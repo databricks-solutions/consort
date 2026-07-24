@@ -32,7 +32,7 @@ import { sanitizeBranchName } from "../util/sanitize-branch-name.js";
 import { isDirty } from "../git/status.js";
 import { updateEnvConnection } from "./env-file.js";
 import { ensureProfilePinned } from "./databricks-profile.js";
-import { DEFAULT_DATABASE, POSTGRES_PORT } from "./constants.js";
+import { DEFAULT_DATABASE, POSTGRES_PORT, RUNTIME_ARTIFACT_IGNORE } from "./constants.js";
 import { KIT_TIMEOUTS } from "./kit-config.js";
 
 // ─── Internal git helpers ───────────────────────────────────────
@@ -131,7 +131,7 @@ export async function assertCleanForFork(cwd: string, startPoint?: string): Prom
   // scm-prepare-pr. Only uncommitted edits to TRACKED source count: an untracked
   // file rides onto the fork but the build's allow-list commit never stages it, so
   // stray agent junk (e.g. a mis-quoted filename) must not block the cut.
-  if (await isDirty({ cwd, ignore: [".sftdd/", ".tdd/", ".lakebase/", ".claude/agent-memory/"], untracked: false })) {
+  if (await isDirty({ cwd, ignore: [...RUNTIME_ARTIFACT_IGNORE], untracked: false })) {
     throw new Error(
       `Working tree has uncommitted changes; refusing to fork from ${startPoint} ` +
         `(they would be carried onto the new branch). Commit or stash first.`,

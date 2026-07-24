@@ -28,6 +28,23 @@ export const POSTGRES_PORT = 5432;
 export const DEFAULT_DATABASE = "databricks_postgres";
 
 /**
+ * Runtime artifact + metadata directories the SCM working-tree guards tolerate
+ * as uncommitted "not code" (the fork-clean check and the open-PR dirty check).
+ * These are the kit's own runtime dirs , SCM workflow state (`.lakebase/`), the
+ * SFTDD orchestration churn (`.sftdd/`, legacy `.tdd/`), and per-agent memory ,
+ * not project source. Passed as the `isDirty({ ignore })` list. Centralized here
+ * so the SCM guards reference ONE named constant instead of inlining the runtime
+ * dir names at each callsite; the extracted lakebase-scm-utils package owns this
+ * default and callers may extend it per-call.
+ */
+export const RUNTIME_ARTIFACT_IGNORE = [
+  ".sftdd/",
+  ".tdd/",
+  ".lakebase/",
+  ".claude/agent-memory/",
+] as const;
+
+/**
  * Default Lakebase endpoint name on a branch. The service currently
  * provisions exactly one endpoint named "primary" per branch; callers
  * that want a different identifier pass `endpointName` explicitly.

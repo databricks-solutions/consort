@@ -10,7 +10,6 @@
 
 import * as fs from "node:fs";
 import { execFileSync } from "node:child_process";
-import { resolveSftddDir } from "../sftdd/sftdd-paths.js";
 import * as path from "node:path";
 import {
   getBranchByName,
@@ -30,7 +29,6 @@ import {
   type TierTopology,
 } from "./scm-workflow-state.js";
 import { sanitizeBranchName } from "../util/sanitize-branch-name.js";
-import { findStaleBranches } from "../sftdd/stale-branches.js";
 import { exec } from "../util/exec.js";
 import {
   collapseMigrationHeads,
@@ -55,6 +53,26 @@ export interface DoctorArgs {
   projectDir: string;
   /** Lakebase project id. Required to reach the Lakebase side. */
   instance?: string;
+}
+
+/** A stale experiment/spike paired branch (the SFTDD-side concept). Declared
+ *  locally so SCM core does not import the sftdd module: the caller injects a
+ *  finder via RunDoctorDeps. Shape mirrors sftdd/stale-branches.StaleBranchFinding. */
+export interface StaleBranchFinding {
+  kind: "experiment" | "spike";
+  slug: string;
+  feature_id?: string;
+  story_id?: string;
+  branch?: string;
+  reason: string;
+}
+
+/** Injected dependencies so SCM-core doctor stays free of any SFTDD import
+ *  (the split into lakebase-scm-utils). The SFTDD side (the CLI wiring, and later
+ *  the kit's doctor wrapper) supplies the stale-branch finder; when absent, the
+ *  stale-branch advisory is simply skipped. */
+export interface RunDoctorDeps {
+  findStaleBranches?: () => StaleBranchFinding[];
 }
 
 export interface DoctorReport {
@@ -104,7 +122,7 @@ function worstOf(a: DoctorSeverity, b: DoctorSeverity): DoctorSeverity {
   return order[Math.max(order.indexOf(a), order.indexOf(b))] as DoctorSeverity;
 }
 
-export async function runDoctor(args: DoctorArgs): Promise<DoctorReport> {
+export async function runDoctor(args: DoctorArgs, deps: RunDoctorDeps = {}): Promise<DoctorReport> {
   const projectDir = args.projectDir;
   const findings: DoctorFinding[] = [];
   const env = readEnv(projectDir);
@@ -112,9 +130,11 @@ export async function runDoctor(args: DoctorArgs): Promise<DoctorReport> {
   const state = readWorkflowState(projectDir);
   const workflowStatePresent = state !== null;
 
-  // 0. Stale spikes + experiments, named distinctly. Hermetic
-  // (reads .tdd records only), so it runs even without a Lakebase instance.
-  for (const stale of findStaleBranches(resolveSftddDir(projectDir))) {
+  // 0. Stale spikes + experiments, named distinctly. Hermetic (reads the
+  // SFTDD records), so it runs even without a Lakebase instance. Provided by an
+  // INJECTED finder (deps.findStaleBranches) so SCM core carries no sftdd import;
+  // skipped when no finder is supplied.
+  for (const stale of deps.findStaleBranches?.() ?? []) {
     const where = stale.feature_id ? ` ${stale.feature_id}/${stale.story_id}` : "";
     findings.push({
       id: `stale-${stale.kind}`,

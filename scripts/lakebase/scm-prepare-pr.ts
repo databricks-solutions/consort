@@ -10,6 +10,7 @@ import { getCurrentBranch } from "../git/inspect.js";
 import { getAheadBehind, isDirty } from "../git/status.js";
 import { getOwnerRepo } from "../git/remote.js";
 import { createPullRequest, getPullRequest } from "../github/pr.js";
+import { RUNTIME_ARTIFACT_IGNORE } from "./constants.js";
 import {
   readWorkflowState,
   writeWorkflowState,
@@ -100,7 +101,7 @@ export async function preparePr(
     // .lakebase/ workflow state). Those are not part of the PR's code, and the
     // driver legitimately dirties them on the very step that opens the PR; the
     // guard's intent is "do not PR uncommitted code", not "freeze workflow state".
-    const dirty = await isDirty({ cwd: args.projectDir, ignore: [".sftdd/", ".tdd/", ".lakebase/", ".claude/agent-memory/"] });
+    const dirty = await isDirty({ cwd: args.projectDir, ignore: [...RUNTIME_ARTIFACT_IGNORE] });
     if (dirty) {
       throw new ScmPreparePrError(
         "Working tree has uncommitted code changes; commit them before opening the PR (or pass --force).",
