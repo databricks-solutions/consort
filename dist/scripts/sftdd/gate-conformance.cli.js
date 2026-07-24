@@ -6648,28 +6648,7 @@ var require_ajv = __commonJS({
 
 // scripts/sftdd/gate-conformance.cli.ts
 init_esm_shims();
-
-// scripts/util/cli-entry.ts
-init_esm_shims();
-import { realpathSync } from "fs";
-import { fileURLToPath as fileURLToPath2 } from "url";
-function isCliEntry(importMetaUrl) {
-  const invokedRaw = process.argv[1];
-  if (!invokedRaw) return false;
-  let invokedResolved;
-  let moduleResolved;
-  try {
-    invokedResolved = realpathSync(invokedRaw);
-  } catch {
-    return false;
-  }
-  try {
-    moduleResolved = realpathSync(fileURLToPath2(importMetaUrl));
-  } catch {
-    return false;
-  }
-  return invokedResolved === moduleResolved;
-}
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // scripts/sftdd/sftdd-paths.ts
 init_esm_shims();

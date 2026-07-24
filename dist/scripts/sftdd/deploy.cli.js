@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path5) {
-      let input = path5;
+    function removeDotSegments(path3) {
+      let input = path3;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path5, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
+        const [path3, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path3 && path3 !== "/" ? path3 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6648,946 +6648,73 @@ var require_ajv = __commonJS({
 
 // scripts/sftdd/deploy.cli.ts
 init_esm_shims();
-
-// scripts/util/cli-entry.ts
-init_esm_shims();
-import { realpathSync } from "fs";
-import { fileURLToPath as fileURLToPath2 } from "url";
-function isCliEntry(importMetaUrl) {
-  const invokedRaw = process.argv[1];
-  if (!invokedRaw) return false;
-  let invokedResolved;
-  let moduleResolved;
-  try {
-    invokedResolved = realpathSync(invokedRaw);
-  } catch {
-    return false;
-  }
-  try {
-    moduleResolved = realpathSync(fileURLToPath2(importMetaUrl));
-  } catch {
-    return false;
-  }
-  return invokedResolved === moduleResolved;
-}
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // scripts/sftdd/deploy.ts
 init_esm_shims();
 import { execSync, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync12, mkdirSync as mkdirSync6, readFileSync as readFileSync14, rmSync as rmSync3, writeFileSync as writeFileSync8 } from "fs";
-import { dirname as dirname3, join as join13 } from "path";
-
-// scripts/lakebase/deploy-targets.ts
-init_esm_shims();
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
-var TARGETS_FILE = "deploy-targets.yaml";
-function readTargets(workspaceRoot) {
-  const targetsFile = join(workspaceRoot, TARGETS_FILE);
-  if (!existsSync(targetsFile)) return null;
-  return parseTargetsYaml(readFileSync(targetsFile, "utf-8"));
-}
-function parseTargetsYaml(content) {
-  const targets = {};
-  let currentTarget = null;
-  for (const rawLine of content.split("\n")) {
-    const trimmed = rawLine.trimEnd();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    if (trimmed === "targets:") continue;
-    const targetMatch = trimmed.match(/^ {2}(\S+):$/);
-    if (targetMatch) {
-      currentTarget = targetMatch[1];
-      targets[currentTarget] = {};
-      continue;
-    }
-    const kvMatch = trimmed.match(/^ {4}(\S+):\s*"?([^"]*)"?\s*$/);
-    if (kvMatch && currentTarget) {
-      const key = kvMatch[1];
-      targets[currentTarget][key] = kvMatch[2];
-    }
-  }
-  return { targets };
-}
-
-// scripts/util/poll-until.ts
-init_esm_shims();
-
-// scripts/util/delay.ts
-init_esm_shims();
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// scripts/util/poll-until.ts
-async function pollUntil(args) {
-  const now = args.now ?? (() => /* @__PURE__ */ new Date());
-  const sleep = args.sleep ?? delay;
-  const startedAt = now().getTime();
-  let polls = 0;
-  while (true) {
-    const elapsedMs = now().getTime() - startedAt;
-    if (elapsedMs >= args.timeoutMs && polls > 0) {
-      return { outcome: "timeout", polls, elapsedMs };
-    }
-    polls += 1;
-    const result = await args.probe({ pollIndex: polls, elapsedMs });
-    const afterProbeElapsed = now().getTime() - startedAt;
-    if (args.onPoll) {
-      args.onPoll({ pollIndex: polls, elapsedMs: afterProbeElapsed, result });
-    } else if (args.label && !result.done) {
-      const seconds = Math.round(afterProbeElapsed / 1e3);
-      console.log(
-        `[${args.label}] still pending after ${seconds}s (poll ${polls})`
-      );
-    }
-    if (result.done) {
-      return {
-        outcome: "done",
-        value: result.value,
-        polls,
-        elapsedMs: afterProbeElapsed
-      };
-    }
-    if (afterProbeElapsed >= args.timeoutMs) {
-      return { outcome: "timeout", polls, elapsedMs: afterProbeElapsed };
-    }
-    await sleep(args.intervalMs);
-  }
-}
-async function pollUntilDefined(probe, opts) {
-  return pollUntil({
-    ...opts,
-    probe: async (ctx) => {
-      const value = await probe(ctx);
-      return value === void 0 ? { done: false } : { done: true, value };
-    }
-  });
-}
+import { existsSync as existsSync8, mkdirSync as mkdirSync5, readFileSync as readFileSync10, rmSync as rmSync3, writeFileSync as writeFileSync5 } from "fs";
+import { dirname as dirname2, join as join9 } from "path";
+import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // scripts/sftdd/sftdd-paths.ts
 init_esm_shims();
 import * as fs from "fs";
-import { join as join2 } from "path";
+import { join } from "path";
 var ARTIFACT_ROOT = ".sftdd";
 var LEGACY_ARTIFACT_ROOT = ".tdd";
 function resolveSftddDir(projectDir = process.cwd()) {
-  const next = join2(projectDir, ARTIFACT_ROOT);
+  const next = join(projectDir, ARTIFACT_ROOT);
   if (fs.existsSync(next)) return next;
-  const legacy = join2(projectDir, LEGACY_ARTIFACT_ROOT);
+  const legacy = join(projectDir, LEGACY_ARTIFACT_ROOT);
   if (fs.existsSync(legacy)) return legacy;
   return next;
 }
-var featuresDir = (tdd) => join2(tdd, "features");
-var escalationsDir = (tdd) => join2(tdd, "escalations");
-var escalationFile = (tdd, id) => join2(escalationsDir(tdd), `${id}.json`);
+var featuresDir = (tdd) => join(tdd, "features");
+var escalationsDir = (tdd) => join(tdd, "escalations");
+var escalationFile = (tdd, id) => join(escalationsDir(tdd), `${id}.json`);
 function findFeatureDir(tdd, featureId) {
   const root = featuresDir(tdd);
   if (!fs.existsSync(root)) return void 0;
-  const exact = join2(root, featureId);
+  const exact = join(root, featureId);
   if (fs.existsSync(exact)) return exact;
   const matches = fs.readdirSync(root).filter((d) => d === featureId || d.startsWith(`${featureId}-`));
-  return matches.length === 1 ? join2(root, matches[0]) : void 0;
+  return matches.length === 1 ? join(root, matches[0]) : void 0;
 }
 
 // scripts/sftdd/escalation.ts
 init_esm_shims();
-import * as fs6 from "fs";
+import * as fs3 from "fs";
 
 // scripts/sftdd/smells.ts
 init_esm_shims();
 
 // scripts/sftdd/run-cycle.ts
 init_esm_shims();
-
-// scripts/lakebase/get-connection.ts
-init_esm_shims();
-
-// scripts/lakebase/databricks-cli.ts
-init_esm_shims();
-import { execFile, execFileSync as execFileSync2 } from "child_process";
-import { promisify } from "util";
-import { join as join4 } from "path";
-
-// scripts/lakebase/kit-config.ts
-init_esm_shims();
-function intFromEnv(name, fallback) {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return parsed;
-}
-var DAY_MS = 24 * 60 * 60 * 1e3;
-var KIT_TIMEOUTS = {
-  cliDefault: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_DEFAULT_MS", 3e4),
-  cliCreateProject: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_CREATE_PROJECT_MS", 18e4),
-  cliCreateBranch: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_CREATE_BRANCH_MS", 6e4),
-  cliCreateEndpoint: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_CREATE_ENDPOINT_MS", 6e4),
-  readyWait: intFromEnv("LAKEBASE_KIT_TIMEOUT_READY_WAIT_MS", 12e4),
-  readyPoll: intFromEnv("LAKEBASE_KIT_TIMEOUT_READY_POLL_MS", 5e3),
-  pgConnect: intFromEnv("LAKEBASE_KIT_TIMEOUT_PG_CONNECT_MS", 1e4),
-  pgStatement: intFromEnv("LAKEBASE_KIT_TIMEOUT_PG_STATEMENT_MS", 15e3),
-  gitDefault: intFromEnv("LAKEBASE_KIT_TIMEOUT_GIT_DEFAULT_MS", 5e3),
-  gitCheckout: intFromEnv("LAKEBASE_KIT_TIMEOUT_GIT_CHECKOUT_MS", 1e4),
-  gitNetwork: intFromEnv("LAKEBASE_KIT_TIMEOUT_GIT_NETWORK_MS", 15e3),
-  gitPush: intFromEnv("LAKEBASE_KIT_TIMEOUT_GIT_PUSH_MS", 3e4),
-  cliLong: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_LONG_MS", 6e4),
-  cmdShort: intFromEnv("LAKEBASE_KIT_TIMEOUT_CMD_SHORT_MS", 5e3),
-  initializrCacheTtl: intFromEnv("LAKEBASE_KIT_INITIALIZR_CACHE_TTL_MS", 10 * 60 * 1e3),
-  featureBranchTtlMs: intFromEnv("LAKEBASE_KIT_FEATURE_BRANCH_TTL_MS", 30 * DAY_MS),
-  testBranchTtlMs: intFromEnv("LAKEBASE_KIT_TEST_BRANCH_TTL_MS", 14 * DAY_MS),
-  uatBranchTtlMs: intFromEnv("LAKEBASE_KIT_UAT_BRANCH_TTL_MS", 14 * DAY_MS),
-  perfBranchTtlMs: intFromEnv("LAKEBASE_KIT_PERF_BRANCH_TTL_MS", 7 * DAY_MS)
-};
-function urlFromEnv(name, fallback) {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  return raw.replace(/\/+$/, "");
-}
-var KIT_REGISTRIES = {
-  mavenCentral: urlFromEnv("LAKEBASE_KIT_REGISTRY_MAVEN_CENTRAL", "https://repo1.maven.org/maven2"),
-  springInitializr: urlFromEnv("LAKEBASE_KIT_REGISTRY_SPRING_INITIALIZR", "https://start.spring.io")
-};
-
-// scripts/lakebase/databricks-profile.ts
-init_esm_shims();
-import * as fs2 from "fs";
-import { execFileSync } from "child_process";
-
-// scripts/util/exec.ts
-init_esm_shims();
-import * as cp from "child_process";
-
-// scripts/lakebase/databricks-profile.ts
-function normalizeHost(host) {
-  return host.trim().replace(/\/+$/, "").toLowerCase();
-}
-function selectProfileForHost(profilesJson, host) {
-  const target = normalizeHost(host);
-  if (!target) return void 0;
-  const start = profilesJson.indexOf("{");
-  if (start < 0) return void 0;
-  let parsed;
-  try {
-    parsed = JSON.parse(profilesJson.slice(start));
-  } catch {
-    return void 0;
-  }
-  const profiles = parsed.profiles;
-  if (!Array.isArray(profiles)) return void 0;
-  const names = profiles.filter((p) => {
-    if (!p || typeof p !== "object") return false;
-    const rec = p;
-    return typeof rec.name === "string" && typeof rec.host === "string" && rec.valid === true && normalizeHost(rec.host) === target;
-  }).map((p) => p.name);
-  const distinct = Array.from(new Set(names));
-  return distinct.length === 1 ? distinct[0] : void 0;
-}
-function resolveProfileForHostSync(host, timeoutMs = KIT_TIMEOUTS.cliDefault) {
-  if (!normalizeHost(host)) return void 0;
-  let out;
-  try {
-    out = execFileSync("databricks", ["auth", "profiles", "-o", "json"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: timeoutMs
-    });
-  } catch {
-    return void 0;
-  }
-  return selectProfileForHost(out, host);
-}
-
-// scripts/lakebase/env-file.ts
-init_esm_shims();
-import * as fs3 from "fs";
-import * as path2 from "path";
-function readEnvVar(envPath, key) {
-  if (!fs3.existsSync(envPath)) return void 0;
-  let value;
-  for (const line of fs3.readFileSync(envPath, "utf-8").split("\n")) {
-    const trimmed = line.trimStart();
-    if (trimmed.startsWith("#") || !trimmed.startsWith(`${key}=`)) continue;
-    value = trimmed.slice(key.length + 1).trim().replace(/^["']|["']$/g, "");
-  }
-  return value && value.length > 0 ? value : void 0;
-}
-
-// scripts/lakebase/databricks-cli.ts
-var execFileP = promisify(execFile);
-var DatabricksCliError = class extends Error {
-  constructor(message, profile, stderr) {
-    super(message);
-    this.profile = profile;
-    this.stderr = stderr;
-    this.name = "DatabricksCliError";
-  }
-  profile;
-  stderr;
-};
-var DatabricksAuthError = class extends DatabricksCliError {
-  constructor(profile, detail) {
-    const login = `databricks auth login${profile ? ` --profile ${profile}` : ""}`;
-    super(
-      `Databricks authentication failed${profile ? ` for profile "${profile}"` : ""}: the cached token is missing or expired. Re-authenticate, then re-run:
-  ${login}
-${detail}`,
-      profile,
-      detail
-    );
-    this.name = "DatabricksAuthError";
-  }
-};
-var profileByHost = /* @__PURE__ */ new Map();
-var profileByEnvFile = /* @__PURE__ */ new Map();
-function isAuthFailure(text) {
-  return /refresh token is invalid|auth login|could not be retrieved because|not authenticated|no valid.*(credential|token)|invalid.*(access token|credential)|\b401\b|unauthorized/i.test(
-    text
-  );
-}
-function resolveProfile(opts) {
-  const base = opts.env ?? process.env;
-  if (opts.profile) return opts.profile;
-  const envProfile = base.DATABRICKS_CONFIG_PROFILE?.trim();
-  if (envProfile) return envProfile;
-  const cwd = opts.cwd ?? process.cwd();
-  let fromEnvFile;
-  if (profileByEnvFile.has(cwd)) {
-    fromEnvFile = profileByEnvFile.get(cwd);
-  } else {
-    fromEnvFile = readEnvVar(join4(cwd, ".env"), "DATABRICKS_CONFIG_PROFILE");
-    profileByEnvFile.set(cwd, fromEnvFile);
-  }
-  if (fromEnvFile) return fromEnvFile;
-  const host = opts.host?.trim();
-  if (!host) return void 0;
-  if (profileByHost.has(host)) return profileByHost.get(host);
-  const resolved = resolveProfileForHostSync(host, opts.timeout);
-  profileByHost.set(host, resolved);
-  return resolved;
-}
-function buildInvocation(args, opts) {
-  const base = opts.env ?? process.env;
-  const trimmedHost = opts.host?.replace(/\/+$/, "");
-  const env = trimmedHost ? { ...base, DATABRICKS_HOST: trimmedHost } : base;
-  const profile = resolveProfile(opts);
-  const argv = profile && !args.includes("--profile") ? [...args, "--profile", profile] : args;
-  return { argv, env, profile };
-}
-function classifyDatabricksError(err, argv, profile) {
-  const e = err;
-  const asText = (v) => typeof v === "string" ? v : Buffer.isBuffer(v) ? v.toString("utf8") : "";
-  const stderr = asText(e.stderr).trim();
-  const stdout = asText(e.stdout).trim();
-  const haystack = `${e.message ?? ""}
-${stderr}
-${stdout}`;
-  if (isAuthFailure(haystack)) {
-    return new DatabricksAuthError(profile, stderr || stdout || (e.message ?? ""));
-  }
-  const killed = e.killed === true;
-  const signal = e.signal ?? void 0;
-  const detail = stderr ? `
-stderr: ${stderr}` : stdout ? `
-stdout: ${stdout}` : killed || signal ? `
-(no output; the CLI was killed${signal ? ` by ${signal}` : ""}, likely a TIMEOUT; raise the budget via the matching LAKEBASE_KIT_TIMEOUT_* env var)` : e.code !== void 0 ? `
-(no stderr/stdout; exit ${e.code})` : "";
-  return new DatabricksCliError(
-    `databricks ${argv.join(" ")} failed: ${e.message}${detail}`,
-    profile,
-    stderr || stdout
-  );
-}
-async function runDatabricks(args, opts = {}) {
-  const { argv, env, profile } = buildInvocation(args, opts);
-  try {
-    const { stdout } = await execFileP("databricks", argv, {
-      env,
-      timeout: opts.timeout ?? KIT_TIMEOUTS.cliDefault
-    });
-    return stdout.toString();
-  } catch (err) {
-    throw classifyDatabricksError(err, argv, profile);
-  }
-}
-function runDatabricksSync(args, opts = {}) {
-  const { argv, env, profile } = buildInvocation(args, opts);
-  try {
-    return execFileSync2("databricks", argv, {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      env,
-      timeout: opts.timeout ?? KIT_TIMEOUTS.cliDefault
-    });
-  } catch (err) {
-    throw classifyDatabricksError(err, argv, profile);
-  }
-}
-
-// scripts/lakebase/get-connection.ts
-import { createLakebasePool } from "@databricks/lakebase";
-import { Client } from "pg";
-
-// scripts/lakebase/branch-utils.ts
-init_esm_shims();
-
-// scripts/lakebase/branch-id.ts
-init_esm_shims();
-var UID_PATTERN = /^br-[a-z0-9-]+$/;
-function looksLikeBranchUid(s) {
-  return UID_PATTERN.test(s);
-}
-function asBranchName(s) {
-  if (!s) throw new TypeError("BranchName cannot be empty");
-  if (looksLikeBranchUid(s)) {
-    throw new TypeError(
-      `'${s}' looks like a BranchUid (br-\u2026 pattern), not a BranchName. BranchName is the resource-path leaf (e.g. 'production', 'staging', 'feature-add-orders'); BranchUid is the system identifier returned by list-branches as the 'uid' field. The Lakebase API rejects a BranchUid in any path-shaped field. If you really mean a BranchUid, use asBranchUid() instead \u2013 but verify you're calling a function that takes one.`
-    );
-  }
-  return s;
-}
-function asBranchUid(s) {
-  if (!s) throw new TypeError("BranchUid cannot be empty");
-  if (!looksLikeBranchUid(s)) {
-    throw new TypeError(
-      `'${s}' is not a BranchUid (must match the br-\u2026 pattern). If you have a BranchName (resource-path leaf like 'production'), use asBranchName() instead.`
-    );
-  }
-  return s;
-}
-function branchNameFromResourcePath(path5) {
-  if (!path5.includes("/branches/")) return null;
-  const leaf = path5.split("/branches/").pop();
-  if (!leaf) return null;
-  try {
-    return asBranchName(leaf);
-  } catch {
-    return null;
-  }
-}
-
-// scripts/git/inspect.ts
-init_esm_shims();
-
-// scripts/lakebase/branch-utils.ts
-var LakebaseBranchError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "LakebaseBranchError";
-  }
-};
-var LakebaseBranchTtlTooLongError = class extends LakebaseBranchError {
-  /** The TTL that was attempted (the value passed to the API). */
-  attemptedTtl;
-  constructor(attemptedTtl, underlyingMessage) {
-    super(
-      `Branch create rejected: TTL '${attemptedTtl}' exceeds the workspace's maximum expiration policy. Pass a shorter ttl arg (e.g. "604800s" for 7 days) or set noExpiry: true. The workspace cap is not directly exposed by the Lakebase API; the project's history_retention_duration (from \`databricks postgres get-project\`) is a conservative starting point.
-
-Underlying error: ${underlyingMessage}`
-    );
-    this.name = "LakebaseBranchTtlTooLongError";
-    this.attemptedTtl = attemptedTtl;
-  }
-};
-function isTtlTooLongError(stderr) {
-  return /expiration time exceeds the maximum expiration time/i.test(stderr);
-}
-function parseLakebaseTtl(ttl) {
-  if (!ttl) return void 0;
-  const m = ttl.trim().match(/^(\d+)s?$/);
-  if (!m) return void 0;
-  const n = Number.parseInt(m[1], 10);
-  return Number.isFinite(n) && n > 0 ? n : void 0;
-}
-function minLakebaseTtl(a, b) {
-  const sa = parseLakebaseTtl(a);
-  const sb = parseLakebaseTtl(b);
-  if (sa === void 0 && sb === void 0) return void 0;
-  if (sa === void 0) return `${sb}s`;
-  if (sb === void 0) return `${sa}s`;
-  return `${Math.min(sa, sb)}s`;
-}
-var RETENTION_CACHE = /* @__PURE__ */ new Map();
-function getCachedProjectRetention(instance) {
-  return RETENTION_CACHE.get(instance);
-}
-function cacheProjectRetention(instance, ttl) {
-  RETENTION_CACHE.set(instance, ttl);
-}
-function projectPath(instance) {
-  return `projects/${instance}`;
-}
-async function listBranches(opts) {
-  const raw = await dbcli(
-    ["postgres", "list-branches", projectPath(opts.instance), "-o", "json"],
-    opts.host
-  );
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new LakebaseBranchError(`Unexpected CLI output: ${raw.slice(0, 200)}`);
-  }
-  const items = Array.isArray(parsed) ? parsed : parsed.branches ?? parsed.items ?? [];
-  return items.map(parseBranch).filter((b) => b !== void 0);
-}
-async function getBranchByName(branchNameOrUid, opts) {
-  const branches = await listBranches(opts);
-  return branches.find(
-    (b) => b.uid === branchNameOrUid || b.name === branchNameOrUid || b.name.endsWith(`/${branchNameOrUid}`)
-  );
-}
-async function getDefaultBranch(opts) {
-  const branches = await listBranches(opts);
-  return branches.find((b) => b.isDefault);
-}
-async function resolveBranchPath(branchNameOrUid, opts) {
-  if (branchNameOrUid.startsWith("projects/") && branchNameOrUid.includes("/branches/")) {
-    return branchNameOrUid;
-  }
-  const branch = await getBranchByName(branchNameOrUid, opts);
-  return branch?.name;
-}
-async function resolveBranchId(args) {
-  const { branch, ...opts } = args;
-  if (branch.startsWith("projects/") && branch.includes("/branches/")) {
-    const leaf2 = branch.split("/branches/").pop();
-    if (leaf2) return leaf2;
-  }
-  if (!branch.startsWith("br-")) {
-    return branch;
-  }
-  const info = await getBranchByName(branch, opts);
-  if (!info) {
-    throw new LakebaseBranchError(
-      `Could not resolve branch "${branch}" in project "${opts.instance}". Pass either the branch_id (e.g. "demo-feature") or the branch uid.`
-    );
-  }
-  const leaf = info.name.split("/branches/").pop();
-  if (!leaf) {
-    throw new LakebaseBranchError(
-      `Branch info for "${branch}" missing a name segment (got "${info.name}").`
-    );
-  }
-  return leaf;
-}
-function parseBranch(raw) {
-  if (!raw || typeof raw !== "object") return void 0;
-  const r = raw;
-  const name = r.name ?? "";
-  if (!name) return void 0;
-  const nameLeaf = branchNameFromResourcePath(name);
-  if (!nameLeaf) return void 0;
-  if (!r.uid) return void 0;
-  let uid;
-  try {
-    uid = asBranchUid(r.uid);
-  } catch {
-    return void 0;
-  }
-  const sourceBranchName = r.status?.source_branch ?? r.spec?.source_branch;
-  const sourceBranchId = sourceBranchName ? branchNameFromResourcePath(sourceBranchName) ?? void 0 : void 0;
-  return {
-    uid,
-    nameLeaf,
-    name,
-    state: r.status?.current_state ?? r.state ?? "UNKNOWN",
-    sourceBranchName,
-    sourceBranchId,
-    isDefault: r.status?.default === true || r.is_default === true,
-    expireTime: r.status?.expire_time,
-    isProtected: r.status?.is_protected
-  };
-}
-function dbcli(args, host) {
-  return runDatabricks(args, { host, timeout: KIT_TIMEOUTS.cliDefault });
-}
-
-// scripts/lakebase/constants.ts
-init_esm_shims();
-var POSTGRES_PORT = 5432;
-var DEFAULT_DATABASE = "databricks_postgres";
-var DEFAULT_ENDPOINT = "primary";
-
-// scripts/lakebase/get-connection.ts
-async function getConnection(args) {
-  const endpointName = args.endpointName ?? DEFAULT_ENDPOINT;
-  const database = args.database ?? process.env.PGDATABASE ?? DEFAULT_DATABASE;
-  const branchId = await resolveBranchId({ instance: args.instance, branch: args.branch });
-  const endpointPath2 = `projects/${args.instance}/branches/${branchId}/endpoints/${endpointName}`;
-  if (args.output === "dsn") {
-    const host2 = await resolveEndpointHost(args.instance, branchId);
-    const { token, email: email2 } = await mintCredential(endpointPath2);
-    const url = buildPostgresUrl({ host: host2, port: POSTGRES_PORT, database, user: email2, password: token });
-    return { url, host: host2, port: POSTGRES_PORT, database, user: email2, endpointPath: endpointPath2 };
-  }
-  const host = await resolveEndpointHost(args.instance, branchId);
-  const email = await resolveCurrentUser();
-  return createLakebasePool({
-    endpoint: endpointPath2,
-    host,
-    database,
-    user: email,
-    // workspaceClient is passed through verbatim. createLakebasePool falls
-    // back to environment / ServiceContext when omitted.
-    ...args.workspaceClient !== void 0 ? { workspaceClient: args.workspaceClient } : {}
-  });
-}
-async function resolveEndpointHost(instance, branch) {
-  const branchId = await resolveBranchId({ instance, branch });
-  const branchPath = `projects/${instance}/branches/${branchId}`;
-  const raw = dbcli2(["postgres", "list-endpoints", branchPath, "-o", "json"]);
-  const endpoints = JSON.parse(raw);
-  if (!Array.isArray(endpoints) || endpoints.length === 0) {
-    throw new Error(`No endpoints found for branch ${branchPath}`);
-  }
-  const host = endpoints[0]?.status?.hosts?.host;
-  if (!host) {
-    throw new Error(`Endpoint exists for ${branchPath} but has no host yet \u2013 wait for it to become ACTIVE`);
-  }
-  return host;
-}
-async function mintCredential(endpointPath2) {
-  const raw = dbcli2(["postgres", "generate-database-credential", endpointPath2, "-o", "json"]);
-  const token = JSON.parse(raw)?.token ?? "";
-  if (!token) {
-    throw new Error(`generate-database-credential returned no token for ${endpointPath2}`);
-  }
-  const email = await resolveCurrentUser();
-  return { token, email };
-}
-async function resolveCurrentUser() {
-  const raw = dbcli2(["current-user", "me", "-o", "json"]);
-  const parsed = JSON.parse(raw);
-  const email = parsed.userName ?? parsed.emails?.[0]?.value;
-  if (!email) {
-    throw new Error("Could not resolve current user from `databricks current-user me`");
-  }
-  return email;
-}
-function buildPostgresUrl(parts) {
-  const u = new URL(`postgresql://${parts.host}:${parts.port}/${encodeURIComponent(parts.database)}`);
-  u.username = encodeURIComponent(parts.user);
-  u.password = encodeURIComponent(parts.password);
-  u.searchParams.set("sslmode", "require");
-  return u.toString();
-}
-function dbcli2(args) {
-  return runDatabricksSync(args, { timeout: KIT_TIMEOUTS.cliDefault });
-}
-async function waitForBranchAuthReady(args) {
-  const timeoutMs = args.timeoutMs ?? 6e4;
-  const initialBackoffMs = args.initialBackoffMs ?? 2e3;
-  const deadline = Date.now() + timeoutMs;
-  let backoffMs = initialBackoffMs;
-  let lastErr;
-  let attempt = 0;
-  while (Date.now() < deadline) {
-    attempt++;
-    let client;
-    try {
-      const dsn = await getConnection({
-        instance: args.instance,
-        branch: args.branch,
-        endpointName: args.endpointName,
-        database: args.database,
-        output: "dsn"
-      });
-      client = new Client({ connectionString: dsn.url });
-      await client.connect();
-      await client.query("SELECT 1");
-      await client.end();
-      return;
-    } catch (err) {
-      lastErr = err;
-      if (client) {
-        try {
-          await client.end();
-        } catch {
-        }
-      }
-      if (!isTransientAuthFailure(err)) {
-        throw err;
-      }
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
-      const wait = Math.min(backoffMs, remaining);
-      await new Promise((r) => setTimeout(r, wait));
-      backoffMs = Math.min(backoffMs * 2, 8e3);
-    }
-  }
-  throw new Error(
-    `waitForBranchAuthReady: timed out after ${timeoutMs}ms (${attempt} attempts) against projects/${args.instance}/branches/${args.branch}. Last error: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`
-  );
-}
-function isTransientAuthFailure(err) {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /external authorization failed/i.test(msg) || /password authentication failed/i.test(msg) || /authentication failed/i.test(msg);
-}
+import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // scripts/sftdd/experiment.ts
 init_esm_shims();
-
-// scripts/lakebase/paired-branch.ts
-init_esm_shims();
-import * as fs4 from "fs";
-import * as path3 from "path";
-import { execFileSync as execFileSync3 } from "child_process";
-
-// scripts/lakebase/branch-create.ts
-init_esm_shims();
-
-// scripts/util/sanitize-branch-name.ts
-init_esm_shims();
-var LAKEBASE_BRANCH_NAME_MAX = 63;
-function sanitizeBranchName(gitBranch) {
-  let name = gitBranch.replace(/\//g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "-").substring(0, LAKEBASE_BRANCH_NAME_MAX);
-  while (name.length < 3) name += "-x";
-  return name;
-}
-
-// scripts/lakebase/lakebase-project.ts
-init_esm_shims();
-function findHistoryRetentionDuration(parsed) {
-  const raw = parsed.history_retention_duration ?? parsed.historyRetentionDuration;
-  if (!raw || typeof raw !== "string") return void 0;
-  const m = raw.trim().match(/^(\d+)s?$/);
-  if (!m) return void 0;
-  const seconds = Number.parseInt(m[1], 10);
-  if (!Number.isFinite(seconds) || seconds <= 0) return void 0;
-  return `${seconds}s`;
-}
-async function getProjectRetentionDuration(args) {
-  const name = args.projectId.startsWith("projects/") ? args.projectId : `projects/${args.projectId}`;
-  let raw;
-  try {
-    raw = await dbcli3(["postgres", "get-project", name, "-o", "json"], args.host);
-  } catch {
-    return void 0;
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return void 0;
-  }
-  return findHistoryRetentionDuration(parsed);
-}
-function dbcli3(args, host, timeout = KIT_TIMEOUTS.cliDefault) {
-  return runDatabricks(args, { host, timeout });
-}
-
-// scripts/lakebase/branch-create.ts
-async function createBranch(args) {
-  const sanitized = sanitizeBranchName(args.branch);
-  const lookup = { instance: args.instance, host: args.host };
-  let sourceBranchPath;
-  if (args.parentBranch) {
-    if (looksLikeBranchUid(args.parentBranch)) {
-      throw new LakebaseBranchError(
-        `parentBranch '${args.parentBranch}' looks like a BranchUid (br-\u2026 pattern), not a BranchName. Pass the resource-path leaf (e.g. 'production', 'staging', 'feature-add-orders') \u2013 the Lakebase API rejects uids in source_branch fields. If you have a uid and need to resolve it to its name, call resolveBranchId() from branch-utils first.`
-      );
-    }
-    const validated = asBranchName(args.parentBranch);
-    const parent = await getBranchByName(validated, lookup);
-    if (parent) {
-      sourceBranchPath = parent.name;
-    } else if (args.strictParent === true) {
-      throw new LakebaseBranchError(
-        `parentBranch '${validated}' does not exist on project '${args.instance}', and strictParent: true was set. Either create '${validated}' first (e.g. cut it off the project default branch) or drop strictParent: true to fall back to the project default branch.`
-      );
-    } else {
-      const def = await getDefaultBranch(lookup);
-      if (!def) {
-        throw new LakebaseBranchError(
-          `parentBranch '${validated}' does not exist on project '${args.instance}' and the project has no default branch to fall back to.`
-        );
-      }
-      const defaultLeaf = leafOf(def.name) ?? def.name;
-      process.stderr.write(
-        `[lakebase-branch-create] parentBranch '${validated}' not found on project '${args.instance}'; falling back to default branch '${defaultLeaf}'. Pass strictParent: true to throw instead.
-`
-      );
-      sourceBranchPath = def.name;
-    }
-  } else if (args.currentBranch && args.currentBranch !== sanitized) {
-    const current = await getBranchByName(args.currentBranch, lookup);
-    if (current) sourceBranchPath = current.name;
-  }
-  if (!sourceBranchPath) {
-    const def = await getDefaultBranch(lookup);
-    if (!def) {
-      throw new LakebaseBranchError(
-        `Could not find a parent branch for "${sanitized}" \u2013 no parentBranch override, no currentBranch hint, and the project has no default branch.`
-      );
-    }
-    sourceBranchPath = def.name;
-  }
-  const existing = await getBranchByName(sanitized, lookup);
-  if (existing) {
-    assertSourceMatches(existing, sourceBranchPath, sanitized);
-    return existing;
-  }
-  if (args.ttl && args.noExpiry === true) {
-    throw new LakebaseBranchError(
-      `Cannot set both ttl ("${args.ttl}") and noExpiry: true on the same branch \u2013 they are mutually exclusive. Pass one or the other.`
-    );
-  }
-  const specObj = {
-    source_branch: sourceBranchPath
-  };
-  if (args.ttl) {
-    specObj.ttl = args.ttl;
-  } else if (args.noExpiry ?? true) {
-    specObj.no_expiry = true;
-  }
-  try {
-    await createWithTtlRecovery(args.instance, sanitized, specObj, args.host);
-  } catch (err) {
-    if (err instanceof LakebaseBranchTtlTooLongError) throw err;
-    const landed = await getBranchByName(sanitized, lookup);
-    if (!landed) throw err;
-    assertSourceMatches(landed, sourceBranchPath, sanitized);
-  }
-  return waitForBranchReady({
-    instance: args.instance,
-    host: args.host,
-    branch: sanitized,
-    timeoutMs: args.readyTimeoutMs ?? KIT_TIMEOUTS.readyWait,
-    pollIntervalMs: args.pollIntervalMs ?? KIT_TIMEOUTS.readyPoll
-  });
-}
-async function waitForBranchReady(args) {
-  const timeoutMs = args.timeoutMs ?? KIT_TIMEOUTS.readyWait;
-  const interval = args.pollIntervalMs ?? KIT_TIMEOUTS.readyPoll;
-  const result = await pollUntilDefined(
-    async () => {
-      const branch = await getBranchByName(args.branch, { instance: args.instance, host: args.host });
-      return branch && branch.state === "READY" ? branch : void 0;
-    },
-    { timeoutMs, intervalMs: interval }
-  );
-  if (result.outcome === "timeout") {
-    throw new LakebaseBranchError(
-      `Branch "${args.branch}" did not reach READY within ${timeoutMs}ms`
-    );
-  }
-  return result.value;
-}
-function leafOf(pathOrName) {
-  if (!pathOrName) return void 0;
-  const segments = pathOrName.split("/");
-  return segments[segments.length - 1] || void 0;
-}
-function assertSourceMatches(existing, sourceBranchPath, sanitized) {
-  const existingLeaf = leafOf(existing.sourceBranchName);
-  const requestedLeaf = leafOf(sourceBranchPath);
-  if (existingLeaf && requestedLeaf && existingLeaf !== requestedLeaf) {
-    throw new LakebaseBranchError(
-      `Branch "${sanitized}" already exists, but was forked from "${existingLeaf}", not the requested "${requestedLeaf}". Delete the existing branch first, or pick a different target name.`
-    );
-  }
-}
-async function createWithTtlRecovery(instance, sanitized, specObj, host) {
-  const originalTtl = specObj.ttl;
-  try {
-    await dbcli4(
-      ["postgres", "create-branch", projectPath(instance), sanitized, "--json", JSON.stringify({ spec: specObj })],
-      host
-    );
-    return;
-  } catch (err) {
-    if (!(err instanceof DatabricksCliError) || !originalTtl || !isTtlTooLongError(err.message)) {
-      throw err;
-    }
-    let retention = getCachedProjectRetention(instance);
-    if (retention === void 0) {
-      retention = await getProjectRetentionDuration({ projectId: instance, host });
-      cacheProjectRetention(instance, retention);
-    }
-    const FALLBACK_TTL = "604800s";
-    const effectiveRetention = retention ?? FALLBACK_TTL;
-    const clamped = minLakebaseTtl(originalTtl, effectiveRetention) ?? effectiveRetention;
-    if (clamped === originalTtl) {
-      throw new LakebaseBranchTtlTooLongError(originalTtl, err.message);
-    }
-    process.stderr.write(
-      `[lakebase-branch-create] workspace TTL cap rejected '${originalTtl}' for project '${instance}'; retrying with ` + (retention ? `retention-clamped '${clamped}'.
-` : `hardcoded fallback '${clamped}' (history_retention_duration not discoverable).
-`)
-    );
-    const retrySpec = { ...specObj, ttl: clamped };
-    try {
-      await dbcli4(
-        ["postgres", "create-branch", projectPath(instance), sanitized, "--json", JSON.stringify({ spec: retrySpec })],
-        host
-      );
-    } catch (retryErr) {
-      if (retryErr instanceof DatabricksCliError && isTtlTooLongError(retryErr.message)) {
-        throw new LakebaseBranchTtlTooLongError(
-          clamped,
-          `Workspace rejected retention-clamped TTL '${clamped}' (original '${originalTtl}'): ${retryErr.message}`
-        );
-      }
-      throw retryErr;
-    }
-  }
-}
-function dbcli4(args, host) {
-  return runDatabricks(args, { host, timeout: KIT_TIMEOUTS.cliCreateBranch });
-}
-
-// scripts/lakebase/branch-delete.ts
-init_esm_shims();
-async function deleteBranch(args) {
-  const fullPath = await resolveBranchPath(args.branch, {
-    instance: args.instance,
-    host: args.host
-  });
-  if (!fullPath) {
-    throw new LakebaseBranchError(`Branch "${args.branch}" not found in instance "${args.instance}"`);
-  }
-  if (!args.allowDefault) {
-    const info = await getBranchByName(args.branch, {
-      instance: args.instance,
-      host: args.host
-    });
-    if (info?.isDefault) {
-      const leaf = info.name.split("/branches/").pop() ?? info.uid;
-      throw new LakebaseBranchError(
-        `Refusing to delete the project's default Lakebase branch "${leaf}". This branch is the trunk every other branch was forked from. Pass allowDefault=true (or --allow-default on the CLI) only when you intend to tear down the entire project.`
-      );
-    }
-  }
-  await dbcli5(["postgres", "delete-branch", fullPath], args.host);
-}
-function dbcli5(args, host) {
-  return runDatabricks(args, { host, timeout: KIT_TIMEOUTS.cliDefault });
-}
-
-// scripts/lakebase/branch-endpoint.ts
-init_esm_shims();
-
-// scripts/git/status.ts
-init_esm_shims();
+import { createPairedBranch, deletePairedBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // scripts/sftdd/agent-log.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync6, readFileSync as readFileSync7 } from "fs";
-import { join as join7 } from "path";
+import { appendFileSync, existsSync as existsSync2, readFileSync as readFileSync3 } from "fs";
+import { join as join3 } from "path";
 
 // scripts/sftdd/schema-loader.ts
 init_esm_shims();
 var import_ajv = __toESM(require_ajv(), 1);
-import { readFileSync as readFileSync6 } from "fs";
-import { join as join6 } from "path";
-var SCHEMA_DIR = join6(__dirname, "schemas");
+import { readFileSync as readFileSync2 } from "fs";
+import { join as join2 } from "path";
+var SCHEMA_DIR = join2(__dirname, "schemas");
 var ajv = new import_ajv.default({ allErrors: true, strict: false });
 ajv.addFormat("date-time", true);
 var validatorCache = /* @__PURE__ */ new Map();
 function loadSchema(name) {
-  return JSON.parse(readFileSync6(join6(SCHEMA_DIR, name), "utf8"));
+  return JSON.parse(readFileSync2(join2(SCHEMA_DIR, name), "utf8"));
 }
 function getValidator(name) {
   const cached = validatorCache.get(name);
@@ -7680,7 +6807,7 @@ function renderEventMessage(event, slots = {}) {
 
 // scripts/sftdd/agent-log.ts
 function logFilePath(sftddDir) {
-  return join7(sftddDir, "agent-log.jsonl");
+  return join3(sftddDir, "agent-log.jsonl");
 }
 function buildAgentLogEvent(input, now) {
   const slots = input.slots ?? {};
@@ -7739,21 +6866,22 @@ init_esm_shims();
 
 // scripts/sftdd/supersession.ts
 init_esm_shims();
-import * as fs5 from "fs";
-import { join as join8 } from "path";
+import * as fs2 from "fs";
+import { join as join4 } from "path";
 
 // scripts/sftdd/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync8, readFileSync as readFileSync9, readdirSync as readdirSync2, statSync as statSync2 } from "fs";
-import { join as join9, relative, extname } from "path";
+import { existsSync as existsSync4, readFileSync as readFileSync5, readdirSync as readdirSync2, statSync as statSync2 } from "fs";
+import { join as join5, relative, extname } from "path";
 
 // scripts/sftdd/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync9, readFileSync as readFileSync10, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
-import { join as join10, relative as relative2, extname as extname2 } from "path";
+import { existsSync as existsSync5, readFileSync as readFileSync6, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
+import { join as join6, relative as relative2, extname as extname2 } from "path";
 
-// scripts/git/commits.ts
-init_esm_shims();
+// scripts/sftdd/cycle-record.ts
+import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
+import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // scripts/sftdd/escalation.ts
 function escalationId(parts) {
@@ -7773,14 +6901,14 @@ function writeEscalation(sftddDir, esc) {
     ...esc.ac_id ? { ac_id: esc.ac_id } : {},
     raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString()
   };
-  fs6.mkdirSync(escalationsDir(sftddDir), { recursive: true });
-  fs6.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
+  fs3.mkdirSync(escalationsDir(sftddDir), { recursive: true });
+  fs3.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
   return full;
 }
 function readEscalationFile(file) {
-  if (!fs6.existsSync(file)) return void 0;
+  if (!fs3.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs6.readFileSync(file, "utf8"));
+    return JSON.parse(fs3.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -7788,8 +6916,8 @@ function readEscalationFile(file) {
 
 // scripts/sftdd/deploy-verify-assess.ts
 init_esm_shims();
-import * as fs7 from "fs";
-import * as path4 from "path";
+import * as fs4 from "fs";
+import * as path2 from "path";
 function parseFailedNodeIds(output) {
   const ids = [];
   const seen = /* @__PURE__ */ new Set();
@@ -7805,13 +6933,13 @@ function parseFailedNodeIds(output) {
 function markerPath(sftddDir, featureId, storyId) {
   const fdir = findFeatureDir(sftddDir, featureId);
   if (!fdir) return void 0;
-  return path4.join(fdir, "stories", storyId, "deploy-verify-assess.json");
+  return path2.join(fdir, "stories", storyId, "deploy-verify-assess.json");
 }
 function readDeployVerifyAssessMarker(sftddDir, featureId, storyId) {
   const file = markerPath(sftddDir, featureId, storyId);
-  if (!file || !fs7.existsSync(file)) return void 0;
+  if (!file || !fs4.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs7.readFileSync(file, "utf8"));
+    return JSON.parse(fs4.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -7827,13 +6955,13 @@ function writeDeployVerifyAssessMarker(sftddDir, featureId, storyId, failingNode
     assessed: false,
     attempts: prior?.attempts ?? 0
   };
-  fs7.mkdirSync(path4.dirname(file), { recursive: true });
-  fs7.writeFileSync(file, JSON.stringify(marker, null, 2) + "\n", "utf8");
+  fs4.mkdirSync(path2.dirname(file), { recursive: true });
+  fs4.writeFileSync(file, JSON.stringify(marker, null, 2) + "\n", "utf8");
   return file;
 }
 function clearDeployVerifyAssessMarker(sftddDir, featureId, storyId) {
   const file = markerPath(sftddDir, featureId, storyId);
-  if (file && fs7.existsSync(file)) fs7.rmSync(file);
+  if (file && fs4.existsSync(file)) fs4.rmSync(file);
 }
 async function classifyDeployVerifyFailure(failingNodeIds, runIsolated) {
   if (failingNodeIds.length === 0) return "genuine";
@@ -7843,11 +6971,15 @@ async function classifyDeployVerifyFailure(failingNodeIds, runIsolated) {
 
 // scripts/sftdd/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync5, readFileSync as readFileSync13, statSync as statSync4 } from "fs";
-import { join as join12 } from "path";
+import { readdirSync as readdirSync5, readFileSync as readFileSync9, statSync as statSync4 } from "fs";
+import { join as join8 } from "path";
 
 // scripts/sftdd/ephemeral-verify.ts
 init_esm_shims();
+import { LAKEBASE_BRANCH_NAME_MAX } from "@databricks-solutions/lakebase-scm-utils/util";
+import { createBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { deleteBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { getConnection as getConnection2, waitForBranchAuthReady } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 var EPHEMERAL_VERIFY_TTL = "3600s";
 async function withEphemeralVerifyBranch(args, run) {
   const ttl = args.ttl ?? EPHEMERAL_VERIFY_TTL;
@@ -7857,7 +6989,7 @@ async function withEphemeralVerifyBranch(args, run) {
   const waitReady = args.waitReady ?? (async (a) => {
     await waitForBranchAuthReady({ instance: a.instance, branch: a.branch });
   });
-  const resolveDsn = args.resolveDsn ?? (async (a) => (await getConnection({ instance: a.instance, branch: a.branch, database: a.database, output: "dsn" })).url);
+  const resolveDsn = args.resolveDsn ?? (async (a) => (await getConnection2({ instance: a.instance, branch: a.branch, database: a.database, output: "dsn" })).url);
   const remove = args.remove ?? (async (a) => {
     await deleteBranch({ instance: a.instance, branch: a.branch });
   });
@@ -7884,7 +7016,7 @@ function ephemeralVerifyBranchName(experimentBranch, nonce) {
 // scripts/sftdd/deploy.ts
 function readProjectInstance(projectDir) {
   try {
-    const m = readFileSync14(join13(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
+    const m = readFileSync10(join9(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
     return m ? m[1].replace(/^["']|["']$/g, "").trim() : void 0;
   } catch {
     return void 0;
@@ -7893,7 +7025,7 @@ function readProjectInstance(projectDir) {
 function readAppDatabaseName(projectDir) {
   let env;
   try {
-    env = readFileSync14(join13(projectDir, ".env"), "utf8");
+    env = readFileSync10(join9(projectDir, ".env"), "utf8");
   } catch {
     return void 0;
   }
@@ -8018,7 +7150,7 @@ function logReleaseEngineerDeployOutcome(ctx, result) {
   }
 }
 function pidFile(projectDir, target) {
-  return join13(resolveSftddDir(projectDir), "deploy", `${target}.pid`);
+  return join9(resolveSftddDir(projectDir), "deploy", `${target}.pid`);
 }
 function normalizeVerifyRun(raw) {
   return typeof raw === "boolean" ? { passed: raw, output: "" } : { passed: raw.passed, output: raw.output ?? "" };
@@ -8041,10 +7173,10 @@ ${tail}
 function writeDeployEvidence(sftddDir, evidence) {
   const fdir = findFeatureDir(sftddDir, evidence.feature_id);
   if (!fdir) return void 0;
-  const dir = evidence.story_id ? join13(fdir, "stories", evidence.story_id) : fdir;
-  mkdirSync6(dir, { recursive: true });
-  const file = join13(dir, "deploy-evidence.json");
-  writeFileSync8(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
+  const dir = evidence.story_id ? join9(fdir, "stories", evidence.story_id) : fdir;
+  mkdirSync5(dir, { recursive: true });
+  const file = join9(dir, "deploy-evidence.json");
+  writeFileSync5(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
   return file;
 }
 function defaultStart(cmd, cwd, env) {
@@ -8111,8 +7243,8 @@ async function deployToTarget(args) {
   const env = args.lakebaseBranch ? { ...process.env, LAKEBASE_BRANCH_ID: args.lakebaseBranch } : void 0;
   const pid = start(cfg.run, args.projectDir, env);
   const pf = pidFile(args.projectDir, args.targetName);
-  mkdirSync6(dirname3(pf), { recursive: true });
-  writeFileSync8(pf, String(pid));
+  mkdirSync5(dirname2(pf), { recursive: true });
+  writeFileSync5(pf, String(pid));
   const poll = await pollUntil({
     probe: async () => await reachable(url) ? { done: true, value: true } : { done: false },
     timeoutMs: cfg.readyTimeoutSeconds * 1e3,
@@ -8227,8 +7359,8 @@ async function deployToTarget(args) {
 }
 function stopLocal(projectDir, targetName) {
   const pf = pidFile(projectDir, targetName);
-  if (!existsSync12(pf)) return { stopped: false };
-  const pid = Number(readFileSync14(pf, "utf8").trim());
+  if (!existsSync8(pf)) return { stopped: false };
+  const pid = Number(readFileSync10(pf, "utf8").trim());
   if (Number.isFinite(pid) && pid > 0) {
     try {
       process.kill(-pid);

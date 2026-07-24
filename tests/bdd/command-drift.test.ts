@@ -9,7 +9,7 @@ import * as path from "node:path";
 import {
   detectCommandDrift,
   detectScaffoldedDrift,
-} from "../../scripts/lakebase/workflow-drift.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const KIT_COMMANDS_DIR = path.join(
@@ -79,7 +79,7 @@ describe("detectCommandDrift", () => {
     deployCommand(dir, "build.md");
     deployCommand(dir, "deploy.md");
     deployCommand(dir, "spike.md");
-    const report = detectCommandDrift({ projectDir: dir });
+    const report = detectCommandDrift({ kitDir: REPO_ROOT, projectDir: dir });
     expect(report.overall).toBe("ok");
     const byName = (n: string) => report.files.find((f) => f.name === n)!;
     expect(byName("design.md").status).toBe("unchanged");
@@ -96,7 +96,7 @@ describe("detectCommandDrift", () => {
       .readFileSync(path.join(dir, ".claude", "commands", "design.md"), "utf8")
       .replace("# /design", "# /design (project-customized)");
     fs.writeFileSync(path.join(dir, ".claude", "commands", "design.md"), customized);
-    const report = detectCommandDrift({ projectDir: dir });
+    const report = detectCommandDrift({ kitDir: REPO_ROOT, projectDir: dir });
     expect(report.overall).toBe("drift");
     const design = report.files.find((f) => f.name === "design.md")!;
     expect(design.status).toBe("drifted");
@@ -113,7 +113,7 @@ describe("detectCommandDrift", () => {
     deployCommand(dir, "build.md", "0.1.0-old");
     deployCommand(dir, "deploy.md", "0.1.0-old");
     deployCommand(dir, "spike.md", "0.1.0-old");
-    const report = detectCommandDrift({ projectDir: dir });
+    const report = detectCommandDrift({ kitDir: REPO_ROOT, projectDir: dir });
     expect(report.overall).toBe("ok");
     const design = report.files.find((f) => f.name === "design.md")!;
     expect(design.status).toBe("unchanged");
@@ -125,7 +125,7 @@ describe("detectCommandDrift", () => {
     const dir = mkProject();
     deployCommand(dir, "design.md");
     // build.md intentionally not deployed.
-    const report = detectCommandDrift({ projectDir: dir });
+    const report = detectCommandDrift({ kitDir: REPO_ROOT, projectDir: dir });
     expect(report.overall).toBe("drift");
     const build = report.files.find((f) => f.name === "build.md")!;
     expect(build.status).toBe("missing");
@@ -142,7 +142,7 @@ describe("detectCommandDrift", () => {
     for (const hook of ["design.pre-hook.md", "design.post-hook.md", "build.pre-hook.md", "build.post-hook.md"]) {
       fs.writeFileSync(path.join(dir, ".claude", "commands", hook), "# project-owned hook\n");
     }
-    const report = detectCommandDrift({ projectDir: dir });
+    const report = detectCommandDrift({ kitDir: REPO_ROOT, projectDir: dir });
     expect(report.overall).toBe("ok");
     expect(report.files.map((f) => f.name)).toEqual(expect.arrayContaining(["design.md", "build.md"]));
     expect(report.files.find((f) => f.name.includes("hook"))).toBeUndefined();
@@ -157,7 +157,7 @@ describe("detectCommandDrift", () => {
     deployCommand(dir, "deploy.md");
     deployCommand(dir, "spike.md");
     fs.writeFileSync(path.join(dir, ".claude", "commands", "custom.md"), "# project-only\n");
-    const report = detectCommandDrift({ projectDir: dir });
+    const report = detectCommandDrift({ kitDir: REPO_ROOT, projectDir: dir });
     expect(report.overall).toBe("ok");
     const custom = report.files.find((f) => f.name === "custom.md")!;
     expect(custom.status).toBe("extra");
@@ -171,7 +171,7 @@ describe("detectCommandDrift", () => {
       path.join(dir, ".claude", "commands", "design.md"),
       "# /design (hand-rolled, no version pin)\n"
     );
-    const report = detectCommandDrift({ projectDir: dir });
+    const report = detectCommandDrift({ kitDir: REPO_ROOT, projectDir: dir });
     const design = report.files.find((f) => f.name === "design.md")!;
     expect(design.status).toBe("drifted");
     expect(design.pinned_version).toBeUndefined();
@@ -180,7 +180,7 @@ describe("detectCommandDrift", () => {
   it("reports overall=ok and empty file list when no .claude/commands exists", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "feip7424-empty-"));
     tmpDirs.push(dir);
-    const report = detectCommandDrift({ projectDir: dir });
+    const report = detectCommandDrift({ kitDir: REPO_ROOT, projectDir: dir });
     // Missing project dir means every kit template registers as "missing".
     expect(report.overall).toBe("drift");
     expect(report.files.every((f) => f.status === "missing")).toBe(true);
@@ -191,7 +191,7 @@ describe("detectCommandDrift", () => {
     deployCommand(dir, "design.md"); // unchanged
     // sprint.md + plan.md + build.md + deploy.md + spike.md missing
     fs.writeFileSync(path.join(dir, ".claude", "commands", "custom.md"), "extra\n");
-    const report = detectCommandDrift({ projectDir: dir });
+    const report = detectCommandDrift({ kitDir: REPO_ROOT, projectDir: dir });
     const order = report.files.map((f) => f.status);
     expect(order).toEqual(["missing", "missing", "missing", "missing", "missing", "extra", "unchanged"]);
   });
@@ -209,7 +209,7 @@ describe("detectScaffoldedDrift umbrella", () => {
     for (const name of ["pr.yml", "merge.yml", "cleanup-orphans.yml"]) {
       deployWorkflow(dir, name);
     }
-    const report = detectScaffoldedDrift({ projectDir: dir });
+    const report = detectScaffoldedDrift({ kitDir: REPO_ROOT, projectDir: dir });
     expect(report.overall).toBe("ok");
     expect(report.workflows.overall).toBe("ok");
     expect(report.commands.overall).toBe("ok");
@@ -222,7 +222,7 @@ describe("detectScaffoldedDrift umbrella", () => {
     for (const name of ["pr.yml", "merge.yml", "cleanup-orphans.yml"]) {
       deployWorkflow(dir, name);
     }
-    const report = detectScaffoldedDrift({ projectDir: dir });
+    const report = detectScaffoldedDrift({ kitDir: REPO_ROOT, projectDir: dir });
     expect(report.overall).toBe("drift");
     expect(report.workflows.overall).toBe("ok");
     expect(report.commands.overall).toBe("drift");
@@ -237,7 +237,7 @@ describe("detectScaffoldedDrift umbrella", () => {
     deployCommand(dir, "deploy.md");
     deployCommand(dir, "spike.md");
     // pr.yml + merge.yml + cleanup-orphans.yml all missing.
-    const report = detectScaffoldedDrift({ projectDir: dir });
+    const report = detectScaffoldedDrift({ kitDir: REPO_ROOT, projectDir: dir });
     expect(report.overall).toBe("drift");
     expect(report.workflows.overall).toBe("drift");
     expect(report.commands.overall).toBe("ok");

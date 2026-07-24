@@ -14,7 +14,7 @@ import {
   deployClaudeSkills,
   scaffoldStaticAll,
   PROJECT_SKILLS,
-} from "../../scripts/lakebase/scaffold";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { ALL_AGENT_ROLES } from "../../scripts/sftdd/agent-models";
 
 const here = path.dirname(fileURLToPath(import.meta.url));

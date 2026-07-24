@@ -6656,32 +6656,11 @@ __export(intake_cli_exports, {
 });
 module.exports = __toCommonJS(intake_cli_exports);
 init_cjs_shims();
-
-// scripts/util/cli-entry.ts
-init_cjs_shims();
-var import_node_fs = require("fs");
-var import_node_url = require("url");
-function isCliEntry(importMetaUrl2) {
-  const invokedRaw = process.argv[1];
-  if (!invokedRaw) return false;
-  let invokedResolved;
-  let moduleResolved;
-  try {
-    invokedResolved = (0, import_node_fs.realpathSync)(invokedRaw);
-  } catch {
-    return false;
-  }
-  try {
-    moduleResolved = (0, import_node_fs.realpathSync)((0, import_node_url.fileURLToPath)(importMetaUrl2));
-  } catch {
-    return false;
-  }
-  return invokedResolved === moduleResolved;
-}
+var import_util = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // scripts/sftdd/intake.ts
 init_cjs_shims();
-var import_node_fs2 = require("fs");
+var import_node_fs = require("fs");
 var import_node_path2 = require("path");
 
 // scripts/sftdd/artifact-conformance.ts
@@ -7023,10 +7002,10 @@ function checkIntakePreconditions(args = {}) {
     required.push({ artifact: "feature-request.md", path: featureRequestMd(sftddDir, args.featureId) });
   }
   const statuses = required.map(({ artifact, path }) => {
-    if (!(0, import_node_fs2.existsSync)(path)) {
+    if (!(0, import_node_fs.existsSync)(path)) {
       return { artifact, path, present: false, conformant: false, violations: [] };
     }
-    const result = checkArtifactConformance(artifact, (0, import_node_fs2.readFileSync)(path, "utf8"));
+    const result = checkArtifactConformance(artifact, (0, import_node_fs.readFileSync)(path, "utf8"));
     return {
       artifact,
       path,
@@ -7092,7 +7071,7 @@ function runIntakeCli(argv) {
   }
   return result.ok ? 0 : 5;
 }
-if (isCliEntry(importMetaUrl)) {
+if ((0, import_util.isCliEntry)(importMetaUrl)) {
   process.exit(runIntakeCli(process.argv.slice(2)));
 }
 // Annotate the CommonJS export names for ESM import in node:

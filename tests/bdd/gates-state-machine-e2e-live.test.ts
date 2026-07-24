@@ -43,13 +43,13 @@ import * as path from "node:path";
 import {
   createLakebaseProject,
   deleteLakebaseProject,
-} from "../../scripts/lakebase/lakebase-project.js";
-import { createPairedBranch } from "../../scripts/lakebase/paired-branch.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { createPairedBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { approveGate } from "../../scripts/sftdd/approve-gate.js";
 import { defaultGatesState, GATE_NAMES, readGates, writeGates } from "../../scripts/sftdd/gates.js";
 import { verifyGateIntegrity } from "../../scripts/sftdd/verify-gate-integrity.js";
 import { withdrawGate } from "../../scripts/sftdd/withdraw-gate.js";
-import { createPullRequest, mergePairedPullRequest } from "../../scripts/github/pr.js";
+import { createPullRequest, mergePairedPullRequest } from "@databricks-solutions/lakebase-scm-utils/github";
 
 const E2E = process.env.LAKEBASE_TEST_E2E === "1";
 const DATABRICKS_HOST = process.env.DATABRICKS_HOST ?? "";

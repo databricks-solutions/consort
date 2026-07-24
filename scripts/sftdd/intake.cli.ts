@@ -15,7 +15,7 @@
 // Exit codes: 0 satisfied, 2 bad args, 5 precondition unmet (missing or
 // non-conformant intake artifact).
 
-import { isCliEntry } from "../util/cli-entry.js";
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import { checkIntakePreconditions } from "./intake.js";
 
 export function runIntakeCli(argv: string[]): number {

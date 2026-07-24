@@ -32,7 +32,7 @@ import { storyTestProgress, nextPendingBatch, DEFAULT_BATCH_CAP } from "./cycle-
 import { readSupersededTests, readGreenFailure } from "./supersession.js";
 import { readDeployVerifyAssessMarker, readDeployVerifyScope } from "./deploy-verify-assess.js";
 import { readConventions } from "./architecture-conventions.js";
-import { sanitizeBranchName } from "../util/sanitize-branch-name.js";
+import { sanitizeBranchName } from "@databricks-solutions/lakebase-scm-utils/util";
 
 export type DriveCommand =
   // resumeKey: when set, the runner resumes this role's Claude session across

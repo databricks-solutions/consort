@@ -16,12 +16,12 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { getCurrentUser, deleteRepo } from "../../scripts/github/repo.js";
+import { getCurrentUser, deleteRepo } from "@databricks-solutions/lakebase-scm-utils/github";
 import { createProject } from "../../scripts/lakebase/create-project.js";
-import { deleteLakebaseProject } from "../../scripts/lakebase/lakebase-project.js";
-import { removeRunner } from "../../scripts/lakebase/runner-setup.js";
-import { deleteBranch } from "../../scripts/lakebase/branch-delete.js";
-import { getBranchByName } from "../../scripts/lakebase/branch-utils.js";
+import { deleteLakebaseProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { removeRunner } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { deleteBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { getBranchByName } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 const E2E = process.env.LAKEBASE_TEST_E2E_GITHUB === "1";
 const DATABRICKS_HOST = process.env.DATABRICKS_HOST ?? "";

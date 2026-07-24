@@ -10,17 +10,17 @@
 // canonical implementations these tools delegate to live in the matching
 // non-.cli files.
 
-import { getConnection } from "../../scripts/lakebase/get-connection.js";
-import { getSchemaDiff } from "../../scripts/lakebase/schema-diff.js";
+import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { getSchemaDiff } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { createProject, type CreateProjectArgs } from "../../scripts/lakebase/create-project.js";
-import { resolveGitHubToken, diagnoseGitHubAuth } from "../../scripts/github/auth.js";
+import { resolveGitHubToken, diagnoseGitHubAuth } from "@databricks-solutions/lakebase-scm-utils/github";
 import {
   applySchemaMigrations,
   rollbackSchemaMigration,
   schemaMigrationStatus,
   listSchemaMigrations,
   type SchemaMigrationLanguage,
-} from "../../scripts/lakebase/schema-migrate.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { getFeatureStatus } from "../../scripts/sftdd/feature-status.js";
 import { resolveSftddDir } from "../../scripts/sftdd/sftdd-paths.js";
 // PR-flow MCP tools.
@@ -32,22 +32,22 @@ import {
   getPullRequestComments,
   mergePullRequest,
   mergePairedPullRequest,
-} from "../../scripts/github/pr.js";
+} from "@databricks-solutions/lakebase-scm-utils/github";
 // doctor MCP tool.
-import { runDoctor } from "../../scripts/lakebase/doctor.js";
+import { runHealthDoctor as runDoctor } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 // workflow drift MCP tool.
-import { detectWorkflowDrift } from "../../scripts/lakebase/workflow-drift.js";
+import { detectWorkflowDrift } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 // branch MCP tools (full parity with the CLI).
 import {
   listBranches,
   getBranchByName,
-} from "../../scripts/lakebase/branch-utils.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import {
   createPairedBranch,
   deletePairedBranch,
   checkoutPaired,
   syncEnvToCurrentBranch,
-} from "../../scripts/lakebase/paired-branch.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 export interface ToolDefinition {
   name: string;

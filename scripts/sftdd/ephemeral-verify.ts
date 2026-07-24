@@ -15,10 +15,10 @@
 // ~instant, so this is cheap per verify. The child also carries a TTL so a
 // crashed run can't leak a branch (Lakebase reaps it).
 
-import { LAKEBASE_BRANCH_NAME_MAX } from "../util/sanitize-branch-name.js";
-import { createBranch } from "../lakebase/branch-create.js";
-import { deleteBranch } from "../lakebase/branch-delete.js";
-import { getConnection, waitForBranchAuthReady } from "../lakebase/get-connection.js";
+import { LAKEBASE_BRANCH_NAME_MAX } from "@databricks-solutions/lakebase-scm-utils/util";
+import { createBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { deleteBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { getConnection, waitForBranchAuthReady } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 /** Lakebase TTL for the disposable child: a backstop reaper, not the primary
  *  cleanup (we delete it in `finally`). 1h covers the slowest single verify. */

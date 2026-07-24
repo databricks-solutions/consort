@@ -15,7 +15,7 @@ import { join } from "path";
 const createPairedBranch = vi.fn();
 const deletePairedBranch = vi.fn();
 
-vi.mock("../../scripts/lakebase/paired-branch", () => ({
+vi.mock("@databricks-solutions/lakebase-scm-utils/lakebase", () => ({
   createPairedBranch: (...args: unknown[]) => createPairedBranch(...args),
   deletePairedBranch: (...args: unknown[]) => deletePairedBranch(...args),
 }));

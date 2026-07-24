@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path10) {
-      let input = path10;
+    function removeDotSegments(path7) {
+      let input = path7;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path10, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path10 && path10 !== "/" ? path10 : void 0;
+        const [path7, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path7 && path7 !== "/" ? path7 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6908,8 +6908,8 @@ function migrateLegacyArtifactDir(projectDir = process.cwd()) {
 
 // scripts/sftdd/drive.cli.ts
 import { randomUUID } from "crypto";
-import * as fs16 from "fs";
-import * as path9 from "path";
+import * as fs12 from "fs";
+import * as path6 from "path";
 import * as readline from "readline";
 
 // scripts/sftdd/replay-artifacts.ts
@@ -7718,154 +7718,37 @@ async function runDriver(effects, options = {}) {
 
 // scripts/sftdd/escalation.ts
 init_esm_shims();
-import * as fs8 from "fs";
+import * as fs5 from "fs";
 
 // scripts/sftdd/smells.ts
 init_esm_shims();
-import { existsSync as existsSync11, readFileSync as readFileSync9, writeFileSync as writeFileSync6 } from "fs";
-import { join as join12 } from "path";
+import { existsSync as existsSync8, readFileSync as readFileSync6, writeFileSync as writeFileSync4 } from "fs";
+import { join as join9 } from "path";
 
 // scripts/sftdd/run-cycle.ts
 init_esm_shims();
-
-// scripts/lakebase/get-connection.ts
-init_esm_shims();
-
-// scripts/lakebase/databricks-cli.ts
-init_esm_shims();
-import { execFile, execFileSync as execFileSync3 } from "child_process";
-import { promisify } from "util";
-import { join as join8 } from "path";
-
-// scripts/lakebase/kit-config.ts
-init_esm_shims();
-function intFromEnv(name, fallback) {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return parsed;
-}
-var DAY_MS = 24 * 60 * 60 * 1e3;
-var KIT_TIMEOUTS = {
-  cliDefault: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_DEFAULT_MS", 3e4),
-  cliCreateProject: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_CREATE_PROJECT_MS", 18e4),
-  cliCreateBranch: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_CREATE_BRANCH_MS", 6e4),
-  cliCreateEndpoint: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_CREATE_ENDPOINT_MS", 6e4),
-  readyWait: intFromEnv("LAKEBASE_KIT_TIMEOUT_READY_WAIT_MS", 12e4),
-  readyPoll: intFromEnv("LAKEBASE_KIT_TIMEOUT_READY_POLL_MS", 5e3),
-  pgConnect: intFromEnv("LAKEBASE_KIT_TIMEOUT_PG_CONNECT_MS", 1e4),
-  pgStatement: intFromEnv("LAKEBASE_KIT_TIMEOUT_PG_STATEMENT_MS", 15e3),
-  gitDefault: intFromEnv("LAKEBASE_KIT_TIMEOUT_GIT_DEFAULT_MS", 5e3),
-  gitCheckout: intFromEnv("LAKEBASE_KIT_TIMEOUT_GIT_CHECKOUT_MS", 1e4),
-  gitNetwork: intFromEnv("LAKEBASE_KIT_TIMEOUT_GIT_NETWORK_MS", 15e3),
-  gitPush: intFromEnv("LAKEBASE_KIT_TIMEOUT_GIT_PUSH_MS", 3e4),
-  cliLong: intFromEnv("LAKEBASE_KIT_TIMEOUT_CLI_LONG_MS", 6e4),
-  cmdShort: intFromEnv("LAKEBASE_KIT_TIMEOUT_CMD_SHORT_MS", 5e3),
-  initializrCacheTtl: intFromEnv("LAKEBASE_KIT_INITIALIZR_CACHE_TTL_MS", 10 * 60 * 1e3),
-  featureBranchTtlMs: intFromEnv("LAKEBASE_KIT_FEATURE_BRANCH_TTL_MS", 30 * DAY_MS),
-  testBranchTtlMs: intFromEnv("LAKEBASE_KIT_TEST_BRANCH_TTL_MS", 14 * DAY_MS),
-  uatBranchTtlMs: intFromEnv("LAKEBASE_KIT_UAT_BRANCH_TTL_MS", 14 * DAY_MS),
-  perfBranchTtlMs: intFromEnv("LAKEBASE_KIT_PERF_BRANCH_TTL_MS", 7 * DAY_MS)
-};
-function urlFromEnv(name, fallback) {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  return raw.replace(/\/+$/, "");
-}
-var KIT_REGISTRIES = {
-  mavenCentral: urlFromEnv("LAKEBASE_KIT_REGISTRY_MAVEN_CENTRAL", "https://repo1.maven.org/maven2"),
-  springInitializr: urlFromEnv("LAKEBASE_KIT_REGISTRY_SPRING_INITIALIZR", "https://start.spring.io")
-};
-
-// scripts/lakebase/databricks-profile.ts
-init_esm_shims();
-import * as fs3 from "fs";
-import { execFileSync as execFileSync2 } from "child_process";
-
-// scripts/util/exec.ts
-init_esm_shims();
-import * as cp2 from "child_process";
-
-// scripts/lakebase/env-file.ts
-init_esm_shims();
-import * as fs4 from "fs";
-import * as path2 from "path";
-
-// scripts/lakebase/databricks-cli.ts
-var execFileP = promisify(execFile);
-
-// scripts/lakebase/get-connection.ts
-import { createLakebasePool } from "@databricks/lakebase";
-import { Client } from "pg";
-
-// scripts/lakebase/branch-utils.ts
-init_esm_shims();
-
-// scripts/lakebase/branch-id.ts
-init_esm_shims();
-
-// scripts/git/inspect.ts
-init_esm_shims();
-
-// scripts/lakebase/constants.ts
-init_esm_shims();
+import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // scripts/sftdd/experiment.ts
 init_esm_shims();
-
-// scripts/lakebase/paired-branch.ts
-init_esm_shims();
-import * as fs5 from "fs";
-import * as path3 from "path";
-import { execFileSync as execFileSync4 } from "child_process";
-
-// scripts/lakebase/branch-create.ts
-init_esm_shims();
-
-// scripts/util/poll-until.ts
-init_esm_shims();
-
-// scripts/util/delay.ts
-init_esm_shims();
-
-// scripts/util/sanitize-branch-name.ts
-init_esm_shims();
-var LAKEBASE_BRANCH_NAME_MAX = 63;
-function sanitizeBranchName(gitBranch) {
-  let name = gitBranch.replace(/\//g, "-").toLowerCase().replace(/[^a-z0-9-]/g, "-").substring(0, LAKEBASE_BRANCH_NAME_MAX);
-  while (name.length < 3) name += "-x";
-  return name;
-}
-
-// scripts/lakebase/lakebase-project.ts
-init_esm_shims();
-
-// scripts/lakebase/branch-delete.ts
-init_esm_shims();
-
-// scripts/lakebase/branch-endpoint.ts
-init_esm_shims();
-
-// scripts/git/status.ts
-init_esm_shims();
+import { createPairedBranch, deletePairedBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // scripts/sftdd/agent-log.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync10, readFileSync as readFileSync8 } from "fs";
-import { join as join11 } from "path";
+import { appendFileSync, existsSync as existsSync7, readFileSync as readFileSync5 } from "fs";
+import { join as join8 } from "path";
 
 // scripts/sftdd/schema-loader.ts
 init_esm_shims();
 var import_ajv = __toESM(require_ajv(), 1);
-import { readFileSync as readFileSync7 } from "fs";
-import { join as join10 } from "path";
-var SCHEMA_DIR = join10(__dirname, "schemas");
+import { readFileSync as readFileSync4 } from "fs";
+import { join as join7 } from "path";
+var SCHEMA_DIR = join7(__dirname, "schemas");
 var ajv = new import_ajv.default({ allErrors: true, strict: false });
 ajv.addFormat("date-time", true);
 var validatorCache = /* @__PURE__ */ new Map();
 function loadSchema(name) {
-  return JSON.parse(readFileSync7(join10(SCHEMA_DIR, name), "utf8"));
+  return JSON.parse(readFileSync4(join7(SCHEMA_DIR, name), "utf8"));
 }
 function getValidator(name) {
   const cached = validatorCache.get(name);
@@ -7958,7 +7841,7 @@ function renderEventMessage(event, slots = {}) {
 
 // scripts/sftdd/agent-log.ts
 function logFilePath(sftddDir) {
-  return join11(sftddDir, "agent-log.jsonl");
+  return join8(sftddDir, "agent-log.jsonl");
 }
 function buildAgentLogEvent(input, now) {
   const slots = input.slots ?? {};
@@ -8190,9 +8073,9 @@ function hasOpenBuildRefactorRoutableSmell(sftddDir, story_id) {
   );
 }
 function readSmellsLog(sftddDir) {
-  const file = join12(sftddDir, "smells.json");
-  if (!existsSync11(file)) return { detected: [] };
-  return JSON.parse(readFileSync9(file, "utf8"));
+  const file = join9(sftddDir, "smells.json");
+  if (!existsSync8(file)) return { detected: [] };
+  return JSON.parse(readFileSync6(file, "utf8"));
 }
 function smellMatches(entry, smell, story_id) {
   if (entry.smell !== smell) return false;
@@ -8207,8 +8090,8 @@ function priorReviseCount(sftddDir, smell, story_id) {
 
 // scripts/sftdd/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync17, readFileSync as readFileSync16, readdirSync as readdirSync9, statSync as statSync8, writeFileSync as writeFileSync10, mkdirSync as mkdirSync9, rmSync as rmSync5 } from "fs";
-import { join as join19, dirname as dirname6 } from "path";
+import { existsSync as existsSync14, readFileSync as readFileSync13, readdirSync as readdirSync9, statSync as statSync8, writeFileSync as writeFileSync8, mkdirSync as mkdirSync8, rmSync as rmSync5 } from "fs";
+import { join as join16, dirname as dirname5 } from "path";
 
 // scripts/sftdd/test-list.ts
 init_esm_shims();
@@ -8217,26 +8100,25 @@ init_esm_shims();
 init_esm_shims();
 import { execSync, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync13, mkdirSync as mkdirSync7, readFileSync as readFileSync12, rmSync as rmSync3, writeFileSync as writeFileSync8 } from "fs";
-import { dirname as dirname5, join as join15 } from "path";
-
-// scripts/lakebase/deploy-targets.ts
-init_esm_shims();
+import { existsSync as existsSync10, mkdirSync as mkdirSync6, readFileSync as readFileSync9, rmSync as rmSync3, writeFileSync as writeFileSync6 } from "fs";
+import { dirname as dirname4, join as join12 } from "path";
+import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // scripts/sftdd/deploy-verify-assess.ts
 init_esm_shims();
-import * as fs6 from "fs";
-import * as path4 from "path";
+import * as fs3 from "fs";
+import * as path2 from "path";
 function scopePath(sftddDir, featureId, storyId) {
   const fdir = findFeatureDir(sftddDir, featureId);
   if (!fdir) return void 0;
-  return path4.join(fdir, "stories", storyId, "deploy-verify-scope.json");
+  return path2.join(fdir, "stories", storyId, "deploy-verify-scope.json");
 }
 function readDeployVerifyScope(sftddDir, featureId, storyId) {
   const file = scopePath(sftddDir, featureId, storyId);
-  if (!file || !fs6.existsSync(file)) return void 0;
+  if (!file || !fs3.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs6.readFileSync(file, "utf8"));
+    return JSON.parse(fs3.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -8244,13 +8126,13 @@ function readDeployVerifyScope(sftddDir, featureId, storyId) {
 function markerPath(sftddDir, featureId, storyId) {
   const fdir = findFeatureDir(sftddDir, featureId);
   if (!fdir) return void 0;
-  return path4.join(fdir, "stories", storyId, "deploy-verify-assess.json");
+  return path2.join(fdir, "stories", storyId, "deploy-verify-assess.json");
 }
 function readDeployVerifyAssessMarker(sftddDir, featureId, storyId) {
   const file = markerPath(sftddDir, featureId, storyId);
-  if (!file || !fs6.existsSync(file)) return void 0;
+  if (!file || !fs3.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs6.readFileSync(file, "utf8"));
+    return JSON.parse(fs3.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -8266,20 +8148,24 @@ function deployVerifyNeedsAssess(sftddDir, featureId, storyId) {
 
 // scripts/sftdd/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync5, readFileSync as readFileSync11, statSync as statSync5 } from "fs";
-import { join as join14 } from "path";
+import { readdirSync as readdirSync5, readFileSync as readFileSync8, statSync as statSync5 } from "fs";
+import { join as join11 } from "path";
 
 // scripts/sftdd/ephemeral-verify.ts
 init_esm_shims();
+import { LAKEBASE_BRANCH_NAME_MAX } from "@databricks-solutions/lakebase-scm-utils/util";
+import { createBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { deleteBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { getConnection as getConnection2, waitForBranchAuthReady } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // scripts/sftdd/deploy.ts
 function deployEvidencePasses(e) {
   return e !== void 0 && e.reachable === true && e.verify?.passed === true;
 }
 function readDeployEvidence(file) {
-  if (!existsSync13(file)) return void 0;
+  if (!existsSync10(file)) return void 0;
   try {
-    return JSON.parse(readFileSync12(file, "utf8"));
+    return JSON.parse(readFileSync9(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -8287,21 +8173,21 @@ function readDeployEvidence(file) {
 function storyDeployVerified(sftddDir, featureId, storyId) {
   const fdir = findFeatureDir(sftddDir, featureId);
   if (!fdir) return false;
-  return deployEvidencePasses(readDeployEvidence(join15(fdir, "stories", storyId, "deploy-evidence.json")));
+  return deployEvidencePasses(readDeployEvidence(join12(fdir, "stories", storyId, "deploy-evidence.json")));
 }
 
 // scripts/sftdd/supersession.ts
 init_esm_shims();
-import * as fs7 from "fs";
-import { join as join16 } from "path";
+import * as fs4 from "fs";
+import { join as join13 } from "path";
 function supersededTestsJson(tdd, feature, story, ac) {
-  return join16(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return join13(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const file = supersededTestsJson(tdd, feature, story, ac);
-  if (!fs7.existsSync(file)) return void 0;
+  if (!fs4.existsSync(file)) return void 0;
   try {
-    const parsed = JSON.parse(fs7.readFileSync(file, "utf8"));
+    const parsed = JSON.parse(fs4.readFileSync(file, "utf8"));
     if (!Array.isArray(parsed.tests) || parsed.tests.length === 0) return void 0;
     return parsed;
   } catch {
@@ -8309,13 +8195,13 @@ function readSupersededTests(tdd, feature, story, ac) {
   }
 }
 function greenFailureJson(tdd, feature, story, ac) {
-  return join16(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return join13(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 function readGreenFailure(tdd, feature, story, ac) {
   const file = greenFailureJson(tdd, feature, story, ac);
-  if (!fs7.existsSync(file)) return void 0;
+  if (!fs4.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs7.readFileSync(file, "utf8"));
+    return JSON.parse(fs4.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -8331,32 +8217,31 @@ function hasPendingRegressionFix(tdd, feature, story, ac) {
 
 // scripts/sftdd/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync15, readFileSync as readFileSync14, readdirSync as readdirSync7, statSync as statSync6 } from "fs";
-import { join as join17, relative as relative2, extname } from "path";
+import { existsSync as existsSync12, readFileSync as readFileSync11, readdirSync as readdirSync7, statSync as statSync6 } from "fs";
+import { join as join14, relative as relative2, extname } from "path";
 
 // scripts/sftdd/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync16, readFileSync as readFileSync15, readdirSync as readdirSync8, statSync as statSync7 } from "fs";
-import { join as join18, relative as relative3, extname as extname2 } from "path";
-
-// scripts/git/commits.ts
-init_esm_shims();
+import { existsSync as existsSync13, readFileSync as readFileSync12, readdirSync as readdirSync8, statSync as statSync7 } from "fs";
+import { join as join15, relative as relative3, extname as extname2 } from "path";
 
 // scripts/sftdd/cycle-record.ts
+import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
+import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 function readStoryItems(sftddDir, featureId, story) {
   const file = storyTestListJson(sftddDir, featureId, story);
-  if (!existsSync17(file)) {
+  if (!existsSync14(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse(readFileSync16(file, "utf8"));
+  const data = JSON.parse(readFileSync13(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyCycles(sftddDir, featureId, story) {
-  const base = join19(cyclesRootDir(sftddDir), featureId, story);
-  if (!existsSync17(base)) return [];
+  const base = join16(cyclesRootDir(sftddDir), featureId, story);
+  if (!existsSync14(base)) return [];
   const out = [];
   for (const acDir of readdirSync9(base)) {
-    const dir = join19(base, acDir);
+    const dir = join16(base, acDir);
     try {
       if (!statSync8(dir).isDirectory()) continue;
     } catch {
@@ -8365,7 +8250,7 @@ function storyCycles(sftddDir, featureId, story) {
     for (const f of readdirSync9(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(readFileSync16(join19(dir, f), "utf8")));
+        out.push(JSON.parse(readFileSync13(join16(dir, f), "utf8")));
       } catch {
       }
     }
@@ -8401,9 +8286,9 @@ function nextPendingBatch(sftddDir, featureId, story, cap = DEFAULT_BATCH_CAP) {
 }
 function readReview(sftddDir, featureId, story, acId) {
   const f = acReviewJson(sftddDir, featureId, story, acId);
-  if (!existsSync17(f)) return {};
+  if (!existsSync14(f)) return {};
   try {
-    return JSON.parse(readFileSync16(f, "utf8"));
+    return JSON.parse(readFileSync13(f, "utf8"));
   } catch {
     return {};
   }
@@ -8453,9 +8338,9 @@ function firstRefactorPendingAc(sftddDir, featureId, story) {
 }
 function readStoryReview(sftddDir, featureId, story) {
   const f = storyReviewJson(sftddDir, featureId, story);
-  if (!existsSync17(f)) return {};
+  if (!existsSync14(f)) return {};
   try {
-    return JSON.parse(readFileSync16(f, "utf8"));
+    return JSON.parse(readFileSync13(f, "utf8"));
   } catch {
     return {};
   }
@@ -8544,23 +8429,23 @@ function writeEscalation(sftddDir, esc) {
     ...esc.ac_id ? { ac_id: esc.ac_id } : {},
     raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString()
   };
-  fs8.mkdirSync(escalationsDir(sftddDir), { recursive: true });
-  fs8.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
+  fs5.mkdirSync(escalationsDir(sftddDir), { recursive: true });
+  fs5.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
   return full;
 }
 function readEscalationFile(file) {
-  if (!fs8.existsSync(file)) return void 0;
+  if (!fs5.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs8.readFileSync(file, "utf8"));
+    return JSON.parse(fs5.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
 }
 function readEscalations(sftddDir) {
   const dir = escalationsDir(sftddDir);
-  if (!fs8.existsSync(dir)) return [];
+  if (!fs5.existsSync(dir)) return [];
   const out = [];
-  for (const f of fs8.readdirSync(dir)) {
+  for (const f of fs5.readdirSync(dir)) {
     if (!f.endsWith(".json")) continue;
     const e = readEscalationFile(`${dir}/${f}`);
     if (e) out.push(e);
@@ -8596,8 +8481,8 @@ function firstPendingEscalation(sftddDir, featureId) {
 
 // scripts/sftdd/next.ts
 init_esm_shims();
-import * as fs13 from "fs";
-import * as path7 from "path";
+import * as fs9 from "fs";
+import * as path4 from "path";
 
 // scripts/sftdd/orchestrator-logging.ts
 init_esm_shims();
@@ -8742,8 +8627,8 @@ init_esm_shims();
 
 // scripts/sftdd/orchestrator-probe.ts
 init_esm_shims();
-import * as fs11 from "fs";
-import * as path6 from "path";
+import * as fs7 from "fs";
+import * as path3 from "path";
 
 // scripts/sftdd/orchestrator-derive.ts
 init_esm_shims();
@@ -8831,8 +8716,8 @@ function driverPhaseForTdd(tddPhase) {
 
 // scripts/sftdd/gates.ts
 init_esm_shims();
-import { existsSync as existsSync19, readFileSync as readFileSync18, renameSync as renameSync2, unlinkSync, writeFileSync as writeFileSync12 } from "fs";
-import { join as join20 } from "path";
+import { existsSync as existsSync16, readFileSync as readFileSync15, renameSync as renameSync2, unlinkSync, writeFileSync as writeFileSync10 } from "fs";
+import { join as join17 } from "path";
 var GATES_SCHEMA_VERSION = 1;
 var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
 function defaultGatesState(featureId) {
@@ -8851,10 +8736,10 @@ function defaultGatesState(featureId) {
 function readGates(featureId, opts = {}) {
   const sftddDir = opts.sftddDir ?? resolveSftddDir();
   const file = gatesFilePath(sftddDir, featureId);
-  if (!existsSync19(file)) {
+  if (!existsSync16(file)) {
     return defaultGatesState(featureId);
   }
-  const raw = readFileSync18(file, "utf8");
+  const raw = readFileSync15(file, "utf8");
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -8865,7 +8750,7 @@ function readGates(featureId, opts = {}) {
   return validateGatesState(parsed, file);
 }
 function gatesFilePath(sftddDir, featureId) {
-  return join20(requireFeatureDir(sftddDir, featureId), "gates.json");
+  return join17(requireFeatureDir(sftddDir, featureId), "gates.json");
 }
 function validateGatesState(parsed, file) {
   if (typeof parsed !== "object" || parsed === null) {
@@ -8925,236 +8810,56 @@ function validateGateRecord(parsed, gateName, file) {
 
 // scripts/sftdd/workflow-phase.ts
 init_esm_shims();
-import * as fs9 from "fs";
+import * as fs6 from "fs";
 var TERMINAL_PHASES = /* @__PURE__ */ new Set(["done", "shipped"]);
 var PHASE_OWNER_KEY = "phase_feature_id";
 function writeWorkflowPhase(sftddDir, phase, featureId) {
   const file = workflowStateJson(sftddDir);
   let state = {};
-  if (fs9.existsSync(file)) {
+  if (fs6.existsSync(file)) {
     try {
-      state = JSON.parse(fs9.readFileSync(file, "utf8"));
+      state = JSON.parse(fs6.readFileSync(file, "utf8"));
     } catch {
       state = {};
     }
   }
   state.phase = phase;
   if (featureId) state[PHASE_OWNER_KEY] = featureId;
-  fs9.mkdirSync(sftddDir, { recursive: true });
-  fs9.writeFileSync(file, JSON.stringify(state, null, 2) + "\n");
+  fs6.mkdirSync(sftddDir, { recursive: true });
+  fs6.writeFileSync(file, JSON.stringify(state, null, 2) + "\n");
 }
 function resetStaleTerminalPhase(sftddDir) {
   const file = workflowStateJson(sftddDir);
-  if (!fs9.existsSync(file)) return false;
+  if (!fs6.existsSync(file)) return false;
   let state;
   try {
-    state = JSON.parse(fs9.readFileSync(file, "utf8"));
+    state = JSON.parse(fs6.readFileSync(file, "utf8"));
   } catch {
     return false;
   }
   if (typeof state.phase === "string" && TERMINAL_PHASES.has(state.phase)) {
     delete state.phase;
-    fs9.writeFileSync(file, JSON.stringify(state, null, 2) + "\n");
+    fs6.writeFileSync(file, JSON.stringify(state, null, 2) + "\n");
     return true;
   }
   return false;
 }
 
-// scripts/lakebase/scm-workflow-state.ts
-init_esm_shims();
-import * as fs10 from "fs";
-import * as path5 from "path";
-var SCM_STATES = [
-  "scaffold-complete",
-  "feature-claimed",
-  "pr-ready",
-  "ci-green",
-  "merged"
-];
-var STATE_INDEX = SCM_STATES.reduce(
-  (acc, s, i) => ({ ...acc, [s]: i }),
-  {}
-);
-var STATE_FILE_REL = ".lakebase/workflow-state.json";
-function stateFilePath(projectDir) {
-  return path5.join(projectDir, STATE_FILE_REL);
-}
-function readWorkflowState(projectDir) {
-  const p = stateFilePath(projectDir);
-  if (!fs10.existsSync(p)) return null;
-  const raw = fs10.readFileSync(p, "utf8");
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    throw new Error(
-      `Failed to parse ${STATE_FILE_REL}: ${e.message}`
-    );
-  }
-  const result = validateWorkflowState(parsed);
-  if (!result.ok) {
-    const summary = result.errors.map((e) => `  - ${e.path}: ${e.message}`).join("\n");
-    throw new Error(
-      `Invalid ${STATE_FILE_REL}:
-${summary}
-
-Fix the file or delete it to re-init.`
-    );
-  }
-  return result.value;
-}
-function isForeignFeatureClaim(scm, featureId) {
-  const recorded = scm?.feature_id?.trim().toLowerCase() ?? "";
-  const driving = featureId.trim().toLowerCase();
-  if (!recorded || !driving) return false;
-  return recorded !== driving;
-}
-function validateWorkflowState(value) {
-  const errors = [];
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return {
-      ok: false,
-      errors: [{ path: "$", message: "must be an object" }]
-    };
-  }
-  const v = value;
-  if (v.version !== 1) {
-    errors.push({ path: "version", message: `must be 1, got ${String(v.version)}` });
-  }
-  if (typeof v.state !== "string" || !SCM_STATES.includes(v.state)) {
-    errors.push({
-      path: "state",
-      message: `must be one of ${SCM_STATES.join(" | ")}`
-    });
-  }
-  if (v.tier_topology !== 1 && v.tier_topology !== 2 && v.tier_topology !== 3) {
-    errors.push({
-      path: "tier_topology",
-      message: "must be 1, 2, or 3"
-    });
-  }
-  if (typeof v.project_id !== "string" || v.project_id.length === 0) {
-    errors.push({
-      path: "project_id",
-      message: "must be a non-empty string"
-    });
-  }
-  const stringFields = [
-    "feature_id",
-    "branch",
-    "parent_branch",
-    "lakebase_branch_uid",
-    "claimed_at",
-    "pr_url",
-    "pushed_at",
-    "ci_run_url",
-    "ci_green_at",
-    "merged_at",
-    "migrate_run_url",
-    "migrate_completed_at",
-    "$schema"
-  ];
-  for (const key of stringFields) {
-    if (v[key] === void 0) continue;
-    if (typeof v[key] !== "string" || v[key].length === 0) {
-      errors.push({
-        path: key,
-        message: "must be a non-empty string when present"
-      });
-    }
-  }
-  const requiredForState = {
-    "scaffold-complete": [],
-    "feature-claimed": [
-      "feature_id",
-      "branch",
-      "parent_branch",
-      "lakebase_branch_uid",
-      "claimed_at"
-    ],
-    "pr-ready": [
-      "feature_id",
-      "branch",
-      "parent_branch",
-      "lakebase_branch_uid",
-      "claimed_at",
-      "pr_url",
-      "pushed_at"
-    ],
-    "ci-green": [
-      "feature_id",
-      "branch",
-      "parent_branch",
-      "lakebase_branch_uid",
-      "claimed_at",
-      "pr_url",
-      "pushed_at",
-      "ci_run_url",
-      "ci_green_at"
-    ],
-    merged: [
-      "feature_id",
-      "branch",
-      "parent_branch",
-      "lakebase_branch_uid",
-      "claimed_at",
-      "pr_url",
-      "pushed_at",
-      "ci_run_url",
-      "ci_green_at",
-      "merged_at"
-    ]
-  };
-  if (typeof v.state === "string" && SCM_STATES.includes(v.state)) {
-    for (const key of requiredForState[v.state]) {
-      if (v[key] === void 0) {
-        errors.push({
-          path: key,
-          message: `required when state is "${v.state}"`
-        });
-      }
-    }
-  }
-  const allowedKeys = /* @__PURE__ */ new Set([
-    "$schema",
-    "version",
-    "state",
-    "tier_topology",
-    "project_id",
-    "feature_id",
-    "branch",
-    "parent_branch",
-    "lakebase_branch_uid",
-    "claimed_at",
-    "pr_url",
-    "pushed_at",
-    "ci_run_url",
-    "ci_green_at",
-    "merged_at",
-    "migrate_run_url",
-    "migrate_completed_at"
-  ]);
-  for (const key of Object.keys(v)) {
-    if (!allowedKeys.has(key)) {
-      errors.push({ path: key, message: "unknown property" });
-    }
-  }
-  if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, value: v };
-}
+// scripts/sftdd/orchestrator-probe.ts
+import { readWorkflowState, SCM_STATES } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // scripts/sftdd/reflection.ts
 init_esm_shims();
-import { existsSync as existsSync22, readFileSync as readFileSync21, writeFileSync as writeFileSync15, mkdirSync as mkdirSync13, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync18, readFileSync as readFileSync17, writeFileSync as writeFileSync12, mkdirSync as mkdirSync11, rmSync as rmSync6 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"
 };
 function readReflectVerdict(sftddDir, feature, story) {
   const p = reflectVerdictJson(sftddDir, feature, story);
-  if (!existsSync22(p)) return void 0;
+  if (!existsSync18(p)) return void 0;
   try {
-    return JSON.parse(readFileSync21(p, "utf8"));
+    return JSON.parse(readFileSync17(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -9169,15 +8874,15 @@ var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
 // scripts/sftdd/architecture-canon.ts
 init_esm_shims();
-import { existsSync as existsSync23, readFileSync as readFileSync22, writeFileSync as writeFileSync16, mkdirSync as mkdirSync14, readdirSync as readdirSync12 } from "fs";
+import { existsSync as existsSync19, readFileSync as readFileSync18, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12, readdirSync as readdirSync12 } from "fs";
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
 function readCanon(sftddDir) {
   const f = architectureCanonJson(sftddDir);
-  if (!existsSync23(f)) return void 0;
+  if (!existsSync19(f)) return void 0;
   try {
-    return JSON.parse(readFileSync22(f, "utf8"));
+    return JSON.parse(readFileSync18(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -9214,22 +8919,22 @@ function architectNovelty(canon, storyAcs, storyArchitectureJsonContent) {
 
 // scripts/sftdd/orchestrator-probe.ts
 function storyCycles2(sftddDir, featureId, story) {
-  const base = path6.join(cyclesRootDir(sftddDir), featureId, story);
-  if (!fs11.existsSync(base)) return [];
+  const base = path3.join(cyclesRootDir(sftddDir), featureId, story);
+  if (!fs7.existsSync(base)) return [];
   const out = [];
-  for (const acDir of fs11.readdirSync(base)) {
-    const dir = path6.join(base, acDir);
+  for (const acDir of fs7.readdirSync(base)) {
+    const dir = path3.join(base, acDir);
     let isDir = false;
     try {
-      isDir = fs11.statSync(dir).isDirectory();
+      isDir = fs7.statSync(dir).isDirectory();
     } catch {
       isDir = false;
     }
     if (!isDir) continue;
-    for (const f of fs11.readdirSync(dir)) {
+    for (const f of fs7.readdirSync(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(fs11.readFileSync(path6.join(dir, f), "utf8")));
+        out.push(JSON.parse(fs7.readFileSync(path3.join(dir, f), "utf8")));
       } catch {
       }
     }
@@ -9237,9 +8942,9 @@ function storyCycles2(sftddDir, featureId, story) {
   return out;
 }
 function readJson(file) {
-  if (!fs11.existsSync(file)) return void 0;
+  if (!fs7.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs11.readFileSync(file, "utf8"));
+    return JSON.parse(fs7.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9253,10 +8958,10 @@ function readDriveContext(sftddDir, featureId, projectDir) {
   const spec = readJson(featureSpecJson(sftddDir, featureId));
   const proposed = spec !== void 0;
   const breakdownDone = Array.isArray(spec?.stories) && spec.stories.length > 0;
-  const requestsAuthored = fs11.existsSync(featureRequestMd(sftddDir, featureId));
-  const deployed = fs11.existsSync(featureDeployEvidenceJson(sftddDir, featureId));
+  const requestsAuthored = fs7.existsSync(featureRequestMd(sftddDir, featureId));
+  const deployed = fs7.existsSync(featureDeployEvidenceJson(sftddDir, featureId));
   const gateApproved = readGateApproved(featureId, sftddDir, "deploy");
-  const proj = projectDir ?? path6.dirname(sftddDir);
+  const proj = projectDir ?? path3.dirname(sftddDir);
   let scmState;
   try {
     scmState = readWorkflowState(proj)?.state;
@@ -9299,10 +9004,10 @@ function diskArtifactProbe(sftddDir, featureId, buildActive) {
       const acs = storyAcIds(sftddDir, featureId, story);
       if (acs.length === 0) return false;
       const everyAcNoted = acs.every((ac) => readAcArchitecturalNotes(sftddDir, featureId, ac) !== void 0);
-      return everyAcNoted && fs11.existsSync(architectureJson(sftddDir, featureId));
+      return everyAcNoted && fs7.existsSync(architectureJson(sftddDir, featureId));
     },
     architectProjectable(story) {
-      if (!fs11.existsSync(architectureJson(sftddDir, featureId))) return false;
+      if (!fs7.existsSync(architectureJson(sftddDir, featureId))) return false;
       const canon = readCanon(sftddDir);
       if (!canon) return false;
       if (canon.established_by === featureId) return false;
@@ -9315,9 +9020,9 @@ function diskArtifactProbe(sftddDir, featureId, buildActive) {
     },
     testListReady(story) {
       const file = storyTestListJson(sftddDir, featureId, story);
-      if (!fs11.existsSync(file)) return false;
+      if (!fs7.existsSync(file)) return false;
       try {
-        const data = JSON.parse(fs11.readFileSync(file, "utf8"));
+        const data = JSON.parse(fs7.readFileSync(file, "utf8"));
         return Array.isArray(data.items) && data.items.length > 0;
       } catch {
         return false;
@@ -9427,16 +9132,16 @@ init_esm_shims();
 
 // scripts/sftdd/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync27, readFileSync as readFileSync26, writeFileSync as writeFileSync18, mkdirSync as mkdirSync16, readdirSync as readdirSync15, statSync as statSync11, rmSync as rmSync7 } from "fs";
+import { existsSync as existsSync23, readFileSync as readFileSync22, writeFileSync as writeFileSync15, mkdirSync as mkdirSync14, readdirSync as readdirSync15, statSync as statSync11, rmSync as rmSync7 } from "fs";
 
 // scripts/sftdd/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync26, readFileSync as readFileSync25, readdirSync as readdirSync14, statSync as statSync10 } from "fs";
-import { join as join24 } from "path";
+import { existsSync as existsSync22, readFileSync as readFileSync21, readdirSync as readdirSync14, statSync as statSync10 } from "fs";
+import { join as join20 } from "path";
 
 // scripts/sftdd/artifact-conformance.ts
 init_esm_shims();
-import { join as join23, basename, dirname as dirname8 } from "path";
+import { join as join19, basename, dirname as dirname7 } from "path";
 var ARTIFACT_FORMATS = {
   "feature-spec.json": { kind: "json-schema", schema: "feature.schema.json" },
   "story.json": { kind: "json-schema", schema: "story.schema.json" },
@@ -9611,20 +9316,20 @@ function checkTestListMd(content) {
   }
   return violations;
 }
-function canonicalArtifactName(path10) {
-  const base = basename(path10);
-  if (basename(dirname8(path10)) === "acs" && base.endsWith(".json")) return "ac.json";
+function canonicalArtifactName(path7) {
+  const base = basename(path7);
+  if (basename(dirname7(path7)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
 }
 
 // scripts/sftdd/architecture-conventions.ts
 init_esm_shims();
-import { existsSync as existsSync25, readFileSync as readFileSync24, writeFileSync as writeFileSync17, mkdirSync as mkdirSync15 } from "fs";
+import { existsSync as existsSync21, readFileSync as readFileSync20, writeFileSync as writeFileSync14, mkdirSync as mkdirSync13 } from "fs";
 function readConventions(sftddDir) {
   const f = architectureConventionsJson(sftddDir);
-  if (!existsSync25(f)) return void 0;
+  if (!existsSync21(f)) return void 0;
   try {
-    return JSON.parse(readFileSync24(f, "utf8"));
+    return JSON.parse(readFileSync20(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -9639,8 +9344,8 @@ function pipelinePath(sftddDir, featureId) {
 }
 function readPipeline(sftddDir, featureId) {
   const p = pipelinePath(sftddDir, featureId);
-  if (!existsSync27(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync26(p, "utf8"));
+  if (!existsSync23(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync22(p, "utf8"));
 }
 
 // scripts/sftdd/feature-status.ts
@@ -9668,20 +9373,20 @@ function deriveFeaturePhase(stories) {
 
 // scripts/sftdd/orchestrator-effects.ts
 init_esm_shims();
-import * as fs12 from "fs";
-import { dirname as dirname9 } from "path";
+import * as fs8 from "fs";
+import { dirname as dirname8 } from "path";
 
 // scripts/sftdd/response-formatter.ts
 init_esm_shims();
-import { existsSync as existsSync28, readFileSync as readFileSync27, readdirSync as readdirSync16 } from "fs";
+import { existsSync as existsSync24, readFileSync as readFileSync23, readdirSync as readdirSync16 } from "fs";
 function designGuideConformance(sftddDir) {
   const file = designGuideJson(sftddDir);
-  if (!existsSync28(file)) {
+  if (!existsSync24(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = readFileSync27(file, "utf8");
+    content = readFileSync23(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -9690,6 +9395,7 @@ function designGuideConformance(sftddDir) {
 }
 
 // scripts/sftdd/orchestrator-effects.ts
+import { sanitizeBranchName } from "@databricks-solutions/lakebase-scm-utils/util";
 var UI_TRACK_PROPOSE = ` UI track is ON: this product has a user-facing UI (a design-brief.md is part of intake), so every user-facing capability must be deliverable end to end as an E2E story, a real browser/screen interaction a user performs, not merely an API. Frame each candidate as a user-facing increment and note which need an E2E (UI) story.`;
 var UI_TRACK_BREAKDOWN = ` UI track is ON: decompose into stories that include the E2E (UI) story for each user-facing capability (a screen the user interacts with), not API-only stories.`;
 function artifactRoot(sftddDir) {
@@ -9701,7 +9407,7 @@ function uiTrackBuild(root) {
 var AGENT_TERSE_SUFFIX = ` Be terse: produce ONLY the required artifact file(s) on disk, then stop with at most a one-line confirmation. Do NOT print a plan, a summary of what you did, rationale, tables, or restate the artifacts to stdout, that output is wasted latency. The files on disk are the deliverable, not your prose.`;
 function storyStubScope(sftddDir, featureId, storyId) {
   try {
-    const stub = JSON.parse(fs12.readFileSync(storyJson(sftddDir, featureId, storyId), "utf8"));
+    const stub = JSON.parse(fs8.readFileSync(storyJson(sftddDir, featureId, storyId), "utf8"));
     const parts = [
       stub.asA ? `As a ${stub.asA}` : "",
       stub.iWantTo ? `I want to ${stub.iWantTo}` : "",
@@ -9722,7 +9428,7 @@ function contextRubric(sftddDir, featureId, story, ac) {
   }
   if (layers.size) parts.push(`layer${layers.size > 1 ? "s" : ""}=${[...layers].join(", ")}`);
   try {
-    const arch = JSON.parse(fs12.readFileSync(architectureJson(sftddDir, featureId), "utf8"));
+    const arch = JSON.parse(fs8.readFileSync(architectureJson(sftddDir, featureId), "utf8"));
     const nfrs = (arch.nfrs ?? []).filter(
       (n) => n && typeof n.id === "string" && (n.applies_to === story || n.applies_to === featureId)
     );
@@ -9733,7 +9439,7 @@ function contextRubric(sftddDir, featureId, story, ac) {
   }
   if (layers.has("E2E")) {
     try {
-      const dg = JSON.parse(fs12.readFileSync(designGuideJson(sftddDir), "utf8"));
+      const dg = JSON.parse(fs8.readFileSync(designGuideJson(sftddDir), "utf8"));
       const groups = Object.keys(dg.tokens ?? dg);
       if (groups.length) parts.push(`design-token groups, ${groups.join(", ")}`);
     } catch {
@@ -9836,11 +9542,11 @@ Apply that fix to the PRODUCTION code. Do NOT edit prior tests to force this reg
 function consumeHandback(action, featureId, sftddDir) {
   const story = "story" in action ? action.story : void 0;
   const file = handbackFile(sftddDir, featureId, action.role, story);
-  if (!fs12.existsSync(file)) return "";
+  if (!fs8.existsSync(file)) return "";
   let note = "";
   try {
-    note = fs12.readFileSync(file, "utf8").trim();
-    fs12.rmSync(file, { force: true });
+    note = fs8.readFileSync(file, "utf8").trim();
+    fs8.rmSync(file, { force: true });
   } catch {
     return "";
   }
@@ -9893,7 +9599,7 @@ function roleTaskBody(action, featureId, uiTrack, sftddDir, build) {
       const acScope = acIds.length ? ` The story's ACs are: ${acIds.join(", ")}. Map every test's ac_id to one of these EXACT ids (verbatim, never a bare slug or an invented id), and cover each AC at least once.` : "";
       let dbScope = "";
       try {
-        const arch = JSON.parse(fs12.readFileSync(architectureJson(sftddDir, featureId), "utf8"));
+        const arch = JSON.parse(fs8.readFileSync(architectureJson(sftddDir, featureId), "utf8"));
         if (arch.service_backed === true) {
           const inv = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string");
           const list = inv.length ? ` The declared persistence invariants are: ${inv.map((i) => `${i.id}${i.brief ? ` (${i.brief})` : ""}`).join("; ")}.` : "";
@@ -10329,8 +10035,8 @@ function buildDriveEffects(cfg) {
     onHandback(handoff, detail) {
       const file = handbackFile(cfg.sftddDir, cfg.featureId, handoff.responder, handoff.story);
       try {
-        fs12.mkdirSync(dirname9(file), { recursive: true });
-        fs12.writeFileSync(file, `${detail}
+        fs8.mkdirSync(dirname8(file), { recursive: true });
+        fs8.writeFileSync(file, `${detail}
 `, "utf8");
       } catch {
       }
@@ -10577,8 +10283,8 @@ function readFeatureNextSnapshot(sftddDir, featureId, projectDir, ctx = {}) {
 function emitNextJson(sftddDir, featureId, projectDir, ctx = {}) {
   try {
     const snap = readFeatureNextSnapshot(sftddDir, featureId, projectDir, ctx);
-    fs13.mkdirSync(sftddDir, { recursive: true });
-    fs13.writeFileSync(path7.join(sftddDir, "next.json"), JSON.stringify(snap, null, 2) + "\n", "utf8");
+    fs9.mkdirSync(sftddDir, { recursive: true });
+    fs9.writeFileSync(path4.join(sftddDir, "next.json"), JSON.stringify(snap, null, 2) + "\n", "utf8");
   } catch {
   }
 }
@@ -10588,7 +10294,7 @@ init_esm_shims();
 
 // scripts/sftdd/sprint-gates.ts
 init_esm_shims();
-import { existsSync as existsSync30, mkdirSync as mkdirSync19, readFileSync as readFileSync29, renameSync as renameSync4, unlinkSync as unlinkSync2, writeFileSync as writeFileSync21 } from "fs";
+import { existsSync as existsSync26, mkdirSync as mkdirSync17, readFileSync as readFileSync25, renameSync as renameSync3, unlinkSync as unlinkSync2, writeFileSync as writeFileSync18 } from "fs";
 
 // scripts/sftdd/gate-hash.ts
 init_esm_shims();
@@ -10608,10 +10314,10 @@ function sprintGatesFile(sftddDir, sprint) {
 function readSprintGates(sprint, opts = {}) {
   const sftddDir = opts.sftddDir ?? resolveSftddDir();
   const file = sprintGatesFile(sftddDir, sprint);
-  if (!existsSync30(file)) return defaultSprintGatesState(sprint);
+  if (!existsSync26(file)) return defaultSprintGatesState(sprint);
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync29(file, "utf8"));
+    parsed = JSON.parse(readFileSync25(file, "utf8"));
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);
@@ -10625,9 +10331,9 @@ function readSprintGates(sprint, opts = {}) {
 }
 
 // scripts/sftdd/orchestrator-sprint.ts
-import * as fs14 from "fs";
+import * as fs10 from "fs";
 function deriveSprintPlanningState(sftddDir, sprint, opts = {}) {
-  const proposed = fs14.existsSync(featureProposalsMd(sftddDir));
+  const proposed = fs10.existsSync(featureProposalsMd(sftddDir));
   const estimated = hasEstimates(sftddDir);
   const backlog = readBacklog(sftddDir, sprint).features;
   const requestsAuthored = backlog.length > 0 && backlog.every((f) => hasFeatureRequest(sftddDir, f.id));
@@ -10679,8 +10385,8 @@ async function runSprint(effects) {
 
 // scripts/sftdd/agent-models.ts
 init_esm_shims();
-import { existsSync as existsSync32, readFileSync as readFileSync30, writeFileSync as writeFileSync22, mkdirSync as mkdirSync20 } from "fs";
-import { dirname as dirname10, join as join26 } from "path";
+import { existsSync as existsSync28, readFileSync as readFileSync26, writeFileSync as writeFileSync19, mkdirSync as mkdirSync18 } from "fs";
+import { dirname as dirname9, join as join22 } from "path";
 var RECOMMENDED_MODELS = {
   "spec-author": "opus",
   "architect-reviewer": "opus",
@@ -10692,11 +10398,11 @@ var RECOMMENDED_MODELS = {
   "release-engineer": "sonnet"
 };
 var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
-var AGENT_CONFIG_REL = join26(".lakebase", "agent-config.json");
+var AGENT_CONFIG_REL = join22(".lakebase", "agent-config.json");
 function readAgentConfig(projectDir) {
-  const p = join26(projectDir, AGENT_CONFIG_REL);
-  if (!existsSync32(p)) return void 0;
-  return JSON.parse(readFileSync30(p, "utf8"));
+  const p = join22(projectDir, AGENT_CONFIG_REL);
+  if (!existsSync28(p)) return void 0;
+  return JSON.parse(readFileSync26(p, "utf8"));
 }
 function resolveModelForRole(role, projectDir) {
   const spawnable = role;
@@ -10706,17 +10412,17 @@ function resolveModelForRole(role, projectDir) {
 
 // scripts/sftdd/sftdd-config.ts
 init_esm_shims();
-import { existsSync as existsSync33, readFileSync as readFileSync31, mkdirSync as mkdirSync21, writeFileSync as writeFileSync23 } from "fs";
-import { dirname as dirname11, join as join27 } from "path";
-var SFTDD_CONFIG_REL = join27(".lakebase", "sftdd-config.json");
-var LEGACY_TDD_CONFIG_REL = join27(".lakebase", "tdd-config.json");
+import { existsSync as existsSync29, readFileSync as readFileSync27, mkdirSync as mkdirSync19, writeFileSync as writeFileSync20 } from "fs";
+import { dirname as dirname10, join as join23 } from "path";
+var SFTDD_CONFIG_REL = join23(".lakebase", "sftdd-config.json");
+var LEGACY_TDD_CONFIG_REL = join23(".lakebase", "tdd-config.json");
 var TDD_CONFIG_REL = SFTDD_CONFIG_REL;
 function loadSftddConfig(projectDir) {
   for (const rel of [SFTDD_CONFIG_REL, LEGACY_TDD_CONFIG_REL]) {
-    const f = join27(projectDir, rel);
-    if (!existsSync33(f)) continue;
+    const f = join23(projectDir, rel);
+    if (!existsSync29(f)) continue;
     try {
-      return JSON.parse(readFileSync31(f, "utf8"));
+      return JSON.parse(readFileSync27(f, "utf8"));
     } catch {
       return void 0;
     }
@@ -10793,10 +10499,10 @@ function defaultSftddConfig() {
   };
 }
 function writeSftddConfig(projectDir, config, opts) {
-  const f = join27(projectDir, TDD_CONFIG_REL);
-  if (existsSync33(f) && !opts?.force) return false;
-  mkdirSync21(dirname11(f), { recursive: true });
-  writeFileSync23(f, JSON.stringify(config, null, 2) + "\n");
+  const f = join23(projectDir, TDD_CONFIG_REL);
+  if (existsSync29(f) && !opts?.force) return false;
+  mkdirSync19(dirname10(f), { recursive: true });
+  writeFileSync20(f, JSON.stringify(config, null, 2) + "\n");
   return true;
 }
 function applyProjectOverrides(projectDir, over) {
@@ -10919,22 +10625,22 @@ function isPromptTooLongSignal(line) {
 
 // scripts/sftdd/run-config.ts
 init_esm_shims();
-import { existsSync as existsSync35, mkdirSync as mkdirSync23, readFileSync as readFileSync33, writeFileSync as writeFileSync25 } from "fs";
-import { join as join29 } from "path";
+import { existsSync as existsSync31, mkdirSync as mkdirSync21, readFileSync as readFileSync29, writeFileSync as writeFileSync22 } from "fs";
+import { join as join25 } from "path";
 
 // scripts/sftdd/kit-ref.ts
 init_esm_shims();
-import { existsSync as existsSync34, readFileSync as readFileSync32, writeFileSync as writeFileSync24, mkdirSync as mkdirSync22 } from "fs";
-import { dirname as dirname12, join as join28 } from "path";
+import { existsSync as existsSync30, readFileSync as readFileSync28, writeFileSync as writeFileSync21, mkdirSync as mkdirSync20 } from "fs";
+import { dirname as dirname11, join as join24 } from "path";
 var KIT_REF_FILE = "kit-ref";
 var KIT_REF_LOCAL_FILE = "kit-ref.local";
 function lakebaseFile(projectDir, name) {
-  return join28(projectDir, ".lakebase", name);
+  return join24(projectDir, ".lakebase", name);
 }
 function readTrimmed(file) {
-  if (!existsSync34(file)) return void 0;
+  if (!existsSync30(file)) return void 0;
   try {
-    const v = readFileSync32(file, "utf8").trim();
+    const v = readFileSync28(file, "utf8").trim();
     return v.length > 0 ? v : void 0;
   } catch {
     return void 0;
@@ -10956,8 +10662,8 @@ function pinRunKitRef(projectDir, ref) {
   const file = lakebaseFile(projectDir, KIT_REF_LOCAL_FILE);
   const previous = readTrimmed(file);
   if (previous === ref) return { pinned: false, ref };
-  mkdirSync22(dirname12(file), { recursive: true });
-  writeFileSync24(file, ref + "\n", "utf8");
+  mkdirSync20(dirname11(file), { recursive: true });
+  writeFileSync21(file, ref + "\n", "utf8");
   return { pinned: true, ref, ...previous ? { previous } : {} };
 }
 function kitRefDriftWarning(projectDir, launchRef) {
@@ -10967,7 +10673,7 @@ function kitRefDriftWarning(projectDir, launchRef) {
 }
 
 // scripts/sftdd/run-config.ts
-var RUN_CONFIG_REL = join29(ARTIFACT_ROOT, "run-config.json");
+var RUN_CONFIG_REL = join25(ARTIFACT_ROOT, "run-config.json");
 function buildRunConfig(inputs) {
   const env = inputs.env ?? process.env;
   const models = {};
@@ -10998,12 +10704,12 @@ function writeRunConfig(inputs) {
   const cfg = buildRunConfig(inputs);
   const body = JSON.stringify(cfg, null, 2) + "\n";
   try {
-    mkdirSync23(inputs.sftddDir, { recursive: true });
-    writeFileSync25(join29(inputs.sftddDir, "run-config.json"), body);
+    mkdirSync21(inputs.sftddDir, { recursive: true });
+    writeFileSync22(join25(inputs.sftddDir, "run-config.json"), body);
     const recordDir = sftddEnv("RECORD_DIR", inputs.env ?? process.env)?.trim();
     if (recordDir) {
-      mkdirSync23(recordDir, { recursive: true });
-      writeFileSync25(join29(recordDir, "run-config.json"), body);
+      mkdirSync21(recordDir, { recursive: true });
+      writeFileSync22(join25(recordDir, "run-config.json"), body);
     }
   } catch {
   }
@@ -11013,45 +10719,48 @@ function writeRunConfig(inputs) {
 // scripts/sftdd/kit-bin.ts
 init_esm_shims();
 import { spawnSync } from "child_process";
-import * as fs15 from "fs";
-import * as path8 from "path";
-var KIT_ROOT = path8.resolve(__dirname, "..", "..", "..");
+import * as fs11 from "fs";
+import * as path5 from "path";
+var KIT_ROOT = path5.resolve(__dirname, "..", "..", "..");
 var kitBinMap = null;
 function resolveKitBinJs(bin) {
   if (kitBinMap === null) {
     try {
-      const pkg = JSON.parse(fs15.readFileSync(path8.join(KIT_ROOT, "package.json"), "utf8"));
+      const pkg = JSON.parse(fs11.readFileSync(path5.join(KIT_ROOT, "package.json"), "utf8"));
       kitBinMap = pkg.bin ?? {};
     } catch {
       kitBinMap = {};
     }
   }
   const rel = kitBinMap[bin];
-  return rel ? path8.join(KIT_ROOT, rel) : null;
+  return rel ? path5.join(KIT_ROOT, rel) : null;
 }
 function kitVersion() {
   try {
-    const pkg = JSON.parse(fs15.readFileSync(path8.join(KIT_ROOT, "package.json"), "utf8"));
+    const pkg = JSON.parse(fs11.readFileSync(path5.join(KIT_ROOT, "package.json"), "utf8"));
     return pkg.version ?? "unknown";
   } catch {
     return "unknown";
   }
 }
 
+// scripts/sftdd/drive.cli.ts
+import { isForeignFeatureClaim, readWorkflowState as readWorkflowState2 } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
 // scripts/sftdd/stray-artifact-recovery.ts
 init_esm_shims();
-import { existsSync as existsSync36, mkdirSync as mkdirSync24, cpSync as cpSync4, rmSync as rmSync9, readdirSync as readdirSync17, statSync as statSync12 } from "fs";
-import { join as join31, dirname as dirname13, basename as basename2 } from "path";
+import { existsSync as existsSync32, mkdirSync as mkdirSync22, cpSync as cpSync4, rmSync as rmSync9, readdirSync as readdirSync17, statSync as statSync12 } from "fs";
+import { join as join27, dirname as dirname12, basename as basename2 } from "path";
 function malformedSiblingRoot(projectDir) {
   const p = projectDir.replace(/\/+$/, "");
-  return `${dirname13(p)}-${basename2(p)}`;
+  return `${dirname12(p)}-${basename2(p)}`;
 }
 function listFilesRel(dir) {
   const out = [];
   const walk2 = (abs, rel) => {
     for (const entry of readdirSync17(abs)) {
-      const childAbs = join31(abs, entry);
-      const childRel = rel ? join31(rel, entry) : entry;
+      const childAbs = join27(abs, entry);
+      const childRel = rel ? join27(rel, entry) : entry;
       if (statSync12(childAbs).isDirectory()) walk2(childAbs, childRel);
       else out.push(childRel);
     }
@@ -11061,14 +10770,14 @@ function listFilesRel(dir) {
 }
 function relocateStrayDesignArtifacts(projectDir) {
   const sibling = malformedSiblingRoot(projectDir);
-  if (!existsSync36(sibling)) return { relocated: false, moved: [] };
+  if (!existsSync32(sibling)) return { relocated: false, moved: [] };
   const moved = [];
   for (const artRoot of [".sftdd", ".tdd"]) {
-    const strayRoot = join31(sibling, artRoot);
-    if (!existsSync36(strayRoot)) continue;
-    for (const rel of listFilesRel(strayRoot)) moved.push(join31(artRoot, rel));
-    const realRoot = join31(projectDir, artRoot);
-    mkdirSync24(realRoot, { recursive: true });
+    const strayRoot = join27(sibling, artRoot);
+    if (!existsSync32(strayRoot)) continue;
+    for (const rel of listFilesRel(strayRoot)) moved.push(join27(artRoot, rel));
+    const realRoot = join27(projectDir, artRoot);
+    mkdirSync22(realRoot, { recursive: true });
     cpSync4(strayRoot, realRoot, { recursive: true, force: true });
     rmSync9(strayRoot, { recursive: true, force: true });
   }
@@ -11199,7 +10908,7 @@ var ReplayCorpusMissError = class extends Error {
 var ArtifactOutOfRootError = class extends Error {
   constructor(role, label, anyOf, sftddDir, checkedSibling) {
     super(
-      `role '${role}' produced no ${label} under ${path9.basename(sftddDir)}/ (expected one of: ${anyOf.join(", ")}).
+      `role '${role}' produced no ${label} under ${path6.basename(sftddDir)}/ (expected one of: ${anyOf.join(", ")}).
         The subagent likely resolved the project root wrong and wrote outside it. ` + (checkedSibling ? `Checked (and tried to relocate from) the malformed sibling ${checkedSibling}; nothing there either. ` : `(check $HOME and other dirs for a stray copy). `) + `Nothing downstream can consume the absent artifact. Re-run to re-dispatch the role.`
     );
     this.role = role;
@@ -11406,8 +11115,8 @@ function execRunner(cfg) {
       if (cmd.kind === "verify-artifact") {
         const isPresent = () => cmd.anyOf.some((p) => {
           try {
-            const st = fs16.statSync(p);
-            return st.isDirectory() ? fs16.readdirSync(p).length > 0 : true;
+            const st = fs12.statSync(p);
+            return st.isDirectory() ? fs12.readdirSync(p).length > 0 : true;
           } catch {
             return false;
           }
@@ -11444,7 +11153,7 @@ function execRunner(cfg) {
 function buildCfg(args, featureId) {
   const projectDir = args.projectDir ?? process.cwd();
   const sftddDir = args.sftddDir ?? resolveSftddDir(projectDir);
-  const scm = readWorkflowState(projectDir);
+  const scm = readWorkflowState2(projectDir);
   const settings = resolveSftddSettings({ projectDir });
   return {
     projectDir,
@@ -11541,14 +11250,14 @@ function makeConfirmContinue() {
       const poll = setInterval(() => {
         let raw;
         try {
-          raw = fs16.readFileSync(answerFile, "utf8");
+          raw = fs12.readFileSync(answerFile, "utf8");
         } catch {
           return;
         }
         const a = raw.trim().toLowerCase();
         if (a === "") return;
         try {
-          fs16.rmSync(answerFile, { force: true });
+          fs12.rmSync(answerFile, { force: true });
         } catch {
         }
         if (a === "y" || a === "yes") {
@@ -11673,7 +11382,7 @@ async function runSprintMode(args) {
   const sprint = args.sprint;
   const projectDir = args.projectDir ?? process.cwd();
   const sftddDir = args.sftddDir ?? resolveSftddDir(projectDir);
-  const claimJs = path9.join(__dirname, "..", "lakebase", "scm-claim-feature.cli.js");
+  const claimJs = path6.join(__dirname, "..", "lakebase", "scm-claim-feature.cli.js");
   const settings = resolveSftddSettings({ projectDir });
   const gates = effectiveGates(args, projectDir);
   const interactive = gates === "interactive";
@@ -11702,7 +11411,7 @@ async function runSprintMode(args) {
       return backlogFeatureIds(readBacklog(sftddDir, sprint));
     },
     async commitAndPushRequests() {
-      const root = path9.basename(sftddDir);
+      const root = path6.basename(sftddDir);
       for (const id of backlogFeatureIds(readBacklog(sftddDir, sprint))) {
         await spawnCmd("git", ["add", "--", `${root}/features/${id}/feature-request.md`], projectDir).catch(() => void 0);
       }
@@ -11764,7 +11473,7 @@ async function runSprintMode(args) {
         `[sprint] RAISED TO HIL${on} , halting sprint ${sprint}.
 ` + (e?.source ? `        source: ${e.source}
 ` : "") + (e?.reason ? `        reason: ${e.reason}
-` : "") + `        recorded under ${path9.basename(sftddDir)}/escalations/ ; resolve it, then re-run to resume.
+` : "") + `        recorded under ${path6.basename(sftddDir)}/escalations/ ; resolve it, then re-run to resume.
 `
       );
       return 3;
@@ -11897,7 +11606,7 @@ ${help()}`);
   const confirmContinue = pauseMilestone ? makeConfirmContinue() : void 0;
   const cfg = buildCfg(args, args.feature);
   {
-    const scm = readWorkflowState(cfg.projectDir);
+    const scm = readWorkflowState2(cfg.projectDir);
     if (isForeignFeatureClaim(scm, cfg.featureId)) {
       process.stderr.write(
         `lakebase-sftdd-drive: refusing to drive "${cfg.featureId}" , the SCM workflow state records a
@@ -11936,7 +11645,7 @@ then re-run.
         `[drive] RAISED TO HIL after ${result.iterations} actions , awaiting HIL decision.
         source: ${e?.source}
         reason: ${e?.reason}
-        recorded under ${path9.basename(cfg.sftddDir)}/escalations/ ; resolve it, then re-run to resume.
+        recorded under ${path6.basename(cfg.sftddDir)}/escalations/ ; resolve it, then re-run to resume.
 `
       );
       return 3;
@@ -11983,7 +11692,7 @@ then re-run.
       } catch {
       }
       process.stderr.write(`[drive] ${err.message}
-        recorded under ${path9.basename(cfg.sftddDir)}/escalations/ ; fix the responder, then re-run.
+        recorded under ${path6.basename(cfg.sftddDir)}/escalations/ ; fix the responder, then re-run.
 `);
       return 3;
     }
@@ -12008,7 +11717,7 @@ then re-run.
       } catch {
       }
       process.stderr.write(`[drive] ${err.message}
-        recorded under ${path9.basename(cfg.sftddDir)}/escalations/ ; resolve it, then re-run.
+        recorded under ${path6.basename(cfg.sftddDir)}/escalations/ ; resolve it, then re-run.
 `);
       return 3;
     }

@@ -8,11 +8,34 @@
 // Hook files (`<name>.{pre,post}-hook.md`) are NEVER touched.
 
 import * as readline from "node:readline";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   detectCommandDrift,
   type CommandFileEntry,
-} from "./workflow-drift.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { updateCommands } from "./update-commands.js";
+
+// The `.claude/commands` templates live in THIS kit (SFTDD), while the
+// drift detector now lives in @databricks-solutions/lakebase-scm-utils. Its
+// default kit-dir resolution walks up from its own (dependency) location and
+// cannot find our templates, so resolve our kit root explicitly by walking up
+// from this CLI to the dir that contains templates/project/common/.claude/commands.
+// Works from both source (scripts/lakebase) and built dist (dist/scripts/lakebase).
+function resolveKitRoot(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(dir, "templates", "project", "common", ".claude", "commands"))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+}
+const KIT_ROOT = resolveKitRoot();
 
 interface ParsedArgs {
   projectDir?: string;
@@ -107,7 +130,7 @@ async function main(): Promise<number> {
   const dryRun = args.dryRun === true;
 
   // Step 1: show the user what's drifted before doing anything.
-  const drift = detectCommandDrift({ projectDir });
+  const drift = detectCommandDrift({ projectDir, kitDir: KIT_ROOT });
   if (drift.overall === "ok" && !drift.files.some((f) => f.status === "missing")) {
     if (args.json) {
       process.stdout.write(JSON.stringify({ changed: false, files: [] }, null, 2) + "\n");

@@ -8,35 +8,35 @@
 import * as fs from "node:fs";
 import { ARTIFACT_ROOT } from "../sftdd/sftdd-paths.js";
 import * as path from "node:path";
-import { writeEnvFile } from "./env-file.js";
-import { verifyProject, verifyHooks, verifyWorkflows } from "./project-verify.js";
-import { createRepo, getRepoFullName, getCurrentUser } from "../github/repo.js";
-import { cloneRepo } from "../git/clone.js";
-import { gitInit } from "../git/init.js";
-import { commitAndPush } from "../git/commit-push.js";
+import { writeEnvFile } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { verifyProject, verifyHooks, verifyWorkflows } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { createRepo, getRepoFullName, getCurrentUser } from "@databricks-solutions/lakebase-scm-utils/github";
+import { cloneRepo } from "@databricks-solutions/lakebase-scm-utils/git";
+import { gitInit } from "@databricks-solutions/lakebase-scm-utils/git";
+import { commitAndPush } from "@databricks-solutions/lakebase-scm-utils/git";
 import {
   createLakebaseProject,
   getDefaultBranchId,
-} from "./lakebase-project.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import {
   checkDatabricksAuth,
   databricksAuthPrereqMessage,
   warmAndVerifyKit,
   kitWarmWarning,
   withLakebaseRollback,
-} from "./create-preflight.js";
-import { scaffoldAll } from "./scaffold.js";
-import type { ClientFramework } from "./scaffold-language.js";
-import { createLongRunningBranch } from "./long-running-branch.js";
-import { enableE2eForProject } from "./enable-e2e.js";
-import { enableInfraForProject } from "./enable-infra.js";
-import { setupRunner } from "./runner-setup.js";
-import { syncCiSecrets } from "../util/ci-secrets.js";
-import { delay } from "../util/delay.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { scaffoldAll } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import type { ClientFramework } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { createLongRunningBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { enableInfraForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { setupRunner } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { syncCiSecrets } from "@databricks-solutions/lakebase-scm-utils/util";
+import { delay } from "@databricks-solutions/lakebase-scm-utils/util";
 import {
   initWorkflowState,
   writeWorkflowState,
-} from "./scm-workflow-state.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import type { AgentRole } from "../sftdd/agent-log.js";
 import { defaultSftddConfig, writeSftddConfig } from "../sftdd/sftdd-config.js";
 

@@ -12,7 +12,7 @@
 //                              [--artifact <rel> ...] [--json]
 
 import { checkImportsClean, type ImportsCleanArgs } from "./imports-clean.js";
-import type { SchemaMigrationLanguage } from "../lakebase/schema-migrate.js";
+import type { SchemaMigrationLanguage } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 interface Parsed {
   projectDir: string;

@@ -47,8 +47,8 @@ import {
 import { checkContractClean, supersededTestCandidates } from "./contract-clean.js";
 import { checkMigrationAppClean } from "./migration-app-clean.js";
 import { emitAgentLogEvent, type AgentLogEventInput } from "./agent-log.js";
-import { commitAllIfChanged } from "../git/commits.js";
-import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "../lakebase/branch-utils.js";
+import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
+import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import {
   beginCycle,
   recordRunnerOutcome,

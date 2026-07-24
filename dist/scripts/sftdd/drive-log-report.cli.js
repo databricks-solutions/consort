@@ -2,27 +2,7 @@
 
 // scripts/sftdd/drive-log-report.cli.ts
 import { readFileSync } from "fs";
-
-// scripts/util/cli-entry.ts
-import { realpathSync } from "fs";
-import { fileURLToPath } from "url";
-function isCliEntry(importMetaUrl) {
-  const invokedRaw = process.argv[1];
-  if (!invokedRaw) return false;
-  let invokedResolved;
-  let moduleResolved;
-  try {
-    invokedResolved = realpathSync(invokedRaw);
-  } catch {
-    return false;
-  }
-  try {
-    moduleResolved = realpathSync(fileURLToPath(importMetaUrl));
-  } catch {
-    return false;
-  }
-  return invokedResolved === moduleResolved;
-}
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // scripts/sftdd/drive-log-report.ts
 var TOOL_LINE = /^\s*·\s+(\S+)(?:\s+([\s\S]*))?$/;

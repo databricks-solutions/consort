@@ -16,8 +16,8 @@ import { execSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { readTargets } from "../lakebase/deploy-targets.js";
-import { pollUntil } from "../util/poll-until.js";
+import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 import { resolveSftddDir, findFeatureDir } from "./sftdd-paths.js";
 import { writeEscalation } from "./escalation.js";
 import {

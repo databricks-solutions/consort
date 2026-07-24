@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createProject } from "../../scripts/lakebase/create-project.js";
-import { deleteLakebaseProject } from "../../scripts/lakebase/lakebase-project.js";
+import { deleteLakebaseProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 /**
  * Resolve the destructive test's target host. Precedence:

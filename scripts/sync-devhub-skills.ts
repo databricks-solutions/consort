@@ -26,7 +26,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Octokit } from "octokit";
-import { resolveGitHubToken } from "./github/auth.js";
+import { resolveGitHubToken } from "@databricks-solutions/lakebase-scm-utils/github";
 
 export interface DevhubLock {
   repo: string;

@@ -23,7 +23,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import { detectLanguage, type SchemaMigrationLanguage } from "../lakebase/schema-migrate.js";
+import { detectLanguage, type SchemaMigrationLanguage } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 /** Result of running an import in a subprocess. */
 export interface ImportOutcome {

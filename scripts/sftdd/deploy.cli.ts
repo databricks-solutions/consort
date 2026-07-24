@@ -8,7 +8,7 @@
 // Only `type: local` targets are implemented; remote types are refused with a
 // clear message. Exit codes: 0 ok, 2 bad args, 6 deploy failed.
 
-import { isCliEntry } from "../util/cli-entry.js";
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import {
   deployToTarget,
   stopLocal,

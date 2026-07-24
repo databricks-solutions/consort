@@ -9,41 +9,17 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: {
+    // The substrate barrels + SCM/branch/connection/schema-migrate/scaffold CLIs
+    // now live in @databricks-solutions/lakebase-scm-utils and are declared as
+    // bins pointing into node_modules there (see package.json "bin"). This kit
+    // builds only its own top barrel (re-export of the package), the SFTDD
+    // orchestration CLIs, the SFTDD-coupled scaffolders that stay here, and the
+    // MCP server.
     "scripts/index": "scripts/index.ts",
-    "scripts/github/index": "scripts/github/index.ts",
-    "scripts/lakebase/index": "scripts/lakebase/index.ts",
-    "scripts/git/index": "scripts/git/index.ts",
-    "scripts/util/index": "scripts/util/index.ts",
-    "scripts/github/auth.cli": "scripts/github/auth.cli.ts",
-    "scripts/lakebase/get-connection.cli": "scripts/lakebase/get-connection.cli.ts",
-    "scripts/lakebase/schema-diff.cli": "scripts/lakebase/schema-diff.cli.ts",
-    "scripts/lakebase/schema-migrate.cli": "scripts/lakebase/schema-migrate.cli.ts",
-    "scripts/lakebase/new-migration.cli": "scripts/lakebase/new-migration.cli.ts",
-    "scripts/lakebase/collapse-heads.cli": "scripts/lakebase/collapse-heads.cli.ts",
     "scripts/lakebase/create-project.cli": "scripts/lakebase/create-project.cli.ts",
     "scripts/lakebase/adopt-sftdd.cli": "scripts/lakebase/adopt-sftdd.cli.ts",
-    "scripts/lakebase/infra-runner.cli": "scripts/lakebase/infra-runner.cli.ts",
-    "scripts/lakebase/update-commands.cli": "scripts/lakebase/update-commands.cli.ts",
-    "scripts/lakebase/cut-backup.cli": "scripts/lakebase/cut-backup.cli.ts",
-    "scripts/lakebase/detect-language.cli": "scripts/lakebase/detect-language.cli.ts",
-    "scripts/lakebase/resolve-profile.cli": "scripts/lakebase/resolve-profile.cli.ts",
     "scripts/lakebase/resolve-sftdd-dir.cli": "scripts/lakebase/resolve-sftdd-dir.cli.ts",
-    "scripts/lakebase/ci-app-endpoint.cli": "scripts/lakebase/ci-app-endpoint.cli.ts",
-    "scripts/lakebase/ci-resolve-branch.cli": "scripts/lakebase/ci-resolve-branch.cli.ts",
-    "scripts/lakebase/branch.cli": "scripts/lakebase/branch.cli.ts",
-    "scripts/lakebase/doctor.cli": "scripts/lakebase/doctor.cli.ts",
-    "scripts/lakebase/scm-state.cli": "scripts/lakebase/scm-state.cli.ts",
-    "scripts/lakebase/scm-claim-feature.cli": "scripts/lakebase/scm-claim-feature.cli.ts",
-    "scripts/lakebase/scm-adopt-state.cli": "scripts/lakebase/scm-adopt-state.cli.ts",
-    "scripts/lakebase/scm-abandon-feature.cli": "scripts/lakebase/scm-abandon-feature.cli.ts",
-    "scripts/lakebase/scm-prepare-pr.cli": "scripts/lakebase/scm-prepare-pr.cli.ts",
-    "scripts/lakebase/scm-wait-ci.cli": "scripts/lakebase/scm-wait-ci.cli.ts",
-    "scripts/lakebase/scm-merge.cli": "scripts/lakebase/scm-merge.cli.ts",
-    "scripts/lakebase/scm-reconcile-tier.cli": "scripts/lakebase/scm-reconcile-tier.cli.ts",
-    "scripts/lakebase/scm-recover-orphans.cli": "scripts/lakebase/scm-recover-orphans.cli.ts",
-    "scripts/lakebase/scm-doctor.cli": "scripts/lakebase/scm-doctor.cli.ts",
-    "scripts/lakebase/scm-feature-branch.cli": "scripts/lakebase/scm-feature-branch.cli.ts",
-    "scripts/github/pr.cli": "scripts/github/pr.cli.ts",
+    "scripts/lakebase/update-commands.cli": "scripts/lakebase/update-commands.cli.ts",
     "scripts/sftdd/feature-status.cli": "scripts/sftdd/feature-status.cli.ts",
     "scripts/sftdd/next.cli": "scripts/sftdd/next.cli.ts",
     "scripts/sftdd/test-list.cli": "scripts/sftdd/test-list.cli.ts",

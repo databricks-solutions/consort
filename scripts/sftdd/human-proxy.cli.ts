@@ -10,7 +10,7 @@
 //   2 = bad args
 //   3 = substrate failure
 
-import { isCliEntry } from "../util/cli-entry.js";
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import {
   drainGatesAsHumanProxy,
   supplyArtifact,

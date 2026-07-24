@@ -66,7 +66,7 @@ import { resolveLaunchKitRef, pinRunKitRef, kitRefDriftWarning } from "./kit-ref
 import type { AgentRole } from "./agent-log.js";
 import { makeOnAction, describeAction, approveHint } from "./orchestrator-logging.js";
 import { resolveKitBinJs, kitVersion } from "./kit-bin.js";
-import { isForeignFeatureClaim, readWorkflowState } from "../lakebase/scm-workflow-state.js";
+import { isForeignFeatureClaim, readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { relocateStrayDesignArtifacts, malformedSiblingRoot } from "./stray-artifact-recovery.js";
 
 // How many times a single role turn that overflows the model window mid-turn

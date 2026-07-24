@@ -30,7 +30,7 @@ import {
   deployVerifyNeedsAssess,
   deployVerifyRefactorPending as deployVerifyRefactorPendingMarker,
 } from "./deploy-verify-assess.js";
-import { readWorkflowState, SCM_STATES } from "../lakebase/scm-workflow-state.js";
+import { readWorkflowState, SCM_STATES } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { firstPendingEscalation } from "./escalation.js";
 import { specLevelSmell, priorReviseCount, isBuildRefactorRoutableSmell } from "./smells.js";
 import { reflectionPassed, reflectionVerdictWritten } from "./reflection.js";

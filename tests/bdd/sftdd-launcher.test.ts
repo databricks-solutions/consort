@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { deployScripts } from "../../scripts/lakebase/scaffold";
+import { deployScripts } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(here, "..", "..");

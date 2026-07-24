@@ -6671,27 +6671,8 @@ function resolveSftddDir(projectDir = process.cwd()) {
   return next;
 }
 
-// scripts/util/cli-entry.ts
-init_cjs_shims();
-var import_node_fs = require("fs");
-var import_node_url = require("url");
-function isCliEntry(importMetaUrl2) {
-  const invokedRaw = process.argv[1];
-  if (!invokedRaw) return false;
-  let invokedResolved;
-  let moduleResolved;
-  try {
-    invokedResolved = (0, import_node_fs.realpathSync)(invokedRaw);
-  } catch {
-    return false;
-  }
-  try {
-    moduleResolved = (0, import_node_fs.realpathSync)((0, import_node_url.fileURLToPath)(importMetaUrl2));
-  } catch {
-    return false;
-  }
-  return invokedResolved === moduleResolved;
-}
+// scripts/sftdd/timing-report.cli.ts
+var import_util = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // scripts/sftdd/timing-report.ts
 init_cjs_shims();
@@ -7049,7 +7030,7 @@ var AGENT_CONFIG_REL = (0, import_path3.join)(".lakebase", "agent-config.json");
 
 // scripts/sftdd/kit-ref.ts
 init_cjs_shims();
-var import_node_fs2 = require("fs");
+var import_node_fs = require("fs");
 var import_node_path2 = require("path");
 
 // scripts/sftdd/run-config.ts
@@ -7170,7 +7151,7 @@ ${HELP}
   }
   return 0;
 }
-if (isCliEntry(importMetaUrl)) {
+if ((0, import_util.isCliEntry)(importMetaUrl)) {
   process.exit(runTimingCli(process.argv.slice(2)));
 }
 // Annotate the CommonJS export names for ESM import in node:

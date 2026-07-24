@@ -1,25 +1,7 @@
 #!/usr/bin/env node
 
-// scripts/util/cli-entry.ts
-import { realpathSync } from "fs";
-import { fileURLToPath } from "url";
-function isCliEntry(importMetaUrl) {
-  const invokedRaw = process.argv[1];
-  if (!invokedRaw) return false;
-  let invokedResolved;
-  let moduleResolved;
-  try {
-    invokedResolved = realpathSync(invokedRaw);
-  } catch {
-    return false;
-  }
-  try {
-    moduleResolved = realpathSync(fileURLToPath(importMetaUrl));
-  } catch {
-    return false;
-  }
-  return invokedResolved === moduleResolved;
-}
+// scripts/sftdd/scenario-conditions.cli.ts
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // scripts/sftdd/scenario-conditions.ts
 import { existsSync, readFileSync } from "fs";

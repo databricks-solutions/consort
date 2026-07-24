@@ -4,27 +4,39 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../scripts/lakebase/get-connection.js", () => ({
-  getConnection: vi.fn(async (args: unknown) => ({
-    url: "postgres://stub@host:5432/db",
-    received: args,
-  })),
-}));
-vi.mock("../../scripts/lakebase/schema-diff.js", () => ({
-  getSchemaDiff: vi.fn(async (args: unknown) => ({
-    target: { branch: "br-feature" },
-    parent: { branch: "br-main" },
-    changes: [],
-    received: args,
-  })),
-}));
-vi.mock("../../scripts/lakebase/create-project.js", () => ({
-  createProject: vi.fn(async (args: unknown) => ({
-    ok: true,
-    project: args,
-  })),
-}));
-vi.mock("../../scripts/github/auth.js", () => ({
+// The substrate now lives behind the lakebase-scm-utils barrel, so a single
+// mock of that module must spread the real exports (tools.ts imports many
+// symbols from it) and override only the two we assert forwarding for.
+// createProject is an SFTDD-coupled scaffolder that stays in this kit, so it is
+// mocked at its local module path.
+vi.mock("@databricks-solutions/lakebase-scm-utils/lakebase", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@databricks-solutions/lakebase-scm-utils/lakebase")>();
+  return {
+    ...actual,
+    getConnection: vi.fn(async (args: unknown) => ({
+      url: "postgres://stub@host:5432/db",
+      received: args,
+    })),
+    getSchemaDiff: vi.fn(async (args: unknown) => ({
+      target: { branch: "br-feature" },
+      parent: { branch: "br-main" },
+      changes: [],
+      received: args,
+    })),
+  };
+});
+vi.mock("../../scripts/lakebase/create-project.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../scripts/lakebase/create-project.js")>();
+  return {
+    ...actual,
+    createProject: vi.fn(async (args: unknown) => ({
+      ok: true,
+      project: args,
+    })),
+  };
+});
+vi.mock("@databricks-solutions/lakebase-scm-utils/github", () => ({
   resolveGitHubToken: vi.fn(async () => "ghs_FAKE_TOKEN"),
   diagnoseGitHubAuth: vi.fn(async () => ({
     sources: ["env", "gh"],

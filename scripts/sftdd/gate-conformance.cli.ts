@@ -14,7 +14,7 @@
 //   2 = bad args
 //   3 = scan failure (e.g. feature not found)
 
-import { isCliEntry } from "../util/cli-entry.js";
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import { resolveSftddDir } from "./sftdd-paths.js";
 import { scanFeatureConformance } from "./artifact-conformance.js";
 

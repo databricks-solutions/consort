@@ -26,11 +26,11 @@ import * as cp from "node:child_process";
 import { ARTIFACT_ROOT } from "../sftdd/sftdd-paths.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createLakebaseProject, getDefaultBranchId } from "./lakebase-project.js";
-import { deployEnv, deployEnvExample } from "./scaffold.js";
+import { createLakebaseProject, getDefaultBranchId } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { deployEnv, deployEnvExample } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { adoptTdd } from "./adopt-sftdd.js";
-import { enableE2eForProject } from "./enable-e2e.js";
-import { enableInfraForProject } from "./enable-infra.js";
+import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { enableInfraForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 export interface AdoptLakebaseProjectArgs {
   /** Existing git repo to onboard. */

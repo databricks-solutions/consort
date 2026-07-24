@@ -17,8 +17,8 @@ import * as path from "node:path";
 import {
   createLakebaseProject,
   deleteLakebaseProject,
-} from "../../scripts/lakebase/lakebase-project.js";
-import { getDefaultBranch } from "../../scripts/lakebase/branch-utils.js";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { getDefaultBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

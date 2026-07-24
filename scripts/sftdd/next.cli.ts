@@ -8,7 +8,7 @@
 import { resolveSftddDir } from "./sftdd-paths.js";
 import { resolveSftddSettings } from "./sftdd-config.js";
 import { readDriveStateFromDisk } from "./orchestrator-effects.js";
-import { readWorkflowState } from "../lakebase/scm-workflow-state.js";
+import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { deriveSprintPlanningState } from "./orchestrator-sprint.js";
 import { summarizeStories } from "./feature-status.js";
 import { kitVersion } from "./kit-bin.js";

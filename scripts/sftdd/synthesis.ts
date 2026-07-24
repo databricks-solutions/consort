@@ -4,7 +4,7 @@ import { listExperiments } from "./experiment";
 import { cutExperiment } from "./experiment";
 import { findFeatureDir } from "./sftdd-paths.js";
 import type { ExperimentRecord } from "./experiment";
-import type { BranchLookupOpts } from "./../lakebase/branch-utils";
+import type { BranchLookupOpts } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 export interface SynthesisPick {
   /** Experiment slug whose capability is being pulled in. */

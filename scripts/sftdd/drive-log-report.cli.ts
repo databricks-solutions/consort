@@ -10,7 +10,7 @@
 // Exit codes: 0 ok; 2 bad args.
 
 import { readFileSync } from "fs";
-import { isCliEntry } from "../util/cli-entry.js";
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import { parseDriveLog, formatDriveLogReport } from "./drive-log-report.js";
 
 interface ParsedArgs {

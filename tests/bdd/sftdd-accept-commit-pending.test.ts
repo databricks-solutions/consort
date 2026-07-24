@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { gitInit } from "../../scripts/git/init.js";
-import { exec } from "../../scripts/util/exec.js";
+import { gitInit } from "@databricks-solutions/lakebase-scm-utils/git";
+import { exec } from "@databricks-solutions/lakebase-scm-utils/util";
 import { commitExperimentCode } from "../../scripts/sftdd/cycle-record.js";
 
 // Regression guard for the accept-merge dirty-tree abort: a supersession/repair

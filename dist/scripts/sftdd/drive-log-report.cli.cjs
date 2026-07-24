@@ -31,27 +31,7 @@ var importMetaUrl = /* @__PURE__ */ getImportMetaUrl();
 
 // scripts/sftdd/drive-log-report.cli.ts
 var import_fs = require("fs");
-
-// scripts/util/cli-entry.ts
-var import_node_fs = require("fs");
-var import_node_url = require("url");
-function isCliEntry(importMetaUrl2) {
-  const invokedRaw = process.argv[1];
-  if (!invokedRaw) return false;
-  let invokedResolved;
-  let moduleResolved;
-  try {
-    invokedResolved = (0, import_node_fs.realpathSync)(invokedRaw);
-  } catch {
-    return false;
-  }
-  try {
-    moduleResolved = (0, import_node_fs.realpathSync)((0, import_node_url.fileURLToPath)(importMetaUrl2));
-  } catch {
-    return false;
-  }
-  return invokedResolved === moduleResolved;
-}
+var import_util = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // scripts/sftdd/drive-log-report.ts
 var TOOL_LINE = /^\s*·\s+(\S+)(?:\s+([\s\S]*))?$/;
@@ -237,7 +217,7 @@ ${HELP}
   }
   return 0;
 }
-if (isCliEntry(importMetaUrl)) {
+if ((0, import_util.isCliEntry)(importMetaUrl)) {
   process.exit(runDriveLogReportCli(process.argv.slice(2)));
 }
 // Annotate the CommonJS export names for ESM import in node:

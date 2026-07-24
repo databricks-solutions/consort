@@ -1,4 +1,0 @@
-[project]
-name = "alembic-fixture"
-version = "0.0.1"
-dependencies = ["alembic", "sqlalchemy", "psycopg2-binary"]

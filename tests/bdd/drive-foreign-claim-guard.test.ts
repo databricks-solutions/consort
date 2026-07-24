@@ -19,7 +19,7 @@ const DRIVE_SRC = readFileSync(new URL("../../scripts/sftdd/drive.cli.ts", impor
 
 describe("lakebase-sftdd-drive wires the foreign-claim refusal (FEIP-8023)", () => {
   it("imports the isForeignFeatureClaim decision from the SCM workflow state module", () => {
-    expect(DRIVE_SRC).toMatch(/import\s*\{[^}]*\bisForeignFeatureClaim\b[^}]*\}\s*from\s*["']\.\.\/lakebase\/scm-workflow-state/);
+    expect(DRIVE_SRC).toMatch(/import\s*\{[^}]*\bisForeignFeatureClaim\b[^}]*\}\s*from\s*["']@databricks-solutions\/lakebase-scm-utils\/lakebase/);
   });
 
   it("refuses the feature drive (returns 2) when the claim is foreign, before running the driver", () => {

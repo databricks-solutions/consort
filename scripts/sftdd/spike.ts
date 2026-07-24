@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
-import { createPairedBranch, deletePairedBranch } from "../lakebase/paired-branch";
-import type { BranchLookupOpts, LakebaseBranchInfo } from "../lakebase/branch-utils";
+import { createPairedBranch, deletePairedBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import type { BranchLookupOpts, LakebaseBranchInfo } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 function branchIdOf(info: LakebaseBranchInfo): string {
   const leaf = info.name.split("/").pop();

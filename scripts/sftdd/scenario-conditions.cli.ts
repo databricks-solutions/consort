@@ -13,7 +13,7 @@
 // A missing/malformed manifest yields the schema defaults (never errors), so the
 // caller can always run. Exit codes: 0 ok; 2 bad args.
 
-import { isCliEntry } from "../util/cli-entry.js";
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import {
   readScenarioConditions,
   formatScenarioConditionField,

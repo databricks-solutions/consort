@@ -15,10 +15,10 @@
 import { mergeExperimentIntoFeature, type ExperimentBranchOps } from "./experiment-lifecycle.js";
 import { deleteExperiment } from "./experiment.js";
 import { readPipeline, writePipeline, acceptStory } from "./story-pipeline.js";
-import { mergePaired } from "../lakebase/paired-branch.js";
+import { mergePaired } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { commitExperimentCode } from "./cycle-record.js";
-import { applySchemaMigrations } from "../lakebase/schema-migrate.js";
-import { readWorkflowState } from "../lakebase/scm-workflow-state.js";
+import { applySchemaMigrations } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 /** The real side-effectful substrate wiring for a merge (git merge, schema
  *  migrate, paired-branch teardown). The order + fail-closed logic live in

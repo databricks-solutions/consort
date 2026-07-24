@@ -19,7 +19,7 @@ import { execFileSync, execSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, cpSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deployClaudeAgents, deployClaudeSkills } from "../../scripts/lakebase/scaffold";
+import { deployClaudeAgents, deployClaudeSkills } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { checkArtifactConformance } from "../../scripts/sftdd/artifact-conformance";
 import { resolveModelForRole } from "../../scripts/sftdd/agent-models";
 import { storyAcIds, readAcLayer } from "../../scripts/sftdd/sftdd-paths";

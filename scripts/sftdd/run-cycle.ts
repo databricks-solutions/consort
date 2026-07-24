@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
-import { getConnection } from "../lakebase/get-connection";
-import type { DsnResult } from "../lakebase/get-connection";
+import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import type { DsnResult } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import {
   acLayerToTag,
   readOutcomes,

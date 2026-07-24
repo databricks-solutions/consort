@@ -11,7 +11,7 @@
 //
 // Exit codes: 0 ok; 2 bad args; 3 emit/validation failure.
 
-import { isCliEntry } from "../util/cli-entry.js";
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import { resolveSftddDir } from "./sftdd-paths.js";
 import {
   emitAgentLogEvent,

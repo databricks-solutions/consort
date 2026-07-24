@@ -29,26 +29,8 @@ module.exports = __toCommonJS(scenario_conditions_cli_exports);
 var getImportMetaUrl = () => typeof document === "undefined" ? new URL(`file:${__filename}`).href : document.currentScript && document.currentScript.tagName.toUpperCase() === "SCRIPT" ? document.currentScript.src : new URL("main.js", document.baseURI).href;
 var importMetaUrl = /* @__PURE__ */ getImportMetaUrl();
 
-// scripts/util/cli-entry.ts
-var import_node_fs = require("fs");
-var import_node_url = require("url");
-function isCliEntry(importMetaUrl2) {
-  const invokedRaw = process.argv[1];
-  if (!invokedRaw) return false;
-  let invokedResolved;
-  let moduleResolved;
-  try {
-    invokedResolved = (0, import_node_fs.realpathSync)(invokedRaw);
-  } catch {
-    return false;
-  }
-  try {
-    moduleResolved = (0, import_node_fs.realpathSync)((0, import_node_url.fileURLToPath)(importMetaUrl2));
-  } catch {
-    return false;
-  }
-  return invokedResolved === moduleResolved;
-}
+// scripts/sftdd/scenario-conditions.cli.ts
+var import_util = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // scripts/sftdd/scenario-conditions.ts
 var import_fs = require("fs");
@@ -130,7 +112,7 @@ ${HELP}`);
   }
   return 0;
 }
-if (isCliEntry(importMetaUrl)) {
+if ((0, import_util.isCliEntry)(importMetaUrl)) {
   process.exit(runScenarioConditionsCli(process.argv.slice(2)));
 }
 // Annotate the CommonJS export names for ESM import in node:

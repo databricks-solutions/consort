@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import {
   deployClaudeCommands,
   scaffoldStaticAll,
-} from "../../scripts/lakebase/scaffold";
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(here, "..", "..");
