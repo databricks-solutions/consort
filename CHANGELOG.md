@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0-beta.36] - 2026-07-24
+
+### Changed
+
+- Track C Phase 2 + 3: the SCM + shared substrate now lives in the standalone
+  `@databricks-solutions/lakebase-scm-utils` package, which the kit consumes as a
+  dependency (v0.1.0-beta.3). The kit keeps the SFTDD orchestration, the MCP
+  server, and the SFTDD-flavored project scaffolders.
+- Decoupled `createProject` / `adoptLakebaseProject`: the base scaffolders moved
+  to the substrate package (SFTDD-agnostic); the kit wraps them and injects the
+  `.sftdd/` lay-down + sftdd-config seeding via `scripts/sftdd/project-sftdd-setup.ts`.
+  The kit's `lakebase-create-project` CLI still produces SFTDD-ready projects; a
+  plain SCM consumer (the VS Code extension) uses the base scaffolders directly.
+- The root `.` barrel re-exports the substrate package, so createProject /
+  adoptLakebaseProject / assertAdoptionPreflight remain reachable from the kit's
+  public API.
+
 ## [0.3.0-beta.35] - 2026-07-24
 
 ### Changed

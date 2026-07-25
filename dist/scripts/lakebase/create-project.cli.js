@@ -1,50 +1,19 @@
 #!/usr/bin/env node
 
-// node_modules/tsup/assets/esm_shims.js
-import path from "path";
-import { fileURLToPath } from "url";
-var getFilename = () => fileURLToPath(import.meta.url);
-var getDirname = () => path.dirname(getFilename());
-var __dirname = /* @__PURE__ */ getDirname();
-
 // scripts/lakebase/create-project.ts
-import * as fs2 from "fs";
+import {
+  createProject as baseCreateProject
+} from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// scripts/sftdd/project-sftdd-setup.ts
+import * as fs3 from "fs";
+import * as path2 from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
 
 // scripts/sftdd/sftdd-paths.ts
 import * as fs from "fs";
 import { join } from "path";
 var ARTIFACT_ROOT = ".sftdd";
-
-// scripts/lakebase/create-project.ts
-import * as path2 from "path";
-import { writeEnvFile } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { verifyProject, verifyHooks, verifyWorkflows } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { createRepo, getRepoFullName, getCurrentUser } from "@databricks-solutions/lakebase-scm-utils/github";
-import { cloneRepo } from "@databricks-solutions/lakebase-scm-utils/git";
-import { gitInit } from "@databricks-solutions/lakebase-scm-utils/git";
-import { commitAndPush } from "@databricks-solutions/lakebase-scm-utils/git";
-import {
-  createLakebaseProject,
-  getDefaultBranchId
-} from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import {
-  checkDatabricksAuth,
-  databricksAuthPrereqMessage,
-  warmAndVerifyKit,
-  kitWarmWarning,
-  withLakebaseRollback
-} from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { scaffoldAll } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { createLongRunningBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { enableInfraForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { setupRunner } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { syncCiSecrets } from "@databricks-solutions/lakebase-scm-utils/util";
-import { delay } from "@databricks-solutions/lakebase-scm-utils/util";
-import {
-  initWorkflowState,
-  writeWorkflowState
-} from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // scripts/sftdd/sftdd-config.ts
 import { existsSync as existsSync2, readFileSync as readFileSync2, mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "fs";
@@ -99,321 +68,52 @@ function writeSftddConfig(projectDir, config, opts) {
   return true;
 }
 
-// scripts/lakebase/create-project.ts
-async function createProject(input, progress) {
-  const report = progress ?? (() => {
-  });
-  const projectDir = path2.join(input.parentDir, input.projectName);
-  const lakebaseProjectId = input.projectName;
-  const host = input.databricksHost.replace(/\/+$/, "");
-  const useGithub = input.createGithubRepo !== false;
-  const language = input.language ?? "java";
-  const runnerType = input.runnerType ?? "self-hosted";
-  const enableSftdd = input.enableSftdd !== false;
-  const uiTrack = input.uiTrack === true;
-  const enableE2e = uiTrack || (input.enableE2e !== void 0 ? input.enableE2e : language === "nodejs");
-  const clientFramework = input.clientFramework ?? (uiTrack ? "react" : "none");
-  if (uiTrack && !enableE2e) {
-    throw new Error(
-      "create-project: uiTrack requires the e2e harness; a UI project cannot be scaffolded without it."
-    );
-  }
-  const enableInfra = input.enableInfra !== void 0 ? input.enableInfra : language === "nodejs";
-  const skipCommands = input.skipCommands === true;
-  const tiers = input.tiers;
-  const warnings = [];
-  if (useGithub && !input.githubOwner) {
-    throw new Error("GitHub owner is required when creating a GitHub repository");
-  }
-  if (!useGithub && fs2.existsSync(projectDir)) {
-    throw new Error(`Directory already exists: ${projectDir}`);
-  }
-  const fullRepoName = input.githubOwner ? `${input.githubOwner}/${input.projectName}` : "";
-  report("Checking Databricks authentication...");
-  const auth = await checkDatabricksAuth(host);
-  if (!auth.ok) {
-    throw new Error(databricksAuthPrereqMessage(host, auth.reason));
-  }
-  if (useGithub) {
-    report("Creating GitHub repository...", fullRepoName);
-    await createRepo(fullRepoName, {
-      private: input.privateRepo !== false,
-      description: `Lakebase project: ${input.projectName}`
-    });
-    report("Waiting for GitHub repo to be visible...", fullRepoName);
-    const probeDelays = [1e3, 2e3, 3e3, 5e3, 8e3];
-    let probeErr = "";
-    let visible = false;
-    for (const waitMs of probeDelays) {
-      try {
-        await getRepoFullName(fullRepoName);
-        visible = true;
-        break;
-      } catch (err) {
-        probeErr = err instanceof Error ? err.message : String(err);
-        await delay(waitMs);
-      }
-    }
-    if (!visible) {
-      let activeUser = "";
-      try {
-        activeUser = await getCurrentUser();
-      } catch {
-      }
-      const samlHint = /SAML|scope does not match|sso/i.test(probeErr) ? "\n\nThe error mentions SAML \u2013 re-sign in to GitHub and authorize SSO for this org." : "";
-      const userHint = activeUser && activeUser !== input.githubOwner ? `
+// scripts/lakebase/adopt-sftdd.ts
+import * as fs2 from "fs";
+import * as path from "path";
+import { fileURLToPath } from "url";
 
-Note: signed in as "${activeUser}", but the repo was created under "${input.githubOwner}".` : "";
-      throw new Error(
-        `GitHub repo "${fullRepoName}" was created but isn't visible after ~19s of polling.${samlHint}${userHint}
-
-Last probe error:
-  ${probeErr.split("\n")[0].slice(0, 200)}`
-      );
-    }
-    report("Cloning repository...", projectDir);
-    await cloneRepo({
-      repoUrl: `https://github.com/${fullRepoName}.git`,
-      parentDir: input.parentDir
-    });
-  } else {
-    report("Creating local project directory...", projectDir);
-    if (fs2.existsSync(projectDir)) {
-      throw new Error(`Directory already exists: ${projectDir}`);
-    }
-    fs2.mkdirSync(projectDir, { recursive: true });
-    await gitInit(projectDir);
-  }
-  report("Creating Lakebase database...", lakebaseProjectId);
-  await createLakebaseProject({ projectId: lakebaseProjectId, host });
-  return await withLakebaseRollback(
-    { projectId: lakebaseProjectId, host, report },
-    async () => {
-      report("Resolving database endpoint...");
-      const defaultBranchId = await getDefaultBranchId({
-        projectId: lakebaseProjectId,
-        host
-      });
-      report("Scaffolding project files...");
-      await scaffoldAll({
-        targetDir: projectDir,
-        databricksHost: host,
-        lakebaseProjectId,
-        language,
-        runnerType,
-        skipCommands,
-        clientFramework,
-        report: (m, d) => report(m, d)
-      });
-      if (enableSftdd) {
-        report("Scaffolding .sftdd/ workflow directory...");
-        layDownTddScaffold(projectDir);
-      }
-      if (enableE2e) {
-        report("Wiring Playwright E2E support...");
-        const e2e = enableE2eForProject({
-          projectDir,
-          language,
-          clientOwnsE2e: clientFramework !== "none"
-        });
-        if (e2e.templatesWritten.length > 0) {
-          report(`  wrote ${e2e.templatesWritten.length} Playwright template(s)`);
-        }
-        if (e2e.packageJson.patched && (e2e.packageJson.scriptAdded || e2e.packageJson.depAdded)) {
-          report("  patched package.json (test:e2e + @playwright/test)");
-        } else if (!e2e.packageJson.patched) {
-          report("  package.json absent, skipped npm wiring (non-Node project)");
-        }
-        if (e2e.runTestsScript.inserted) {
-          report("  patched scripts/run-tests.sh");
-        }
-      }
-      if (enableInfra) {
-        report("Wiring [Infra]-tag runner support...");
-        const infra = enableInfraForProject({ projectDir });
-        if (infra.packageJson.patched && infra.packageJson.scriptAdded) {
-          report("  patched package.json (test:infra)");
-        } else if (!infra.packageJson.patched) {
-          report("  package.json absent, skipped npm wiring (non-Node project)");
-        }
-        if (infra.runTestsScript.inserted) {
-          report("  patched scripts/run-tests.sh (infra block)");
-        }
-      }
-      if (useGithub) {
-        report("Setting up CI auth (service principal)...");
-        try {
-          await syncCiSecrets({
-            projectDir,
-            databricksHost: host,
-            lakebaseProjectId,
-            comment: "GitHub Actions CI",
-            lifetimeSeconds: 86400,
-            ownerRepo: fullRepoName
-          });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          warnings.push(`CI auth setup failed: ${msg}`);
-          report(`Warning: CI auth setup failed (${msg})`);
-        }
-      }
-      if (useGithub && runnerType === "self-hosted") {
-        report("Setting up self-hosted runner...");
-        try {
-          await setupRunner({
-            fullRepoName,
-            projectName: input.projectName,
-            report: (m) => report(m)
-          });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          warnings.push(`Runner setup failed: ${msg}`);
-          report(`Warning: runner setup failed (${msg}). CI workflows will queue until a runner is available.`);
-        }
-      } else if (useGithub) {
-        report("Using GitHub-hosted runners \u2013 no local runner needed.");
-      } else {
-        report("Skipping runner setup (no GitHub repository).");
-      }
-      try {
-        writeWorkflowState(
-          projectDir,
-          initWorkflowState({
-            projectId: lakebaseProjectId,
-            tierTopology: tiers ?? 1
-          })
-        );
-      } catch (err) {
-        warnings.push(
-          `SCM workflow-state seed failed (advisory): ${err instanceof Error ? err.message : String(err)}. Run lakebase-scm-state to inspect.`
-        );
-      }
-      if (enableSftdd) {
-        try {
-          const sftddConfig = defaultSftddConfig();
-          for (const [role, model] of Object.entries(input.agentModels ?? {})) {
-            if (model && sftddConfig.roles?.[role]) {
-              sftddConfig.roles[role].model = model;
-            }
-          }
-          if (sftddConfig.project) {
-            sftddConfig.project.uiTrack = uiTrack;
-            sftddConfig.project.clientFramework = clientFramework;
-          }
-          writeSftddConfig(projectDir, sftddConfig);
-        } catch (err) {
-          warnings.push(
-            `SFTDD config seed failed (advisory): ${err instanceof Error ? err.message : String(err)}. The role defaults still apply.`
-          );
-        }
-      }
-      if (enableSftdd) {
-        const kitRef = process.env.LAKEBASE_KIT_REF?.trim();
-        if (kitRef) {
-          try {
-            const dir = path2.join(projectDir, ".lakebase");
-            fs2.mkdirSync(dir, { recursive: true });
-            fs2.writeFileSync(path2.join(dir, "kit-ref"), `${kitRef}
-`, "utf8");
-          } catch (err) {
-            warnings.push(`Kit ref pin failed (advisory): ${err instanceof Error ? err.message : String(err)}.`);
-          }
-        }
-        report("Warming + verifying the kit fast-CLI cache...");
-        const warm = warmAndVerifyKit(projectDir);
-        if (!warm.ok) {
-          const msg = kitWarmWarning(projectDir, warm.reason);
-          warnings.push(msg);
-          report(`Warning: ${msg}`);
-        }
-      }
-      const langLabels = {
-        java: "Java/Spring Boot",
-        kotlin: "Kotlin/Spring Boot",
-        python: "Python/FastAPI",
-        nodejs: "Node.js/Express"
-      };
-      const langLabel = langLabels[language] ?? language;
-      report("Creating initial commit...");
-      await commitAndPush({
-        projectDir,
-        message: `Initial project scaffold (${langLabel} + Lakebase)`,
-        push: useGithub
-      });
-      if (tiers === 2 || tiers === 3) {
-        if (!useGithub) {
-          warnings.push(
-            `tiers === ${tiers} requires a GitHub repository (createLongRunningBranch pushes the tier's git side to origin). Extra tiers were NOT cut.`
-          );
-        } else {
-          report(`Cutting staging tier (tiers=${tiers}) via createLongRunningBranch...`);
-          try {
-            await createLongRunningBranch({
-              name: "staging",
-              forkFromBranch: "main",
-              projectId: lakebaseProjectId,
-              workTreeDir: projectDir,
-              databricksHost: host
-            });
-          } catch (err) {
-            warnings.push(
-              `tiers === ${tiers} requested but createLongRunningBranch for staging failed: ${err instanceof Error ? err.message : String(err)}.`
-            );
-          }
-          if (tiers === 3) {
-            report("Cutting dev tier (tiers=3) via createLongRunningBranch (off staging)...");
-            try {
-              await createLongRunningBranch({
-                name: "dev",
-                forkFromBranch: "staging",
-                projectId: lakebaseProjectId,
-                workTreeDir: projectDir,
-                databricksHost: host
-              });
-            } catch (err) {
-              warnings.push(
-                `tiers === 3 requested but createLongRunningBranch for dev failed: ${err instanceof Error ? err.message : String(err)}.`
-              );
-            }
-          }
-        }
-      }
-      report("Verifying project...");
-      const health = verifyProject(projectDir);
-      for (const w of health.warnings) {
-        warnings.push(w);
-        report(`Warning: ${w}`);
-      }
-      report("Project created successfully!");
-      if (enableSftdd) {
-        report(`Next: cd ${projectDir} && ./scripts/sftdd.sh plan`);
-      }
-      report(`Review the running app: cd ${projectDir} && ./scripts/run-dev.sh`);
-      return {
-        projectDir,
-        githubRepoUrl: useGithub ? `https://github.com/${fullRepoName}` : void 0,
-        lakebaseProjectId,
-        lakebaseDefaultBranch: defaultBranchId,
-        warnings
-      };
-    }
-    // end withLakebaseRollback closure
-  );
-}
+// scripts/sftdd/project-sftdd-setup.ts
+var __dirname2 = path2.dirname(fileURLToPath2(import.meta.url));
 function layDownTddScaffold(targetDir) {
   const candidates = [
-    path2.resolve(__dirname, `../../templates/sftdd-bootstrap/${ARTIFACT_ROOT}`),
-    path2.resolve(__dirname, `../../../templates/sftdd-bootstrap/${ARTIFACT_ROOT}`)
+    path2.resolve(__dirname2, `../../templates/sftdd-bootstrap/${ARTIFACT_ROOT}`),
+    path2.resolve(__dirname2, `../../../templates/sftdd-bootstrap/${ARTIFACT_ROOT}`)
   ];
-  const source = candidates.find((c) => fs2.existsSync(c));
+  const source = candidates.find((c) => fs3.existsSync(c));
   if (!source) {
     throw new Error(`sftdd-bootstrap template not found; looked in: ${candidates.join(", ")}`);
   }
   const dest = path2.join(targetDir, ARTIFACT_ROOT);
-  if (fs2.existsSync(dest)) {
+  if (fs3.existsSync(dest)) {
     return;
   }
-  fs2.cpSync(source, dest, { recursive: true });
+  fs3.cpSync(source, dest, { recursive: true });
+}
+function seedSftddConfig(projectDir, opts) {
+  const sftddConfig = defaultSftddConfig();
+  for (const [role, model] of Object.entries(opts.agentModels ?? {})) {
+    if (model && sftddConfig.roles?.[role]) {
+      sftddConfig.roles[role].model = model;
+    }
+  }
+  if (sftddConfig.project) {
+    sftddConfig.project.uiTrack = opts.uiTrack ?? false;
+    sftddConfig.project.clientFramework = opts.clientFramework;
+  }
+  writeSftddConfig(projectDir, sftddConfig);
+}
+var kitSftddHooks = {
+  layDownScaffold: layDownTddScaffold,
+  seedConfig: seedSftddConfig
+};
+
+// scripts/lakebase/create-project.ts
+function createProject(input, progress) {
+  return baseCreateProject(
+    { ...input, sftddHooks: input.sftddHooks ?? kitSftddHooks },
+    progress
+  );
 }
 
 // scripts/lakebase/create-project.cli.ts
