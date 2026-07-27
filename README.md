@@ -5,13 +5,13 @@
   </picture>
 </p>
 
-**Consort builds software with a coordinated ensemble of AI agents, spec-first and test-driven, on live branches of a real Lakebase database.**
+**Consort makes an AI coding agent's "done" checkable: spec-first, test-driven, and verified against live branches of a real Lakebase database, not mocks.**
 
-Consort takes its name from the field of music. A *consort* is an ensemble that plays in concert: each musician holds one part, and a conductor keeps them in time. Consort is that, applied to building software. A set of agents each take on one familiar role from the software lifecycle, a product owner, a spec author, an architect, a DBA, a test strategist, a UX designer, and a navigator/driver pair at the keyboard, while a deterministic conductor keeps them in sequence and a human approves every gate, and no agent plays another's part.
+Consort takes its name from the field of music. A *consort* is an ensemble that plays in concert: each musician holds one part, and a conductor keeps them in time. Consort is that, applied to building software. A set of agents each take on one familiar role from the software lifecycle, a product owner, a spec author, an architect, a DBA, a test strategist, a UX designer, and a navigator/driver pair at the keyboard, while a deterministic conductor keeps them in sequence and a human approves every gate. No agent plays another's part.
 
 ## Why Consort
 
-AI agents write code fast, but you can't trust that it works. On their own they mock the database, mark a task "done" with no test behind it, drift off the request, weaken a test to reach green, and lose the plan across a context reset. The database made it worse: it was the one dependency you couldn't cheaply branch, so it got faked with mocks and shared staging.
+AI agents write code fast, but you can't trust that it works. On their own they mock the database, mark a task "done" with no test behind it, drift off the request, weaken a test to reach green, and lose the plan across a context reset. The database makes it worse: it's the one dependency you can't cheaply branch, so it gets faked with mocks and shared staging.
 
 Lakebase removes that constraint. A database branch is a real, governed, copy-on-write copy created in about a second, so the work runs against real data instead of a mock. Consort builds on that to make an agent's "done" checkable. Every increment is:
 
@@ -21,7 +21,7 @@ Lakebase removes that constraint. A database branch is a real, governed, copy-on
 - **Deterministically driven**: the control loop is code, so it can't drift, skip a step, or get lost after a long session.
 - **Human-gated**: the gates fail closed, and nothing advances past one without your approval.
 
-A technical paper is forthcoming.
+Two papers are forthcoming: one on the practice underneath Consort, Branched-Database TDD, and one on Consort itself.
 
 ## The ensemble
 
@@ -43,7 +43,7 @@ Each agent owns one concern and communicates only through the artifacts it produ
 Consort runs as a loop of small increments, `/plan -> /design -> /build -> /deploy`, and a human decides every gate:
 
 - **Design (spec-first).** Intent becomes a specification and the list of tests that will demonstrate it, then freezes at a hashed gate so the target cannot move mid-build. The Spec Author, Architect Reviewer, DBA, and Test Strategist each add their part (plus the UX Designer for user-facing work).
-- **Build (test-driven).** The Navigator writes a failing test; the Driver makes it pass with the least honest code, then refactors, each cycle against a copy-on-write branch of real data. A failed verify routes to a bounded repair that never touches the tests.
+- **Build (test-driven).** The Navigator writes a failing test; the Driver makes it pass with the least code that honestly passes, then refactors, each cycle against a copy-on-write branch of real data. A failed verify routes to a bounded repair that never touches the tests.
 - **Deploy + promote (deterministic).** The orchestrator, not an agent, deploys and verifies the increment and drives the PR, CI, merge, and parent-tier migration. The human approves the deploy and promote gates.
 
 Routing between phases is a program, not a model's choice, so the loop cannot drift, be argued out of a step, or be lost across a context reset.
@@ -63,7 +63,7 @@ Then, in any session, run:
 /consort:start
 ```
 
-**Your first run.** In a fresh folder, `/consort:start` walks you through creating a Lakebase-paired project: a repo, a paired database, and the role agents and commands scaffolded into it. In a project that already has a `.sftdd/` directory, it resumes wherever you left off. (The command, skills, and MCP server ship in the plugin; the role agents live in your project's `.claude/agents/`, spawned by the orchestrator `lakebase-sftdd-drive` as `claude --agent <role>`.)
+**Your first run.** In a fresh folder, `/consort:start` walks you through creating a Lakebase-paired project: a repo, a paired database, and the role agents and commands scaffolded into it. In a project that already has a `.sftdd/` directory (Consort's spec-first, test-driven workflow state), it resumes wherever you left off. (The command, skills, and MCP server ship in the plugin; the role agents live in your project's `.claude/agents/`, spawned by the orchestrator `lakebase-sftdd-drive` as `claude --agent <role>`.)
 
 **What to expect.** Consort drives the loop `/plan -> /design -> /build -> /deploy` and stops at every gate for you:
 
@@ -88,7 +88,15 @@ bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/consort/m
 ./install.sh --install-to-genie --profile DEFAULT
 ```
 
-Targets: **Claude Code** (`.claude/skills/`), **Cursor** (`.cursor/skills/`), **Databricks Genie Code** (workspace upload), and **Claude Desktop / OpenAI Codex** via the MCP manifest at `.mcp.json` (the server lives at `apps/mcp-server/`, also on PATH as `lakebase-mcp-server`). **OpenAI Foundry** consumes the pre-rendered spec at [`tools/openai-foundry/consort.tools.json`](tools/openai-foundry/consort.tools.json). `manifest.json` is a machine-readable index of every skill and its files (regenerated by `python3 scripts/skills.py`).
+Targets:
+
+- **Claude Code** (`.claude/skills/`)
+- **Cursor** (`.cursor/skills/`)
+- **Databricks Genie Code** (workspace upload)
+- **Claude Desktop / OpenAI Codex** via the MCP manifest at `.mcp.json` (the server lives at `apps/mcp-server/`, also on PATH as `lakebase-mcp-server`)
+- **OpenAI Foundry** consumes the pre-rendered spec at [`tools/openai-foundry/consort.tools.json`](tools/openai-foundry/consort.tools.json)
+
+`manifest.json` is a machine-readable index of every skill and its files (regenerated by `python3 scripts/skills.py`).
 
 Or run the bins directly from a clone:
 
@@ -101,7 +109,7 @@ npm install   # the prepare script builds dist/
 ### Prerequisites
 
 - **Node.js 20+** and npm
-- **Databricks CLI v1.0.0+**, authenticated to a workspace with Lakebase enabled (macOS: `brew upgrade databricks/tap/databricks`)
+- **Databricks CLI v1.0.0+**, authenticated to a workspace with Lakebase enabled (macOS: `brew install databricks/tap/databricks`)
 - **Python 3.10+** (for `scripts/openai-foundry.py` and the alembic venv the live driver manages)
 - **GitHub CLI (`gh`)** authenticated, for self-hosted-runner setup
 - **JDK 17+** for the Flyway live path (the CLI itself is auto-downloaded)
