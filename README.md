@@ -11,7 +11,7 @@ Consort takes its name from the field of music. A *consort* is an ensemble that 
 
 ## Why Consort
 
-AI agents write code fast, but you can't trust that the code it writes is maintainable or refactorable over the long term. On their own they mark a task "done" with no test behind it, drift off the request, weaken a test to reach green, smear logic across layers, lean on mocks that fall out of sync with the real database, and lose the plan across a context reset. The database makes it worse: it's the one dependency you can't cheaply branch, so it gets faked with mocks and shared staging.
+AI agents write code fast, but you can't trust that the code is correct or maintainable over the long haul. On their own they mark a task "done" with no test behind it, drift off the request, weaken a test to reach green, tangle the layers, and lose the plan across a context reset. The database is the hardest part to get right: it's the one dependency you can't cheaply branch, so it gets faked with mocks that fall out of sync with production, or shared across a staging box the tests quietly diverge from.
 
 Lakebase removes that constraint. A database branch is a real, governed, copy-on-write copy created in about a second, so the work runs against real data instead of a mock. Consort builds on that to make an agent's "done" checkable. Every increment is:
 
