@@ -103,6 +103,7 @@
     "consort-scenario-conditions": "./dist/bin/consort/scenario-conditions.cli.js",
     "consort-spike": "./dist/bin/consort/spike.cli.js",
     "consort-sync-backlog": "./dist/bin/consort/sync-backlog.cli.js",
+    "consort-telemetry": "./dist/bin/consort/telemetry.cli.js",
     "consort-test-list": "./dist/bin/consort/test-list.cli.js",
     "consort-timing": "./dist/bin/consort/timing-report.cli.js",
     "lakebase-adopt-consort": "./dist/bin/lakebase/adopt-consort.cli.js",
@@ -177,7 +178,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:live": "bash scripts/run-live-tests.sh"
+    "test:live": "bash scripts/run-live-tests.sh",
+    "collector": "tsx tools/telemetry-collector/collector.ts",
+    "simulate-run": "tsx tools/telemetry-collector/simulate-run.ts"
   },
   "dependencies": {
     "@databricks-solutions/lakebase-scm-utils": "github:databricks-solutions/lakebase-scm-utils#v0.1.3",

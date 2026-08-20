@@ -72,6 +72,7 @@ import {
   ReplayCorpusMissError,
   ArtifactOutOfRootError,
 } from "../../consort/orchestrator/drive/claude-runner.js";
+import { beginTelemetryRun, withTelemetry } from "../../consort/telemetry/with-telemetry.js";
 
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -974,14 +975,29 @@ async function main(): Promise<number> {
   const gates = effectiveGates(args, cfg.projectDir);
   snapshotRunConfig(cfg, bound ?? "full", gates);
   const interactive = gates === "interactive";
+  // Consort telemetry (Level 1): one trace per consort-drive run. A NO-OP unless
+  // consent passes (persisted-enabled + interactive TTY + not CI/DO_NOT_TRACK/
+  // CONSORT_TELEMETRY=0), and even then nothing leaves the machine until a
+  // maintainer arms a real endpoint (the sink defaults to a local no-op). The
+  // decorator never throws into the driver and never blocks it. `command` maps a
+  // Tier-2 bound to its slash command; a full feature run reports "build".
+  const telemetry = beginTelemetryRun({
+    command: bound ?? "build",
+    onNotice: (m) => process.stderr.write(m),
+  });
+  let result: RunDriverResult | undefined;
+  let caught: unknown;
   try {
-    const result = await runDriver(withTurnRecording(withBuildRecording(buildDriveEffects(cfg), cfg), cfg), {
-      maxSteps: args.maxSteps,
-      transition: boundOpts.transition,
-      stopWhen: gatedStopWhen(boundOpts.stopWhen, interactive),
-      pauseBefore,
-      confirmContinue,
-    });
+    result = await runDriver(
+      withTelemetry(withTurnRecording(withBuildRecording(buildDriveEffects(cfg), cfg), cfg), telemetry),
+      {
+        maxSteps: args.maxSteps,
+        transition: boundOpts.transition,
+        stopWhen: gatedStopWhen(boundOpts.stopWhen, interactive),
+        pauseBefore,
+        confirmContinue,
+      },
+    );
     const pendingGate = pendingGateOf(result);
     const pendingInput = pendingInputOf(result);
     if (result.escalated) {
@@ -1019,6 +1035,7 @@ async function main(): Promise<number> {
     }
     return 0;
   } catch (err) {
+    caught = err;
     // A handoff EXPECTATION violation: a role returned nothing/null for the
     // artifact it owed (or the workflow tried to advance past an unmet handoff).
     // Record an escalation + emit escalation.raised (honor "escalate on any
@@ -1092,6 +1109,16 @@ async function main(): Promise<number> {
     process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
   } finally {
+    // Close the telemetry root span with a coarse run outcome + exit code (an
+    // error -> error/1, an escalation -> aborted/3, else completed/0). A no-op
+    // when telemetry consent did not pass; never throws into the CLI.
+    const outcome = caught ? "error" : result?.escalated ? "aborted" : "completed";
+    const exitCode = caught ? 1 : result?.escalated ? 3 : 0;
+    try {
+      telemetry.finish({ outcome, exit_code: exitCode });
+    } catch {
+      /* telemetry never affects CLI behavior */
+    }
     // Auto-emit the authoritative "what next" snapshot to <root>/next.json on
     // EVERY stop (a gate, an escalation, feature-complete, an error, a killed
     // run), so an orchestrating agent's contract is "on any stop, read next.json

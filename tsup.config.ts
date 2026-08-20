@@ -35,6 +35,7 @@ export default defineConfig({
     "bin/consort/drive-log-report.cli": "bin/consort/drive-log-report.cli.ts",
     "bin/consort/contract-clean.cli": "bin/consort/contract-clean.cli.ts",
     "bin/consort/sync-backlog.cli": "bin/consort/sync-backlog.cli.ts",
+    "bin/consort/telemetry.cli": "bin/consort/telemetry.cli.ts",
     "bin/consort/approve-gate.cli": "bin/consort/approve-gate.cli.ts",
     "bin/consort/project-canon-notes.cli": "bin/consort/project-canon-notes.cli.ts",
     "bin/consort/migration-app-clean.cli": "bin/consort/migration-app-clean.cli.ts",
