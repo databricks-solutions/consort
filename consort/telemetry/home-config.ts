@@ -41,6 +41,14 @@ export const DEFAULT_TELEMETRY_ENABLED = true;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuidV4 = (s: unknown): s is string => typeof s === "string" && UUID_V4.test(s);
 
+/** Emit a diagnostic ONLY when CONSORT_TELEMETRY_DEBUG is set. Telemetry is
+ *  otherwise silent , it must never write to stderr on the offline/disabled path. */
+export function telemetryDebug(msg: string, err?: unknown): void {
+  if (!process.env.CONSORT_TELEMETRY_DEBUG) return;
+  const detail = err instanceof Error ? err.message : err !== undefined ? String(err) : "";
+  process.stderr.write(`[consort-telemetry] ${msg}${detail ? `: ${detail}` : ""}\n`);
+}
+
 /** The XDG-aware config dir: `$XDG_CONFIG_HOME/consort` else `~/.config/consort`. */
 export function telemetryConfigDir(deps: HomeConfigDeps = {}): string {
   const env = deps.env ?? process.env;
@@ -75,23 +83,47 @@ export function readStoredConfig(deps: HomeConfigDeps = {}): StoredTelemetryConf
   }
 }
 
-function writeStoredConfig(cfg: StoredTelemetryConfig, deps: HomeConfigDeps = {}): StoredTelemetryConfig {
-  const dir = telemetryConfigDir(deps);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(telemetryConfigFile(deps), JSON.stringify(cfg, null, 2) + "\n", "utf8");
-  return cfg;
+/**
+ * Persist the config. NEVER throws: a failed write (read-only home, permission
+ * denied, disk full) is swallowed (debug-logged) and the in-memory cfg is
+ * returned unchanged, so the caller still gets a valid (this-run-only, ephemeral)
+ * identity. Telemetry must never break consort-drive over an unwritable config.
+ * `persisted` reports whether the bytes actually landed on disk.
+ */
+function writeStoredConfig(
+  cfg: StoredTelemetryConfig,
+  deps: HomeConfigDeps = {},
+): { cfg: StoredTelemetryConfig; persisted: boolean } {
+  try {
+    const dir = telemetryConfigDir(deps);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(telemetryConfigFile(deps), JSON.stringify(cfg, null, 2) + "\n", "utf8");
+    return { cfg, persisted: true };
+  } catch (err) {
+    telemetryDebug("could not persist telemetry config (degrading to an ephemeral id for this run)", err);
+    return { cfg, persisted: false };
+  }
 }
 
 /**
  * The persistent per-install id. Created once (fresh UUIDv4 + default consent),
  * stable across calls, regenerated only if the file was deleted. This is the ONE
- * place install_id is minted.
+ * place install_id is minted. NEVER throws: if the config cannot be read or
+ * written it degrades to an ephemeral UUID for this run rather than propagating
+ * an error into consort-drive.
  */
 export function ensureInstallId(deps: HomeConfigDeps = {}): string {
-  const existing = readStoredConfig(deps);
-  if (existing) return existing.install_id;
-  return writeStoredConfig({ install_id: randomUUID(), telemetry_enabled: DEFAULT_TELEMETRY_ENABLED }, deps)
-    .install_id;
+  try {
+    const existing = readStoredConfig(deps);
+    if (existing) return existing.install_id;
+    return writeStoredConfig({ install_id: randomUUID(), telemetry_enabled: DEFAULT_TELEMETRY_ENABLED }, deps).cfg
+      .install_id;
+  } catch (err) {
+    // Defense in depth: readStoredConfig / writeStoredConfig already swallow, but
+    // guarantee this function can never throw regardless.
+    telemetryDebug("ensureInstallId failed (using an ephemeral id for this run)", err);
+    return randomUUID();
+  }
 }
 
 /** The persisted consent flag. Defaults to DEFAULT_TELEMETRY_ENABLED when no
@@ -107,9 +139,10 @@ export function isFirstRun(deps: HomeConfigDeps = {}): boolean {
 }
 
 /** Persist the enable/disable decision, preserving the existing install id (or
- *  minting one if none exists yet). Returns the written config. */
+ *  minting one if none exists yet). Returns the config (whether or not the write
+ *  actually landed , writeStoredConfig never throws). */
 export function setTelemetryEnabled(enabled: boolean, deps: HomeConfigDeps = {}): StoredTelemetryConfig {
   const existing = readStoredConfig(deps);
   const install_id = existing?.install_id ?? randomUUID();
-  return writeStoredConfig({ install_id, telemetry_enabled: enabled }, deps);
+  return writeStoredConfig({ install_id, telemetry_enabled: enabled }, deps).cfg;
 }

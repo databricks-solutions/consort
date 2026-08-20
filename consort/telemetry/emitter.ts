@@ -24,8 +24,6 @@ import {
 
 export const DEFAULT_QUEUE_CAP = 200;
 export const DEFAULT_TIMEOUT_MS = 500;
-/** Best-effort budget the CLI gives a pending flush at process exit. */
-export const EXIT_FLUSH_MS = 50;
 
 /** A destination for delivered trace batches. MUST NOT throw; SHOULD NOT block. */
 export interface TelemetrySink {

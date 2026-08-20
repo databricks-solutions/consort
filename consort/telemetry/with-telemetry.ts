@@ -28,7 +28,7 @@ import {
 } from "./allowlist.js";
 import { shouldEmitTelemetry } from "./consent.js";
 import { TelemetryEmitter, resolveSink, type TelemetrySink } from "./emitter.js";
-import { isFirstRun, isTelemetryEnabled } from "./home-config.js";
+import { isFirstRun, isTelemetryEnabled, telemetryDebug } from "./home-config.js";
 import { buildResourceAttrs, type ResourceDeps } from "./resource.js";
 import { newSpanId, newTraceId, type GateSpan, type RunSpan } from "./spans.js";
 
@@ -93,6 +93,20 @@ function gateOutcome(action: WorkflowAction, threw: boolean): GateOutcome {
  * install_id on first use, so it happens only AFTER consent.
  */
 export function beginTelemetryRun(deps: BeginRunDeps): TelemetryRun {
+  try {
+    return beginTelemetryRunUnsafe(deps);
+  } catch (err) {
+    // The emitter must NEVER throw into consort-drive. Any failure setting up the
+    // run (e.g. an unwritable ~/.config while building the resource) disables
+    // telemetry for this run rather than propagating , a silent no-op.
+    telemetryDebug("beginTelemetryRun failed; telemetry disabled for this run", err);
+    return NOOP_RUN;
+  }
+}
+
+/** The setup body. May throw; beginTelemetryRun wraps it so the caller never sees
+ *  a throw (see the never-throw invariant in TELEMETRY.md). */
+function beginTelemetryRunUnsafe(deps: BeginRunDeps): TelemetryRun {
   const env = deps.env ?? process.env;
   const isTTY = deps.isTTY ?? !!process.stdout.isTTY;
   const enabledFlag = deps.telemetryEnabled ?? isTelemetryEnabled(deps);
@@ -159,14 +173,20 @@ export function beginTelemetryRun(deps: BeginRunDeps): TelemetryRun {
       assertRouteSatisfiable: inner.assertRouteSatisfiable
         ? (a, s) => inner.assertRouteSatisfiable!(a, s)
         : undefined,
-      // Executor-dispatched agent turns run THROUGH performViaExecutor (perform is
-      // not called), so a child span must be timed here too.
+      // Executor-dispatched agent turns run THROUGH performViaExecutor (the driver
+      // does NOT then call perform), so a child span is timed here , but ONLY when
+      // the inner returns a DEFINED bounded route, i.e. the action was actually
+      // handled by the executor. When it returns `undefined` the action was NOT
+      // executor-dispatched: the driver falls through to `perform`, whose wrapper
+      // records the span, so recording here too would DOUBLE-COUNT every non-
+      // executor action (the common case: gates, cut-experiment, deploy, merge, ...).
+      // On a throw we still record (fail), since no fall-through perform will run.
       performViaExecutor: inner.performViaExecutor
         ? async (action, state, routerDeps) => {
             const start = now();
             try {
               const r = await inner.performViaExecutor!(action, state, routerDeps);
-              recordChild(action, pendingOrdinal, start, false);
+              if (r !== undefined) recordChild(action, pendingOrdinal, start, false);
               return r;
             } catch (err) {
               recordChild(action, pendingOrdinal, start, true);

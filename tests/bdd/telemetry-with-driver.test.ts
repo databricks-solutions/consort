@@ -4,12 +4,12 @@
 // never swallows a perform failure; and a disabled run is a byte-identical no-op.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runDriver, type DriveEffects } from "../../consort/orchestrator/drive/orchestrator-run";
 import type { DriveState, WorkflowAction } from "../../consort/orchestrator/workflow/workflow-vocabulary";
-import { beginTelemetryRun, type BeginRunDeps } from "../../consort/telemetry/with-telemetry";
+import { beginTelemetryRun, type BeginRunDeps, type TelemetryRun } from "../../consort/telemetry/with-telemetry";
 import { memorySink, type MemorySink } from "../../consort/telemetry/emitter";
 import { isRunSpan, type GateSpan, type RunSpan } from "../../consort/telemetry/spans";
 
@@ -171,5 +171,113 @@ describe("withTelemetry over the driver loop", () => {
     const second = beginTelemetryRun({ ...CONSENTING(home, memorySink()), onNotice: (m) => notices.push(m) });
     second.finish({ outcome: "completed", exit_code: 0 });
     expect(notices).toHaveLength(1);
+  });
+
+  // Regression (BLOCKING FIX 1): the production DriveEffects wire a real
+  // performViaExecutor that returns a DEFINED bounded route for an executor-
+  // dispatched action and `undefined` for every other action (the common case).
+  // When it returns undefined the driver loop falls through to `perform`. The
+  // decorator must record a span in EXACTLY ONE of those two places, never both.
+  // The earlier scripted tests don't define performViaExecutor, so they skipped
+  // this path entirely (the double-count bug lived here).
+  it("records EXACTLY ONE gate span per action across the performViaExecutor path (no double-count)", async () => {
+    const sink = memorySink();
+    const run = beginTelemetryRun(CONSENTING(home, sink));
+    const A: WorkflowAction = { kind: "cut-experiment", story: "S1" }; // executor-dispatched
+    const B: WorkflowAction = { kind: "prepare-pr" }; // NOT executor-dispatched -> perform
+    let gaveA = false;
+    const performedKinds: string[] = [];
+    const effects: DriveEffects = {
+      async readState() {
+        return {} as DriveState;
+      },
+      // Real-shaped: A is handled by the executor (returns a defined bounded route
+      // pointing at B, the next action); everything else returns undefined so the
+      // loop falls through to perform.
+      async performViaExecutor(action) {
+        if (action.kind === "cut-experiment") return { action: B, sanctionedRetry: false };
+        return undefined;
+      },
+      async perform(action) {
+        performedKinds.push(action.kind);
+      },
+    };
+    const transition = (): WorkflowAction => {
+      if (!gaveA) {
+        gaveA = true;
+        return A;
+      }
+      return { kind: "done" };
+    };
+    await runDriver(run.wrap(effects), { transition, enforceExpectations: false });
+    run.finish({ outcome: "completed", exit_code: 0 });
+
+    const spans = sink.payloads[0].spans;
+    const children = spans.filter((s) => !isRunSpan(s)) as GateSpan[];
+    const root = spans.filter(isRunSpan)[0] as RunSpan;
+    // A went through the executor (defined route, NOT perform); B fell through to
+    // perform; `done` is the terminal perform (no span). cut-experiment must NOT
+    // reach perform , that is the whole point of the executor path.
+    expect(performedKinds).toEqual(["prepare-pr", "done"]);
+    // EXACTLY one span per action , B is NOT double-counted.
+    expect(children.map((c) => c.gate)).toEqual(["cut-experiment", "prepare-pr"]);
+    expect(children).toHaveLength(2);
+    expect(children.filter((c) => c.gate === "prepare-pr")).toHaveLength(1);
+    expect(root.gates_total).toBe(2);
+  });
+
+  it("performViaExecutor returning undefined records NO span (the fall-through perform records it)", async () => {
+    const sink = memorySink();
+    const run = beginTelemetryRun(CONSENTING(home, sink));
+    const wrapped = run.wrap({
+      async readState() {
+        return {} as DriveState;
+      },
+      async performViaExecutor() {
+        return undefined; // not executor-dispatched
+      },
+      async perform() {},
+    });
+    // Mirror the driver loop: performViaExecutor first (undefined) then perform.
+    const bounded = await wrapped.performViaExecutor!({ kind: "deploy" }, {} as DriveState, {} as never);
+    expect(bounded).toBeUndefined();
+    await wrapped.perform({ kind: "deploy" });
+    run.finish({ outcome: "completed", exit_code: 0 });
+    const children = sink.payloads[0].spans.filter((s) => !isRunSpan(s)) as GateSpan[];
+    expect(children).toHaveLength(1); // recorded once (by perform), not twice
+    expect(children[0].gate).toBe("deploy");
+  });
+
+  // Regression (BLOCKING FIX 2): telemetry must never throw into consort-drive,
+  // even when the home-dir config is unwritable (read-only home, permission
+  // denied, disk full). beginTelemetryRun is called OUTSIDE the CLI try/catch.
+  it("never throws when the config dir is unwritable; the run proceeds unaffected", async () => {
+    // Point "home" at a regular FILE, so mkdir(<file>/.config/consort) fails ENOTDIR.
+    const fileAsHome = join(home, "home-is-a-file");
+    writeFileSync(fileAsHome, "x", "utf8");
+    const sink = memorySink();
+    let run!: TelemetryRun;
+    expect(() => {
+      run = beginTelemetryRun({
+        command: "build",
+        sink,
+        telemetryEnabled: true,
+        isTTY: true,
+        env: {},
+        homedir: fileAsHome,
+        registerExitFlush: false,
+      });
+    }).not.toThrow();
+
+    // The run proceeds (degraded to an ephemeral id) and a full driver pass +
+    // finish complete without throwing.
+    const { effects, transition } = scripted([{ kind: "cut-experiment", story: "S1" }]);
+    await expect(
+      runDriver(run.wrap(effects), { transition, enforceExpectations: false }),
+    ).resolves.toBeDefined();
+    expect(() => run.finish({ outcome: "completed", exit_code: 0 })).not.toThrow();
+
+    // The write genuinely failed: no config file was created under the file-home.
+    expect(existsSync(join(fileAsHome, ".config", "consort", "telemetry.json"))).toBe(false);
   });
 });

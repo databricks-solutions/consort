@@ -89,4 +89,26 @@ describe("telemetry home config", () => {
     // Sanity: the rewritten file is valid JSON now.
     expect(() => JSON.parse(readFileSync(file, "utf8"))).not.toThrow();
   });
+
+  // Regression (BLOCKING FIX 2): the config-write path must never throw (it feeds
+  // beginTelemetryRun, which runs outside consort-drive's try/catch).
+  it("ensureInstallId / setTelemetryEnabled never throw when the config dir is unwritable", () => {
+    // Point "home" at a regular FILE, so mkdir(<file>/.config/consort) fails ENOTDIR.
+    const fileHome = join(home, "home-as-file");
+    writeFileSync(fileHome, "x", "utf8");
+    const badDeps: HomeConfigDeps = { homedir: fileHome, env: {} };
+
+    let id: string | undefined;
+    expect(() => {
+      id = ensureInstallId(badDeps);
+    }).not.toThrow();
+    expect(id).toMatch(UUID_V4); // degrades to an ephemeral id, still valid
+
+    expect(() => setTelemetryEnabled(false, badDeps)).not.toThrow();
+    expect(() => isTelemetryEnabled(badDeps)).not.toThrow();
+
+    // The write genuinely failed: nothing persisted.
+    expect(readStoredConfig(badDeps)).toBeNull();
+    expect(existsSync(join(fileHome, ".config", "consort", "telemetry.json"))).toBe(false);
+  });
 });
