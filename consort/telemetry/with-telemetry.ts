@@ -17,27 +17,50 @@
 // is the emitter's fire-and-forget flush.
 
 import type { DriveEffects } from "../orchestrator/drive/orchestrator-run.js";
-import type { WorkflowAction } from "../orchestrator/workflow/workflow-vocabulary.js";
+import type { DriveState, WorkflowAction } from "../orchestrator/workflow/workflow-vocabulary.js";
 import {
   GATE_SPAN_NAME,
   RUN_SPAN_NAME,
+  TURN_SPAN_NAME,
   isKnownGateKind,
+  isKnownRole,
   type GateOutcome,
   type RunOutcome,
   type TelemetryCommand,
+  type TelemetryLevel,
 } from "./allowlist.js";
 import { shouldEmitTelemetry } from "./consent.js";
 import { TelemetryEmitter, resolveSink, type TelemetrySink } from "./emitter.js";
-import { isFirstRun, isTelemetryEnabled, telemetryDebug } from "./home-config.js";
+import {
+  isFirstRun,
+  isL2NoticeSeen,
+  isTelemetryEnabled,
+  markL2NoticeSeen,
+  resolveTelemetryLevel,
+  telemetryDebug,
+} from "./home-config.js";
 import { buildResourceAttrs, type ResourceDeps } from "./resource.js";
-import { newSpanId, newTraceId, type GateSpan, type RunSpan } from "./spans.js";
+import { newSpanId, newTraceId, type GateSpan, type RunSpan, type TurnSpan } from "./spans.js";
 
-/** The one-time first-run notice (stderr). Pseudonymous, local no-op by default. */
+/** The one-time first-run notice (stderr). Pseudonymous, armed by default. */
 export const FIRST_RUN_NOTICE =
   "[consort] Anonymous* usage telemetry is on (*pseudonymous: a random per-install id, no PII).\n" +
   "          Each interactive run reports to the Consort maintainers' endpoint; only\n" +
   "          allowlisted, non-sensitive fields are sent (no paths, code, or names).\n" +
   "          Turn it off any time: `consort-telemetry disable` (or CONSORT_TELEMETRY=0).\n" +
+  "          Details: TELEMETRY.md.\n";
+
+/** The one-time LEVEL-2 opt-in notice (stderr). Shown once, on the first run after
+ *  a user explicitly opts in to Level 2. Level 2 is a SEPARATE opt-in on top of the
+ *  Level-1 default; it captures MORE (per-role turn timings, coarse repair/loop
+ *  counts, a categorized failure class) , still only allowlisted enums / counts /
+ *  durations, never prompts, code, paths, or names. */
+export const L2_OPT_IN_NOTICE =
+  "[consort] Level-2 usage telemetry is ON (you opted in).\n" +
+  "          On top of Level 1, it reports per-role turn timings and coarse\n" +
+  "          repair/loop counts , still only allowlisted enums, counts, and\n" +
+  "          durations (no prompts, code, paths, error text, or names).\n" +
+  "          Back to Level 1 any time: `consort-telemetry enable --level 1`.\n" +
   "          Details: TELEMETRY.md.\n";
 
 export interface RunFinishInfo {
@@ -71,6 +94,8 @@ export interface BeginRunDeps extends ResourceDeps {
   onNotice?: (msg: string) => void;
   /** Register a best-effort exit flush (default true). Off in tests to avoid leaks. */
   registerExitFlush?: boolean;
+  /** Active telemetry level override (tests). Defaults to resolveTelemetryLevel(deps). */
+  level?: TelemetryLevel;
 }
 
 /** The immutable no-op session returned when consent fails. */
@@ -114,11 +139,18 @@ function beginTelemetryRunUnsafe(deps: BeginRunDeps): TelemetryRun {
   if (!shouldEmitTelemetry({ telemetryEnabled: enabledFlag, isTTY, env })) return NOOP_RUN;
 
   const now = deps.now ?? Date.now;
-  // Fire the one-time notice BEFORE building the resource (which creates the
+  const level = deps.level ?? resolveTelemetryLevel(deps);
+  const l2 = level === 2;
+  // Fire the one-time notices BEFORE building the resource (which creates the
   // config file), so "first run" is detected against the pre-existing state.
   if (deps.onNotice && isFirstRun(deps)) deps.onNotice(FIRST_RUN_NOTICE);
+  // The Level-2 opt-in notice fires once, on the first run after opting in.
+  if (deps.onNotice && l2 && !isL2NoticeSeen(deps)) {
+    deps.onNotice(L2_OPT_IN_NOTICE);
+    markL2NoticeSeen(deps);
+  }
 
-  const resource = buildResourceAttrs({ ...deps, isTTY });
+  const resource = buildResourceAttrs({ ...deps, isTTY, level });
   const sink = deps.sink ?? resolveSink(env);
   const emitter = new TelemetryEmitter({ sink, resource });
 
@@ -127,6 +159,44 @@ function beginTelemetryRunUnsafe(deps: BeginRunDeps): TelemetryRun {
   const rootStart = now();
   let gates = 0;
   let finished = false;
+
+  // ── Level-2 (opt-in) accumulators. Populated ONLY when l2; at Level 1 they
+  //    stay zero and are never attached to the root span. ──────────────────────
+  const l2Counts = {
+    red_green_cycles: 0,
+    refactor_iterations: 0,
+    revise_rounds: 0,
+    selfheal_attempts: 0,
+    hil_escalations: 0,
+  };
+  // The last DriveState the driver read (captured through the readState seam), so
+  // finish() can record coarse project shape WITHOUT an async read of its own.
+  let lastState: DriveState | undefined;
+
+  /** Tally the coarse L2 repair/loop dynamics from a performed action. Reads ONLY
+   *  the action's structured `kind` / `role` / `buildMode` / `mode` , never any
+   *  free-text field. */
+  const tallyL2 = (action: WorkflowAction): void => {
+    switch (action.kind) {
+      case "raise-to-hil":
+        l2Counts.hil_escalations += 1;
+        break;
+      case "revise-route":
+        l2Counts.revise_rounds += 1;
+        break;
+      case "invoke-role": {
+        const bm = "buildMode" in action ? action.buildMode : undefined;
+        if (bm && bm.startsWith("refactor")) l2Counts.refactor_iterations += 1;
+        else if (bm && (bm.startsWith("assess") || bm === "repair")) l2Counts.selfheal_attempts += 1;
+        else if (action.role === "driver" && bm === undefined) l2Counts.red_green_cycles += 1;
+        break;
+      }
+      case "deploy-verify-heal":
+        if (action.mode.startsWith("refactor")) l2Counts.refactor_iterations += 1;
+        else l2Counts.selfheal_attempts += 1;
+        break;
+    }
+  };
 
   const recordChild = (action: WorkflowAction, ordinal: number, start: number, threw: boolean): void => {
     // `done` is the terminal no-op, not real work , never a child span.
@@ -150,6 +220,25 @@ function beginTelemetryRunUnsafe(deps: BeginRunDeps): TelemetryRun {
     };
     emitter.enqueue(span);
     gates += 1;
+
+    // Level-2 (opt-in) only: tally coarse dynamics and, for a role invocation,
+    // emit a `consort.turn` span (role + timing). model / effort / token_bucket /
+    // retry_count are NOT available at this seam, so they are simply omitted , the
+    // sanitizer keeps only allowlisted keys either way.
+    if (l2) {
+      tallyL2(action);
+      if (action.kind === "invoke-role" && isKnownRole(action.role)) {
+        const turn: TurnSpan = {
+          trace_id: traceId,
+          parent_span_id: rootSpanId,
+          span_id: newSpanId(),
+          name: TURN_SPAN_NAME,
+          role: action.role,
+          duration_ms: end - start,
+        };
+        emitter.enqueue(turn);
+      }
+    }
   };
 
   const wrap = (inner: DriveEffects): DriveEffects => {
@@ -157,7 +246,13 @@ function beginTelemetryRunUnsafe(deps: BeginRunDeps): TelemetryRun {
     // loop iteration; capture it as the child span's ordinal.
     let pendingOrdinal = 0;
     return {
-      readState: () => inner.readState(),
+      // Tap the readState seam to capture the last state the driver observed, so
+      // finish() can record coarse L2 project shape without its own async read.
+      readState: async () => {
+        const s = await inner.readState();
+        lastState = s;
+        return s;
+      },
       onAction: (action, i) => {
         pendingOrdinal = i;
         inner.onAction?.(action, i);
@@ -224,6 +319,18 @@ function beginTelemetryRunUnsafe(deps: BeginRunDeps): TelemetryRun {
       exit_code: info.exit_code,
       gates_total: gates,
     };
+    // Level-2 (opt-in) only: attach the coarse repair/loop counts + project shape.
+    if (l2) {
+      root.red_green_cycles = l2Counts.red_green_cycles;
+      root.refactor_iterations = l2Counts.refactor_iterations;
+      root.revise_rounds = l2Counts.revise_rounds;
+      root.selfheal_attempts = l2Counts.selfheal_attempts;
+      root.hil_escalations = l2Counts.hil_escalations;
+      if (lastState) {
+        if (typeof lastState.uiTrack === "boolean") root.ui_track = lastState.uiTrack;
+        if (Array.isArray(lastState.storyOrder)) root.story_count = lastState.storyOrder.length;
+      }
+    }
     emitter.enqueue(root);
     emitter.flush();
   };

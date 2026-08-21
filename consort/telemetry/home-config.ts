@@ -18,6 +18,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
+import { type TelemetryLevel } from "./allowlist.js";
 
 /** Overridable inputs, so tests isolate the config to a temp dir. */
 export interface HomeConfigDeps {
@@ -26,17 +27,24 @@ export interface HomeConfigDeps {
   homedir?: string;
 }
 
-/** The persisted shape. `telemetry_enabled` is opt-out (defaults true); nothing
- *  leaves the machine regardless until a human flips the real endpoint (the sink
- *  defaults to a local no-op). */
+/** The persisted shape. `telemetry_enabled` is opt-out (defaults true).
+ *  `telemetry_level` is opt-IN (absent / 1 = Level 1; 2 only after an explicit
+ *  `enable --level 2` or CONSORT_TELEMETRY_LEVEL=2). `l2_opt_in_notified` records
+ *  that the one-time Level-2 opt-in notice has already been shown. */
 export interface StoredTelemetryConfig {
   install_id: string;
   telemetry_enabled: boolean;
+  telemetry_level?: TelemetryLevel;
+  l2_opt_in_notified?: boolean;
 }
 
 /** Default consent when no decision has been recorded yet (opt-out model, paired
  *  with the one-time first-run notice + the default no-op sink). */
 export const DEFAULT_TELEMETRY_ENABLED = true;
+
+/** The DEFAULT telemetry level: Level 1. Level 2 is only ever reached by an
+ *  explicit opt-in (persisted flag or CONSORT_TELEMETRY_LEVEL=2). */
+export const DEFAULT_TELEMETRY_LEVEL: TelemetryLevel = 1;
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuidV4 = (s: unknown): s is string => typeof s === "string" && UUID_V4.test(s);
@@ -73,11 +81,20 @@ export function readStoredConfig(deps: HomeConfigDeps = {}): StoredTelemetryConf
     return null;
   }
   try {
-    const data = JSON.parse(raw) as { install_id?: unknown; telemetry_enabled?: unknown };
+    const data = JSON.parse(raw) as {
+      install_id?: unknown;
+      telemetry_enabled?: unknown;
+      telemetry_level?: unknown;
+      l2_opt_in_notified?: unknown;
+    };
     if (!isUuidV4(data.install_id)) return null;
     const telemetry_enabled =
       typeof data.telemetry_enabled === "boolean" ? data.telemetry_enabled : DEFAULT_TELEMETRY_ENABLED;
-    return { install_id: data.install_id, telemetry_enabled };
+    // A stored level is honored only when it is a valid level; anything else
+    // (garbage, 0, 3, "2") falls back to the default (Level 1). Never throws.
+    const telemetry_level: TelemetryLevel = data.telemetry_level === 2 ? 2 : DEFAULT_TELEMETRY_LEVEL;
+    const l2_opt_in_notified = data.l2_opt_in_notified === true;
+    return { install_id: data.install_id, telemetry_enabled, telemetry_level, l2_opt_in_notified };
   } catch {
     return null;
   }
@@ -138,11 +155,56 @@ export function isFirstRun(deps: HomeConfigDeps = {}): boolean {
   return readStoredConfig(deps) === null;
 }
 
-/** Persist the enable/disable decision, preserving the existing install id (or
- *  minting one if none exists yet). Returns the config (whether or not the write
- *  actually landed , writeStoredConfig never throws). */
-export function setTelemetryEnabled(enabled: boolean, deps: HomeConfigDeps = {}): StoredTelemetryConfig {
+/** Merge a partial update onto the existing config (minting an install id + the
+ *  defaults when none exists yet) and persist it, preserving every other field.
+ *  The single write path for the toggles below; never throws. */
+function updateStoredConfig(
+  patch: Partial<Omit<StoredTelemetryConfig, "install_id">>,
+  deps: HomeConfigDeps = {},
+): StoredTelemetryConfig {
   const existing = readStoredConfig(deps);
-  const install_id = existing?.install_id ?? randomUUID();
-  return writeStoredConfig({ install_id, telemetry_enabled: enabled }, deps).cfg;
+  const base: StoredTelemetryConfig = existing ?? {
+    install_id: randomUUID(),
+    telemetry_enabled: DEFAULT_TELEMETRY_ENABLED,
+    telemetry_level: DEFAULT_TELEMETRY_LEVEL,
+  };
+  return writeStoredConfig({ ...base, ...patch }, deps).cfg;
+}
+
+/** Persist the enable/disable decision, preserving the existing install id, level,
+ *  and notice flag (or minting an install id if none exists yet). Returns the
+ *  config (whether or not the write landed , writeStoredConfig never throws). */
+export function setTelemetryEnabled(enabled: boolean, deps: HomeConfigDeps = {}): StoredTelemetryConfig {
+  return updateStoredConfig({ telemetry_enabled: enabled }, deps);
+}
+
+/** Persist the telemetry LEVEL (the Level-2 opt-in). Setting level 2 is the
+ *  explicit, separate opt-in; setting level 1 returns to the default. Preserves
+ *  install id + consent + notice flag. Never throws. */
+export function setTelemetryLevel(level: TelemetryLevel, deps: HomeConfigDeps = {}): StoredTelemetryConfig {
+  return updateStoredConfig({ telemetry_level: level }, deps);
+}
+
+/**
+ * The RESOLVED active level for this run. An explicit `CONSORT_TELEMETRY_LEVEL`
+ * env var wins (`2` opts in, `1` forces back to Level 1 for this run); otherwise
+ * the persisted level; otherwise the default (Level 1). Level 2 is ALWAYS an
+ * explicit opt-in , there is no path that reaches it without one. Pure read.
+ */
+export function resolveTelemetryLevel(deps: HomeConfigDeps = {}): TelemetryLevel {
+  const env = deps.env ?? process.env;
+  const raw = (env.CONSORT_TELEMETRY_LEVEL ?? "").trim();
+  if (raw === "2") return 2;
+  if (raw === "1") return 1;
+  return readStoredConfig(deps)?.telemetry_level === 2 ? 2 : DEFAULT_TELEMETRY_LEVEL;
+}
+
+/** True when the one-time Level-2 opt-in notice has already been shown. */
+export function isL2NoticeSeen(deps: HomeConfigDeps = {}): boolean {
+  return readStoredConfig(deps)?.l2_opt_in_notified === true;
+}
+
+/** Record that the one-time Level-2 opt-in notice has been shown. Never throws. */
+export function markL2NoticeSeen(deps: HomeConfigDeps = {}): void {
+  updateStoredConfig({ l2_opt_in_notified: true }, deps);
 }

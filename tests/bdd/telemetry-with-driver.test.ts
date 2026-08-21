@@ -11,7 +11,8 @@ import { runDriver, type DriveEffects } from "../../consort/orchestrator/drive/o
 import type { DriveState, WorkflowAction } from "../../consort/orchestrator/workflow/workflow-vocabulary";
 import { beginTelemetryRun, type BeginRunDeps, type TelemetryRun } from "../../consort/telemetry/with-telemetry";
 import { memorySink, type MemorySink } from "../../consort/telemetry/emitter";
-import { isRunSpan, type GateSpan, type RunSpan } from "../../consort/telemetry/spans";
+import { isRunSpan, isTurnSpan, type GateSpan, type RunSpan, type TurnSpan } from "../../consort/telemetry/spans";
+import { ROLE_VALUES } from "../../consort/telemetry/allowlist";
 
 /** A scripted DriveEffects that performs `actions` in order then reaches `done`.
  *  `transition` ignores state; `perform` advances a cursor (optionally throwing). */
@@ -279,5 +280,85 @@ describe("withTelemetry over the driver loop", () => {
 
     // The write genuinely failed: no config file was created under the file-home.
     expect(existsSync(join(fileAsHome, ".config", "consort", "telemetry.json"))).toBe(false);
+  });
+
+  // ── Level 2 (opt-in) ────────────────────────────────────────────────────────
+  // At Level 2 the SAME driver pass additionally emits a `consort.turn` span per
+  // role invocation (role + timing) and attaches coarse repair/loop counts +
+  // project shape to the root span. At Level 1 (the default) neither appears.
+  const L2_ACTIONS: WorkflowAction[] = [
+    { kind: "invoke-role", role: "navigator", story: "S1" }, // RED: turn span, NOT a red_green_cycle
+    { kind: "invoke-role", role: "driver", story: "S1" }, // GREEN: turn span + red_green_cycles++
+    { kind: "invoke-role", role: "driver", story: "S1", buildMode: "refactor" }, // turn span + refactor_iterations++
+    { kind: "revise-route", story: "S1", role: "spec-author", gate: "spec", reason: "r", source: "s" }, // revise_rounds++
+    { kind: "raise-to-hil", reason: "x", source: "y" }, // hil_escalations++ (terminal, so keep it last)
+  ];
+
+  it("Level 2 (opt-in) emits consort.turn spans + coarse run counts (resource level = 2)", async () => {
+    const sink = memorySink();
+    const run = beginTelemetryRun({ ...CONSENTING(home, sink), level: 2 });
+    const effects: DriveEffects = {
+      async readState() {
+        return { storyOrder: ["S1", "S2"], uiTrack: true } as unknown as DriveState;
+      },
+      async perform() {},
+    };
+    let i = 0;
+    const transition = (): WorkflowAction => (i < L2_ACTIONS.length ? L2_ACTIONS[i++] : { kind: "done" });
+    await runDriver(run.wrap(effects), { transition, enforceExpectations: false });
+    run.finish({ outcome: "aborted", exit_code: 3 });
+
+    const payload = sink.payloads[0];
+    const turns = payload.spans.filter(isTurnSpan) as TurnSpan[];
+    const root = payload.spans.filter(isRunSpan)[0] as RunSpan;
+
+    // The resource carries the opted-in level.
+    expect(payload.resource.level).toBe(2);
+
+    // One turn span per role invocation, carrying role (within the closed enum) +
+    // timing, parented to the root and sharing the trace id. No free-text fields.
+    expect(turns.map((t) => t.role)).toEqual(["navigator", "driver", "driver"]);
+    for (const t of turns) {
+      expect(ROLE_VALUES).toContain(t.role);
+      expect(t.trace_id).toBe(root.trace_id);
+      expect(t.parent_span_id).toBe(root.span_id);
+      expect(t.duration_ms).toBeGreaterThanOrEqual(0);
+    }
+
+    // Coarse repair/loop dynamics tallied from the structured action kinds.
+    expect(root.red_green_cycles).toBe(1);
+    expect(root.refactor_iterations).toBe(1);
+    expect(root.revise_rounds).toBe(1);
+    expect(root.hil_escalations).toBe(1);
+    expect(root.selfheal_attempts).toBe(0);
+    // Coarse project shape from the last state the driver observed.
+    expect(root.story_count).toBe(2);
+    expect(root.ui_track).toBe(true);
+  });
+
+  it("Level 1 (default) emits NO turn spans and NO L2 fields on the root", async () => {
+    const sink = memorySink();
+    const run = beginTelemetryRun({ ...CONSENTING(home, sink), level: 1 });
+    let i = 0;
+    const transition = (): WorkflowAction => (i < L2_ACTIONS.length ? L2_ACTIONS[i++] : { kind: "done" });
+    await runDriver(
+      run.wrap({
+        async readState() {
+          return { storyOrder: ["S1", "S2"], uiTrack: true } as unknown as DriveState;
+        },
+        async perform() {},
+      }),
+      { transition, enforceExpectations: false },
+    );
+    run.finish({ outcome: "aborted", exit_code: 3 });
+
+    const payload = sink.payloads[0];
+    expect(payload.resource.level).toBe(1);
+    expect(payload.spans.some(isTurnSpan)).toBe(false);
+    const root = payload.spans.filter(isRunSpan)[0] as RunSpan;
+    expect(root.red_green_cycles).toBeUndefined();
+    expect(root.hil_escalations).toBeUndefined();
+    expect(root.story_count).toBeUndefined();
+    expect(root.ui_track).toBeUndefined();
   });
 });

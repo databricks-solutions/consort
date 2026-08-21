@@ -1,4 +1,4 @@
-// Barrel for the Consort telemetry emitter (Level 1). See TELEMETRY.md.
+// Barrel for the Consort telemetry emitter (Level 1 default + Level 2 opt-in). See TELEMETRY.md.
 export * from "./allowlist.js";
 export * from "./spans.js";
 export * from "./home-config.js";

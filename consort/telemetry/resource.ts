@@ -10,13 +10,13 @@ import {
   ARCH_VALUES,
   OS_VALUES,
   SHELL_VALUES,
-  TELEMETRY_LEVEL,
   TELEMETRY_SCHEMA,
   type ArchValue,
   type OsValue,
   type ShellValue,
+  type TelemetryLevel,
 } from "./allowlist.js";
-import { ensureInstallId, type HomeConfigDeps } from "./home-config.js";
+import { ensureInstallId, resolveTelemetryLevel, type HomeConfigDeps } from "./home-config.js";
 import type { ResourceAttrs } from "./spans.js";
 
 /** Normalize a Node platform string into the os enum. */
@@ -56,6 +56,8 @@ export interface ResourceDeps extends HomeConfigDeps {
   isTTY?: boolean;
   /** Override the consort version (defaults to kitVersion()). */
   version?: string;
+  /** Override the active telemetry level (defaults to resolveTelemetryLevel(deps)). */
+  level?: TelemetryLevel;
 }
 
 /**
@@ -74,6 +76,6 @@ export function buildResourceAttrs(deps: ResourceDeps = {}): ResourceAttrs {
     shell: normalizeShell(env),
     ci: ciBool(env),
     tty: deps.isTTY ?? !!process.stdout.isTTY,
-    level: TELEMETRY_LEVEL,
+    level: deps.level ?? resolveTelemetryLevel(deps),
   };
 }

@@ -5,8 +5,11 @@ the deterministic orchestrator (`consort-drive`) is used in practice — which
 commands run, how many gates a run traverses, and how runs end. This document is
 the contract: what is collected, what is **not**, and how to turn it off.
 
-This is **Level 1**: `consort-drive` only, one trace per run, resource + span
-attributes drawn from a **closed allowlist**. No free-form data is ever collected.
+The default is **Level 1**: `consort-drive` only, one trace per run, resource +
+span attributes drawn from a **closed allowlist**. **Level 2** is a separate,
+explicit **opt-in** (off by default) that captures *more* — per-role turn timings
+and coarse repair/loop counts — still drawn from a closed allowlist. No free-form
+data is ever collected at either level. See [Level 2 (opt-in)](#level-2-opt-in).
 
 ## Why this is collected
 
@@ -116,7 +119,7 @@ consort-telemetry enable          # re-enable
 | `shell` | enum | `zsh` \| `bash` \| `fish` \| `powershell` \| `unknown` |
 | `ci` | bool | in CI? |
 | `tty` | bool | interactive terminal? |
-| `level` | number | `1` |
+| `level` | number | `1` (default) or `2` (opted in) |
 
 **Root span `consort.run`** (one per `consort-drive` run):
 `trace_id`, `span_id`, `name` (`"consort.run"`), `start_ts` / `end_ts` (epoch ms),
@@ -144,6 +147,65 @@ await-acceptance, accept, complete, feature-complete, deploy, approve-deploy-gat
 deploy-complete, prepare-pr, wait-ci, approve-promote-gate, merge, raise-to-hil,
 revise-route, done
 ```
+
+## Level 2 (opt-in)
+
+**Level 2 is OFF by default and is only ever reached by an explicit opt-in.** Where
+Level 1 answers *is it healthy / adopted*, Level 2 answers *why does a run fail and
+where is the bottleneck*. It is higher-volume and closer to your work, so it is a
+separate, deliberate choice — never on unless you turn it on. Everything it adds is
+still **allowlisted enums / counts / durations — never raw content**.
+
+### Turning Level 2 on and off
+
+```bash
+consort-telemetry enable --level 2   # opt in (persisted)
+CONSORT_TELEMETRY_LEVEL=2 consort-drive …   # opt in for one invocation
+consort-telemetry enable --level 1   # back to the Level-1 default
+consort-telemetry status             # shows the resolved level
+```
+
+`CONSORT_TELEMETRY_LEVEL` wins for that invocation (`2` opts in, `1` forces back to
+Level 1); otherwise the persisted level applies. Opting in to Level 2 does **not**
+change consent: every Level-1 opt-out (`disable`, `CONSORT_TELEMETRY=0`, CI /
+non-TTY, `CONSORT_TELEMETRY_SIGNOFF=0`) still applies unchanged. On the first run
+after you opt in, `consort-drive` prints a one-time Level-2 notice to stderr.
+
+### What Level 2 adds (schema `consort/v1`, `level = 2`)
+
+On top of everything in Level 1:
+
+**Turn span `consort.turn`** (one per role invocation): `trace_id`,
+`parent_span_id`, `span_id`, `name` (`"consort.turn"`), `role` (`spec-author` \|
+`architect-reviewer` \| `dba` \| `ux-designer` \| `test-strategist` \| `navigator`
+\| `driver` \| `product-owner`), `duration_ms`, plus the OPTIONAL coarse buckets
+`model` (`opus` \| `sonnet` \| `haiku` \| `fable` \| `other`), `effort` (`low` \|
+`medium` \| `high` \| `unknown`), `token_bucket` (`xs` \| `s` \| `m` \| `l` \|
+`xl`), and `retry_count` (a number). The optional buckets are only carried when the
+executor surfaces them; they are never the exact model id, and never a raw count.
+
+**Extra `consort.run` fields** (all counts / a boolean — never content):
+`red_green_cycles`, `refactor_iterations`, `revise_rounds`, `selfheal_attempts`,
+`hil_escalations` (repair / loop dynamics — *is the ensemble thrashing*),
+`story_count`, `ui_track`, and (reserved) `feature_count`, `ac_count`,
+`test_count` (coarse project shape — *how big is the work*, never *what* the work
+is).
+
+**Extra `consort.gate` field:** `fail_class` — a nullable **categorized signature**
+of a failure drawn from a closed enum (e.g. `merge-etimedout`, `npm-proxy-hang`,
+`deploy-verify-halt`, `review-blocked-protocol`, `ux-adherence-hil`, `other`).
+**Never the error text**, path, or any free string — only the category.
+
+**Hard line, even at Level 2:** no prompts, code, spec / feature text, error
+*messages*, file paths, branch names, hostnames, or usernames. Level 2 still cannot
+reconstruct *what* you built.
+
+> **Note on population.** This release ships the full Level-2 vocabulary + opt-in and
+> emits `consort.turn` (role + timing) and the coarse `consort.run` counts from the
+> deterministic driver seam. The optional turn buckets (`model` / `effort` /
+> `token_bucket` / `retry_count`) and `gate.fail_class` are part of the closed
+> allowlist and are populated as the executor / failure-classifier surfaces them;
+> until then they are simply absent (never guessed, never free text).
 
 ## Running the local collector
 

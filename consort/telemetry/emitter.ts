@@ -14,9 +14,7 @@
 
 import {
   isRunSpan,
-  sanitizeGateSpan,
-  sanitizeRunSpan,
-  type GateSpan,
+  sanitizeSpan,
   type ResourceAttrs,
   type TelemetrySpan,
   type TracePayload,
@@ -113,7 +111,7 @@ export function httpSink(opts: HttpSinkOptions): TelemetrySink {
 /** One NDJSON wire line for a span: the sanitized span + schema, with the trace's
  *  resource attached to the root span's line only (so it ships once). */
 function wireLine(span: TelemetrySpan, payload: TracePayload): Record<string, unknown> {
-  const clean = isRunSpan(span) ? sanitizeRunSpan(span) : sanitizeGateSpan(span as GateSpan);
+  const clean = sanitizeSpan(span);
   return isRunSpan(span)
     ? { schema: payload.schema, ...clean, resource: payload.resource }
     : { schema: payload.schema, ...clean };
@@ -192,7 +190,7 @@ export class TelemetryEmitter {
    *  so a non-allowlisted field never reaches the queue. Never throws. */
   enqueue(span: TelemetrySpan): void {
     try {
-      const clean = isRunSpan(span) ? sanitizeRunSpan(span) : sanitizeGateSpan(span as GateSpan);
+      const clean = sanitizeSpan(span);
       if (this.queue.length >= this.cap) this.queue.shift();
       this.queue.push(clean);
     } catch {
