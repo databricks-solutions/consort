@@ -23,29 +23,36 @@ export function modeFromUrl(search: string): "live" | "replay" | null {
 }
 
 export function DriftBanner({ correlation }: { correlation: NonNullable<DashboardState["source"]>["correlation"] }) {
-  if (!correlation || correlation.healthy) return null;
-  // A version mismatch means every turn is suspect; running out of turns means the pairing was
-  // fine up to that point. Both are red — the consequence (wrong code shown) is the same.
+  if (!correlation || correlation.severity === "ok") return null;
+  // This banner is ALWAYS about the dashboard's corpus pairing, never the run's health — it never
+  // means the orchestrator/build/deploy is failing. Two weights:
+  //   warning — a role the corpus never recorded, i.e. the RECORD_DIR likely points at a DIFFERENT
+  //             run. Amber (not critical-red): worth a look, still not a failure.
+  //   info    — a benign caveat (kit-version drift, or the live edge running ahead of the corpus).
+  //             A quiet note; drill-downs may just be approximate.
+  const warn = correlation.severity === "warning";
   return (
     <div
-      role="alert"
+      role={warn ? "alert" : "note"}
       style={{
         display: "flex",
         alignItems: "flex-start",
         gap: 10,
-        background: "var(--status-critical-tint)",
-        border: `1px solid var(--status-critical)`,
+        background: warn ? "var(--status-warning-tint)" : "var(--surface-inset)",
+        border: `1px solid ${warn ? "var(--status-warning)" : "var(--border-default)"}`,
         borderRadius: radius.panel,
         padding: "10px 13px",
         marginBottom: 12,
       }}
     >
-      <span style={{ fontSize: "0.8rem", lineHeight: 1.3 }}>⚠</span>
+      <span style={{ fontSize: "0.8rem", lineHeight: 1.3 }}>{warn ? "⚠" : "ℹ"}</span>
       <div>
-        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--status-critical-text)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-          Corpus pairing unreliable
+        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: warn ? "var(--status-warning-text)" : "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          {warn ? "Corpus pairing unreliable" : "Live view pairing note"}
         </div>
-        <div style={{ fontSize: "0.78rem", color: "var(--text-body)", marginTop: 3 }}>{correlation.message}</div>
+        <div style={{ fontSize: "0.78rem", color: "var(--text-body)", marginTop: 3 }}>
+          {correlation.message} Turn drill-downs may be approximate; the run itself is unaffected.
+        </div>
         {/* The counts say how far to trust it: `paired` turns did match, and `structural`
             non-pairings are expected rather than evidence of a problem. */}
         <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: 4 }}>

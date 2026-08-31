@@ -357,6 +357,7 @@ const withSource = (over: Partial<NonNullable<DashboardState["source"]>>): Dashb
 
 const health = (over: Partial<NonNullable<NonNullable<DashboardState["source"]>["correlation"]>> = {}) => ({
   healthy: true,
+  severity: "ok" as "ok" | "info" | "warning",
   message: null,
   paired: 71,
   structural: 10,
@@ -402,29 +403,46 @@ describe("render — DriftBanner", () => {
     expect(renderToStaticMarkup(<DriftBanner correlation={null} />)).toBe("");
   });
 
-  it("names a kit-version mismatch and stays out of the way of structural non-pairings", () => {
+  it("treats a kit-version mismatch as a quiet pairing NOTE, not a critical alert (info)", () => {
+    // Kevin's ask: a kit-version drift is an expected observability caveat, not a run failure, so
+    // it must not wear the critical-red alert weight that reads as "the orchestrator is broken".
     const markup = renderToStaticMarkup(
       <DriftBanner
         correlation={health({
           healthy: false,
+          severity: "info",
           kitVersionMatch: false,
           message: "Log and corpus are different kit versions (log aaaa111 vs corpus bbbb222) — turn pairing is unreliable.",
         })}
       />,
     );
-    expect(markup).toContain("Corpus pairing unreliable");
+    expect(markup).toContain("Live view pairing note");
     expect(markup).toContain("different kit versions");
+    expect(markup).toContain("Turn drill-downs may be approximate");
     expect(markup).toContain("kit version mismatch");
     // The structural count is labelled as expected, so it never reads as part of the problem.
     expect(markup).toContain("10 structural (expected)");
-    expect(markup).toContain('role="alert"');
+    // Quiet: a polite note, never the assertive critical alert.
+    expect(markup).toContain('role="note"');
+    expect(markup).not.toContain('role="alert"');
   });
 
-  it("reports unpaired events with the paired count, so partial trust is legible", () => {
+  it("flags a role the corpus never recorded as a prominent WARNING — a likely different run", () => {
     const markup = renderToStaticMarkup(
-      <DriftBanner correlation={health({ healthy: false, unpairedEvents: 4, message: "4 events found no matching turn — the log is ahead of the corpus, so later turns may be mis-paired." })} />,
+      <DriftBanner
+        correlation={health({
+          healthy: false,
+          severity: "warning",
+          unpairedEvents: 4,
+          message: "The corpus has no turns for dba (4 events) — it may be a different run.",
+        })}
+      />,
     );
+    expect(markup).toContain("Corpus pairing unreliable");
+    expect(markup).toContain("may be a different run");
+    // The paired count is kept, so partial trust stays legible.
     expect(markup).toContain("71 paired · 4 unpaired");
+    expect(markup).toContain('role="alert"');
     expect(markup).not.toContain("kit version mismatch"); // that isn't this failure
   });
 });

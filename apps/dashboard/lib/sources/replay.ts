@@ -27,7 +27,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { resolveContained } from "../safepath";
 import { classify, readTextFile } from "../filekind";
-import { correlate, driftMessage, type CorrelationReport, type TurnIndexEntry } from "../correlate";
+import { correlate, driftMessage, driftSeverity, type CorrelationReport, type TurnIndexEntry } from "../correlate";
 import { RECENT_EVENT_TAIL } from "../reducer";
 import { CAPABILITIES, foldSource, type Capability, type DashboardSource } from "../source";
 import { loadPlanning } from "../planning";
@@ -475,6 +475,7 @@ export class ReplaySource implements DashboardSource {
 
     return {
       healthy: r.healthy,
+      severity: driftSeverity(r),
       message: driftMessage(r),
       paired: r.pairings.length,
       structural: r.structural.length,

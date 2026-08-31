@@ -16,7 +16,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { correlate, driftMessage, kitVersionOfLog, turnByEvent, type TurnIndexEntry } from "./correlate";
+import { correlate, driftMessage, driftSeverity, kitVersionOfLog, turnByEvent, type TurnIndexEntry } from "./correlate";
 import type { AgentLogEvent } from "./types";
 
 const CORPUS_DIR = join(__dirname, "__fixtures__");
@@ -217,6 +217,14 @@ describe("correlate — drift is detected and named", () => {
     ]);
     expect(r.healthy).toBe(false);
     expect(driftMessage(r)).toContain("log is ahead of the corpus");
+    // A log-ahead tail is the normal live edge — a quiet caveat, not a prominent warning.
+    expect(driftSeverity(r)).toBe("info");
+  });
+
+  it("is 'ok' severity (no banner) when the log pairs cleanly", () => {
+    const r = correlate([ev("driver", "green")], [turn(0, "driver")]);
+    expect(r.healthy).toBe(true);
+    expect(driftSeverity(r)).toBe("ok");
   });
 
   it("distinguishes a role the corpus has never heard of (role-absent)", () => {
@@ -225,6 +233,8 @@ describe("correlate — drift is detected and named", () => {
     const r = correlate([ev("navigator", "red")], [turn(0, "driver")]);
     expect(r.unpairedEvents[0].reason).toBe("role-absent");
     expect(driftMessage(r)).toContain("no turns for navigator");
+    // A role the corpus never recorded = likely a different run: the one case worth flagging loudly.
+    expect(driftSeverity(r)).toBe("warning");
   });
 
   it("flags an explicit kit-version mismatch as fatal", () => {
@@ -236,6 +246,9 @@ describe("correlate — drift is detected and named", () => {
     // Both sides are named, so the UI can show what mismatched.
     expect(driftMessage(r)).toContain("aaaa111");
     expect(driftMessage(r)).toContain("bbbb222");
+    // Pairing IS unreliable (healthy=false), but a kit drift is a benign, expected caveat — the
+    // banner surfaces it quietly (info), not as the critical-red alert it used to.
+    expect(driftSeverity(r)).toBe("info");
   });
 
   it("treats a missing stamp on either side as unknown, not as a mismatch", () => {

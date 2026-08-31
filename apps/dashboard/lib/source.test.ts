@@ -238,6 +238,36 @@ describe("LiveSource.fidelity + capabilities — companion record dir (Phase B)"
     expect(c.paired).toBe(1);
     expect(c.healthy).toBe(true);
   });
+
+  it("stays severity 'ok' on the normal live edge — an in-flight turn the companion hasn't recorded yet", () => {
+    // The live log runs one navigator phase.start AHEAD of the companion's recorded turns (the
+    // in-flight turn isn't captured yet): a role-EXHAUSTED tail. `report.healthy` trips on it, but the
+    // live rule keeps it healthy, so there must be NO DriftBanner. Guards the regression where severity
+    // was derived from report.healthy and lit an "info" banner (with a null message) on every live board.
+    const ev = (ts: string, event: string, role: string) =>
+      JSON.stringify({ timestamp: ts, level: "info", role, event, message: "", metadata: { phase: "red" } });
+    writeFileSync(
+      join(proj, ".consort", "agent-log.jsonl"),
+      [
+        ev("2026-01-01T10:00:05Z", "phase.start", "navigator"), // pairs with the recorded turn
+        ev("2026-01-01T10:00:09Z", "phase.start", "navigator"), // in-flight: navigator turns are used up → role-exhausted
+      ].join("\n"),
+    );
+    mkdirSync(join(rec, "turns"), { recursive: true });
+    writeFileSync(
+      join(rec, "turns", "index.json"),
+      JSON.stringify({ turns: [{ ordinal: 5, step: 0, label: "nav red", kind: "invoke-role", role: "navigator", dir: "0005-navigator", producedCount: 0, deletedCount: 0 }] }),
+    );
+    writeFileSync(join(rec, "agent-log.jsonl"), ev("2026-01-01T10:00:05Z", "phase.start", "navigator"));
+    process.env.CONSORT_RECORD_DIR = rec;
+
+    const c = new LiveSource().correlationSummary();
+    expect(c.paired).toBe(1);
+    expect(c.unpairedEvents).toBe(1); // the in-flight navigator turn
+    expect(c.healthy).toBe(true);
+    expect(c.severity).toBe("ok"); // → DriftBanner renders nothing
+    expect(c.message).toBeNull();
+  });
 });
 
 describe("resolveSource — mode selection", () => {

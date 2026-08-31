@@ -227,6 +227,23 @@ export function driftMessage(report: CorrelationReport): string | null {
   return `${n} event${n === 1 ? "" : "s"} found no matching turn — the log is ahead of the corpus, so later turns may be mis-paired.`;
 }
 
+/**
+ * How prominently the UI should surface an unhealthy report. This is a property of the
+ * dashboard's corpus PAIRING, not the run's health — the banner it drives never means the
+ * orchestrator, build, or deploy is failing.
+ *
+ *   "ok"      — healthy, no banner.
+ *   "warning" — a role the corpus never recorded: the RECORD_DIR likely points at a DIFFERENT
+ *               run. This is the one case worth flagging prominently.
+ *   "info"    — a benign observability caveat: a kit-version mismatch (an expected-with-caveat
+ *               drift) or a plain log-ahead tail. Quiet, non-alarming.
+ */
+export function driftSeverity(report: CorrelationReport): "ok" | "info" | "warning" {
+  if (report.healthy) return "ok";
+  if (report.unpairedEvents.some((u) => u.reason === "role-absent")) return "warning";
+  return "info";
+}
+
 function short(commit: string | null): string {
   return commit ? commit.slice(0, 7) : "unstamped";
 }

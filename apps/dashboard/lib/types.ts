@@ -153,6 +153,17 @@ export interface SourceMeta {
    */
   correlation?: {
     healthy: boolean;
+    /**
+     * How loudly to surface the pairing caveat — this is ALWAYS about the dashboard's ability to
+     * pair the run to a recorded corpus, never about the run's own health:
+     *   "ok"      — paired cleanly; the banner never renders.
+     *   "info"    — a benign observability caveat (kit-version drift, or the live edge running
+     *               ahead of the corpus). Turn drill-downs may be approximate; the run is fine.
+     *   "warning" — a role the corpus never recorded, i.e. the RECORD_DIR likely points at a
+     *               DIFFERENT run. Worth a look, but still not a run/deploy failure.
+     * From `driftSeverity()`.
+     */
+    severity: "ok" | "info" | "warning";
     /** One-line explanation when unhealthy; null when fine. From `driftMessage()`. */
     message: string | null;
     paired: number;

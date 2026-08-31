@@ -38,7 +38,7 @@ import {
 import { loadPlanning } from "../planning";
 import { CAPABILITIES, foldSource, type Capability, type DashboardSource } from "../source";
 import { ReplaySource, classify, type ParsedTranscript, type TurnDetail } from "./replay";
-import { correlate, driftMessage } from "../correlate";
+import { correlate, driftMessage, driftSeverity } from "../correlate";
 import { RECENT_EVENT_TAIL } from "../reducer";
 import type { AgentLogEvent, ArtifactContent, DashboardState, Planning, SnapshotInputs, SourceMeta, StepOutputs } from "../types";
 
@@ -214,7 +214,7 @@ export class LiveSource implements DashboardSource {
   correlationSummary(upTo?: number, recentCount = RECENT_EVENT_TAIL): NonNullable<SourceMeta["correlation"]> {
     const liveEvents = this.events();
     const at = upTo === undefined ? liveEvents.length : Math.max(0, Math.min(Math.floor(upTo), liveEvents.length));
-    const empty = { healthy: true, message: null, paired: 0, structural: 0, unpairedEvents: 0, kitVersionMatch: null as boolean | null, recentTurns: [] as (number | null)[] };
+    const empty = { healthy: true, severity: "ok" as const, message: null, paired: 0, structural: 0, unpairedEvents: 0, kitVersionMatch: null as boolean | null, recentTurns: [] as (number | null)[] };
 
     const rec = this.companion();
     if (!rec) return empty;
@@ -238,8 +238,17 @@ export class LiveSource implements DashboardSource {
 
     const absent = report.unpairedEvents.filter((u) => u.reason === "role-absent");
     const healthy = absent.length === 0 && report.kitVersionMatch !== false;
+    // Severity must track THIS LOCAL `healthy`, not `report.healthy`. `report.healthy` also trips on
+    // a role-exhausted tail (the in-flight turn the companion hasn't recorded yet) — the NORMAL live
+    // edge this source deliberately treats as healthy. Keying `driftSeverity(report)` off it directly
+    // would return "info" and surface the banner (with a null message) on every recording live board.
+    // So short-circuit to "ok" whenever the local rule is healthy; only classify warning/info when it
+    // isn't (which, by construction, means role-absent or a kit mismatch — exactly what driftSeverity
+    // separates).
+    const severity = healthy ? "ok" : driftSeverity(report);
     return {
       healthy,
+      severity,
       message: healthy ? null : driftMessage(report),
       paired: report.pairings.length,
       structural: report.structural.length,
