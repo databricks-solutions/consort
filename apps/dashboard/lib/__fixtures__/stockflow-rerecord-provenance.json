@@ -1,0 +1,9 @@
+{
+  "scenario": "stockflow-rerecord",
+  "captured_at": "2026-08-01T02:50:33.000Z",
+  "kit_ref": "sftdd-capture-local",
+  "kit_commit": "cad5f5fb5eb7e59a703722284b6a5858ddf3fff0",
+  "kit_describe": "v0.3.6",
+  "agent_log": "agent-log.jsonl",
+  "notes": "Provenance for the stockflow-rerecord corpus + full-run agent-log.jsonl. kit_ref is the LOCAL dev ref capture-scenario.sh pins (CAPTURE_KIT_REF, a cache symlink to the working tree at capture time), not a published version. kit_commit/kit_describe are the real version anchor: the kit commit the recorded artifacts + log reflect (the v0.3.6 corpus commit). The same kit_ref/kit_commit/kit_describe are stamped on metadata of the first event in agent-log.jsonl."
+}

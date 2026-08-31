@@ -1,0 +1,486 @@
+{
+  "_comment": "Verbatim extraction of WORKFLOW from Kevin Hartman's build_dashboard.py, via ast.literal_eval of the source literal. Do not hand-edit. Regenerate with scripts/extract-kevin-workflow.py. Guards lib/topology.ts against transcription drift; intentional deviations are declared in topology.test.ts.",
+  "_source": {
+    "file": "build_dashboard.py",
+    "symbol": "WORKFLOW",
+    "line": 384,
+    "literal_sha256": "5796743238375a2c3781294fd74cb71a2ac7bad88060aa6370bf0624b725d89e",
+    "kit_describe": "v0.3.6",
+    "kit_commit": "cad5f5fb"
+  },
+  "nodes": [
+    {
+      "id": "intake",
+      "label": "Intake",
+      "roles": [],
+      "type": "phase"
+    },
+    {
+      "id": "plan",
+      "label": "Plan",
+      "roles": [
+        "spec-author",
+        "architect-reviewer",
+        "product-owner"
+      ],
+      "type": "phase"
+    },
+    {
+      "id": "plangate",
+      "label": "plan gate",
+      "roles": [],
+      "type": "gate"
+    },
+    {
+      "id": "design",
+      "label": "Design lane",
+      "roles": [
+        "spec-author",
+        "architect-reviewer",
+        "dba",
+        "test-strategist",
+        "ux-designer"
+      ],
+      "type": "phase"
+    },
+    {
+      "id": "specgate",
+      "label": "spec + test-list gates",
+      "roles": [],
+      "type": "gate"
+    },
+    {
+      "id": "build",
+      "label": "Build lane",
+      "roles": [
+        "navigator",
+        "driver"
+      ],
+      "type": "phase"
+    },
+    {
+      "id": "deploy",
+      "label": "Deploy",
+      "roles": [
+        "release-engineer"
+      ],
+      "type": "phase"
+    },
+    {
+      "id": "deploygate",
+      "label": "deploy gate",
+      "roles": [],
+      "type": "gate"
+    },
+    {
+      "id": "promote",
+      "label": "Promote",
+      "roles": [
+        "release-engineer"
+      ],
+      "type": "phase"
+    },
+    {
+      "id": "promgate",
+      "label": "promote gate",
+      "roles": [],
+      "type": "gate"
+    },
+    {
+      "id": "shipped",
+      "label": "Shipped",
+      "roles": [],
+      "type": "phase"
+    }
+  ],
+  "edges": [
+    [
+      "intake",
+      "plan"
+    ],
+    [
+      "plan",
+      "plangate"
+    ],
+    [
+      "plangate",
+      "design"
+    ],
+    [
+      "design",
+      "specgate"
+    ],
+    [
+      "specgate",
+      "build"
+    ],
+    [
+      "build",
+      "deploy"
+    ],
+    [
+      "deploy",
+      "deploygate"
+    ],
+    [
+      "deploygate",
+      "promote"
+    ],
+    [
+      "promote",
+      "promgate"
+    ],
+    [
+      "promgate",
+      "shipped"
+    ],
+    [
+      "shipped",
+      "plan"
+    ]
+  ],
+  "phaseToNode": {
+    "propose": "plan",
+    "estimate": "plan",
+    "estimate-committed": "plan",
+    "author-requests": "plan",
+    "breakdown": "plan",
+    "feature": "plan",
+    "assess": "plan",
+    "workflow": "plan",
+    "design": "design",
+    "build": "build",
+    "red": "build",
+    "green": "build",
+    "refactor": "build",
+    "review": "build",
+    "reflect": "build",
+    "repair": "build",
+    "RED": "build",
+    "deploy": "deploy",
+    "promote": "promote",
+    "estimate ": "plan"
+  },
+  "lanes": {
+    "plan": {
+      "title": "Plan  \u00b7  sprint planning",
+      "steps": [
+        {
+          "id": "p-propose",
+          "role": "spec-author",
+          "label": "Spec author",
+          "sub": "propose features",
+          "match": {
+            "role": "spec-author",
+            "phase": "propose"
+          }
+        },
+        {
+          "id": "p-size",
+          "role": "architect-reviewer",
+          "label": "Architect",
+          "sub": "t-shirt sizing (estimate)",
+          "match": {
+            "role": "architect-reviewer",
+            "phaseAny": [
+              "estimate",
+              "estimate-committed"
+            ]
+          }
+        },
+        {
+          "id": "p-req",
+          "role": "product-owner",
+          "label": "Product owner",
+          "sub": "author requests",
+          "match": {
+            "role": "product-owner",
+            "phaseAny": [
+              "author-requests",
+              "feature"
+            ]
+          }
+        },
+        {
+          "id": "p-gate",
+          "role": null,
+          "label": "Plan gate",
+          "sub": "human approves backlog",
+          "gate": true,
+          "match": null
+        }
+      ],
+      "edges": [
+        [
+          "p-propose",
+          "p-size"
+        ],
+        [
+          "p-size",
+          "p-req"
+        ],
+        [
+          "p-req",
+          "p-gate"
+        ]
+      ],
+      "backEdges": []
+    },
+    "design": {
+      "title": "Design lane  \u00b7  spec-first (per story)",
+      "steps": [
+        {
+          "id": "d-ux",
+          "role": "ux-designer",
+          "label": "UX designer",
+          "sub": "design guide (once)",
+          "match": {
+            "role": "ux-designer"
+          }
+        },
+        {
+          "id": "d-spec",
+          "role": "spec-author",
+          "label": "Spec author",
+          "sub": "acceptance criteria",
+          "match": {
+            "role": "spec-author",
+            "phaseNot": [
+              "propose",
+              "estimate",
+              "author-requests",
+              "breakdown"
+            ]
+          }
+        },
+        {
+          "id": "d-arch",
+          "role": "architect-reviewer",
+          "label": "Architect",
+          "sub": "annotate layers",
+          "match": {
+            "role": "architect-reviewer",
+            "phaseNot": [
+              "estimate"
+            ]
+          }
+        },
+        {
+          "id": "d-dba",
+          "role": "dba",
+          "label": "DBA",
+          "sub": "realize schema",
+          "match": {
+            "role": "dba"
+          }
+        },
+        {
+          "id": "d-ts",
+          "role": "test-strategist",
+          "label": "Test strategist",
+          "sub": "test list",
+          "match": {
+            "role": "test-strategist"
+          }
+        },
+        {
+          "id": "d-nav",
+          "role": "navigator",
+          "label": "Navigator",
+          "sub": "reflect / critique",
+          "match": {
+            "role": "navigator",
+            "buildMode": "reflect",
+            "phase": "reflect"
+          }
+        },
+        {
+          "id": "d-gate",
+          "role": null,
+          "label": "Spec gate",
+          "sub": "human approves",
+          "gate": true,
+          "match": null
+        }
+      ],
+      "edges": [
+        [
+          "d-ux",
+          "d-spec"
+        ],
+        [
+          "d-spec",
+          "d-arch"
+        ],
+        [
+          "d-arch",
+          "d-dba"
+        ],
+        [
+          "d-dba",
+          "d-ts"
+        ],
+        [
+          "d-ts",
+          "d-nav"
+        ],
+        [
+          "d-nav",
+          "d-gate"
+        ]
+      ],
+      "backEdges": [
+        [
+          "d-nav",
+          "d-spec",
+          "revise on findings"
+        ]
+      ]
+    },
+    "build": {
+      "title": "Build lane  \u00b7  honest-GREEN cycle (Branched-Database TDD)",
+      "steps": [
+        {
+          "id": "b-red",
+          "role": "navigator",
+          "label": "Navigator",
+          "sub": "write failing test (RED)",
+          "match": {
+            "role": "navigator",
+            "phase": "red",
+            "buildModeNot": [
+              "reflect",
+              "review",
+              "assess",
+              "assess-refactor",
+              "assess-deploy"
+            ]
+          }
+        },
+        {
+          "id": "b-green",
+          "role": "driver",
+          "label": "Driver",
+          "sub": "minimal honest code (GREEN)",
+          "match": {
+            "role": "driver",
+            "buildModeNot": [
+              "refactor",
+              "repair",
+              "refactor-superseded",
+              "refactor-deploy"
+            ]
+          }
+        },
+        {
+          "id": "b-verify",
+          "role": null,
+          "label": "Verify",
+          "sub": "run vs real branch",
+          "gate": true,
+          "match": {
+            "eventPrefix": "verify"
+          }
+        },
+        {
+          "id": "b-review",
+          "role": "navigator",
+          "label": "Navigator",
+          "sub": "review / refactor",
+          "match": {
+            "role": "navigator",
+            "buildMode": "review"
+          }
+        },
+        {
+          "id": "b-assess",
+          "role": "navigator",
+          "label": "Navigator",
+          "sub": "assess: regression or supersession?",
+          "branch": true,
+          "match": {
+            "role": "navigator",
+            "buildModeAny": [
+              "assess",
+              "assess-refactor",
+              "assess-deploy"
+            ]
+          }
+        },
+        {
+          "id": "b-repair",
+          "role": "driver",
+          "label": "Driver",
+          "sub": "repair code, never tests",
+          "branch": true,
+          "match": {
+            "role": "driver",
+            "buildModeAny": [
+              "repair"
+            ]
+          }
+        },
+        {
+          "id": "b-perm",
+          "role": "driver",
+          "label": "Driver",
+          "sub": "permissive-green (superseded only)",
+          "branch": true,
+          "match": {
+            "role": "driver",
+            "buildModeAny": [
+              "refactor-superseded",
+              "refactor",
+              "refactor-deploy"
+            ]
+          }
+        }
+      ],
+      "edges": [
+        [
+          "b-red",
+          "b-green"
+        ],
+        [
+          "b-green",
+          "b-verify"
+        ],
+        [
+          "b-verify",
+          "b-review"
+        ],
+        [
+          "b-review",
+          "b-red"
+        ]
+      ],
+      "backEdges": [
+        [
+          "b-verify",
+          "b-assess",
+          "verify fails"
+        ],
+        [
+          "b-assess",
+          "b-repair",
+          "regression"
+        ],
+        [
+          "b-assess",
+          "b-perm",
+          "supersession"
+        ],
+        [
+          "b-repair",
+          "b-green",
+          "re-verify"
+        ],
+        [
+          "b-perm",
+          "b-green",
+          "re-verify"
+        ]
+      ]
+    }
+  }
+}

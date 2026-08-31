@@ -18,5 +18,5 @@
     "types": ["node"]
   },
   "include": ["scripts/**/*.ts", "tests/**/*.ts", "apps/**/*.ts", "consort/**/*.ts"],
-  "exclude": ["node_modules", "dist", "consort/evaluation/reference-assets", "tests/integration/live/driver-green-setup/code-assets", "tests/integration/live/driver-green-setup/*-seed", "tests/integration/live/driver-green-setup-s2/code-assets"]
+  "exclude": ["node_modules", "dist", "apps/dashboard", "consort/evaluation/reference-assets", "tests/integration/live/driver-green-setup/code-assets", "tests/integration/live/driver-green-setup/*-seed", "tests/integration/live/driver-green-setup-s2/code-assets"]
 }

@@ -1,0 +1,29 @@
+/* Design tokens (--surface-*, --text-*, --status-*, --role-*) are injected by layout.tsx as
+   two blocks generated from lib/theme.ts: a light :root and a :root[data-theme="dark"] (each
+   also sets color-scheme). We deliberately do NOT invert on prefers-color-scheme — dark is an
+   explicit choice (the in-app toggle or THEME=dark), so the board looks identical on any
+   machine unless someone asks for dark. */
+html {
+  height: 100%;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  min-height: 100%;
+  color: var(--text-strong);
+  background: var(--surface-page);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
