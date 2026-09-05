@@ -34,7 +34,7 @@
 #     --sprint <sprint-name> --feature F1-... --feature F6-...
 #   # The whole-sprint orchestrator plans to the plan gate (sync-backlog projects
 #   # backlog.json from just these features), then claims + drives each. The
-#   # feature-requests are supplied to planning via LAKEBASE_SFTDD_SPRINT_REQUESTS.
+#   # feature-requests are supplied to planning via LAKEBASE_CONSORT_SPRINT_REQUESTS.
 #
 #   # Plan-only: capture JUST the planning lane (propose/estimate via the executor +
 #   # author-requests/sync-backlog/estimate-committed/gate-plan) and STOP at
@@ -42,7 +42,7 @@
 #   capture-scenario.sh --scenario <name> --create ... \
 #     --sprint <name> --feature <F1> --plan-only
 # Env: DATABRICKS_HOST, DATABRICKS_CONFIG_PROFILE, GITHUB_OWNER.
-#      LAKEBASE_SFTDD_AUTO_CONTINUE=1 to run headless (required for --create).
+#      LAKEBASE_CONSORT_AUTO_CONTINUE=1 to run headless (required for --create).
 #      Do NOT set LAKEBASE_KIT_DIR: the script refuses it (it would split-brain
 #      the orchestrator vs the claude -p agents). The script instead pins one dev
 #      ref (CAPTURE_KIT_REF, default sftdd-capture-local) symlinked to THIS kit
@@ -175,7 +175,7 @@ KIT_ROOT="$KIT_SINGLE_ROOT"
 #    the FULL LIVE design lane (no replay) so the design roles + the pre-build
 #    reflection gate all run live and are recorded. ─────────────────────────────
 if [[ -n "$CREATE" ]]; then
-  KIT_LK="${KIT_ROOT}/templates/project/common/scripts/lk"
+  KIT_LK="$(kit_lk_path "$KIT_ROOT")" || exit 1
   HOST="${DATABRICKS_HOST_ARG:-${DATABRICKS_HOST:?--databricks-host or DATABRICKS_HOST required}}"
   OWNER="${GITHUB_OWNER_ARG:-${GITHUB_OWNER:?--github-owner or GITHUB_OWNER required}}"
   PROJECT_NAME="${PROJECT_NAME:-${SCENARIO}-cap-$(date +%Y%m%d-%H%M%S)}"
@@ -202,7 +202,13 @@ if [[ -n "$CREATE" ]]; then
   # stockflow-optimize first live run provisioned Spring Boot/Java, not python+UI).
   SCENARIO_MANIFEST="${INPUTS}/scenario.json"
   [[ -f "$SCENARIO_MANIFEST" ]] || SCENARIO_MANIFEST="${INPUTS}/scenario.json.pending"
-  sc() { node "${KIT_ROOT}/dist/bin/consort/scenario-conditions.cli.js" --manifest "$SCENARIO_MANIFEST" --field "$1" 2>/dev/null || true; }
+  # Warn LOUD when the conditions reader is missing (unbuilt/stale dist): sc() then
+  # returns empty for every field and the run silently scaffolds the WRONG stack
+  # (java, no UI, wrong tiers) instead of the manifest's , the exact silent-default
+  # failure the comment above records. Non-fatal (we still degrade to the --ui flag).
+  SC_CLI="${KIT_ROOT}/dist/bin/consort/scenario-conditions.cli.js"
+  [[ -f "$SC_CLI" ]] || echo "capture-scenario: WARNING , conditions reader missing (${SC_CLI}); scenario conditions will DEFAULT (run 'npm run build' in the kit). Scaffolding may use the wrong language/UI/tiers." >&2
+  sc() { node "$SC_CLI" --manifest "$SCENARIO_MANIFEST" --field "$1" 2>/dev/null || true; }
   SC_UI="$(sc uiTrack)"; SC_LANG="$(sc language)"; SC_RUNNER="$(sc runner)"; SC_TIERS="$(sc tiers)"
   create_flags=(--tiers "${SC_TIERS:-$TIERS}")
   [[ "$SC_UI" == "true" || -n "$UI" ]] && create_flags+=(--ui-track)
@@ -246,7 +252,7 @@ if [[ -n "$CREATE" ]]; then
   # PER-FEATURE mode: pre-seed each feature-request on the entry tier so the fork
   # inherits it. SPRINT mode does NOT pre-seed: the planning lane authors the
   # feature-requests LIVE (the proxy-as-PO author-requests step, fed by
-  # LAKEBASE_SFTDD_SPRINT_REQUESTS), and runSprint's commitAndPushRequests commits
+  # LAKEBASE_CONSORT_SPRINT_REQUESTS), and runSprint's commitAndPushRequests commits
   # + pushes them to origin AFTER the plan gate, BEFORE the first fork. Pre-seeding
   # here would defeat the point of exercising the planning lane.
   if [[ ${#SPRINT_NAMES[@]} -eq 0 ]]; then
@@ -301,7 +307,7 @@ if [[ ${#SPRINT_NAMES[@]} -gt 0 ]]; then
   #    the PLANNING lane and emits backlog.json. Each sprint's backlog is EXACTLY
   #    its own --feature group, and the feature-requests are authored LIVE by the
   #    planning lane (NOT pre-seeded above):
-  #      - LAKEBASE_SFTDD_SPRINT_REQUESTS supplies THIS sprint's recorded requests
+  #      - LAKEBASE_CONSORT_SPRINT_REQUESTS supplies THIS sprint's recorded requests
   #        to the planning author-requests step (proxy-as-PO), so sync-backlog
   #        projects the backlog from just this sprint's features; AND
   #      - runSprint's commitAndPushRequests commits + pushes the just-authored
@@ -323,7 +329,7 @@ if [[ ${#SPRINT_NAMES[@]} -gt 0 ]]; then
       [[ -f "$FR" ]] || { echo "capture-scenario: --sprint '${sname}' needs a recorded feature-request for ${FID} at ${FR}" >&2; exit 2; }
       reqs+="${FID}"$'\t'"${FR}"$'\n'
     done
-    export LAKEBASE_SFTDD_SPRINT_REQUESTS="$reqs"
+    export LAKEBASE_CONSORT_SPRINT_REQUESTS="$reqs"
     echo "[capture-scenario] recording ${SCENARIO} SPRINT '${sname}' (backlog: ${sfeats[*]}) into ${SCEN}" >&2
     # Honor the drive's exit code: a raise-to-HIL (or any failure) exits non-zero,
     # and the sprint's feature is still claimed. Advancing to the NEXT sprint would

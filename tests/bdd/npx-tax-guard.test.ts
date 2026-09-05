@@ -60,8 +60,11 @@ describe("npx-tax guard: the canonical logging doc + smoke use lk", () => {
     ]) {
       const smoke = read(rel);
       // Bootstrap routes through the committed lk resolver, pinned via KIT_LK.
-      expect(smoke, `${rel}: defines KIT_LK from the kit's committed lk`).toMatch(
-        /KIT_LK=.*templates\/project\/common\/scripts\/lk/,
+      // KIT_LK resolves through the shared kit_lk_path helper (the scaffold lk now
+      // lives in the @databricks-solutions/lakebase-scm-utils substrate package, not
+      // in-repo), so assert the helper is used rather than a hardcoded lk path.
+      expect(smoke, `${rel}: defines KIT_LK via the shared kit_lk_path resolver`).toMatch(
+        /KIT_LK="?\$\(kit_lk_path /,
       );
       // Tolerate both inline and split-line (`bash "$KIT_LK" \` then bin) forms.
       expect(smoke, `${rel}: runs create-project via lk`).toMatch(/bash "\$KIT_LK"[\s\\]*lakebase-create-project/);

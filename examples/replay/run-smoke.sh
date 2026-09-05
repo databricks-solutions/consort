@@ -194,7 +194,7 @@ export LAKEBASE_KIT_NPX="$KIT_NPX"
 source "${ORCHESTRATOR_DIR}/lib/pin-local-kit.sh"
 resolve_kit_single_source "${ORCHESTRATOR_DIR}" "${KIT_REF}" || exit 1
 KIT_ROOT="${KIT_SINGLE_ROOT}"
-KIT_LK="${KIT_ROOT}/templates/project/common/scripts/lk"
+KIT_LK="$(kit_lk_path "$KIT_ROOT")" || exit 1
 
 # Headless run: the human reviewer at each HITL gate is performed by
 # human-proxy, which validates the gate's artifacts exist + carry their
@@ -622,7 +622,7 @@ run_plan_sprint() {
   # where the PO's artifacts are provided, and headless the Human Proxy supplies
   # them then (logging each). The recorded file is named independently of the
   # feature id (v1-initial-domain.md -> F1-initial-domain), so each pair is
-  # `<feature_id>\t<recorded source>`, passed via LAKEBASE_SFTDD_SPRINT_REQUESTS.
+  # `<feature_id>\t<recorded source>`, passed via LAKEBASE_CONSORT_SPRINT_REQUESTS.
   # This is the identical state machine a human runs; only the provider differs.
   local iter feature_id spec _pairs=""
   for iter in "${iters[@]}"; do
@@ -631,7 +631,7 @@ run_plan_sprint() {
     [[ -f "$spec" ]] || { err "missing iteration spec: $spec"; exit 2; }
     _pairs+="$(printf '%s\t%s' "$feature_id" "$spec")"$'\n'
   done
-  export LAKEBASE_SFTDD_SPRINT_REQUESTS="$_pairs"
+  export LAKEBASE_CONSORT_SPRINT_REQUESTS="$_pairs"
 
   # c. Drive planning through the deterministic orchestrator (the same CLI the
   # scaffolded /plan command runs). The smoke calls the driver DIRECTLY (as it
@@ -641,7 +641,7 @@ run_plan_sprint() {
   # gate was never approved. Calling the driver here (in this shell, where the env
   # is correct) with an explicit `--gates proxy` is deterministic. The driver runs
   # propose (Spec Author -> feature-proposals.md), author-requests (the Human Proxy
-  # supplies the recorded feature-requests from LAKEBASE_SFTDD_SPRINT_REQUESTS + logs
+  # supplies the recorded feature-requests from LAKEBASE_CONSORT_SPRINT_REQUESTS + logs
   # each), sync-backlog (projects backlog.json from them), then the Human Proxy
   # approves the sprint plan gate (teeth: feature-proposals.md exists + conforms)
   # and it stops at planning-complete.

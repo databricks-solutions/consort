@@ -13,11 +13,40 @@
 
 LOCAL_KIT_REF_DEFAULT="sftdd-capture-local"
 
+# The kit package these launchers resolve. The scaffold `lk` shim is generic
+# across substrate + kit, so a PRE-project call (no .lakebase/kit-package yet) must
+# be told which package to load; resolve_kit_single_source exports this as
+# LAKEBASE_KIT_PACKAGE for that reason.
+KIT_PACKAGE_DEFAULT="@databricks-solutions/consort"
+
 # The cache slot (node_modules/<pkg> symlink target) for a local ref.
 local_kit_cache_link() {
   local ref="${1:-$LOCAL_KIT_REF_DEFAULT}"
   local cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/consort"
-  printf '%s\n' "${cache_root}/${ref}/node_modules/@databricks-solutions/consort"
+  printf '%s\n' "${cache_root}/${ref}/node_modules/${KIT_PACKAGE_DEFAULT}"
+}
+
+# Path to the scaffold `lk` shim a launcher invokes BEFORE a project exists (for
+# --warm / lakebase-create-project). The shim used to live in-repo at
+# templates/project/common/scripts/lk, but it was moved into the
+# @databricks-solutions/lakebase-scm-utils substrate package (installed under the
+# kit's node_modules). Return the installed path; fall back to the legacy in-repo
+# location for older checkouts that still ship it.
+kit_lk_path() {
+  local kit_root="$1" p legacy
+  p="${kit_root}/node_modules/@databricks-solutions/lakebase-scm-utils/templates/project/common/scripts/lk"
+  legacy="${kit_root}/templates/project/common/scripts/lk"
+  if [ ! -f "$p" ] && [ ! -f "$legacy" ]; then
+    # Neither the substrate-package shim nor the legacy in-repo path exists. The
+    # usual cause is that `npm install` has not been run in the kit (the substrate
+    # package, which ships the shim, is not installed). Fail LOUD here rather than
+    # returning a dead path and letting a later `bash "$KIT_LK" ...` die with an
+    # opaque "No such file or directory".
+    echo "kit_lk_path: no scaffold lk found under ${kit_root} , run 'npm install' in the kit first (expected ${p})." >&2
+    return 1
+  fi
+  [ -f "$p" ] || p="$legacy"
+  printf '%s\n' "$p"
 }
 
 # Plant (idempotent) the cache symlink -> the working tree, so a bin run finds
@@ -66,6 +95,11 @@ resolve_kit_single_source() {
   # in a SUBSHELL so `pwd` runs on exactly one branch (|| + && are equal precedence, left-assoc).
   root="$(git -C "$start_dir" rev-parse --show-toplevel 2>/dev/null || (cd "$start_dir/../.." && pwd))"
   export KIT_SINGLE_ROOT="$root"
+  # Tell the generic scaffold `lk` which kit to resolve for PRE-project calls
+  # (a scaffolded project reads .lakebase/kit-package, but the launchers invoke
+  # `lk --warm` / lakebase-create-project before any project exists). Respect an
+  # already-set value so a caller can override the package under test.
+  export LAKEBASE_KIT_PACKAGE="${LAKEBASE_KIT_PACKAGE:-$KIT_PACKAGE_DEFAULT}"
   if [ -n "$published_ref" ]; then
     # Escape hatch: a real remote ref, resolved by lk from github , no local cache pin.
     export LAKEBASE_KIT_REF="$published_ref"

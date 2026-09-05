@@ -13,7 +13,7 @@
 #
 # At the handoff the driver PAUSES (a HITL [Y/n] gate), waits for the human, and
 # RESUMES the same run on Y , it never bails out of the state machine. Set
-# LAKEBASE_SFTDD_AUTO_CONTINUE=1 to auto-confirm (non-interactive / CI).
+# LAKEBASE_CONSORT_AUTO_CONTINUE=1 to auto-confirm (non-interactive / CI).
 #
 # Determinism (in code): the create-project bootstrap, the scaffolded project's
 # scripts/lk, and every drive turn all resolve the kit through the SAME committed
@@ -92,7 +92,7 @@ replay_smoke() {
   source "${REPLAY_DIR}/lib/pin-local-kit.sh"
   resolve_kit_single_source "${REPLAY_DIR}" "${KIT_REF}" || return 1
   KIT_ROOT="${KIT_SINGLE_ROOT}"
-  KIT_LK="${KIT_ROOT}/templates/project/common/scripts/lk"
+  KIT_LK="$(kit_lk_path "$KIT_ROOT")" || return 1
 
   # UI track is a PROJECT setting (project.uiTrack, set at create by --ui-track
   # below), not an env door. Only the run-mode Human Proxy is env here.
@@ -234,13 +234,13 @@ replay_smoke() {
     local FR="${CORPUS_DIR}/features/${FEATURE_ID}/feature-request.md"
     [[ -f "$FR" ]] || { err "planning replay needs the recorded feature-request at ${FR}"; return 2; }
     [[ "${REPLAY_DESIGN:-1}" == "1" ]] && export LAKEBASE_CONSORT_REPLAY_DIR="${CORPUS_DIR}"
-    export LAKEBASE_SFTDD_SPRINT_REQUESTS="${FEATURE_ID}"$'\t'"${FR}"$'\n'
+    export LAKEBASE_CONSORT_SPRINT_REQUESTS="${FEATURE_ID}"$'\t'"${FR}"$'\n'
     local _plan_mode; [[ "${REPLAY_DESIGN:-1}" == "1" ]] && _plan_mode="REPLAYED from corpus" || _plan_mode="LIVE (recording)"
     local _plan_flag=""; [[ "$PLAN_ONLY" == "1" ]] && _plan_flag="--plan-only"
     log "PLANNING lane , sprint '${REPLAY_SPRINT}' (propose + estimate ${_plan_mode} via the executor; author-requests deterministic)${_plan_flag:+ , STOP after planning-complete}"
     lk consort-drive --sprint "$REPLAY_SPRINT" --project-dir "$PROJECT_DIR" --gates proxy $_plan_flag \
       || { err "planning-lane ${_plan_flag:-drive} (--sprint ${REPLAY_SPRINT}) failed"; return 2; }
-    unset LAKEBASE_SFTDD_SPRINT_REQUESTS
+    unset LAKEBASE_CONSORT_SPRINT_REQUESTS
     # --plan-only: the planning lane IS the whole run (capture the plan turns, then stop). Skip the
     # per-feature request/claim/drive below , there is no feature to build here.
     if [[ "$PLAN_ONLY" == "1" ]]; then
@@ -298,7 +298,16 @@ replay_smoke() {
   local _FEATURE_BRANCH
   _FEATURE_BRANCH="$(printf '%s' "$_CLAIM_JSON" | sed -n 's/.*"branch":"\([^"]*\)".*/\1/p' | head -1)"
   [[ -n "$_FEATURE_BRANCH" ]] || { err "could not parse claimed feature branch from claim JSON"; return 2; }
-  git -C "$PROJECT_DIR" checkout "$_FEATURE_BRANCH" >/dev/null 2>&1 \
+  # Force the checkout. On a RESUME (alreadyClaimed) HEAD is on the parent tier and
+  # the per-run .consort/.lakebase metadata (workflow-state.json, pipeline.json,
+  # smells.json, ...) is dirty + tracked, so a plain `git checkout` ABORTS ("local
+  # changes would be overwritten") and wedges the whole resume. That churn is
+  # disposable here , the feature branch carries its OWN committed state, and landing
+  # on it is the whole point , so -f discards the parent-tier churn and switches.
+  # Mirrors the deterministic force-checkout the orchestrator's `done` phase uses for
+  # the identical condition (orchestrator-effects.ts) and the fork-guard's tolerance
+  # of the same metadata.
+  git -C "$PROJECT_DIR" checkout -f "$_FEATURE_BRANCH" >/dev/null 2>&1 \
     || { err "could not checkout claimed feature branch ${_FEATURE_BRANCH}"; return 2; }
   lk lakebase-branch checkout-paired --project-dir "$PROJECT_DIR" >/dev/null 2>&1 \
     || log "  (warn: checkout-paired .env sync for ${_FEATURE_BRANCH} reported an issue; continuing)"
@@ -320,7 +329,7 @@ replay_smoke() {
   # INTERNAL to this one drive process, so recording + the turn timeline span
   # design and build continuously (as if there were no pause).
   # This harness is headless BY CONSTRUCTION (it exports LAKEBASE_SFTDD_HUMAN_PROXY=1
-  # and its callers set LAKEBASE_SFTDD_AUTO_CONTINUE=1), so it ALWAYS runs the
+  # and its callers set LAKEBASE_CONSORT_AUTO_CONTINUE=1), so it ALWAYS runs the
   # proxy gate policy: the Human Proxy approves each per-story spec gate without a
   # human, in both the capture and replay directions. This is a deliberate,
   # explicit opt-in , the project's declared gate policy is now interactive

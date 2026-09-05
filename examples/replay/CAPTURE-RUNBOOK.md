@@ -96,13 +96,13 @@ different kit is the split-brain trap.
 - [ ] Cache not stale: Mode B ran `lk --rewarm`; Mode A rebuilt `dist`.
 - [ ] `DATABRICKS_CONFIG_PROFILE` valid for the target workspace.
 - [ ] Port 8000 free (the local deploy verify binds it): `lsof -iTCP:8000 -sTCP:LISTEN`.
-- [ ] `LAKEBASE_SFTDD_AUTO_CONTINUE=1` (headless, required for `--create`).
+- [ ] `LAKEBASE_CONSORT_AUTO_CONTINUE=1` (headless, required for `--create`).
 - [ ] No leftover orphan from a prior failed run (see Teardown).
 
 ## Run
 
 ```
-LAKEBASE_SFTDD_AUTO_CONTINUE=1 DATABRICKS_CONFIG_PROFILE=<profile> \
+LAKEBASE_CONSORT_AUTO_CONTINUE=1 DATABRICKS_CONFIG_PROFILE=<profile> \
 bash examples/replay/capture-scenario.sh \
   --scenario <name> --create \
   --databricks-host <url> --github-owner <owner> \
@@ -141,7 +141,7 @@ phase and no-op.
 
 In `--sprint` the harness does NOT pre-seed the feature-requests: the planning
 lane authors them LIVE (the proxy-as-PO author-requests step, fed by
-`LAKEBASE_SFTDD_SPRINT_REQUESTS`), so `sync-backlog` projects `backlog.json` from
+`LAKEBASE_CONSORT_SPRINT_REQUESTS`), so `sync-backlog` projects `backlog.json` from
 just those features. After the plan gate, `runSprint`'s `commitAndPushRequests`
 commits + pushes the just-authored requests to `origin/<entry-tier>` before the
 first fork, so each feature branch (forked from origin) inherits its request.

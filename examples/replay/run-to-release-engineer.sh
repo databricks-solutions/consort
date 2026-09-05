@@ -9,7 +9,7 @@
 # to resume the SAME run into the deploy + verify + the PO acceptance gate; the
 # state machine is never abandoned. Use it to review the built, ready-to-ship state.
 #
-# Set LAKEBASE_SFTDD_AUTO_CONTINUE=1 to auto-confirm the gate (non-interactive / CI).
+# Set LAKEBASE_CONSORT_AUTO_CONTINUE=1 to auto-confirm the gate (non-interactive / CI).
 #
 # Determinism is in code: with no --kit-ref, the kit resolves to this checkout's
 # built dist (offline, stable). See _replay-smoke.sh.

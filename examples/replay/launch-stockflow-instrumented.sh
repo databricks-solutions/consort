@@ -55,7 +55,7 @@ export GITHUB_OWNER="${GITHUB_OWNER:-${LAKEBASE_TEST_GITHUB_OWNER:-}}"
 
 # --- recording + unattended resume ---
 export LAKEBASE_CONSORT_RECORD_DIR="$REC"   # turns/ + routing-decisions.jsonl + correspondence.jsonl
-export LAKEBASE_SFTDD_AUTO_CONTINUE=1        # auto-confirm the navigator pause (unattended)
+export LAKEBASE_CONSORT_AUTO_CONTINUE=1        # auto-confirm the navigator pause (unattended)
 # Manifest-steps path is ON (the executor is the sole agent path + the route-contract seam fires). It
 # is ON by default, but set it EXPLICITLY here so a stray USE_MANIFEST_STEPS=0 in the environment can
 # never silently drop the capture onto the retired legacy dispatch. (The flag is not retired , it does

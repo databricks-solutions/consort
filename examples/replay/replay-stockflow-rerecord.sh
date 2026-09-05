@@ -105,7 +105,7 @@ green "  DATABRICKS_HOST=$DATABRICKS_HOST  GITHUB_OWNER=$GITHUB_OWNER  profile=$
 # the delegate's job; setting them twice would risk drift). LAKEBASE_KIT_DIR defaults to this
 # checkout's dist (deterministic, offline). AUTO_CONTINUE auto-confirms the handoff gate (headless).
 export LAKEBASE_SFTDD_USE_MANIFEST_STEPS=1
-export LAKEBASE_SFTDD_AUTO_CONTINUE=1
+export LAKEBASE_CONSORT_AUTO_CONTINUE=1
 
 # ── 5. Delegate to the generic scenario replay ────────────────────────────────
 # --sprint (when set) replays the PLANNING lane once on the first feature: propose + estimate

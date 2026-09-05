@@ -16,7 +16,7 @@
 #   replay-scenario.sh --scenario <name> [--to navigator|release-engineer]
 #                      [--kit-ref <ref>] [--project-dir <dir>]
 # Env: DATABRICKS_HOST, GITHUB_OWNER, a CLI profile (same as run-smoke.sh).
-#      LAKEBASE_SFTDD_AUTO_CONTINUE=1 auto-confirms the handoff gate (CI).
+#      LAKEBASE_CONSORT_AUTO_CONTINUE=1 auto-confirms the handoff gate (CI).
 # Exit: 0 ok; 2 bad args / missing scenario; non-zero from a failed replay step.
 set -euo pipefail
 
