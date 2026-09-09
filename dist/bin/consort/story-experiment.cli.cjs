@@ -7367,6 +7367,10 @@ async function commitExperimentCode(projectDir, message) {
     untrackedAllow: ["app", "src", "lib", "server", "client", "tests", "test", "alembic", "migrations", "db"]
   });
 }
+async function commitDriveStateForAccept(projectDir, message) {
+  await (0, import_lakebase7.assertCommitTargetNotProtected)(projectDir);
+  return (0, import_git.commitAllIfChanged)({ cwd: projectDir, message, untrackedAllow: [] });
+}
 function resetStoryBuildState(consortDir, featureId, story) {
   const cyclesDir = (0, import_path7.join)(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
@@ -7398,6 +7402,7 @@ var import_lakebase10 = require("@databricks-solutions/lakebase-scm-utils/lakeba
 var realExperimentOps = {
   gitMerge: async ({ from, into, projectDir }) => {
     await commitExperimentCode(projectDir, `accept: commit pending experiment work for ${from}`);
+    await commitDriveStateForAccept(projectDir, `accept: commit drive-state audit trail for ${from}`);
     await (0, import_lakebase8.mergePaired)({ cwd: projectDir, from, into });
   },
   runMigrations: async ({ instance, branch, projectDir }) => {

@@ -201,7 +201,7 @@ KIT_REF="${LAKEBASE_KIT_REF:-}"
 if [ -z "$KIT_REF" ] && [ -f "$CONSORT_ROOT/.claude-plugin/plugin.json" ]; then
   KIT_REF="v$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
 fi
-KIT_REF="${KIT_REF:-v0.3.75}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
+KIT_REF="${KIT_REF:-v0.3.76}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
 export LAKEBASE_KIT_REF="$KIT_REF"
 
 # Launch scaffolding DETACHED (own session): it prints the child pid + a live-log path

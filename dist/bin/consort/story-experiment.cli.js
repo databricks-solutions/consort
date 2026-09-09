@@ -7372,6 +7372,10 @@ async function commitExperimentCode(projectDir, message) {
     untrackedAllow: ["app", "src", "lib", "server", "client", "tests", "test", "alembic", "migrations", "db"]
   });
 }
+async function commitDriveStateForAccept(projectDir, message) {
+  await assertCommitTargetNotProtected(projectDir);
+  return commitAllIfChanged({ cwd: projectDir, message, untrackedAllow: [] });
+}
 function resetStoryBuildState(consortDir, featureId, story) {
   const cyclesDir = join17(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
@@ -7403,6 +7407,7 @@ import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lake
 var realExperimentOps = {
   gitMerge: async ({ from, into, projectDir }) => {
     await commitExperimentCode(projectDir, `accept: commit pending experiment work for ${from}`);
+    await commitDriveStateForAccept(projectDir, `accept: commit drive-state audit trail for ${from}`);
     await mergePaired({ cwd: projectDir, from, into });
   },
   runMigrations: async ({ instance, branch, projectDir }) => {

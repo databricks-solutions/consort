@@ -43,6 +43,9 @@ function fmtElapsed(ms: number): string {
 const STEP_W = 104;
 const STEP_H = 68; // tall enough for the agent card: label + sub + model·effort·turns + duration
 const GAP = 30;
+// Body-text size for the step card's sub-title + the model·effort·turns metric + the duration
+// (the card TITLE stays 9/bold above them). One knob so the card body reads at one size.
+const STEP_BODY_FONT = 8.5;
 const PAD = 14;
 const BACK_LANE_H = 34; // vertical room under the row for back-edges
 
@@ -160,7 +163,14 @@ function LanePanel({
   const entered = done.size > 0 || passed.has(nodes.own) || nodes.after.some((n) => passed.has(n));
   const movedOn =
     nodes.after.some((n) => passed.has(n)) ||
-    ((laneId === "build" || laneId === "deploy") && state.lane === "complete");
+    // The combined deploy lane (and build behind it) has no single "after" lifecycle node, so it
+    // used to fall back to `state.lane === "complete"`. But that lane value is FORCED to "complete"
+    // by a feature pin / run-end regardless of the scrubber, so build+deploy wrongly stayed
+    // "complete" when you moved (scrubber OR story click) to another story. Tie it to the SCRUBBER:
+    // build/deploy are done only once the PLAYHEAD has actually passed promote/ship — the same
+    // passed-node test laneFromPlayhead uses for "complete" — so moving to a story that has not
+    // reached ship resets the lanes to their reached/total step count.
+    ((laneId === "build" || laneId === "deploy") && (passed.has("promote") || passed.has("shipped")));
   const inOwnNode = state.topology.activeNode === nodes.own;
   const complete = !active && !inOwnNode && movedOn;
 
@@ -904,7 +914,7 @@ function StepBox({
         y={y + 28}
         textAnchor="middle"
         style={{
-          fontSize: 7.5,
+          fontSize: STEP_BODY_FONT,
           // On the active turn / parked gate the non-white text takes the border colour (the agent's
           // colour for a turn, gate-purple for a parked gate).
           fill: highlighted ? stroke : state === "pending" ? "var(--text-faint)" : "var(--text-muted)",
@@ -924,7 +934,7 @@ function StepBox({
           x={x + STEP_W / 2}
           y={y + 49}
           textAnchor="middle"
-          style={{ fontSize: 7.5, fill: highlighted ? stroke : "var(--text-muted)", fontFamily: font.mono }}
+          style={{ fontSize: STEP_BODY_FONT, fill: highlighted ? stroke : "var(--text-muted)", fontFamily: font.mono }}
         >
           {truncate(modelLine, 28)}
         </text>
@@ -932,7 +942,7 @@ function StepBox({
       {/* Elapsed working DURATION on the active step — moved to the BOTTOM row (turns took its old
           spot on the metric line above), centered, in the active colour. */}
       {active && elapsed ? (
-        <text x={x + STEP_W / 2} y={y + 60} textAnchor="middle" style={{ fontSize: 7.5, fill: stroke, fontFamily: font.mono }}>
+        <text x={x + STEP_W / 2} y={y + 60} textAnchor="middle" style={{ fontSize: STEP_BODY_FONT, fill: stroke, fontFamily: font.mono }}>
           {elapsed}
         </text>
       ) : null}

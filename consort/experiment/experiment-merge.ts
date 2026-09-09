@@ -17,7 +17,7 @@ import { deleteExperiment } from "./experiment.js";
 import { readPipeline, writePipeline, acceptStory } from "../pipeline/story-pipeline.js";
 import { logGateApproved } from "../logging/gate-decision-log.js";
 import { mergePaired } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { commitExperimentCode } from "../pipeline/cycle-record.js";
+import { commitExperimentCode, commitDriveStateForAccept } from "../pipeline/cycle-record.js";
 import { applySchemaMigrations } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
@@ -30,10 +30,16 @@ export const realExperimentOps: ExperimentBranchOps = {
     // supersession/repair turn can edit code outside any green/refactor commit
     // point, leaving an uncommitted change on the experiment branch; mergePaired
     // then checks out `into` and git ABORTS on the dirty tree. Commit any pending
-    // experiment CODE first (code-only policy: runtime .sftdd/.tdd/.lakebase state
-    // stays uncommitted so it does not diverge from the feature branch). No-op on
-    // a clean tree.
+    // experiment CODE first (code-only policy: transient runtime state stays
+    // uncommitted so it does not diverge from the feature branch). No-op on a clean tree.
     await commitExperimentCode(projectDir, `accept: commit pending experiment work for ${from}`);
+    // ...but the drive's own TRACKED bookkeeping (workflow-state.json, smells.json,
+    // features/<F>/pipeline.json, ...) is NOT transient — the .gitignore tracks it as the
+    // "committed corpus", yet the code-only commit above excludes it, so it is left DIRTY and
+    // mergePaired's checkout would ABORT on it (the recurring accept HIL). Commit that tracked
+    // audit trail onto the experiment branch so it merges forward; the ignored transient churn
+    // (next.json, cycles/, experiments/, root pipeline.json) is skipped. No-op on a clean tree.
+    await commitDriveStateForAccept(projectDir, `accept: commit drive-state audit trail for ${from}`);
     await mergePaired({ cwd: projectDir, from, into });
   },
   runMigrations: async ({ instance, branch, projectDir }) => {

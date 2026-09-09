@@ -138,6 +138,37 @@ export async function commitExperimentCode(projectDir: string, message: string):
   });
 }
 
+/**
+ * Accept-only companion to commitExperimentCode: commit the drive's own TRACKED bookkeeping/audit
+ * that this story's turns updated — `workflow-state.json`, `smells.json`, `features/<F>/pipeline.json`,
+ * plus the rest of the tracked artifact-root corpus (escalations/, intake/, deploy-evidence/, turns/).
+ *
+ * commitExperimentCode is CODE-ONLY: it excludes the artifact roots so mid-build cycle commits stay
+ * clean. That leaves those TRACKED `.consort` state files DIRTY, and the accept's `mergePaired` then
+ * checks out the feature branch and git ABORTS on them ("your local changes would be overwritten") —
+ * the recurring accept HIL where a human commits them by hand. Commit them here, at ACCEPT only, so
+ * they travel onto the feature branch as the audit trail (the scaffold's .gitignore already frames
+ * this state as the "committed corpus").
+ *
+ * Scoped to the artifact roots (force-staged under an exclude-everything), so CODE (already committed
+ * above) never re-commits and, crucially, the genuinely-transient churn the .gitignore excludes
+ * (next.json, cycles/, experiments/, the ROOT pipeline.json, agent-log.jsonl, the recorder scratch)
+ * never rides along — `git add` skips ignored paths. No-op on a clean tree; never commits onto a
+ * protected tier. Accept-only by design: running it per-cycle would re-introduce the churn-divergence
+ * commitExperimentCode's code-only policy exists to avoid.
+ */
+export async function commitDriveStateForAccept(projectDir: string, message: string): Promise<boolean> {
+  await assertCommitTargetNotProtected(projectDir);
+  // untrackedAllow:[] => stage every TRACKED change (git add -u), which — after commitExperimentCode
+  // has already committed the code — is exactly the still-dirty TRACKED drive-state under the
+  // artifact root (workflow-state.json, smells.json, features/<F>/pipeline.json, ...). It does NOT
+  // force-add ignored paths (git add -u only touches tracked files; the untracked candidates come
+  // from `git ls-files --others --exclude-standard`, which excludes the .gitignore'd transient), so
+  // next.json / cycles/ / the root pipeline.json never ride along. (An `include:` of the artifact
+  // root would `git add -f` and drag those ignored files in — the opposite of what we want.)
+  return commitAllIfChanged({ cwd: projectDir, message, untrackedAllow: [] });
+}
+
 async function commitCycleWork(consortDir: string, message: string): Promise<void> {
   try {
     await commitExperimentCode(dirname(consortDir), message);

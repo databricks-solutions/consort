@@ -12,8 +12,9 @@ import {
   reduceAgents,
   consortDir,
   sftddDir,
+  mergeFeatureStatus,
 } from "./consort";
-import type { AgentLogEvent } from "./types";
+import type { AgentLogEvent, FeatureStatus } from "./types";
 
 // Minimal event builder — only the fields the pure functions read.
 function ev(event: string, metadata: Record<string, unknown> = {}, extra: Partial<AgentLogEvent> = {}): AgentLogEvent {
@@ -311,5 +312,29 @@ describe("consortDir — artifact-root resolution (v0.3.7 .sftdd → .consort re
   it("sftddDir alias resolves identically", () => {
     projectWith([".consort"]);
     expect(sftddDir()).toBe(consortDir());
+  });
+});
+
+describe("mergeFeatureStatus — hold the final test tally at sprint end", () => {
+  const withTests = (green: number, total: number): FeatureStatus =>
+    ({ test_list: { total, by_status: { green, red: 0 }, completion_pct: Math.round((green / total) * 100) } } as unknown as FeatureStatus);
+  const noTests = (): FeatureStatus => ({ test_list: null } as unknown as FeatureStatus);
+
+  it("KEEPS the cached test_list when the shipped feature's fresh status has none", () => {
+    const prev = withTests(8, 8); // all green at ship
+    const merged = mergeFeatureStatus(prev, noTests());
+    // The bar keeps showing 8/8 instead of flipping to "unavailable".
+    expect(merged.test_list).toEqual(prev.test_list);
+  });
+
+  it("a fresh test_list ALWAYS replaces the cached one (a real count is never masked)", () => {
+    const merged = mergeFeatureStatus(withTests(3, 8), withTests(5, 8));
+    expect(merged.test_list?.by_status.green).toBe(5);
+  });
+
+  it("takes the fresh status verbatim when there is no cached tally to preserve", () => {
+    const fresh = noTests();
+    expect(mergeFeatureStatus(null, fresh)).toBe(fresh);
+    expect(mergeFeatureStatus(noTests(), fresh)).toBe(fresh);
   });
 });

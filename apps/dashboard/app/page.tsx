@@ -197,10 +197,13 @@ export default function Home() {
               active tests + completed stories + turns (right). Grid stretch keeps both cards level. */}
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.5fr) minmax(0, 1fr)", gap: 12, marginBottom: 12 }}>
             <OrchestratorLane state={state} />
-            <div style={{ background: "var(--surface-card)", borderRadius: radius.card, padding: "16px 20px", border: `1px solid var(--border-default)`, display: "flex", flexDirection: "column", gap: 16, justifyContent: "center" }}>
+            <div style={{ background: "var(--surface-card)", borderRadius: radius.card, padding: "16px 20px", border: `1px solid var(--border-default)`, display: "flex", flexDirection: "column", gap: 16, justifyContent: "center", containerType: "inline-size", minWidth: 0 }}>
               {/* Active tests (red vs green) — the run's live test health. */}
               <BuildLane state={state} active={state.lane === "build"} complete={state.lane === "complete"} />
-              <div style={{ display: "flex", gap: 28, borderTop: `1px solid var(--border-default)`, paddingTop: 12 }}>
+              {/* Completed · Turns · Tokens vitals. The row wraps + each metric shrinks (minWidth:0),
+                  and the fonts are container-reactive (cqi off the card above) so they never spill out
+                  of the card when the window narrows. */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "clamp(8px, 2cqi, 28px)", borderTop: `1px solid var(--border-default)`, paddingTop: 12, minWidth: 0 }}>
                 <Metric label="Completed" value={`${state.progress.storiesDone}/${state.progress.storiesTotal}`} />
                 <Metric label="Turns" value={`${state.agents.reduce((sum, a) => sum + a.turns, 0)}`} />
                 {/* Compute usage next to turns: token count (default) or $ cost, per the usage toggle. */}
@@ -342,7 +345,7 @@ function Header({ state, connected, lastUpdatedAt, costMode, setCostMode, onMode
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
       <div>
-        <h1 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 800, color: "var(--text-strong)" }}>Consort · Delivery Radiator</h1>
+        <h1 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 800, color: "var(--text-strong)" }}>Agent Delivery Radiator</h1>
         {/* No run loaded → no subtitle at all. The top-right feed dot already carries the
             connecting/running state, so a placeholder line here would just repeat it (and the old
             "waiting for a run…" wrongly read as a human-wait). It appears once a feature is known. */}
@@ -696,9 +699,9 @@ function BuildLane({ state, active, complete }: { state: DashboardState; active:
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <div style={{ fontSize: "0.7rem", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--text-strong)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
+    <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+      <div style={{ fontSize: "clamp(0.55rem, 2cqi, 0.7rem)", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{label}</div>
+      <div style={{ fontSize: "clamp(0.85rem, 6cqi, 1.3rem)", fontWeight: 800, color: "var(--text-strong)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{value}</div>
     </div>
   );
 }

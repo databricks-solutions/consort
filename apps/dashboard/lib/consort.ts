@@ -388,6 +388,16 @@ let _fsRefreshing = false;
 // ~15s shell-out is CPU-heavy, so re-running it every few seconds is pure waste.
 const FEATURE_STATUS_TTL_MS = 30_000;
 
+/** Merge a fresh feature-status over the cached one, KEEPING a real `test_list` when the fresh
+ *  response carries none. At sprint end the feature ships and the live CLI stops reporting a
+ *  test_list (its live paired-branch view is gone), but the final tally is still true and belongs
+ *  on the Tests bar — so we hold the last-known counts (all-green at ship) instead of flipping the
+ *  bar to "unavailable". A fresh test_list ALWAYS replaces the cached one; only an ABSENT one is
+ *  ignored, so a genuinely-changed count is never masked. Exported for tests. */
+export function mergeFeatureStatus(prev: FeatureStatus | null, fresh: FeatureStatus): FeatureStatus {
+  return fresh.test_list == null && prev?.test_list != null ? { ...fresh, test_list: prev.test_list } : fresh;
+}
+
 function readFeatureStatus(feature: string): FeatureStatus | null {
   const fresh = _fsCache?.feature === feature && Date.now() - _fsCache.at < FEATURE_STATUS_TTL_MS;
   if (!fresh && !_fsRefreshing) {
@@ -399,10 +409,13 @@ function readFeatureStatus(feature: string): FeatureStatus | null {
       { cwd: projectDir(), encoding: "utf8", timeout: 20_000 },
       (err, stdout) => {
         _fsRefreshing = false;
-        let value: FeatureStatus | null = _fsCache?.feature === feature ? _fsCache.value : null; // keep last-good
+        const prev: FeatureStatus | null = _fsCache?.feature === feature ? _fsCache.value : null;
+        let value: FeatureStatus | null = prev; // keep last-good
         if (!err) {
           try {
-            value = JSON.parse(stdout) as FeatureStatus;
+            // Hold the last-known test_list once the shipped feature's CLI stops reporting one, so
+            // the final tally stays on the bar at sprint end (see mergeFeatureStatus).
+            value = mergeFeatureStatus(prev, JSON.parse(stdout) as FeatureStatus);
           } catch {
             /* torn/partial output: keep last-good */
           }

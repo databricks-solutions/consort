@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { gitInit } from "@databricks-solutions/lakebase-scm-utils/git";
 import { exec } from "@databricks-solutions/lakebase-scm-utils/util";
-import { commitExperimentCode } from "../../consort/pipeline/cycle-record.js";
+import { commitExperimentCode, commitDriveStateForAccept } from "../../consort/pipeline/cycle-record.js";
 
 // Regression guard for the accept-merge dirty-tree abort: a supersession/repair
 // turn can edit CODE on the experiment branch outside any green/refactor commit,
@@ -160,5 +160,73 @@ describe("commitExperimentCode (accept-merge clean-tree precondition)", () => {
 
     const committed = await commitExperimentCode(dir, "accept: nothing pending");
     expect(committed).toBe(false);
+  });
+});
+
+describe("commitDriveStateForAccept (tracked drive-state audit unblocks the accept checkout)", () => {
+  it("commits dirty TRACKED .consort state so checkout no longer aborts, leaving ignored transient + already-committed code alone", async () => {
+    // The recurring accept HIL: unlike the .sftdd runtime the above tests treat as UNtracked,
+    // real projects TRACK workflow-state.json / smells.json / features/<F>/pipeline.json (the
+    // .gitignore's "committed corpus"). commitExperimentCode is code-only so it leaves them DIRTY,
+    // and mergePaired's `git checkout <feature>` then ABORTS on them. commitDriveStateForAccept
+    // commits that tracked audit so the checkout succeeds; the ignored transient never rides along.
+    const dir = mkTmp();
+    await gitInit(dir);
+    await configIdentity(dir);
+
+    // Base on main: tracked .consort audit + a .gitignore for the transient churn.
+    fs.mkdirSync(path.join(dir, ".consort", "features", "F1"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".consort/workflow-state.json"), '{"sprint":"s1","stories":{}}\n', "utf8");
+    fs.writeFileSync(path.join(dir, ".consort/smells.json"), '{"detected":[]}\n', "utf8");
+    fs.writeFileSync(path.join(dir, ".consort/features/F1/pipeline.json"), '{"stories":{}}\n', "utf8");
+    fs.writeFileSync(path.join(dir, ".gitignore"), ".consort/next.json\n.consort/cycles/\n", "utf8");
+    await writeMigration(dir, "def downgrade():\n    pass  # base\n");
+    await exec("git add -A && git commit -m base", { cwd: dir });
+
+    // Feature branch (the merge target) DIVERGES the tracked drive-state, so a dirty experiment
+    // copy would be overwritten by the checkout (git's abort condition).
+    await exec("git checkout -b feature", { cwd: dir });
+    fs.writeFileSync(path.join(dir, ".consort/workflow-state.json"), '{"sprint":"s1","stories":{"S0":"done"}}\n', "utf8");
+    await exec("git add -A && git commit -m feature-work", { cwd: dir });
+
+    // Experiment branch (from base): this story's turns UPDATE the tracked audit (dirty-tracked) +
+    // write an IGNORED transient (next.json) + change CODE.
+    await exec("git checkout -b experiment main", { cwd: dir });
+    fs.writeFileSync(path.join(dir, ".consort/workflow-state.json"), '{"sprint":"s1","stories":{"S1":"accepted"}}\n', "utf8");
+    fs.writeFileSync(path.join(dir, ".consort/smells.json"), '{"detected":[{"smell":"x"}]}\n', "utf8");
+    fs.writeFileSync(path.join(dir, ".consort/features/F1/pipeline.json"), '{"stories":{"S1":"merged"}}\n', "utf8");
+    fs.writeFileSync(path.join(dir, ".consort/next.json"), '{"stop":true}\n', "utf8"); // ignored transient
+    await writeMigration(dir, "def downgrade():\n    pass  # experiment\n");
+
+    // Code-only commit lands the migration but LEAVES the tracked .consort state dirty.
+    await commitExperimentCode(dir, "accept: commit pending experiment work");
+    // Precondition: the dirty TRACKED drive-state now blocks the accept checkout.
+    await expect(exec("git checkout feature", { cwd: dir })).rejects.toThrow();
+    await exec("git checkout experiment", { cwd: dir }).catch(() => undefined);
+
+    // The fix: commit the tracked drive-state audit trail.
+    const committed = await commitDriveStateForAccept(dir, "accept: commit drive-state audit trail");
+    expect(committed).toBe(true);
+
+    // The tracked audit is in the last commit; the ignored transient is NOT.
+    const files = await exec("git show --name-only --pretty=format: HEAD", { cwd: dir });
+    expect(files).toMatch(/\.consort\/workflow-state\.json/);
+    expect(files).toMatch(/\.consort\/smells\.json/);
+    expect(files).toMatch(/\.consort\/features\/F1\/pipeline\.json/);
+    expect(files, "the .gitignore'd transient must never ride along").not.toMatch(/next\.json/);
+
+    // And the accept checkout now succeeds (no dirty tracked files to overwrite).
+    await expect(exec("git checkout feature", { cwd: dir })).resolves.toBeDefined();
+  });
+
+  it("is a no-op (returns false) when no tracked drive-state changed", async () => {
+    const dir = mkTmp();
+    await gitInit(dir);
+    await configIdentity(dir);
+    fs.mkdirSync(path.join(dir, ".consort"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".consort/workflow-state.json"), '{"a":1}\n', "utf8");
+    await exec("git add -A && git commit -m base", { cwd: dir });
+    await exec("git checkout -b experiment", { cwd: dir });
+    expect(await commitDriveStateForAccept(dir, "accept: nothing")).toBe(false);
   });
 });
