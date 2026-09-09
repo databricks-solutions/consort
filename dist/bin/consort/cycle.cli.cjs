@@ -7665,7 +7665,12 @@ function resolveDeployTarget(projectDir, name) {
     config: {
       type: "local",
       run: raw.run ?? "",
-      baseUrl: (raw.base_url ?? "http://localhost:8000").replace(/\/+$/, ""),
+      // 127.0.0.1, not localhost: probeReachable fetches this URL, and on macOS
+      // localhost resolves to IPv6 ::1 first while the app binds IPv4 (uvicorn's
+      // default), so a localhost fallback would report a healthy app unreachable.
+      // Scaffolded projects carry an explicit base_url; this default only covers a
+      // hand-written target that omits it.
+      baseUrl: (raw.base_url ?? "http://127.0.0.1:8000").replace(/\/+$/, ""),
       healthPath: raw.health_path ?? "/",
       readyTimeoutSeconds: Number(raw.ready_timeout_seconds ?? "60") || 60,
       verify: raw.verify || void 0,
