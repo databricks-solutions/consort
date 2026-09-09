@@ -24,6 +24,7 @@ export default defineConfig({
     "bin/lakebase/update-agents.cli": "bin/lakebase/update-agents.cli.ts",
     "bin/consort/feature-status.cli": "bin/consort/feature-status.cli.ts",
     "bin/consort/next.cli": "bin/consort/next.cli.ts",
+    "bin/consort/preflight.cli": "bin/consort/preflight.cli.ts",
     "bin/consort/watch.cli": "bin/consort/watch.cli.ts",
     "bin/consort/upgrade.cli": "bin/consort/upgrade.cli.ts",
     "bin/consort/diagnose.cli": "bin/consort/diagnose.cli.ts",

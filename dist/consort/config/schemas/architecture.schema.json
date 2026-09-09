@@ -103,7 +103,12 @@
           },
           "fitness_function": {
             "type": "string",
-            "description": "The concrete, real-branch test that DEFENDS this NFR (e.g. \"integration test applies the Alembic revision over seeded rows and asserts survival + clean down\"). Per @architectural-design-principles every architectural constraint names the fitness function that defends it, recorded so the Test Strategist authors it as a RED test. Omit only for an NFR with no machine-checkable defense."
+            "description": "The concrete, real-branch test that DEFENDS this NFR (e.g. \"integration test applies the Alembic revision over seeded rows and asserts survival + clean down\"). Per @architectural-design-principles every architectural constraint names the fitness function that defends it, recorded so the Test Strategist authors it as a RED test. Omit only for an NFR with no machine-checkable defense. Use this SINGULAR form ONLY for a single-obligation NFR; when the guarantee is multi-part, use `fitness_functions` (array) instead so each clause is defended by its own test."
+          },
+          "fitness_functions": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "description": "The ATOMIC per-clause form of `fitness_function`: ONE independently-testable obligation per entry. Use this INSTEAD of packing multiple checks into one `fitness_function` prose string (the compound form the reflect gate has to decompose, which it does inconsistently across laps and surfaces ONE-uncovered-clause-per-lap - the piecemeal reflect thrash). Each entry is defended by its OWN test; the Test Strategist authors one `fitness` test per entry, tagging each with this NFR's `id` via the test-list item's `nfr_id`, and the reflect gate checks coverage PER ENTRY deterministically (no prose decomposition). When present, `checkFitnessClauseCoverage` hard-blocks the test_list gate unless every entry is covered by a test referencing this NFR's `id`. Requires this NFR to set `id`. Mutually exclusive with `fitness_function` (set one or the other, never both)."
           },
           "notes": { "type": "string" },
           "applies_to": {

@@ -20,6 +20,7 @@ import {
   checkNfrCoverage,
   projectBriefRefs,
   checkFitnessCoverage,
+  checkFitnessClauseCoverage,
   checkE2ECoverage,
   checkPersistenceCoverage,
   checkInvariantCoverageDistinct,
@@ -325,6 +326,22 @@ function fitnessCoverageReason(consortDir: string, featureId: string, testListJs
   if (arch === undefined) return null;
   const r = checkFitnessCoverage(testListJson, arch);
   return r.ok ? null : `fitness coverage failed: ${r.violations.join("; ")}`;
+}
+
+/**
+ * Per-CLAUSE fitness-coverage test_list-gate condition: an NFR declared in the
+ * ATOMIC `fitness_functions` array form must have one covering test per clause
+ * (each tagged with the NFR's `id` via `nfr_id`). Fires ONLY for NFRs on the array
+ * form (back-compatible with the singular `fitness_function`), giving deterministic
+ * teeth so a multi-part NFR is defended clause-by-clause instead of being surfaced
+ * one-uncovered-clause-per-lap by the reflect. Null when covered / no test-list or
+ * architecture yet.
+ */
+function fitnessClauseCoverageReason(consortDir: string, featureId: string, testListJson: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  const r = checkFitnessClauseCoverage(testListJson, arch);
+  return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
 }
 
 /**
@@ -687,6 +704,13 @@ export function resolveArtifactInputs(
       if (tlJson !== undefined) {
         const fitnessReason = fitnessCoverageReason(consortDir, featureId, tlJson);
         if (fitnessReason !== null) return { reason: fitnessReason };
+        // Per-clause fitness coverage (Gate 3): an NFR on the ATOMIC
+        // `fitness_functions` array form must have one covering test per clause
+        // (tagged nfr_id). Fires only for the array form, so it is additive; it is
+        // the deterministic teeth that stop a multi-part NFR thrashing the reflect
+        // one-uncovered-clause-per-lap.
+        const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
+        if (clauseReason !== null) return { reason: clauseReason };
         // Persistence coverage (Gate 3): a service_backed feature must declare its
         // persistence_invariants[] and cover each with a real-branch test (an item
         // referencing its invariant_id), so DB guarantees are tested against the

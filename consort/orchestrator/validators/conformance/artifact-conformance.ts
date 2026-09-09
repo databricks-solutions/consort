@@ -685,6 +685,57 @@ export function checkPersistenceCoverage(testListJson: string, architectureJson:
 }
 
 /**
+ * Deterministic per-CLAUSE fitness coverage for an NFR declared in the ATOMIC
+ * `fitness_functions` array form. For each nfrs[] entry that carries a non-empty
+ * `fitness_functions` array (and an `id`), the test-list must hold at least as many
+ * `fitness` items tagged with that NFR's `id` (via `nfr_id`) as the array has
+ * clauses — one test per atomic obligation. This is the structural teeth for #4:
+ * it fires ONLY for NFRs on the array form (a compound singular `fitness_function`
+ * is untouched, so it is fully back-compatible), and it needs NO natural-language
+ * "is this compound?" heuristic - the architect declares the clauses as discrete
+ * data and the count is mechanical. It stops a multi-part NFR being surfaced
+ * ONE-uncovered-clause-per-lap by the reflect (the piecemeal thrash), because a
+ * missing clause is a mechanical shortfall here, before the reflect ever runs.
+ */
+export function checkFitnessClauseCoverage(testListJson: string, architectureJson: string): ConformanceResult {
+  let arch: { nfrs?: Array<{ id?: string; fitness_functions?: unknown }> };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true }; // invalid architecture reported elsewhere
+  }
+  const atomic = (arch.nfrs ?? [])
+    .filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions))
+    .map((n) => ({ id: n.id as string, clauses: (n.fitness_functions as unknown[]).filter((c) => typeof c === "string" && c.trim().length > 0).length }))
+    .filter((n) => n.clauses > 0);
+  if (atomic.length === 0) return { ok: true }; // no NFR uses the atomic array form
+  let tl: { items?: Array<{ kind?: string; nfr_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const countById = new Map<string, number>();
+  for (const it of tl.items ?? []) {
+    if (typeof it.nfr_id === "string" && it.nfr_id.length > 0) countById.set(it.nfr_id, (countById.get(it.nfr_id) ?? 0) + 1);
+  }
+  const short = atomic
+    .map((n) => ({ id: n.id, need: n.clauses, have: countById.get(n.id) ?? 0 }))
+    .filter((n) => n.have < n.need);
+  if (short.length > 0) {
+    return {
+      ok: false,
+      violations: short.map(
+        (n) =>
+          `NFR ${n.id} declares ${n.need} atomic fitness clause(s) (fitness_functions) but only ${n.have} test-list item(s) reference it via nfr_id ` +
+          `(author one fitness test per clause, each tagged nfr_id:"${n.id}"; do not pack multiple clauses into one test)`,
+      ),
+    };
+  }
+  return { ok: true };
+}
+
+/**
  * DB-design coverage (the DBA's cross-check, the physical counterpart to
  * checkPersistenceCoverage): a service_backed feature's DBA produces
  * db-design.json realizing the architect's contract. It must (1) exist + parse,

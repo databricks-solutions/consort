@@ -7564,6 +7564,36 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
   }
   return { ok: true };
 }
+function checkFitnessClauseCoverage(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions)).map((n) => ({ id: n.id, clauses: n.fitness_functions.filter((c) => typeof c === "string" && c.trim().length > 0).length })).filter((n) => n.clauses > 0);
+  if (atomic.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const countById = /* @__PURE__ */ new Map();
+  for (const it of tl.items ?? []) {
+    if (typeof it.nfr_id === "string" && it.nfr_id.length > 0) countById.set(it.nfr_id, (countById.get(it.nfr_id) ?? 0) + 1);
+  }
+  const short = atomic.map((n) => ({ id: n.id, need: n.clauses, have: countById.get(n.id) ?? 0 })).filter((n) => n.have < n.need);
+  if (short.length > 0) {
+    return {
+      ok: false,
+      violations: short.map(
+        (n) => `NFR ${n.id} declares ${n.need} atomic fitness clause(s) (fitness_functions) but only ${n.have} test-list item(s) reference it via nfr_id (author one fitness test per clause, each tagged nfr_id:"${n.id}"; do not pack multiple clauses into one test)`
+      )
+    };
+  }
+  return { ok: true };
+}
 function checkDbDesign(dbDesignJson2, architectureJson2) {
   let arch;
   try {
@@ -8248,6 +8278,12 @@ function fitnessCoverageReason(consortDir, featureId, testListJson) {
   const r = checkFitnessCoverage(testListJson, arch);
   return r.ok ? null : `fitness coverage failed: ${r.violations.join("; ")}`;
 }
+function fitnessClauseCoverageReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkFitnessClauseCoverage(testListJson, arch);
+  return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
+}
 function e2eCoverageReason(consortDir, featureId, testListJson) {
   const storiesDir2 = (0, import_node_path2.join)(featureDir2(consortDir, featureId), "stories");
   if (!(0, import_node_fs.existsSync)(storiesDir2)) return null;
@@ -8469,6 +8505,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (tlJson !== void 0) {
         const fitnessReason = fitnessCoverageReason(consortDir, featureId, tlJson);
         if (fitnessReason !== null) return { reason: fitnessReason };
+        const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
+        if (clauseReason !== null) return { reason: clauseReason };
         const persistenceReason = persistenceCoverageReason(consortDir, featureId, tlJson);
         if (persistenceReason !== null) return { reason: persistenceReason };
         const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
@@ -8770,6 +8808,11 @@ PRESERVE every ${artifact} item this story ALREADY has \u2013 they passed prior 
 
 Re-author this story's ${artifact} to address the above. Do NOT re-emit the same overlap/redundancy; if no honest, not-already-delivered behavior remains, say so as an open question rather than fabricating one.`;
 }
+function readSmellsLog(consortDir) {
+  const file = (0, import_path11.join)(consortDir, "smells.json");
+  if (!(0, import_fs11.existsSync)(file)) return { detected: [] };
+  return JSON.parse((0, import_fs11.readFileSync)(file, "utf8"));
+}
 function smellMatches(entry, smell, story_id) {
   if (entry.smell !== smell) return false;
   if (story_id === void 0) return true;
@@ -8946,15 +8989,28 @@ function staleStoryArtifactsForRevise(consortDir, featureId, story, gate) {
   const perStory = storyTestListJson(consortDir, featureId, story);
   if ((0, import_node_fs8.existsSync)(perStory)) (0, import_node_fs8.rmSync)(perStory, { force: true });
   if (gate === "spec") {
-    const dir = acsDir(consortDir, featureId, story);
-    if ((0, import_node_fs8.existsSync)(dir)) {
-      for (const f of (0, import_node_fs8.readdirSync)(dir)) {
-        if (f.endsWith(".json") || f.endsWith(".md")) (0, import_node_fs8.rmSync)((0, import_node_path10.join)(dir, f), { force: true });
-      }
-    }
+    clearStoryAcs(consortDir, featureId, story);
   } else if (gate === "architecture") {
     clearArchitecturalNotes(consortDir, featureId, story);
   }
+}
+function clearStoryAcs(consortDir, featureId, story) {
+  const dir = acsDir(consortDir, featureId, story);
+  if (!(0, import_node_fs8.existsSync)(dir)) return;
+  for (const f of (0, import_node_fs8.readdirSync)(dir)) {
+    if (f.endsWith(".json") || f.endsWith(".md")) (0, import_node_fs8.rmSync)((0, import_node_path10.join)(dir, f), { force: true });
+  }
+}
+function hasOpenReflectSpecDefect(consortDir, story) {
+  let log;
+  try {
+    log = readSmellsLog(consortDir);
+  } catch {
+    return false;
+  }
+  return log.detected.some(
+    (d) => !d.resolution && d.smell === "reflect-spec-defect" && (d.story_id === void 0 || d.story_id === story)
+  );
 }
 function clearArchitecturalNotes(consortDir, featureId, story) {
   const dir = acsDir(consortDir, featureId, story);
@@ -9012,12 +9068,15 @@ function applyReviseSelfHeal(args) {
   const reflect = isReflectSmell(args.smell);
   if (reflect) {
     clearArchitecturalNotes(consortDir, args.featureId, args.story);
-    for (const role of ["architect-reviewer", "test-strategist"]) {
+    const specDefectOpen = args.routedTo !== "spec-author" && hasOpenReflectSpecDefect(consortDir, args.story);
+    if (specDefectOpen && args.gate !== "spec") clearStoryAcs(consortDir, args.featureId, args.story);
+    const coHealRoles = specDefectOpen ? ["spec-author", "architect-reviewer", "test-strategist"] : ["architect-reviewer", "test-strategist"];
+    for (const role of coHealRoles) {
       if (role === args.routedTo) continue;
       try {
         const hb = handbackFile(consortDir, args.featureId, role, args.story);
         (0, import_node_fs8.mkdirSync)((0, import_node_path10.dirname)(hb), { recursive: true });
-        const gate = role === "architect-reviewer" ? "architecture" : "test_list";
+        const gate = role === "architect-reviewer" ? "architecture" : role === "spec-author" ? "spec" : "test_list";
         (0, import_node_fs8.writeFileSync)(hb, composeReviseBrief({ smell: args.smell, gate, reason: args.reason }));
       } catch {
       }

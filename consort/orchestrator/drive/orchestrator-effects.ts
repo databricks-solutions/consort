@@ -31,6 +31,7 @@ import {
   storyJson, designGuideJson, handbackFile, storyAcIds, architectureJson, readAcLayer,
   featureProposalsMd, featureSpecJson, featureTestListJson, acsDir, planningEstimatesJson, cycleDir,
 } from "../../config/consort-paths.js";
+import { kitRoot } from "../../config/kit-bin.js";
 import type { TurnKey } from "./turn-key.js";
 // turnKeyForAction now lives in the shared, dependency-light turn-key module (so the config
 // resolver can derive the same key without a cycle). Re-exported here for the callers that have
@@ -585,12 +586,24 @@ function roleTaskBody(
           `estimate already in the file (merge, do not overwrite the candidate sizes). This is the size sync-backlog ` +
           `stamps into the per-sprint backlog, so the committed backlog shows real sizing.`
         );
-      case "intake":
+      case "intake": {
         // The metered Product Owner intake turn: DRAFT the project intake FROM the human's gathered
         // answers (the coordinating session ran the interview + wrote them to intake/answers.md), the
         // canon that defines each artifact's shape, and the StockFlow worked example. You draft FOR
         // the human, who approves; never invent intent – if answers.md is thin, fill only what it
         // supports and leave the rest for the human to expand at review.
+        //
+        // The StockFlow worked example lives in the kit (examples/first-project/stockflow-seed/intake/),
+        // NOT in the project – for a normal project it is not staged locally, so a kit-RELATIVE hint
+        // sends the headless agent hunting the filesystem (5+ `find` calls) and it never reads it.
+        // Emit the ABSOLUTE kit path (resolved on the drive host; the agent reads it on the same host)
+        // so the agent reads the exemplar directly; fall back to the relative hint only if it is absent.
+        const seedIntakeDir = join(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
+        const groundingClause = fs.existsSync(seedIntakeDir)
+          ? `Ground the shape in the canon above and the StockFlow worked example at ${seedIntakeDir} ` +
+            `(READ the files there to learn the format + level of detail; never copy it verbatim).`
+          : `Ground the shape in the canon above (the StockFlow worked example under the kit's ` +
+            `examples/first-project/stockflow-seed/intake/ is unavailable here – rely on the canon).`;
         return (
           `Author the project intake for the Product Owner, DRAFTING each artifact FRESH from the human's ` +
           `answers at ${root}/intake/answers.md (the interview responses; if absent or thin, draft only what ` +
@@ -604,10 +617,9 @@ function roleTaskBody(
           `  - ${root}/design/design-brief.md (UI track only) – apply @ui-ux-design-principles: 1-3 reference ` +
           `sites + what to take from each, brand / interaction / accessibility constraints, and a required ` +
           `'## References' section.\n` +
-          `Ground the shape in the canon above and the StockFlow worked example under the kit's ` +
-          `examples/first-project/stockflow-seed/intake/ (learn the format + level of detail; never copy it ` +
-          `verbatim). The human reviews + approves these before the Spec Author proposes the sprint from them.`
+          `${groundingClause} The human reviews + approves these before the Spec Author proposes the sprint from them.`
         );
+      }
       case "author-requests":
         // The metered Product Owner author-requests turn: author a feature-request.md per COMMITTED
         // feature (the folder ids the human selected at the backlog gate, recorded in requested.json)
@@ -854,8 +866,10 @@ function roleTaskBody(
           `consistency of THIS story's artifacts.` +
           ` BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued — run EVERY check against ` +
           `EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect ` +
-          `(decompose a multi-part NFR fitness_function into its sub-guarantees and flag every ` +
-          `uncovered clause). Do NOT return one finding at a time: the reflect↔revise loop is bounded ` +
+          `(decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag ` +
+          `every uncovered clause — but an NFR that already declares the ATOMIC fitness_functions ARRAY ` +
+          `is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so ` +
+          `do NOT re-decompose it). Do NOT return one finding at a time: the reflect↔revise loop is bounded ` +
           `and escalates after a few laps, so a piecemeal reflect burns that budget on repeated ` +
           `revise→re-test→reflect laps and can hand the human a still-defective design.` +
           ` Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as ` +

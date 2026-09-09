@@ -8114,15 +8114,28 @@ function staleStoryArtifactsForRevise(consortDir, featureId, story, gate) {
   const perStory = storyTestListJson(consortDir, featureId, story);
   if (existsSync18(perStory)) rmSync8(perStory, { force: true });
   if (gate === "spec") {
-    const dir = acsDir(consortDir, featureId, story);
-    if (existsSync18(dir)) {
-      for (const f of readdirSync12(dir)) {
-        if (f.endsWith(".json") || f.endsWith(".md")) rmSync8(join20(dir, f), { force: true });
-      }
-    }
+    clearStoryAcs(consortDir, featureId, story);
   } else if (gate === "architecture") {
     clearArchitecturalNotes(consortDir, featureId, story);
   }
+}
+function clearStoryAcs(consortDir, featureId, story) {
+  const dir = acsDir(consortDir, featureId, story);
+  if (!existsSync18(dir)) return;
+  for (const f of readdirSync12(dir)) {
+    if (f.endsWith(".json") || f.endsWith(".md")) rmSync8(join20(dir, f), { force: true });
+  }
+}
+function hasOpenReflectSpecDefect(consortDir, story) {
+  let log;
+  try {
+    log = readSmellsLog(consortDir);
+  } catch {
+    return false;
+  }
+  return log.detected.some(
+    (d) => !d.resolution && d.smell === "reflect-spec-defect" && (d.story_id === void 0 || d.story_id === story)
+  );
 }
 function clearArchitecturalNotes(consortDir, featureId, story) {
   const dir = acsDir(consortDir, featureId, story);
@@ -8180,12 +8193,15 @@ function applyReviseSelfHeal(args) {
   const reflect = isReflectSmell(args.smell);
   if (reflect) {
     clearArchitecturalNotes(consortDir, args.featureId, args.story);
-    for (const role of ["architect-reviewer", "test-strategist"]) {
+    const specDefectOpen = args.routedTo !== "spec-author" && hasOpenReflectSpecDefect(consortDir, args.story);
+    if (specDefectOpen && args.gate !== "spec") clearStoryAcs(consortDir, args.featureId, args.story);
+    const coHealRoles = specDefectOpen ? ["spec-author", "architect-reviewer", "test-strategist"] : ["architect-reviewer", "test-strategist"];
+    for (const role of coHealRoles) {
       if (role === args.routedTo) continue;
       try {
         const hb = handbackFile(consortDir, args.featureId, role, args.story);
         mkdirSync11(dirname11(hb), { recursive: true });
-        const gate = role === "architect-reviewer" ? "architecture" : "test_list";
+        const gate = role === "architect-reviewer" ? "architecture" : role === "spec-author" ? "spec" : "test_list";
         writeFileSync12(hb, composeReviseBrief({ smell: args.smell, gate, reason: args.reason }));
       } catch {
       }

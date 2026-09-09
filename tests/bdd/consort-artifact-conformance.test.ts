@@ -16,6 +16,7 @@ import {
   scanFeatureConformance,
   checkLayeringDeclared,
   checkFitnessCoverage,
+  checkFitnessClauseCoverage,
   checkE2ECoverage,
   checkPersistenceCoverage,
   checkInvariantCoverageDistinct,
@@ -1075,5 +1076,56 @@ describe("checkE2ECoverage: an E2E-layer AC needs a REAL e2e test, not a mocked 
 
   it("reports invalid test-list JSON rather than throwing", () => {
     expect(checkE2ECoverage("{not json", ["AC1"]).ok).toBe(false);
+  });
+});
+
+describe("checkFitnessClauseCoverage: per-clause coverage for the ATOMIC fitness_functions array form (#4)", () => {
+  const archAtomic = (clauses: string[]) =>
+    JSON.stringify({
+      feature_id: "F1-x",
+      service_backed: true,
+      nfrs: [{ id: "NFR-F1-spa", brief: "SPA boundary contract", fitness_functions: clauses }],
+    });
+  const tl = (items: Array<Record<string, unknown>>) => JSON.stringify({ items });
+
+  it("passes when every atomic clause has a covering test tagged with the NFR id", () => {
+    const arch = archAtomic(["client-side nav does no full-page reload", "the API boundary returns JSON, not HTML"]);
+    const list = tl([
+      { id: "T1", ac_id: "AC1", kind: "fitness", nfr_id: "NFR-F1-spa" },
+      { id: "T2", ac_id: "AC1", kind: "fitness", nfr_id: "NFR-F1-spa" },
+    ]);
+    expect(checkFitnessClauseCoverage(list, arch).ok).toBe(true);
+  });
+
+  it("blocks when a two-clause NFR has only one covering test (the piecemeal gap, caught mechanically pre-reflect)", () => {
+    const arch = archAtomic(["no full-page reload", "boundary returns JSON"]);
+    const list = tl([{ id: "T1", ac_id: "AC1", kind: "fitness", nfr_id: "NFR-F1-spa" }]);
+    const r = checkFitnessClauseCoverage(list, arch);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join("\n")).toMatch(/NFR-F1-spa declares 2 atomic fitness clause/);
+      expect(r.violations.join("\n")).toMatch(/only 1 test-list item/);
+    }
+  });
+
+  it("is a NO-OP (back-compatible) for an NFR using the singular fitness_function", () => {
+    const arch = JSON.stringify({
+      feature_id: "F1-x",
+      service_backed: true,
+      nfrs: [{ id: "NFR-F1-x", brief: "b", fitness_function: "one prose test" }],
+    });
+    // no nfr_id tags anywhere, yet the singular form is never clause-checked
+    expect(checkFitnessClauseCoverage(tl([{ id: "T1", ac_id: "AC1", kind: "fitness" }]), arch).ok).toBe(true);
+  });
+
+  it("ignores empty-string clauses when counting the requirement", () => {
+    const arch = archAtomic(["real clause", "   ", ""]);
+    const list = tl([{ id: "T1", ac_id: "AC1", kind: "fitness", nfr_id: "NFR-F1-spa" }]);
+    expect(checkFitnessClauseCoverage(list, arch).ok).toBe(true); // only 1 real clause -> 1 test suffices
+  });
+
+  it("tolerates invalid architecture / test-list JSON without throwing", () => {
+    expect(checkFitnessClauseCoverage("{}", "{not json").ok).toBe(true); // arch invalid -> vacuously ok
+    expect(checkFitnessClauseCoverage("{not json", archAtomic(["a"])).ok).toBe(false); // atomic present, list invalid
   });
 });

@@ -86,15 +86,37 @@ export function staleStoryArtifactsForRevise(
   if (existsSync(perStory)) rmSync(perStory, { force: true });
 
   if (gate === "spec") {
-    const dir = acsDir(consortDir, featureId, story);
-    if (existsSync(dir)) {
-      for (const f of readdirSync(dir)) {
-        if (f.endsWith(".json") || f.endsWith(".md")) rmSync(join(dir, f), { force: true });
-      }
-    }
+    clearStoryAcs(consortDir, featureId, story);
   } else if (gate === "architecture") {
     clearArchitecturalNotes(consortDir, featureId, story);
   }
+}
+
+/** Delete a story's AC files (json + md) so `hasAcs` reads false and the design lane
+ *  RE-INVOKES the spec-author to re-decompose. Used by a `spec`-gate revise and by the
+ *  reflect co-heal when a spec-author reflect defect is open under a non-spec primary. */
+export function clearStoryAcs(consortDir: string, featureId: string, story: string): void {
+  const dir = acsDir(consortDir, featureId, story);
+  if (!existsSync(dir)) return;
+  for (const f of readdirSync(dir)) {
+    if (f.endsWith(".json") || f.endsWith(".md")) rmSync(join(dir, f), { force: true });
+  }
+}
+
+/** True iff a `reflect-spec-defect` smell is OPEN (unresolved) for the story — i.e.
+ *  the last reflect attributed a defect to the spec-author. Unscoped smells
+ *  (story_id undefined) count (feature-wide reflect defects), matching the driver's
+ *  smellMatches semantics. Best-effort: an unreadable log reads as "none open". */
+export function hasOpenReflectSpecDefect(consortDir: string, story: string): boolean {
+  let log;
+  try {
+    log = readSmellsLog(consortDir);
+  } catch {
+    return false;
+  }
+  return log.detected.some(
+    (d) => !d.resolution && d.smell === "reflect-spec-defect" && (d.story_id === undefined || d.story_id === story),
+  );
 }
 
 /**
@@ -228,12 +250,29 @@ export function applyReviseSelfHeal(args: ReviseSelfHealArgs): ReviseSelfHealRes
   const reflect = isReflectSmell(args.smell);
   if (reflect) {
     clearArchitecturalNotes(consortDir, args.featureId, args.story);
-    for (const role of ["architect-reviewer", "test-strategist"] as const) {
+    // Re-author EVERY design owner that has an open reflect finding for the story —
+    // not just architect + test-strategist. The gap this closes: a single reflect
+    // pass can flag BOTH a test-list defect and a SPEC defect, and revisableSmell
+    // routes to whichever open smell is FIRST (often the test-strategist, gate
+    // test_list). This co-heal then re-ran architect + test-strategist but NOT the
+    // spec-author, and staleStoryArtifactsForRevise clears the ACs only on a `spec`
+    // gate — so the spec defect was never re-authored, yet resolveOpenReflectSmells
+    // below spends its budget as `revised`. It therefore re-fires on the NEXT reflect
+    // and burns the reflect budget straight to a needless HIL (observed live: an
+    // actor-field AC-contract gap looped 4 laps to raise-to-hil). So when a
+    // spec-author reflect defect is open and spec was NOT the primary gate, ALSO
+    // stale the ACs (re-decomposition) so the spec-author genuinely re-drafts.
+    const specDefectOpen = args.routedTo !== "spec-author" && hasOpenReflectSpecDefect(consortDir, args.story);
+    if (specDefectOpen && args.gate !== "spec") clearStoryAcs(consortDir, args.featureId, args.story);
+    const coHealRoles = specDefectOpen
+      ? (["spec-author", "architect-reviewer", "test-strategist"] as const)
+      : (["architect-reviewer", "test-strategist"] as const);
+    for (const role of coHealRoles) {
       if (role === args.routedTo) continue;
       try {
         const hb = handbackFile(consortDir, args.featureId, role, args.story);
         mkdirSync(dirname(hb), { recursive: true });
-        const gate = role === "architect-reviewer" ? "architecture" : "test_list";
+        const gate = role === "architect-reviewer" ? "architecture" : role === "spec-author" ? "spec" : "test_list";
         writeFileSync(hb, composeReviseBrief({ smell: args.smell, gate, reason: args.reason }));
       } catch {
         // Best-effort brief; never block the heal.

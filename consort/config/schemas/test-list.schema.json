@@ -55,6 +55,10 @@
           "invariant_id": {
             "type": "string",
             "description": "For a data/persistence fitness test: the id of the architecture.json persistence_invariant this test covers (e.g. \"PI1-stock-sku-unique\"). checkPersistenceCoverage requires every declared invariant to be referenced by >=1 item."
+          },
+          "nfr_id": {
+            "type": "string",
+            "description": "For a fitness test defending an NFR that declares the ATOMIC `fitness_functions` array: the id of the architecture.json nfrs[] entry this test covers (e.g. \"NFR-F1-spa-single-page\"). checkFitnessClauseCoverage requires every entry of that NFR's `fitness_functions` to be covered by >=1 test-list item referencing this id, so a multi-clause NFR is defended clause-by-clause with no prose decomposition. Omit for a test covering a persistence invariant (use invariant_id) or a single-obligation NFR."
           }
         }
       }

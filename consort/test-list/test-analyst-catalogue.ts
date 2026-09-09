@@ -140,9 +140,12 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / " +
       "negative-quantity write at the SERVICE layer – distinct from a DB CHECK constraint). A " +
       "CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is " +
-      "NOT yours – the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. A COMPOUND " +
-      "defense (an `and`/`+`/comma joining two checkable claims) needs ONE item PER conjunct, never one " +
-      "for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE " +
+      "NOT yours – the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR " +
+      "declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` " +
+      "item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks " +
+      "the test_list gate unless every clause is covered) – never one item for the whole array. A COMPOUND " +
+      "singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item " +
+      "PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE " +
       "`kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified " +
       "DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER " +
       "EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two " +
