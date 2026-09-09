@@ -1,7 +1,7 @@
 {
   "name": "consort",
   "description": "Consort: a Spec-First Branched-Database TDD agent framework for building transactional applications on Lakebase (Databricks' serverless Postgres/OLTP database, not the Delta Lakehouse). A deterministic orchestrator drives role agents through a spec-first design lane and a test-driven build lane whose every cycle runs against a live copy-on-write branch of a real Postgres database, with human-in-the-loop gates that fail closed. For application backends on Postgres, not ETL or analytics. Run /consort:start to launch the workflow.",
-  "version": "0.3.82",
+  "version": "0.3.83",
   "author": {
     "name": "Databricks"
   },

@@ -51,6 +51,21 @@ describe("TEST_ANALYST_CATALOGUE: the 3 seed kinds", () => {
   });
 });
 
+describe("behavior vs fitness: a service-internal guard is NOT a .feature scenario (anti build-stall)", () => {
+  // Regression (pm23): "Service rejects negative quantity before DB constraint" was authored as a BDD
+  // .feature scenario in the behavior slice; it is not API-observable, so it got no step def -> an
+  // unbound pytest-bdd scenario -> cycle-stall on the build lane. Service-internal guards (reject
+  // BEFORE the DB / repository never reached / at the service layer) belong to the fitness analyst.
+  const bhv = TEST_ANALYST_CATALOGUE.behavior.focusPrompt;
+  it("the behavior analyst asserts only API-observable outcomes + excludes service-internal guards from .feature", () => {
+    expect(bhv).toMatch(/API-OBSERVABLE/);
+    expect(bhv).toMatch(/SERVICE-INTERNAL/);
+    expect(bhv, "must say a service-internal guard is not a .feature scenario").toMatch(/not a behavior\/\.feature scenario/i);
+    expect(bhv, "must warn it stalls the build (unbound scenario)").toMatch(/unbound|stall/i);
+    expect(bhv, "must route the service-layer guard to the fitness analyst").toMatch(/FITNESS analyst/i);
+  });
+});
+
 describe("resolveTestAnalystKind: fail-loud", () => {
   it("resolves a known kind", () => {
     const e: TestAnalystCatalogueEntry = resolveTestAnalystKind("fitness");

@@ -113,7 +113,15 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "AC's field is required / NOT NULL (a `not_null` invariant or a field-named-validation NFR names it), " +
       "emit a behavior item that OMITS (or sends invalid) that field through the API boundary and asserts " +
       "a field-named rejection – this is the boundary guard, DISTINCT from the DB constraint the fitness " +
-      "analyst tests. A required-field/CHECK/overcommit rejection with only a happy-path test is the " +
+      "analyst tests. Your `behavior` item asserts ONLY an API-OBSERVABLE outcome (an HTTP status + " +
+      "response body through the boundary). A SERVICE-INTERNAL assertion — the service raises/rejects " +
+      "BEFORE the DB, the repository is never reached, the guard fires 'at the service layer' — is NOT " +
+      "API-observable and is NOT a behavior/.feature scenario: authored as one it gets no bindable step " +
+      "def and STALLS the build lane (an unbound pytest-bdd scenario). That service-layer guard is the " +
+      "FITNESS analyst's (a direct service-level test), so cover the negative case here ONLY in its " +
+      "API-observable form (POST the invalid value → 4xx naming the field), and leave the " +
+      "'rejects-before-the-DB / repository-not-reached' assertion to fitness. " +
+      "A required-field/CHECK/overcommit rejection with only a happy-path test is the " +
       "recurring reflect-testlist-defect. " + SLICE_CONTRACT,
   },
   fitness: {

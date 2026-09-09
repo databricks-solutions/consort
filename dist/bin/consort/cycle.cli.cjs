@@ -7671,7 +7671,11 @@ function resolveDeployTarget(projectDir, name) {
       // Scaffolded projects carry an explicit base_url; this default only covers a
       // hand-written target that omits it.
       baseUrl: (raw.base_url ?? "http://127.0.0.1:8000").replace(/\/+$/, ""),
-      healthPath: raw.health_path ?? "/",
+      // Default to /health, not "/": "/" is the React SPA catch-all that mounts only
+      // when client/dist exists, so it 404s in the build lane and false-negatives
+      // readiness on a healthy app; /health answers 200 in every lane. Scaffolded
+      // projects carry an explicit health_path; this default only covers an omission.
+      healthPath: raw.health_path ?? "/health",
       readyTimeoutSeconds: Number(raw.ready_timeout_seconds ?? "60") || 60,
       verify: raw.verify || void 0,
       migrate: raw.migrate || void 0
