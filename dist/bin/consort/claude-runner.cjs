@@ -6655,8 +6655,10 @@ __export(claude_runner_exports, {
   ClaudeTurnError: () => ClaudeTurnError,
   CliEffectError: () => CliEffectError,
   ReplayCorpusMissError: () => ReplayCorpusMissError,
+  UX_BROWSER_ALLOWED_TOOLS: () => UX_BROWSER_ALLOWED_TOOLS,
   UX_BROWSER_INSTALL_CMD: () => UX_BROWSER_INSTALL_CMD,
   UX_BROWSER_MCP_CONFIG: () => UX_BROWSER_MCP_CONFIG,
+  browserAllowedToolsForRole: () => browserAllowedToolsForRole,
   buildCfg: () => buildCfg,
   claudeBaseArgs: () => claudeBaseArgs,
   claudeToolArgs: () => claudeToolArgs,
@@ -8917,13 +8919,18 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
 }
 function claudeToolArgs(cmd) {
   const out = [];
-  if (cmd.allowedTools && cmd.allowedTools.length) out.push("--allowed-tools", cmd.allowedTools.join(","));
+  const allowed = [.../* @__PURE__ */ new Set([...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
+  if (allowed.length) out.push("--allowed-tools", allowed.join(","));
   if (cmd.disallowedTools && cmd.disallowedTools.length) out.push("--disallowed-tools", cmd.disallowedTools.join(","));
   return out;
 }
 var UX_BROWSER_MCP_CONFIG = "skills/consort/config/ux-browser-mcp.json";
 function defaultMcpConfigForRole(role) {
   return role === "ux-designer" ? path7.join(kitRoot(), UX_BROWSER_MCP_CONFIG) : void 0;
+}
+var UX_BROWSER_ALLOWED_TOOLS = ["mcp__playwright", "WebFetch", "WebSearch"];
+function browserAllowedToolsForRole(role) {
+  return role === "ux-designer" ? [...UX_BROWSER_ALLOWED_TOOLS] : [];
 }
 var UX_BROWSER_INSTALL_CMD = { command: "npx", args: ["--yes", "playwright@latest", "install", "chromium"] };
 var uxBrowserEnsured = false;
@@ -9301,8 +9308,10 @@ function composeOnAction(...hooks) {
   ClaudeTurnError,
   CliEffectError,
   ReplayCorpusMissError,
+  UX_BROWSER_ALLOWED_TOOLS,
   UX_BROWSER_INSTALL_CMD,
   UX_BROWSER_MCP_CONFIG,
+  browserAllowedToolsForRole,
   buildCfg,
   claudeBaseArgs,
   claudeToolArgs,

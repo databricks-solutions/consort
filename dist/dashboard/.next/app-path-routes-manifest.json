@@ -2,9 +2,9 @@
   "/_not-found/page": "/_not-found",
   "/favicon.ico/route": "/favicon.ico",
   "/api/planning/route": "/api/planning",
+  "/api/step-outputs/route": "/api/step-outputs",
   "/api/artifact/route": "/api/artifact",
   "/api/state/route": "/api/state",
   "/api/turn/[ord]/route": "/api/turn/[ord]",
-  "/api/step-outputs/route": "/api/step-outputs",
   "/page": "/"
 }

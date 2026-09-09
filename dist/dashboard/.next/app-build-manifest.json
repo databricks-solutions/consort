@@ -22,6 +22,13 @@
       "static/chunks/main-app-d5835ac14905e9ef.js",
       "static/chunks/app/api/planning/route-c4704d85d1cb8f3d.js"
     ],
+    "/api/step-outputs/route": [
+      "static/chunks/webpack-d6297060eb558837.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/255-62902f04efbdd792.js",
+      "static/chunks/main-app-d5835ac14905e9ef.js",
+      "static/chunks/app/api/step-outputs/route-c4704d85d1cb8f3d.js"
+    ],
     "/api/artifact/route": [
       "static/chunks/webpack-d6297060eb558837.js",
       "static/chunks/4bd1b696-c023c6e3521b1417.js",
@@ -42,13 +49,6 @@
       "static/chunks/255-62902f04efbdd792.js",
       "static/chunks/main-app-d5835ac14905e9ef.js",
       "static/chunks/app/api/turn/[ord]/route-c4704d85d1cb8f3d.js"
-    ],
-    "/api/step-outputs/route": [
-      "static/chunks/webpack-d6297060eb558837.js",
-      "static/chunks/4bd1b696-c023c6e3521b1417.js",
-      "static/chunks/255-62902f04efbdd792.js",
-      "static/chunks/main-app-d5835ac14905e9ef.js",
-      "static/chunks/app/api/step-outputs/route-c4704d85d1cb8f3d.js"
     ],
     "/page": [
       "static/chunks/webpack-d6297060eb558837.js",

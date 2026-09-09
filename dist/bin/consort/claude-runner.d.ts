@@ -417,6 +417,14 @@ declare const UX_BROWSER_MCP_CONFIG = "skills/consort/config/ux-browser-mcp.json
  *  (so no other spawn changes). ONE source of truth for the default, shared by the drive
  *  config wiring and its guard test. */
 declare function defaultMcpConfigForRole(role: string): string | undefined;
+/** The tools the ux-designer's browser turn needs PRE-APPROVED for headless auto-run.
+ *  Paired with defaultMcpConfigForRole: the role that LOADS the browser MCP is the one
+ *  whose MCP + web tools must be in `--allowed-tools`, or acceptEdits denies them with no
+ *  human to grant. `mcp__playwright` (the browser server), `WebFetch` (read a named
+ *  reference), `WebSearch` (find references when the brief names none) — the same three
+ *  the ux-designer frontmatter grants. Empty for every other role (spawn unchanged). */
+declare const UX_BROWSER_ALLOWED_TOOLS: readonly ["mcp__playwright", "WebFetch", "WebSearch"];
+declare function browserAllowedToolsForRole(role: string | undefined): string[];
 /** The command that installs the browser the ux-designer's MCP drives. `@playwright/mcp` does
  *  NOT auto-install a browser — without Chromium present the MCP starts but every navigate fails
  *  ("browser not installed"), so the ux-designer reports the browser unavailable and degrades to
@@ -473,4 +481,4 @@ declare function execRunner(cfg: DriveEffectsConfig): CommandRunner;
 /** Build a DriveEffectsConfig for a feature (or planning, featureId ""). */
 declare function buildCfg(args: ParsedArgs, featureId: string): DriveEffectsConfig;
 
-export { ArtifactOutOfRootError, ClaudeTurnError, CliEffectError, type ParsedArgs, ReplayCorpusMissError, type TurnMeta, type TurnTranscript, UX_BROWSER_INSTALL_CMD, UX_BROWSER_MCP_CONFIG, buildCfg, claudeBaseArgs, claudeToolArgs, defaultMcpConfigForRole, defaultTurnMonitor, ensureUxBrowserChromium, execRunner, peekLastAgentTranscript, peekLastAgentUsage, peekLastTurnMeta, recordAgentTranscript, recordAgentUsage, recordTurnMeta, spawnClaudeStreaming, spawnCmd, takeLastAgentTranscript, takeLastTurnMeta };
+export { ArtifactOutOfRootError, ClaudeTurnError, CliEffectError, type ParsedArgs, ReplayCorpusMissError, type TurnMeta, type TurnTranscript, UX_BROWSER_ALLOWED_TOOLS, UX_BROWSER_INSTALL_CMD, UX_BROWSER_MCP_CONFIG, browserAllowedToolsForRole, buildCfg, claudeBaseArgs, claudeToolArgs, defaultMcpConfigForRole, defaultTurnMonitor, ensureUxBrowserChromium, execRunner, peekLastAgentTranscript, peekLastAgentUsage, peekLastTurnMeta, recordAgentTranscript, recordAgentUsage, recordTurnMeta, spawnClaudeStreaming, spawnCmd, takeLastAgentTranscript, takeLastTurnMeta };

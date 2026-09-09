@@ -10124,9 +10124,14 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
 }
 function claudeToolArgs(cmd) {
   const out = [];
-  if (cmd.allowedTools && cmd.allowedTools.length) out.push("--allowed-tools", cmd.allowedTools.join(","));
+  const allowed = [.../* @__PURE__ */ new Set([...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
+  if (allowed.length) out.push("--allowed-tools", allowed.join(","));
   if (cmd.disallowedTools && cmd.disallowedTools.length) out.push("--disallowed-tools", cmd.disallowedTools.join(","));
   return out;
+}
+var UX_BROWSER_ALLOWED_TOOLS = ["mcp__playwright", "WebFetch", "WebSearch"];
+function browserAllowedToolsForRole(role) {
+  return role === "ux-designer" ? [...UX_BROWSER_ALLOWED_TOOLS] : [];
 }
 var UX_BROWSER_INSTALL_CMD = { command: "npx", args: ["--yes", "playwright@latest", "install", "chromium"] };
 var uxBrowserEnsured = false;

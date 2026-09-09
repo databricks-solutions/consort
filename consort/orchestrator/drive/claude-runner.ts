@@ -534,7 +534,14 @@ export function spawnClaudeStreaming(
  */
 export function claudeToolArgs(cmd: Extract<DriveCommand, { kind: "claude" }>): string[] {
   const out: string[] = [];
-  if (cmd.allowedTools && cmd.allowedTools.length) out.push("--allowed-tools", cmd.allowedTools.join(","));
+  // Pre-approve the ux-designer's browser tools alongside any Family-2 allow-list. The
+  // agent frontmatter GRANTS these (makes them available) and the browser MCP is LOADED,
+  // but under `--permission-mode acceptEdits` (headless, no human) an un-pre-approved MCP
+  // /WebFetch call is DENIED ("...you haven't granted it yet") — PROVEN live: without
+  // these in --allowed-tools mcp__playwright__browser_navigate is permission-denied; with
+  // them it is permitted. So the role that loads the browser MCP must also allow its tools.
+  const allowed = [...new Set([...(cmd.allowedTools ?? []), ...browserAllowedToolsForRole(cmd.role)])];
+  if (allowed.length) out.push("--allowed-tools", allowed.join(","));
   if (cmd.disallowedTools && cmd.disallowedTools.length) out.push("--disallowed-tools", cmd.disallowedTools.join(","));
   return out;
 }
@@ -551,6 +558,17 @@ export const UX_BROWSER_MCP_CONFIG = "skills/consort/config/ux-browser-mcp.json"
  *  config wiring and its guard test. */
 export function defaultMcpConfigForRole(role: string): string | undefined {
   return role === "ux-designer" ? path.join(kitRoot(), UX_BROWSER_MCP_CONFIG) : undefined;
+}
+
+/** The tools the ux-designer's browser turn needs PRE-APPROVED for headless auto-run.
+ *  Paired with defaultMcpConfigForRole: the role that LOADS the browser MCP is the one
+ *  whose MCP + web tools must be in `--allowed-tools`, or acceptEdits denies them with no
+ *  human to grant. `mcp__playwright` (the browser server), `WebFetch` (read a named
+ *  reference), `WebSearch` (find references when the brief names none) — the same three
+ *  the ux-designer frontmatter grants. Empty for every other role (spawn unchanged). */
+export const UX_BROWSER_ALLOWED_TOOLS = ["mcp__playwright", "WebFetch", "WebSearch"] as const;
+export function browserAllowedToolsForRole(role: string | undefined): string[] {
+  return role === "ux-designer" ? [...UX_BROWSER_ALLOWED_TOOLS] : [];
 }
 
 /** The command that installs the browser the ux-designer's MCP drives. `@playwright/mcp` does

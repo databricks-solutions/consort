@@ -14,7 +14,18 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { defaultMcpConfigForRole, UX_BROWSER_MCP_CONFIG, UX_BROWSER_INSTALL_CMD } from "../../consort/orchestrator/drive/claude-runner.js";
+import {
+  defaultMcpConfigForRole,
+  UX_BROWSER_MCP_CONFIG,
+  UX_BROWSER_INSTALL_CMD,
+  claudeToolArgs,
+  browserAllowedToolsForRole,
+  UX_BROWSER_ALLOWED_TOOLS,
+} from "../../consort/orchestrator/drive/claude-runner.js";
+
+type ClaudeCmd = Parameters<typeof claudeToolArgs>[0];
+const uxCmd = (extra: Record<string, unknown> = {}): ClaudeCmd =>
+  ({ kind: "claude", role: "ux-designer", ...extra }) as unknown as ClaudeCmd;
 
 const KIT_ROOT = path.resolve(__dirname, "..", "..");
 const CONFIG_PATH = path.join(KIT_ROOT, UX_BROWSER_MCP_CONFIG);
@@ -31,6 +42,40 @@ describe("ux-designer browser MCP: default-on wiring", () => {
   it("gives NO other role an MCP by default (every other spawn is unchanged)", () => {
     for (const role of ["driver", "navigator", "spec-author", "architect", "product-owner", "dba"]) {
       expect(defaultMcpConfigForRole(role), `${role} must not get a default MCP`).toBeUndefined();
+    }
+  });
+});
+
+describe("ux-designer browser MCP: tools are PRE-APPROVED for the headless spawn", () => {
+  // Regression (PROVEN live): the frontmatter grant makes the browser tools AVAILABLE and
+  // the MCP is loaded, but under `--permission-mode acceptEdits` a headless
+  // mcp__playwright__browser_navigate is "permission-denied ... you haven't granted it yet"
+  // unless it is in --allowed-tools; with it, it is permitted. So the role that LOADS the
+  // browser MCP must also pre-approve its tools.
+  it("puts the browser MCP + web tools into --allowed-tools for the ux-designer", () => {
+    const args = claudeToolArgs(uxCmd());
+    const i = args.indexOf("--allowed-tools");
+    expect(i, "ux-designer must emit --allowed-tools").toBeGreaterThanOrEqual(0);
+    const allowed = args[i + 1];
+    for (const t of ["mcp__playwright", "WebFetch", "WebSearch"]) expect(allowed).toContain(t);
+    // Same three the ux-designer frontmatter grants.
+    expect([...UX_BROWSER_ALLOWED_TOOLS]).toEqual(["mcp__playwright", "WebFetch", "WebSearch"]);
+  });
+
+  it("MERGES with a Family-2 allow-list (deduped, ONE --allowed-tools flag)", () => {
+    const args = claudeToolArgs(uxCmd({ allowedTools: ["Read", "mcp__playwright"] }));
+    expect(args.filter((a) => a === "--allowed-tools")).toHaveLength(1);
+    const allowed = args[args.indexOf("--allowed-tools") + 1].split(",");
+    expect(allowed).toContain("Read");
+    expect(allowed.filter((t) => t === "mcp__playwright")).toHaveLength(1); // deduped, not doubled
+    expect(allowed).toContain("WebSearch");
+  });
+
+  it("adds NO browser tools for any other role (their spawn is byte-identical)", () => {
+    for (const role of ["driver", "navigator", "architect", "product-owner"]) {
+      expect(browserAllowedToolsForRole(role)).toEqual([]);
+      const args = claudeToolArgs({ kind: "claude", role } as unknown as ClaudeCmd);
+      expect(args).not.toContain("--allowed-tools");
     }
   });
 });
