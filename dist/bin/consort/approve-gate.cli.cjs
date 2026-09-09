@@ -7123,7 +7123,7 @@ function checkFitnessCoverage(testListJson, architectureJson2) {
     return {
       ok: false,
       violations: [
-        `architecture is service-backed/layered but the test-list has no kind:"fitness" item (every architectural constraint needs a fitness test, e.g. the layering contract; see test-strategy.md)`
+        `architecture is service-backed/layered but the test-list has no kind:"fitness" item (a service-backed feature needs a fitness test for its gate-uncovered constraints, e.g. a real-branch persistence-invariant test or config-in-env; the inward-deps/ORM-containment layering contract is defended by the consort-layering-clean gate, not a test item; see test-strategy.md)`
       ]
     };
   }

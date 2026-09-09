@@ -127,11 +127,17 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
     focusPrompt:
       "You are the FITNESS test analyst – the SOLE owner of `invariant_id`. Two duties: (1) Walk the " +
       "architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and " +
-      "emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches: the layering " +
-      "contract (boundary must not import the DB session; persistence only in the repository), the " +
-      "ORM-only contract (ONLY the repository touches the ORM/session – the service AND boundary " +
-      "contain no ORM imports; this is DISTINCT from the routes-vs-session check), config-from-env, and " +
-      "any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / " +
+      "emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT " +
+      "ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> " +
+      "repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the " +
+      "repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the " +
+      "`consort-layering-clean` gate (a source scan at REVIEW) – do NOT author import-scan fitness " +
+      "items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports " +
+      "a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely " +
+      "forgets to exclude the infrastructure session-factory module (app/database.py), is then " +
+      "unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO " +
+      "emit fitness items for constraints the gate does NOT cover: config-from-env, and any " +
+      "service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / " +
       "negative-quantity write at the SERVICE layer – distinct from a DB CHECK constraint). A " +
       "CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is " +
       "NOT yours – the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. A COMPOUND " +
