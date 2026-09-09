@@ -32,7 +32,7 @@ function kitRoot() {
 
 // bin/consort/dashboard.cli.ts
 function parseArgs(argv) {
-  const out = { projectDir: process.cwd(), host: "localhost", open: true, status: false };
+  const out = { projectDir: process.cwd(), host: "localhost", open: true, status: false, detach: false, openReady: false };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case "--project-dir":
@@ -53,10 +53,16 @@ function parseArgs(argv) {
       case "--status":
         out.status = true;
         break;
+      case "--detach":
+        out.detach = true;
+        break;
+      case "--open-ready":
+        out.openReady = true;
+        break;
       case "-h":
       case "--help":
         console.log(
-          "consort-dashboard [--project-dir <p>] [--port <n>] [--record-dir <p>] [--host <h>] [--no-open] [--status]\nLaunch the dashboard on a local project's .consort/ (prebuilt bundle, or next dev in a dev clone).\n--status reports whether one is already running (running <url> / stopped) without launching."
+          "consort-dashboard [--project-dir <p>] [--port <n>] [--record-dir <p>] [--host <h>] [--no-open] [--status] [--detach]\nLaunch the dashboard on a local project's .consort/ (prebuilt bundle, or next dev in a dev clone).\n--detach spawns the server detached + prints the URL + returns at once (opens the browser when ready).\n--status reports whether one is already running (running <url> / stopped) without launching."
         );
         process.exit(0);
         break;
@@ -65,6 +71,10 @@ function parseArgs(argv) {
     }
   }
   return out;
+}
+function logPath(projectDir) {
+  const h = crypto.createHash("sha1").update(path3.resolve(projectDir)).digest("hex").slice(0, 16);
+  return path3.join(os.tmpdir(), "consort-dashboard", `${h}.log`);
 }
 function recordPath(projectDir) {
   const h = crypto.createHash("sha1").update(path3.resolve(projectDir)).digest("hex").slice(0, 16);
@@ -123,6 +133,12 @@ function prebuiltServer(kit) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const projectDir = path3.resolve(args.projectDir);
+  if (args.openReady) {
+    const port2 = args.port ?? 0;
+    const ready = await waitListening(args.host, port2, 480);
+    if (ready && args.open) openBrowser(`http://${args.host}:${port2}/`);
+    process.exit(0);
+  }
   if (args.status) {
     const rec = await runningRecord(projectDir);
     if (rec) {
@@ -151,18 +167,28 @@ async function main() {
   const url = `http://${args.host}:${port}/`;
   const server = prebuiltServer(kit);
   const runSh = path3.join(kit, "apps", "dashboard", "run.sh");
+  let stdio = "inherit";
+  let logFile = null;
+  if (args.detach) {
+    logFile = logPath(projectDir);
+    try {
+      fs2.mkdirSync(path3.dirname(logFile), { recursive: true });
+    } catch {
+    }
+    const fd = fs2.openSync(logFile, "a");
+    stdio = ["ignore", fd, fd];
+  }
+  const spawnOpts = args.detach ? { env, stdio, detached: true } : { env, stdio };
   let child;
   if (server) {
     console.log(`Consort dashboard (prebuilt) \u2192 ${url}
   project: ${projectDir}${args.recordDir ? `
-  record:  ${args.recordDir}` : ""}
-  Ctrl-C to stop.`);
-    child = spawn("node", [server], { cwd: path3.dirname(server), env, stdio: "inherit" });
+  record:  ${args.recordDir}` : ""}${args.detach ? "" : "\n  Ctrl-C to stop."}`);
+    child = spawn("node", [server], { cwd: path3.dirname(server), ...spawnOpts });
   } else if (fs2.existsSync(runSh)) {
     console.log(`Consort dashboard (dev) \u2192 ${url}
-  project: ${projectDir}
-  Ctrl-C to stop.`);
-    child = spawn("bash", [runSh, projectDir], { cwd: path3.join(kit, "apps", "dashboard"), env, stdio: "inherit" });
+  project: ${projectDir}${args.detach ? "" : "\n  Ctrl-C to stop."}`);
+    child = spawn("bash", [runSh, projectDir], { cwd: path3.join(kit, "apps", "dashboard"), ...spawnOpts });
   } else {
     console.error(
       `consort-dashboard: no dashboard found in the deployed kit (${kit}).
@@ -173,6 +199,21 @@ async function main() {
     return;
   }
   const childPid = child.pid;
+  if (args.detach) {
+    child.unref();
+    if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    if (args.open) {
+      try {
+        spawn(process.execPath, [process.argv[1], "--open-ready", "--host", args.host, "--port", String(port)], {
+          detached: true,
+          stdio: "ignore"
+        }).unref();
+      } catch {
+      }
+    }
+    console.log(`  detached \u2014 the browser opens when the server is ready; logs: ${logFile}`);
+    process.exit(0);
+  }
   void waitListening(args.host, port).then((ready) => {
     if (ready) {
       if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: (/* @__PURE__ */ new Date()).toISOString() });

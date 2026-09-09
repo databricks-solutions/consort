@@ -35,10 +35,19 @@ interface Args {
    *  (`running <url>` + exit 0, or `stopped` + exit 3). No launch. Lets a caller decide
    *  whether to OFFER the dashboard rather than re-asking when one is already up. */
   status: boolean;
+  /** --detach: spawn the server fully detached (its own session, unref'd, logged to a file) and
+   *  RETURN AT ONCE with the URL printed — the resilient launch for a session/agent, which must
+   *  not sit foregrounding a long-lived server (a hung "shell still running"). The browser is
+   *  opened by a separate detached opener when the server binds, however long that takes. */
+  detach: boolean;
+  /** --open-ready (internal): the detached opener re-invokes the bin with this — it polls until
+   *  host:port answers, opens the browser, and exits. Keeps the browser-open off the launcher's
+   *  critical path so `--detach` can return immediately yet the browser still opens reliably. */
+  openReady: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { projectDir: process.cwd(), host: "localhost", open: true, status: false };
+  const out: Args = { projectDir: process.cwd(), host: "localhost", open: true, status: false, detach: false, openReady: false };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case "--project-dir": out.projectDir = argv[++i]; break;
@@ -47,10 +56,13 @@ function parseArgs(argv: string[]): Args {
       case "--host": out.host = argv[++i]; break;
       case "--no-open": out.open = false; break;
       case "--status": out.status = true; break;
+      case "--detach": out.detach = true; break;
+      case "--open-ready": out.openReady = true; break;
       case "-h": case "--help":
         console.log(
-          "consort-dashboard [--project-dir <p>] [--port <n>] [--record-dir <p>] [--host <h>] [--no-open] [--status]\n" +
+          "consort-dashboard [--project-dir <p>] [--port <n>] [--record-dir <p>] [--host <h>] [--no-open] [--status] [--detach]\n" +
             "Launch the dashboard on a local project's .consort/ (prebuilt bundle, or next dev in a dev clone).\n" +
+            "--detach spawns the server detached + prints the URL + returns at once (opens the browser when ready).\n" +
             "--status reports whether one is already running (running <url> / stopped) without launching.",
         );
         process.exit(0);
@@ -59,6 +71,13 @@ function parseArgs(argv: string[]): Args {
     }
   }
   return out;
+}
+
+/** Per-project detached-server log (tmp, keyed by the resolved project dir), so a `--detach`
+ *  launch's server output is capturable and a startup crash is diagnosable instead of lost. */
+function logPath(projectDir: string): string {
+  const h = crypto.createHash("sha1").update(path.resolve(projectDir)).digest("hex").slice(0, 16);
+  return path.join(os.tmpdir(), "consort-dashboard", `${h}.log`);
 }
 
 /** Per-project run record so a second invocation (or --status) knows a dashboard is already
@@ -150,6 +169,16 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const projectDir = path.resolve(args.projectDir);
 
+  // --open-ready (internal, spawned detached by a --detach launch): poll until the server binds,
+  // open the browser, exit. Runs OFF the launcher's critical path so --detach returns at once yet
+  // the browser still opens reliably whenever the server is up (generous wait for a cold boot).
+  if (args.openReady) {
+    const port = args.port ?? 0;
+    const ready = await waitListening(args.host, port, 480); // up to ~2min: cold Next boot, slow box
+    if (ready && args.open) openBrowser(`http://${args.host}:${port}/`);
+    process.exit(0);
+  }
+
   // --status: answer "is a dashboard already serving this project?" and exit — no launch. A
   // caller (e.g. /consort:start) checks this to decide whether to OFFER the dashboard, instead
   // of re-asking on every resume when one is already up.
@@ -190,15 +219,30 @@ async function main(): Promise<void> {
   const server = prebuiltServer(kit);
   const runSh = path.join(kit, "apps", "dashboard", "run.sh");
 
+  // Detached launch (a session/agent): the server gets its OWN session (detached:true → setsid) +
+  // unref, and its stdout/stderr go to a per-project LOG file — so this launcher exits AT ONCE
+  // instead of foregrounding a long-lived server (the "shell still running" that hung the session
+  // and made it wait on the boot). Foreground launch (a human via run-dashboard.sh): inherit the
+  // terminal, Ctrl-C stops it.
+  let stdio: "inherit" | ["ignore", number, number] = "inherit";
+  let logFile: string | null = null;
+  if (args.detach) {
+    logFile = logPath(projectDir);
+    try { fs.mkdirSync(path.dirname(logFile), { recursive: true }); } catch { /* best-effort */ }
+    const fd = fs.openSync(logFile, "a");
+    stdio = ["ignore", fd, fd];
+  }
+  const spawnOpts = args.detach ? { env, stdio, detached: true as const } : { env, stdio };
+
   let child;
   if (server) {
-    console.log(`Consort dashboard (prebuilt) → ${url}\n  project: ${projectDir}${args.recordDir ? `\n  record:  ${args.recordDir}` : ""}\n  Ctrl-C to stop.`);
-    child = spawn("node", [server], { cwd: path.dirname(server), env, stdio: "inherit" });
+    console.log(`Consort dashboard (prebuilt) → ${url}\n  project: ${projectDir}${args.recordDir ? `\n  record:  ${args.recordDir}` : ""}${args.detach ? "" : "\n  Ctrl-C to stop."}`);
+    child = spawn("node", [server], { cwd: path.dirname(server), ...spawnOpts });
   } else if (fs.existsSync(runSh)) {
     // Dev-clone kit: no prebuilt bundle, but the dashboard source is here. run.sh sets
     // CONSORT_PROJECT_DIR/PORT itself from its args + env and runs `next dev`.
-    console.log(`Consort dashboard (dev) → ${url}\n  project: ${projectDir}\n  Ctrl-C to stop.`);
-    child = spawn("bash", [runSh, projectDir], { cwd: path.join(kit, "apps", "dashboard"), env, stdio: "inherit" });
+    console.log(`Consort dashboard (dev) → ${url}\n  project: ${projectDir}${args.detach ? "" : "\n  Ctrl-C to stop."}`);
+    child = spawn("bash", [runSh, projectDir], { cwd: path.join(kit, "apps", "dashboard"), ...spawnOpts });
   } else {
     console.error(
       `consort-dashboard: no dashboard found in the deployed kit (${kit}).\n` +
@@ -209,12 +253,34 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Wait for the server to actually accept connections, THEN record it + open the browser. An
-  // immediate open races the not-yet-ready server (connection-refused page); recording only once
-  // it's up means --status never reports a server that then failed to bind. If it never comes up
-  // (a startup crash), say so loudly and point at where the output went — a silent dead process
-  // (e.g. a tmux window that just closes) is the "clunky, had to relaunch with logs" failure.
   const childPid = child.pid;
+
+  // Detached: RETURN NOW. The server runs in its own session (survives this exit); we record it so
+  // --status + a re-launch find it, print the URL immediately (the session relays it without
+  // waiting on the boot), and hand the browser-open to a SEPARATE detached opener that polls until
+  // the port answers. Nothing here blocks — no hung shell, and the browser still opens reliably
+  // whenever the server is ready, however long a cold boot takes.
+  if (args.detach) {
+    child.unref();
+    if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: new Date().toISOString() });
+    if (args.open) {
+      try {
+        spawn(process.execPath, [process.argv[1], "--open-ready", "--host", args.host, "--port", String(port)], {
+          detached: true,
+          stdio: "ignore",
+        }).unref();
+      } catch {
+        /* the printed URL is the fallback */
+      }
+    }
+    console.log(`  detached — the browser opens when the server is ready; logs: ${logFile}`);
+    process.exit(0);
+  }
+
+  // Foreground (human): wait for the server to accept connections, THEN record it + open the
+  // browser. An immediate open races the not-yet-ready server (connection-refused page); recording
+  // only once it's up means --status never reports a server that then failed to bind. If it never
+  // comes up (a startup crash), say so loudly and point at where the output went.
   void waitListening(args.host, port).then((ready) => {
     if (ready) {
       if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: new Date().toISOString() });

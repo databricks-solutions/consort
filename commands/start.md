@@ -201,7 +201,7 @@ KIT_REF="${LAKEBASE_KIT_REF:-}"
 if [ -z "$KIT_REF" ] && [ -f "$CONSORT_ROOT/.claude-plugin/plugin.json" ]; then
   KIT_REF="v$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
 fi
-KIT_REF="${KIT_REF:-v0.3.76}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
+KIT_REF="${KIT_REF:-v0.3.77}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
 export LAKEBASE_KIT_REF="$KIT_REF"
 
 # Launch scaffolding DETACHED (own session): it prints the child pid + a live-log path
@@ -254,11 +254,13 @@ then re-run **`/consort:start`** there (it will find `.consort/` and resume at `
 This hand-off runs on the way to the first workflow step (`/plan`, `/sprint`, `/design`, `/spike`) of a fresh project AND on a `/consort:start` that resumes an existing one (NOT fresh-create-only). Do BOTH steps below, in order.
 
 **Step 1 — offer the live dashboard as a WIZARD CHOICE, and START it yourself on yes.** **FIRST check whether one is already running for this project** — run `./scripts/lk consort-dashboard --status --project-dir "$PWD"` silently (FOR YOU). If it prints `running <URL>`, a dashboard is ALREADY up: do NOT re-offer it (re-asking a human who already started it is a defect) — just tell them *"Dashboard's already live: <URL>"* and go to Step 2. Only when it prints `stopped` do you present the choice (AskUserQuestion), whether or not they're in an editor — e.g. *"Open the live dashboard to watch this run?"* → **① Start it now** / **② Not now**. The human sees ONLY this clean choice and, on yes, the result — never a shell command.
-- On **① Start it now:** run it YOURSELF via your Bash tool, silently (do NOT print the command or ask the human to run it). Launch the **`consort-dashboard`** bin — never `next dev` or `server.js` by hand — DETACHED so it survives the turn and doesn't block it. **macOS has no `setsid`; do NOT use it.** Pick by environment (commands are FOR YOU — do not echo them):
-  - **In tmux** (`$TMUX` set): `tmux new-window -d -n consort-dashboard './scripts/lk consort-dashboard --project-dir "$PWD"'` — a visible, Ctrl-C-able window.
-  - **Otherwise:** `nohup ./scripts/lk consort-dashboard --project-dir "$PWD" >/tmp/consort-dashboard.log 2>&1 &` (nohup survives the turn on macOS; `setsid` does not exist).
+- On **① Start it now:** run **exactly one** command YOURSELF via your Bash tool, silently (do NOT print the command or ask the human to run it):
 
-  The bin picks a FREE port, starts the server, waits until it's actually up, records it (so a later `--status` / re-launch knows it's running), then OPENS THE BROWSER itself; it prints `Consort dashboard … → <URL>` (to the tmux pane / the log). **Confirm it actually came up before you call it live** — run `./scripts/lk consort-dashboard --status --project-dir "$PWD"` once more: on `running <URL>` tell the human *"Dashboard's live: <URL>"*; if it still says `stopped` the server crashed on startup, so surface the launch log (`/tmp/consort-dashboard.log`, or the tmux pane) and its error — do NOT claim it's live. Then go to Step 2.
+  ```
+  ./scripts/lk consort-dashboard --detach --project-dir "$PWD"
+  ```
+
+  **`--detach` does all the hard work and RETURNS AT ONCE — treat it exactly like `code "$PWD"`.** It picks a free port, spawns the server fully detached in its own session (so nothing is left foregrounded — do NOT wrap it in `nohup`/`tmux`/`&`, and do NOT `setsid`; the bin self-detaches), records it for `--status`, prints `Consort dashboard → <URL>` on the FIRST line of its output, and hands the browser-open to a separate detached opener that fires when the server is ready. **Read the `<URL>` from that output and tell the human *"Dashboard's live: <URL>"* — do NOT poll, do NOT wait for a second URL, do NOT re-run `--status` to "confirm".** The command already returned; the browser opens on its own when the server finishes booting (a cold boot can take a bit — that is expected and not your concern). This is the ONE call; if it ever errors outright, the launch log is at `~/.cache`-style tmp (`consort-dashboard/<hash>.log`, path printed in the output). Then go to Step 2.
 - On **② Not now:** continue to Step 2 (fine to offer again later).
 
 **Step 2 — get the terminal/editor right.** Make sure the human is driving from the best place – a resuming user needs the same choice as a fresh project. **FIRST detect whether this session is ALREADY inside the editor's integrated terminal** – the same signal the kit uses in `isInsideEditor` (`TERM_PROGRAM` contains `vscode`/`cursor`, or `CURSOR_TRACE_ID` / `VSCODE_PID` is set):
