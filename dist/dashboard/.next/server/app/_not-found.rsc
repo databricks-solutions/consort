@@ -146,7 +146,7 @@
   --role-driver: #008300;
   --role-product-owner: #22D3EE;
   --role-release-engineer: #5EEAD4;
-}0:{"P":null,"b":"PmrmBQ5OYZijZI55fmhYQ","p":"","c":["","_not-found"],"i":false,"f":[[["",{"children":["/_not-found",{"children":["__PAGE__",{}]}]},"$undefined","$undefined",true],["",["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/e1b5b1c74573682b.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}]],["$","html",null,{"lang":"en","className":"__variable_246ccd __variable_c29908","data-theme":"$undefined","suppressHydrationWarning":true,"children":[["$","head",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"$2"}}],"$L3"]}],"$L4"]}]]}],{"children":["/_not-found","$L5",{"children":["__PAGE__","$L6",{},null,false]},null,false]},null,false],"$L7",false]],"m":"$undefined","G":["$8",[]],"s":false,"S":true}
+}0:{"P":null,"b":"xvPh82UJEtAjpQY8nMzTI","p":"","c":["","_not-found"],"i":false,"f":[[["",{"children":["/_not-found",{"children":["__PAGE__",{}]}]},"$undefined","$undefined",true],["",["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/e1b5b1c74573682b.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}]],["$","html",null,{"lang":"en","className":"__variable_246ccd __variable_c29908","data-theme":"$undefined","suppressHydrationWarning":true,"children":[["$","head",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"$2"}}],"$L3"]}],"$L4"]}]]}],{"children":["/_not-found","$L5",{"children":["__PAGE__","$L6",{},null,false]},null,false]},null,false],"$L7",false]],"m":"$undefined","G":["$8",[]],"s":false,"S":true}
 9:I[9766,[],""]
 a:I[8924,[],""]
 b:I[4431,[],"OutletBoundary"]
@@ -162,5 +162,5 @@ f:I[4431,[],"ViewportBoundary"]
 10:[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]
 c:null
 14:I[622,[],"IconMark"]
-e:{"metadata":[["$","title","0",{"children":"Agent Delivery Radiator"}],["$","meta","1",{"name":"description","content":"Live observability for a Consort run"}],["$","link","2",{"rel":"icon","href":"/favicon.ico","type":"image/x-icon","sizes":"16x16"}],["$","$L14","3",{}]],"error":null,"digest":"$undefined"}
+e:{"metadata":[["$","title","0",{"children":"Consort · Agent Delivery Radiator"}],["$","meta","1",{"name":"description","content":"Live observability for a Consort run"}],["$","link","2",{"rel":"icon","href":"/favicon.ico","type":"image/x-icon","sizes":"16x16"}],["$","$L14","3",{}]],"error":null,"digest":"$undefined"}
 13:"$e:metadata"

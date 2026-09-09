@@ -85,3 +85,21 @@ describe("ux-designer agent: frontmatter grants the browser tools", () => {
     for (const t of ["Read", "Write", "Edit", "Bash"]) expect(toolsLine).toContain(t);
   });
 });
+
+describe("ux-designer procedure: open EVERY named reference, not just the first", () => {
+  // Live gap (portfolio-manager20): the brief named Robinhood + Wealthfront, but the ux-designer
+  // navigated to Robinhood ONLY, then wrote the guide citing Wealthfront from prior knowledge.
+  // The procedure must force opening EVERY named reference and block writing until it has.
+  const md = readFileSync(UX_AGENT, "utf8");
+
+  it("requires enumerating + opening EVERY named reference (forbids one-and-fill-the-rest-from-memory)", () => {
+    expect(md).toMatch(/enumerate EVERY reference|OPEN EVERY ONE|open every named reference/i);
+    expect(md, "must forbid opening one site and filling the rest from memory").toMatch(/from memory|prior knowledge/i);
+    // A hard gate: no writing the guide until every named reference has been navigated.
+    expect(md).toMatch(/may not write [\s\S]*?until[\s\S]*?navigat/i);
+  });
+
+  it("requires per-reference provenance (browsed vs guessed is distinguishable)", () => {
+    expect(md).toMatch(/provenance MUST cite, per reference|per reference, which tokens/i);
+  });
+});

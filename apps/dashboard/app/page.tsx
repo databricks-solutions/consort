@@ -345,7 +345,7 @@ function Header({ state, connected, lastUpdatedAt, costMode, setCostMode, onMode
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
       <div>
-        <h1 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 800, color: "var(--text-strong)" }}>Agent Delivery Radiator</h1>
+        <h1 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 800, color: "var(--text-strong)" }}>Consort · Agent Delivery Radiator</h1>
         {/* No run loaded → no subtitle at all. The top-right feed dot already carries the
             connecting/running state, so a placeholder line here would just repeat it (and the old
             "waiting for a run…" wrongly read as a human-wait). It appears once a feature is known. */}

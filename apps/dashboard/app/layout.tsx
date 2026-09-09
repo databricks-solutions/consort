@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Delivery Radiator",
+  title: "Consort · Agent Delivery Radiator",
   description: "Live observability for a Consort run",
 };
 

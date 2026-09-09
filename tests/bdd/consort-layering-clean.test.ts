@@ -10,6 +10,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   checkLayeringClean,
+  checkImportLayering,
+  checkOrmContainment,
   checkModulePlacement,
   checkInlineRendering,
   checkCodeBudget,
@@ -363,5 +365,157 @@ describe("checkCodeBudget (A3): DRY + function-length budget", () => {
     const dir = mkProject();
     write(dir, "app/services.py", `def small(x):\n    return x + 1\n`);
     expect(checkCodeBudget(dir, ["app/services.py"]).ok).toBe(true);
+  });
+});
+
+// The canonical four-layer declaration (mirrors the stockflow reference
+// architecture.json): boundary -> service -> repository -> models, inward.
+const CANONICAL_LAYERS = [
+  { role: "boundary", module: "app/routes/", may_import: ["service"] },
+  { role: "service", module: "app/services/", may_import: ["repository"] },
+  { role: "repository", module: "app/repositories/", may_import: ["models"] },
+  { role: "models", module: "app/models/", may_import: [] as string[] },
+];
+
+/** Lay down a clean, correctly-layered app that mirrors the reference corpus'
+ *  import shape exactly (absolute imports, inward direction, and the composition
+ *  root's `import app.models  # noqa: F401` registration side-effect). */
+function writeCleanLayeredApp(dir: string): void {
+  write(dir, "app/main.py", `from fastapi import FastAPI\nfrom app.routes.stock import router as stock_router\nimport app.models  # noqa: F401\n\napp = FastAPI()\napp.include_router(stock_router)\n`);
+  write(dir, "app/routes/stock.py", `from fastapi import APIRouter, Depends\nfrom app.services.stock_service import StockService\n\nrouter = APIRouter()\n\n@router.get("/stock")\ndef list_stock(service: StockService = Depends()):\n    return service.all()\n`);
+  write(dir, "app/services/stock_service.py", `from app.repositories.stock_repository import StockRepository\n\nclass StockService:\n    def all(self):\n        return StockRepository().all()\n`);
+  write(dir, "app/repositories/stock_repository.py", `from app.models.stock import StockRecord\n\nclass StockRepository:\n    def all(self, db):\n        return db.query(StockRecord).all()\n`);
+  write(dir, "app/models/stock.py", `from app.database import Base\n\nclass StockRecord(Base):\n    __tablename__ = "stock_records"\n`);
+}
+
+describe("checkImportLayering (A5): dependencies point inward per may_import", () => {
+  it("passes the clean inward chain that mirrors the reference corpus (incl. the noqa registration import)", () => {
+    const dir = mkProject();
+    writeCleanLayeredApp(dir);
+    const r = checkImportLayering(dir, CANONICAL_LAYERS);
+    expect(r.violations).toEqual([]);
+    expect(r.ok).toBe(true);
+    // it really did scan the layer sources (not a vacuous pass)
+    expect(r.scanned.some((s) => s.endsWith("stock.py"))).toBe(true);
+  });
+
+  it("flags the boundary reaching around the service straight into the repository", () => {
+    const dir = mkProject();
+    writeCleanLayeredApp(dir);
+    // boundary imports the repository directly (skips the service it may_import)
+    write(dir, "app/routes/stock.py", `from fastapi import APIRouter\nfrom app.repositories.stock_repository import StockRepository\n\nrouter = APIRouter()\n`);
+    const r = checkImportLayering(dir, CANONICAL_LAYERS);
+    expect(r.ok).toBe(false);
+    expect(r.violations.join("\n")).toMatch(/routes\/stock\.py:\d+/);
+    expect(r.violations.join("\n")).toMatch(/boundary may not import repository/);
+    expect(r.remediation).toBeTruthy();
+  });
+
+  it("flags a backward dependency (service importing the boundary above it)", () => {
+    const dir = mkProject();
+    writeCleanLayeredApp(dir);
+    write(dir, "app/services/stock_service.py", `from app.routes.stock import router\n\nclass StockService:\n    pass\n`);
+    const r = checkImportLayering(dir, CANONICAL_LAYERS);
+    expect(r.ok).toBe(false);
+    expect(r.violations.join("\n")).toMatch(/service may not import boundary/);
+  });
+
+  it("resolves a relative import and flags a forbidden cross-layer dependency", () => {
+    const dir = mkProject();
+    writeCleanLayeredApp(dir);
+    // relative import: app/routes/stock.py -> ..repositories (boundary -> repository)
+    write(dir, "app/routes/stock.py", `from fastapi import APIRouter\nfrom ..repositories.stock_repository import StockRepository\n\nrouter = APIRouter()\n`);
+    const r = checkImportLayering(dir, CANONICAL_LAYERS);
+    expect(r.ok).toBe(false);
+    expect(r.violations.join("\n")).toMatch(/boundary may not import repository/);
+  });
+
+  it("does not flag same-role siblings or non-layer imports (fastapi, utils)", () => {
+    const dir = mkProject();
+    write(dir, "app/routes/stock.py", `from fastapi import APIRouter\nfrom app.routes.health import ping\nfrom app.utils import fmt\n\nrouter = APIRouter()\n`);
+    write(dir, "app/routes/health.py", `def ping():\n    return "ok"\n`);
+    write(dir, "app/services/stock_service.py", `class StockService:\n    pass\n`);
+    write(dir, "app/repositories/stock_repository.py", `class StockRepository:\n    pass\n`);
+    write(dir, "app/models/stock.py", `class StockRecord:\n    pass\n`);
+    write(dir, "app/utils.py", `def fmt(x):\n    return str(x)\n`);
+    const r = checkImportLayering(dir, CANONICAL_LAYERS);
+    expect(r.ok).toBe(true);
+  });
+
+  it("does not flag app.repository against a same-named prefix collision (app.repositories)", () => {
+    // A layer prefix `app.repository` must not match the distinct `app.repositories`.
+    const dir = mkProject();
+    write(dir, "app/services/x.py", `from app.repositories.stock_repository import StockRepository\n`);
+    const layers = [
+      { role: "service", module: "app/services/", may_import: [] as string[] },
+      { role: "repository", module: "app/repository.py", may_import: [] as string[] },
+    ];
+    // service may_import nothing; it imports app.repositories (NOT the declared
+    // app/repository.py repository layer) -> no declared layer matched -> clean.
+    const r = checkImportLayering(dir, layers);
+    expect(r.ok).toBe(true);
+  });
+
+  it("is clean when no layers (or a single layer) are declared", () => {
+    const dir = mkProject();
+    write(dir, "app/routes/stock.py", `from app.repositories.x import Y\n`);
+    expect(checkImportLayering(dir, []).ok).toBe(true);
+    expect(checkImportLayering(dir, [{ role: "boundary", module: "app/routes/", may_import: [] }]).ok).toBe(true);
+  });
+});
+
+describe("checkOrmContainment (A6): only the repository touches the ORM session", () => {
+  it("passes when persistence lives only in the repository", () => {
+    const dir = mkProject();
+    writeCleanLayeredApp(dir);
+    const r = checkOrmContainment(dir, CANONICAL_LAYERS);
+    expect(r.violations).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+
+  it("flags a service that calls the DB session directly (leaked persistence)", () => {
+    const dir = mkProject();
+    writeCleanLayeredApp(dir);
+    write(dir, "app/services/stock_service.py", `class StockService:\n    def all(self, db):\n        return db.query("StockRecord").all()\n`);
+    const r = checkOrmContainment(dir, CANONICAL_LAYERS);
+    expect(r.ok).toBe(false);
+    expect(r.violations.join("\n")).toMatch(/services\/stock_service\.py:\d+/);
+    expect(r.violations.join("\n")).toMatch(/service layer must not touch the ORM session/);
+    expect(r.remediation).toBeTruthy();
+  });
+
+  it("exempts the check entirely when no repository layer is declared", () => {
+    const dir = mkProject();
+    write(dir, "app/services/x.py", `def f(db):\n    return db.query("X").all()\n`);
+    const r = checkOrmContainment(dir, [{ role: "service", module: "app/services/" }]);
+    expect(r.ok).toBe(true);
+    expect(r.scanned).toEqual([]);
+  });
+
+  it("does not flag the repository or infrastructure layers themselves", () => {
+    const dir = mkProject();
+    write(dir, "app/repositories/stock_repository.py", `class StockRepository:\n    def all(self, db):\n        return db.query("X").all()\n`);
+    write(dir, "app/database.py", `def healthcheck(db):\n    db.execute("SELECT 1")\n`);
+    const r = checkOrmContainment(dir, [
+      { role: "repository", module: "app/repositories/" },
+      { role: "infrastructure", module: "app/database.py" },
+    ]);
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("layeringConfigFromArchitecture carries may_import for the layering checks", () => {
+  it("threads each layer's may_import into allModules", () => {
+    const cfg = layeringConfigFromArchitecture(
+      JSON.stringify({
+        service_backed: true,
+        layers: [
+          { role: "boundary", module: "app/routes/", may_import: ["service"] },
+          { role: "service", module: "app/services/", may_import: ["repository"] },
+        ],
+      }),
+    );
+    const boundary = cfg.allModules.find((m) => m.role === "boundary");
+    expect(boundary?.may_import).toEqual(["service"]);
   });
 });

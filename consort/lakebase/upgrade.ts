@@ -61,13 +61,21 @@ export function quiesceGate(q: QuiesceInput): QuiesceResult {
   if (q.pidAlive === true) {
     return { safe: false, reason: "a drive process is still RUNNING – wait for it to stop at a gate before upgrading (never swap the kit mid-turn)." };
   }
+  if (q.pidAlive === false) {
+    // The drive pid is provably GONE, so NOTHING is executing – safe to swap the kit regardless of
+    // what next.json queues next. pid-gone is the stop authority; next.json's primary_action is only
+    // a SUGGESTION for the next cycle. A COMPLETED sprint rolls next.json forward to the next cycle's
+    // first step (e.g. "dispatch product-owner for intake"), which is neither awaiting_human nor done
+    // but is NOT mid-flight either – requiring atStop here wrongly blocked upgrading a finished sprint.
+    return { safe: true, reason: "at a clean stop (drive pid not alive – nothing is running)." };
+  }
+  // pidAlive === null: liveness UNVERIFIED (no --pid). next.json is the only signal, and it cannot
+  // tell a between-cycles stop from a live mid-flight dispatch, so require an explicit human-owned
+  // stop (awaiting_human/done) and steer the operator to pass --pid so liveness can be verified.
   if (!q.atStop) {
-    return { safe: false, reason: "next.json does not show a clean stop (no awaiting_human / done) – the run may be mid-flight. Resolve to a gate first." };
+    return { safe: false, reason: "no --pid given and next.json shows no clean stop (awaiting_human/done) – pass --pid <drive-pid> so drive liveness can be verified, or resolve to a gate first." };
   }
-  if (q.pidAlive === null) {
-    return { safe: true, reason: "at a stop (awaiting_human/done); drive liveness UNVERIFIED (no --pid) – confirm no drive is running." };
-  }
-  return { safe: true, reason: "at a clean stop (drive pid not alive + awaiting_human/done)." };
+  return { safe: true, reason: "at a stop (awaiting_human/done); drive liveness UNVERIFIED (no --pid) – confirm no drive is running." };
 }
 
 export interface PinBothResult {

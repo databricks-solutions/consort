@@ -21,6 +21,8 @@
 import { readFileSync } from "node:fs";
 import {
   checkLayeringClean,
+  checkImportLayering,
+  checkOrmContainment,
   checkModulePlacement,
   checkInlineRendering,
   checkCodeBudget,
@@ -97,6 +99,17 @@ if (repository.length > 0) callArgs.repositoryModules = repository;
 // The gate runs a suite of deterministic architecture checks; any failure fails
 // the gate (all surface together so one run shows every violation).
 const layering = checkLayeringClean(callArgs);
+// Deterministic, declaration-driven layering enforcement (derived from layers[]):
+// import layering = dependencies point inward per may_import; ORM containment =
+// only the repository touches the session. Both gated on declared layers.
+const importLayering =
+  serviceBacked && allModules.length
+    ? checkImportLayering(p.projectDir, allModules)
+    : { ok: true, violations: [] as string[], remediation: undefined as string | undefined };
+const ormContainment =
+  serviceBacked && allModules.length
+    ? checkOrmContainment(p.projectDir, allModules)
+    : { ok: true, violations: [] as string[], remediation: undefined as string | undefined };
 const placement = serviceBacked && allModules.length ? checkModulePlacement(p.projectDir, allModules) : { ok: true, violations: [] };
 const rendering = serviceBacked ? checkInlineRendering(p.projectDir, boundary, rendersVia) : { ok: true, violations: [] as string[] };
 // Budget over the declared layer modules (or `app` by default) – broad clean-code check.
@@ -108,6 +121,8 @@ const duplicates = checkDuplicateClasses(p.projectDir);
 
 const groups: Array<{ label: string; ok: boolean; violations: string[]; remediation?: string }> = [
   { label: "layering (boundary vs persistence)", ok: layering.clean, violations: layering.violations, remediation: layering.remediation },
+  { label: "import layering (dependencies point inward per may_import)", ok: importLayering.ok, violations: importLayering.violations, remediation: importLayering.remediation },
+  { label: "ORM containment (only the repository touches the session)", ok: ormContainment.ok, violations: ormContainment.violations, remediation: ormContainment.remediation },
   { label: "module placement (layers at declared paths)", ok: placement.ok, violations: placement.violations },
   { label: "rendering (templating, not inline HTML)", ok: rendering.ok, violations: rendering.violations, remediation: rendering.remediation },
   { label: "DRY + complexity budget", ok: budget.ok, violations: budget.violations },

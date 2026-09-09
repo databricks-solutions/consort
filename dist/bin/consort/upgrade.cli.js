@@ -278,13 +278,13 @@ function quiesceGate(q) {
   if (q.pidAlive === true) {
     return { safe: false, reason: "a drive process is still RUNNING \u2013 wait for it to stop at a gate before upgrading (never swap the kit mid-turn)." };
   }
+  if (q.pidAlive === false) {
+    return { safe: true, reason: "at a clean stop (drive pid not alive \u2013 nothing is running)." };
+  }
   if (!q.atStop) {
-    return { safe: false, reason: "next.json does not show a clean stop (no awaiting_human / done) \u2013 the run may be mid-flight. Resolve to a gate first." };
+    return { safe: false, reason: "no --pid given and next.json shows no clean stop (awaiting_human/done) \u2013 pass --pid <drive-pid> so drive liveness can be verified, or resolve to a gate first." };
   }
-  if (q.pidAlive === null) {
-    return { safe: true, reason: "at a stop (awaiting_human/done); drive liveness UNVERIFIED (no --pid) \u2013 confirm no drive is running." };
-  }
-  return { safe: true, reason: "at a clean stop (drive pid not alive + awaiting_human/done)." };
+  return { safe: true, reason: "at a stop (awaiting_human/done); drive liveness UNVERIFIED (no --pid) \u2013 confirm no drive is running." };
 }
 function pinBoth(projectDir, ref) {
   const previousLocal = localKitRef(projectDir);

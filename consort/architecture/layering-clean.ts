@@ -185,6 +185,88 @@ function repositoryExists(projectDir: string, repositoryModules: string[]): bool
   return repositoryModules.some((rel) => existsSync(join(projectDir, rel)));
 }
 
+/** Project-relative display path for an absolute file under projectDir. */
+function relTo(projectDir: string, file: string): string {
+  return file.startsWith(projectDir) ? file.slice(projectDir.length).replace(/^\/+/, "") : file;
+}
+
+/** A declared `layers[].module` -> its Python dotted import prefix. `app/routes/`
+ *  -> `app.routes`; `app/repository.py` -> `app.repository`. */
+function dottedPrefix(module: string): string {
+  return module
+    .replace(/\.py$/, "")
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\//g, ".");
+}
+
+/** Application source *.py files that make up a declared layer's module (a
+ *  directory -> its tree, recursively, skipping vendor/test/migration dirs and
+ *  test files; a file -> itself; a bare path -> `<base>.py` if that is the file).
+ *  Unlike pyFilesFor this recurses and KEEPS __init__.py (imports live there too). */
+function layerSourceFiles(projectDir: string, module: string): string[] {
+  const base = module.replace(/\/+$/, "");
+  const out: string[] = [];
+  const abs = join(projectDir, base);
+  const tryFile = (p: string): void => {
+    try {
+      if (existsSync(p) && !statSync(p).isDirectory()) out.push(p);
+    } catch {
+      /* skip */
+    }
+  };
+  if (existsSync(abs)) {
+    let isDir = false;
+    try {
+      isDir = statSync(abs).isDirectory();
+    } catch {
+      /* treat as missing */
+    }
+    if (isDir) sourcePyFilesRec(abs, out);
+    else if (abs.endsWith(".py")) out.push(abs);
+    else tryFile(join(projectDir, `${base}.py`));
+  } else {
+    tryFile(join(projectDir, `${base}.py`));
+  }
+  return out;
+}
+
+/** Resolve a relative import (`from ..pkg import x`) to its absolute dotted
+ *  module, given the importing file. One leading dot = the file's own package;
+ *  each extra dot climbs one package. Returns null if it climbs past the root. */
+function resolveRelativeImport(fileAbs: string, projectDir: string, dots: number, tail: string): string | null {
+  const rel = relTo(projectDir, fileAbs);
+  const parts = rel.split("/");
+  parts.pop(); // drop the filename -> the file's package parts
+  const up = dots - 1;
+  if (up > parts.length) return null;
+  const basePkg = parts.slice(0, parts.length - up);
+  const tailParts = tail ? tail.split(".").filter(Boolean) : [];
+  const full = [...basePkg, ...tailParts].join(".");
+  return full || null;
+}
+
+/** The absolute dotted module a single import line brings in, or null if the line
+ *  is not an import. Handles `from X import ...`, `import X`/`import X as y`, and
+ *  relative `from .X import ...` (resolved against the importing file). Multi-name
+ *  `import a, b` collapses to its first module (sufficient for layer detection). */
+function importedModule(line: string, fileAbs: string, projectDir: string): string | null {
+  const from = /^\s*from\s+(\.*)([\w.]*)\s+import\b/.exec(line);
+  if (from) {
+    const dots = from[1].length;
+    const tail = from[2] ?? "";
+    if (dots === 0) return tail || null;
+    return resolveRelativeImport(fileAbs, projectDir, dots, tail);
+  }
+  const imp = /^\s*import\s+([\w.]+)/.exec(line);
+  return imp ? imp[1] : null;
+}
+
+/** Is `mod` the layer at `prefix`, or a submodule of it? (`app.services` matches
+ *  `app.services` and `app.services.foo`, but never `app.services_util`.) */
+function underPrefix(mod: string, prefix: string): boolean {
+  return mod === prefix || mod.startsWith(`${prefix}.`);
+}
+
 /**
  * Check the layering contract statically. Returns clean=true when the feature is
  * not service-backed (exempt), or when no boundary file does a session op AND a
@@ -225,20 +307,161 @@ export function checkLayeringClean(args: LayeringCleanArgs): LayeringCleanResult
   return { clean: true, scanned, violations: [] };
 }
 
+// ─── A5: may_import-derived inward-dependency scan (declaration-driven) ──
+// The architect declares, per layer, which layer ROLES it is allowed to depend on
+// (`layers[].may_import`), encoding the inward-dependency rule (boundary -> service
+// -> repository -> models). This scan proves the SOURCE honors it: for each declared
+// layer it reads that layer's module and flags any import of ANOTHER declared layer
+// whose role is NOT in this layer's `may_import`. It is fully derived from the
+// declaration (no hardcoded direction) and model-independent; "an import is an
+// import", so it needs no interpreter, only the import syntax of the kit's stack
+// (Python absolute/relative `import` / `from ... import`). This is the deterministic
+// backstop for the "dependencies point inward" family of NFRs, so the Navigator's
+// reflect need not demand a separate fitness test per inward edge.
+//
+// A side-effect-only registration import (`import app.models  # noqa: F401`, used to
+// force ORM table registration at the composition root) is assembly, not a layer
+// dependency, and is exempt (lines carrying a `# noqa` marker are skipped).
+
+export interface ImportLayeringResult {
+  ok: boolean;
+  /** Layer files that were scanned. */
+  scanned: string[];
+  /** "file:line  <code>  (role may not import role)" per offending import. */
+  violations: string[];
+  remediation?: string;
+}
+
+const IMPORT_LAYERING_REMEDIATION =
+  "A layer imports another layer it is not allowed to depend on. Dependencies must " +
+  "point inward, per the architect's layers[].may_import (boundary -> service -> " +
+  "repository -> models). Route the dependency through the allowed inner layer (the " +
+  "boundary calls the service, the service calls the repository) instead of reaching " +
+  "across or around it. See the `layering-violation` smell + " +
+  "@architectural-design-principles layered-architecture.";
+
+/**
+ * Flag any declared layer that imports another declared layer its `may_import`
+ * does not permit. Derived entirely from `layers[]` (role, module, may_import); a
+ * layer with no `may_import` may depend on no other layer (schema: empty/omitted =
+ * nothing inward). Same-role sibling layers never constrain each other, and imports
+ * of non-layer modules (utils, framework) are never flagged. Clean when no layer
+ * (or a single layer) is declared.
+ */
+export function checkImportLayering(
+  projectDir: string,
+  layers: Array<{ role: string; module: string; may_import?: string[] }>,
+): ImportLayeringResult {
+  const decls = layers
+    .filter((l) => typeof l.role === "string" && typeof l.module === "string" && l.module.length > 0)
+    .map((l) => ({ role: l.role, module: l.module, allowed: new Set(l.may_import ?? []), prefix: dottedPrefix(l.module) }));
+
+  const scanned: string[] = [];
+  const violations: string[] = [];
+  for (const layer of decls) {
+    // Forbidden targets: every OTHER declared layer (different prefix AND different
+    // role) whose role this layer's may_import does not list.
+    const forbidden = decls.filter((k) => k.prefix !== layer.prefix && k.role !== layer.role && !layer.allowed.has(k.role));
+    if (forbidden.length === 0) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = readFileSync(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (/#\s*noqa/i.test(line)) return; // side-effect-only registration import (assembly, not a dependency)
+        const mod = importedModule(line, file, projectDir);
+        if (!mod) return;
+        const hit = forbidden.find((t) => underPrefix(mod, t.prefix));
+        if (hit) violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} may not import ${hit.role})`);
+      });
+    }
+  }
+  return violations.length === 0
+    ? { ok: true, scanned, violations: [] }
+    : { ok: false, scanned, violations, remediation: IMPORT_LAYERING_REMEDIATION };
+}
+
+// ─── A6: ORM / persistence containment (only the repository owns the session) ──
+// "Only the repository layer touches the persistence mechanism." checkLayeringClean
+// already proves the BOUNDARY is not a fat controller; this generalizes the
+// containment to EVERY other declared layer that must not touch the ORM (service,
+// models, policy, ...), leaving `repository` (which owns persistence) and
+// `infrastructure` (which owns the engine / session factory) exempt. The scan token
+// is the persistence stack's session-operation signature, passed in so it can be
+// parameterized per detected stack (SQLAlchemy today, `SESSION_OP`; a Prisma / JPA
+// stack would pass its own). Gated on a repository layer being declared (containment
+// is only meaningful when there is a repository to contain persistence to). This is
+// the deterministic backstop for the "only the repository owns the ORM" NFR, so the
+// Navigator need not demand a per-layer containment fitness test.
+//
+// The boundary is scanned here too (it is a non-repo layer), so a fat controller
+// surfaces under both this check and checkLayeringClean; both point at the same fix.
+
+const ORM_CONTAINMENT_EXEMPT_ROLES = new Set<string>(["repository", "infrastructure"]);
+
+const ORM_CONTAINMENT_REMEDIATION =
+  "A layer other than the repository calls the persistence session/ORM directly. Only " +
+  "the repository layer may touch the ORM session; move the persistence call into the " +
+  "repository and have this layer delegate to it. See the `layering-violation` smell + " +
+  "@architectural-design-principles layered-architecture.";
+
+export interface OrmContainmentResult {
+  ok: boolean;
+  /** Non-repo layer files that were scanned. */
+  scanned: string[];
+  violations: string[];
+  remediation?: string;
+}
+
+/**
+ * Flag any declared non-repository, non-infrastructure layer that calls the ORM
+ * session directly. Derived from `layers[]`; gated on a declared repository layer.
+ * `sessionOp` defaults to the kit's SQLAlchemy signature but is a parameter so a
+ * different persistence stack can pass its own token.
+ */
+export function checkOrmContainment(
+  projectDir: string,
+  layers: Array<{ role: string; module: string }>,
+  sessionOp: RegExp = SESSION_OP,
+): OrmContainmentResult {
+  const hasRepository = layers.some((l) => l.role === "repository");
+  if (!hasRepository) return { ok: true, scanned: [], violations: [] };
+
+  const scanned: string[] = [];
+  const violations: string[] = [];
+  for (const layer of layers) {
+    if (typeof layer.module !== "string" || !layer.module || ORM_CONTAINMENT_EXEMPT_ROLES.has(layer.role)) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = readFileSync(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (sessionOp.test(line)) {
+          violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} layer must not touch the ORM session)`);
+        }
+      });
+    }
+  }
+  return violations.length === 0
+    ? { ok: true, scanned, violations: [] }
+    : { ok: false, scanned, violations, remediation: ORM_CONTAINMENT_REMEDIATION };
+}
+
 /** Read `service_backed` + the layer module paths + the boundary `renders_via`
  *  out of an architecture.json string, for the CLI. Tolerant of absent/invalid JSON. */
 export function layeringConfigFromArchitecture(architectureJson: string): {
   serviceBacked: boolean;
   boundaryModules: string[];
   repositoryModules: string[];
-  /** Every declared layer's role + module (for the placement check). */
-  allModules: Array<{ role: string; module: string }>;
+  /** Every declared layer's role + module + may_import (for the placement, import
+   *  layering, and ORM-containment checks). */
+  allModules: Array<{ role: string; module: string; may_import?: string[] }>;
   /** The boundary layer's `renders_via` (templating framework), if declared. */
   rendersVia?: string;
 } {
   let parsed: {
     service_backed?: boolean;
-    layers?: Array<{ role?: string; module?: string; renders_via?: string }>;
+    layers?: Array<{ role?: string; module?: string; renders_via?: string; may_import?: string[] }>;
   };
   try {
     parsed = JSON.parse(architectureJson);
@@ -250,7 +473,11 @@ export function layeringConfigFromArchitecture(architectureJson: string): {
     layers.filter((l) => l.role === role && typeof l.module === "string").map((l) => l.module as string);
   const allModules = layers
     .filter((l) => typeof l.role === "string" && typeof l.module === "string")
-    .map((l) => ({ role: l.role as string, module: l.module as string }));
+    .map((l) => ({
+      role: l.role as string,
+      module: l.module as string,
+      ...(Array.isArray(l.may_import) ? { may_import: l.may_import.filter((r): r is string => typeof r === "string") } : {}),
+    }));
   const boundaryLayer = layers.find((l) => l.role === "boundary" && typeof l.renders_via === "string");
   return {
     serviceBacked: parsed.service_backed === true,

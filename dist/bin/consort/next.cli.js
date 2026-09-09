@@ -8857,7 +8857,7 @@ var SMELL_CATALOG = [
   },
   {
     name: "layering-violation",
-    description: "The boundary/routes layer touches persistence directly (calls the DB session: .query/.add/.commit/.delete on a route handler) or business logic lives in the boundary/templates, instead of delegating to a service + repository. A fat controller violates the layered-architecture contract the architect declared in architecture.json `layers`. Distinct from `boundary-violation` (which is a TEST reaching a private method). Caught deterministically by `consort-layering-clean`; the Navigator may also flag it in REVIEW.",
+    description: "The code breaks the layered-architecture contract the architect declared in architecture.json `layers`: a fat controller (the boundary/routes layer calls the DB session directly \u2013 .query/.add/.commit/.delete \u2013 or holds business logic instead of delegating to a service + repository); a dependency that does NOT point inward (a layer imports another its `may_import` does not permit \u2013 e.g. the boundary reaching around the service into the repository, or a backward import); or leaked persistence (a non-repository layer such as the service touches the ORM session). Distinct from `boundary-violation` (which is a TEST reaching a private method). Caught deterministically by `consort-layering-clean` (boundary session ops, may_import-derived inward-dependency scan, and ORM containment across non-repository layers); the Navigator may also flag it in REVIEW.",
     proposed_remediation: "Extract a service (business logic) + a repository (the ONLY layer that touches the ORM/session); the route handler validates input + delegates. Defended by the layering fitness test (tests/architecture/test_layering.py)."
   },
   {

@@ -17,13 +17,21 @@ describe("quiesceGate – only upgrade at a clean stop, never under a running dr
     expect(quiesceGate({ pidAlive: true, atStop: true }).safe).toBe(false);
     expect(quiesceGate({ pidAlive: true, atStop: false }).safe).toBe(false);
   });
-  it("REFUSES when not at a stop (mid-flight) even with the drive confirmed down", () => {
+  it("ALLOWS when the drive is confirmed DOWN, even if next.json rolled forward (pid-gone is the stop authority)", () => {
+    // A completed sprint rolls next.json forward to the next cycle's first step (atStop:false), but
+    // with the drive pid gone NOTHING is running — so the upgrade is safe. This is the finished-sprint
+    // case the old gate wrongly refused.
     const r = quiesceGate({ pidAlive: false, atStop: false });
-    expect(r.safe).toBe(false);
-    expect(r.reason).toMatch(/clean stop|mid-flight/i);
+    expect(r.safe).toBe(true);
+    expect(r.reason).toMatch(/nothing is running|not alive/i);
   });
   it("ALLOWS at a stop with the drive confirmed down", () => {
     expect(quiesceGate({ pidAlive: false, atStop: true }).safe).toBe(true);
+  });
+  it("REFUSES with liveness UNVERIFIED (no --pid) and next.json not at a clean stop — steer to --pid", () => {
+    const r = quiesceGate({ pidAlive: null, atStop: false });
+    expect(r.safe).toBe(false);
+    expect(r.reason).toMatch(/--pid/);
   });
   it("ALLOWS at a stop with liveness UNVERIFIED (no --pid), but flags it", () => {
     const r = quiesceGate({ pidAlive: null, atStop: true });

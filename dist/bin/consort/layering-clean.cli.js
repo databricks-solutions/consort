@@ -108,6 +108,61 @@ function pyFilesFor(projectDir, rel) {
 function repositoryExists(projectDir, repositoryModules) {
   return repositoryModules.some((rel) => existsSync2(join2(projectDir, rel)));
 }
+function relTo(projectDir, file) {
+  return file.startsWith(projectDir) ? file.slice(projectDir.length).replace(/^\/+/, "") : file;
+}
+function dottedPrefix(module) {
+  return module.replace(/\.py$/, "").replace(/^\/+|\/+$/g, "").replace(/\//g, ".");
+}
+function layerSourceFiles(projectDir, module) {
+  const base = module.replace(/\/+$/, "");
+  const out = [];
+  const abs = join2(projectDir, base);
+  const tryFile = (p2) => {
+    try {
+      if (existsSync2(p2) && !statSync2(p2).isDirectory()) out.push(p2);
+    } catch {
+    }
+  };
+  if (existsSync2(abs)) {
+    let isDir = false;
+    try {
+      isDir = statSync2(abs).isDirectory();
+    } catch {
+    }
+    if (isDir) sourcePyFilesRec(abs, out);
+    else if (abs.endsWith(".py")) out.push(abs);
+    else tryFile(join2(projectDir, `${base}.py`));
+  } else {
+    tryFile(join2(projectDir, `${base}.py`));
+  }
+  return out;
+}
+function resolveRelativeImport(fileAbs, projectDir, dots, tail) {
+  const rel = relTo(projectDir, fileAbs);
+  const parts = rel.split("/");
+  parts.pop();
+  const up = dots - 1;
+  if (up > parts.length) return null;
+  const basePkg = parts.slice(0, parts.length - up);
+  const tailParts = tail ? tail.split(".").filter(Boolean) : [];
+  const full = [...basePkg, ...tailParts].join(".");
+  return full || null;
+}
+function importedModule(line, fileAbs, projectDir) {
+  const from = /^\s*from\s+(\.*)([\w.]*)\s+import\b/.exec(line);
+  if (from) {
+    const dots = from[1].length;
+    const tail = from[2] ?? "";
+    if (dots === 0) return tail || null;
+    return resolveRelativeImport(fileAbs, projectDir, dots, tail);
+  }
+  const imp = /^\s*import\s+([\w.]+)/.exec(line);
+  return imp ? imp[1] : null;
+}
+function underPrefix(mod, prefix) {
+  return mod === prefix || mod.startsWith(`${prefix}.`);
+}
 function checkLayeringClean(args) {
   if (!args.serviceBacked) {
     return { clean: true, scanned: [], violations: [] };
@@ -136,6 +191,51 @@ function checkLayeringClean(args) {
   }
   return { clean: true, scanned, violations: [] };
 }
+var IMPORT_LAYERING_REMEDIATION = "A layer imports another layer it is not allowed to depend on. Dependencies must point inward, per the architect's layers[].may_import (boundary -> service -> repository -> models). Route the dependency through the allowed inner layer (the boundary calls the service, the service calls the repository) instead of reaching across or around it. See the `layering-violation` smell + @architectural-design-principles layered-architecture.";
+function checkImportLayering(projectDir, layers) {
+  const decls = layers.filter((l) => typeof l.role === "string" && typeof l.module === "string" && l.module.length > 0).map((l) => ({ role: l.role, module: l.module, allowed: new Set(l.may_import ?? []), prefix: dottedPrefix(l.module) }));
+  const scanned = [];
+  const violations = [];
+  for (const layer of decls) {
+    const forbidden = decls.filter((k) => k.prefix !== layer.prefix && k.role !== layer.role && !layer.allowed.has(k.role));
+    if (forbidden.length === 0) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = readFileSync2(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (/#\s*noqa/i.test(line)) return;
+        const mod = importedModule(line, file, projectDir);
+        if (!mod) return;
+        const hit = forbidden.find((t) => underPrefix(mod, t.prefix));
+        if (hit) violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} may not import ${hit.role})`);
+      });
+    }
+  }
+  return violations.length === 0 ? { ok: true, scanned, violations: [] } : { ok: false, scanned, violations, remediation: IMPORT_LAYERING_REMEDIATION };
+}
+var ORM_CONTAINMENT_EXEMPT_ROLES = /* @__PURE__ */ new Set(["repository", "infrastructure"]);
+var ORM_CONTAINMENT_REMEDIATION = "A layer other than the repository calls the persistence session/ORM directly. Only the repository layer may touch the ORM session; move the persistence call into the repository and have this layer delegate to it. See the `layering-violation` smell + @architectural-design-principles layered-architecture.";
+function checkOrmContainment(projectDir, layers, sessionOp = SESSION_OP) {
+  const hasRepository = layers.some((l) => l.role === "repository");
+  if (!hasRepository) return { ok: true, scanned: [], violations: [] };
+  const scanned = [];
+  const violations = [];
+  for (const layer of layers) {
+    if (typeof layer.module !== "string" || !layer.module || ORM_CONTAINMENT_EXEMPT_ROLES.has(layer.role)) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = readFileSync2(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (sessionOp.test(line)) {
+          violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} layer must not touch the ORM session)`);
+        }
+      });
+    }
+  }
+  return violations.length === 0 ? { ok: true, scanned, violations: [] } : { ok: false, scanned, violations, remediation: ORM_CONTAINMENT_REMEDIATION };
+}
 function layeringConfigFromArchitecture(architectureJson) {
   let parsed;
   try {
@@ -145,7 +245,11 @@ function layeringConfigFromArchitecture(architectureJson) {
   }
   const layers = parsed.layers ?? [];
   const modulesByRole = (role) => layers.filter((l) => l.role === role && typeof l.module === "string").map((l) => l.module);
-  const allModules2 = layers.filter((l) => typeof l.role === "string" && typeof l.module === "string").map((l) => ({ role: l.role, module: l.module }));
+  const allModules2 = layers.filter((l) => typeof l.role === "string" && typeof l.module === "string").map((l) => ({
+    role: l.role,
+    module: l.module,
+    ...Array.isArray(l.may_import) ? { may_import: l.may_import.filter((r) => typeof r === "string") } : {}
+  }));
   const boundaryLayer = layers.find((l) => l.role === "boundary" && typeof l.renders_via === "string");
   return {
     serviceBacked: parsed.service_backed === true,
@@ -315,6 +419,8 @@ var callArgs = { projectDir: p.projectDir, serviceBacked };
 if (boundary.length > 0) callArgs.boundaryModules = boundary;
 if (repository.length > 0) callArgs.repositoryModules = repository;
 var layering = checkLayeringClean(callArgs);
+var importLayering = serviceBacked && allModules.length ? checkImportLayering(p.projectDir, allModules) : { ok: true, violations: [], remediation: void 0 };
+var ormContainment = serviceBacked && allModules.length ? checkOrmContainment(p.projectDir, allModules) : { ok: true, violations: [], remediation: void 0 };
 var placement = serviceBacked && allModules.length ? checkModulePlacement(p.projectDir, allModules) : { ok: true, violations: [] };
 var rendering = serviceBacked ? checkInlineRendering(p.projectDir, boundary, rendersVia) : { ok: true, violations: [] };
 var budgetPaths = allModules.length ? allModules.map((m) => m.module) : ["app"];
@@ -322,6 +428,8 @@ var budget = checkCodeBudget(p.projectDir, budgetPaths);
 var duplicates = checkDuplicateClasses(p.projectDir);
 var groups = [
   { label: "layering (boundary vs persistence)", ok: layering.clean, violations: layering.violations, remediation: layering.remediation },
+  { label: "import layering (dependencies point inward per may_import)", ok: importLayering.ok, violations: importLayering.violations, remediation: importLayering.remediation },
+  { label: "ORM containment (only the repository touches the session)", ok: ormContainment.ok, violations: ormContainment.violations, remediation: ormContainment.remediation },
   { label: "module placement (layers at declared paths)", ok: placement.ok, violations: placement.violations },
   { label: "rendering (templating, not inline HTML)", ok: rendering.ok, violations: rendering.violations, remediation: rendering.remediation },
   { label: "DRY + complexity budget", ok: budget.ok, violations: budget.violations },
