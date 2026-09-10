@@ -38,6 +38,10 @@ function findFeatureDir(tdd, featureId) {
   return matches.length === 1 ? join(root, matches[0]) : void 0;
 }
 
+// consort/gates/registered-breakdown.ts
+import { join as join2 } from "path";
+var registrationPath = (consortDir) => join2(consortDir, "registration.json");
+
 // bin/lakebase/stage-first-project.cli.ts
 function packageRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -71,6 +75,12 @@ function stageFirstProject(opts = {}) {
   for (const [from, to] of intake) {
     copy(from, to);
     staged.push(rel(to));
+  }
+  const regFrom = path.join(seedDir, "registration.json");
+  if (fs2.existsSync(regFrom)) {
+    const regTo = registrationPath(consortDir);
+    copy(regFrom, regTo);
+    staged.push(rel(regTo));
   }
   const frDir = path.join(seedDir, "feature-requests");
   const features = [];

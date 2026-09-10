@@ -10,6 +10,7 @@
 //   intake/design-brief.md       -> .consort/design/design-brief.md
 //   intake/assets/warehouse.png  -> .consort/design/assets/warehouse.png (alongside the brief)
 //   feature-requests/<Fid>.md    -> .consort/features/<Fid>/feature-request.md (one per file)
+//   registration.json            -> .consort/registration.json (pre-registration; guards the F1 breakdown)
 //
 // The feature-PROPOSALS are intentionally NOT staged: the Spec Author regenerates
 // proposals during /plan. Idempotent (overwrites). Never throws a partial state: it
@@ -28,6 +29,7 @@ import {
   designBriefMd,
   featureRequestMd,
 } from "../../consort/config/consort-paths.js";
+import { registrationPath } from "../../consort/gates/registered-breakdown.js";
 
 /** The package root: examples/ ships beside dist/. dist/bin/lakebase/<this>.js -> ../../.. */
 function packageRoot(): string {
@@ -79,6 +81,17 @@ export function stageFirstProject(opts: { projectDir?: string; seedDir?: string 
   for (const [from, to] of intake) {
     copy(from, to);
     staged.push(rel(to));
+  }
+
+  // Pre-registration: the canonical F1 story+AC breakdown. Staged to
+  // .consort/registration.json so the design-spec gate's registered-breakdown
+  // guard halts fail-closed if the design lane derives a different breakdown
+  // (the recurring app-shell/story-drift wild path). Optional in the seed.
+  const regFrom = path.join(seedDir, "registration.json");
+  if (fs.existsSync(regFrom)) {
+    const regTo = registrationPath(consortDir);
+    copy(regFrom, regTo);
+    staged.push(rel(regTo));
   }
 
   // One feature-request.md per seed file, keyed by the filename (F<n>-<slug>).

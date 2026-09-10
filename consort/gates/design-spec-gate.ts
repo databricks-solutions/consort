@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { readMasterTestList, scopeToStory, acsForStory } from "../test-list/test-list.js";
+import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "./registered-breakdown.js";
 import { storyPlanJson } from "../../consort/config/consort-paths.js";
 import type { TestList, TestListItem } from "../test-list/test-list.js";
 import { readAcLayer } from "../pipeline/run-cycle.js";
@@ -85,7 +86,7 @@ export interface TransitionBlocker {
    *   E2E-tagged ACs but `playwright.config.ts` is missing from the
    *   project root. Fix: run `installPlaywright()` or retag the ACs.
    */
-  kind: "e2e-without-playwright";
+  kind: "e2e-without-playwright" | "registered-breakdown-divergence";
   detail: string;
   /** AC ids that triggered this blocker. Empty when not AC-scoped. */
   ac_ids?: string[];
@@ -126,6 +127,18 @@ export function analyzeForGate(
   const gaps = detectOpinionGaps(list);
   const projectDir = opts?.projectDir ?? dirname(consortDir);
   const transition_blockers = checkE2eGate({ consortDir, featureId, list, projectDir });
+  // Pre-registered example guard: when the feature ships a registration.json, the
+  // derived story + AC breakdown must match it (by slug). A divergence — an
+  // invented/renamed story (the recurring `app-shell` wild path) or a restructured
+  // AC set — hard-stops here instead of thrashing the reflect gate later. No-op
+  // when no registration.json exists (every non-registered project is unaffected).
+  const registration = readRegistration(consortDir, featureId);
+  if (registration) {
+    const { violations } = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+    for (const detail of violations) {
+      transition_blockers.push({ kind: "registered-breakdown-divergence", detail });
+    }
+  }
   const mode: "N=1" | "N>=2" = gaps.length >= 2 ? "N>=2" : "N=1";
   const proposed: ExperimentPlan = {
     feature_id: featureId,

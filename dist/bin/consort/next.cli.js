@@ -10023,6 +10023,9 @@ init_esm_shims();
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
 
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+
 // consort/experiment/spike-carryforward.ts
 init_esm_shims();
 

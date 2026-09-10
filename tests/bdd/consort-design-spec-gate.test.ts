@@ -107,4 +107,26 @@ describe("design-spec-gate", () => {
   it("readPlan returns null when no plan has been written", () => {
     expect(readPlan(tdd, "F1", STORY)).toBeNull();
   });
+
+  it("no registered-breakdown blocker when the feature has no registration.json (non-registered projects unaffected)", () => {
+    writeMasterTestList(tdd, { feature_id: "F1", items: [{ id: "T1", description: "happy path", ac_id: "AC1", status: "pending" }] });
+    seedAcs("AC1");
+    const analysis = analyzeForGate(tdd, "F1", STORY);
+    expect(analysis.transition_blockers.some((b) => b.kind === "registered-breakdown-divergence")).toBe(false);
+  });
+
+  it("surfaces a registered-breakdown-divergence blocker when the derived story diverges from registration.json", () => {
+    // A pre-registered feature declares S1-file-stock; the live design lane produced S1 (an
+    // unregistered story slug) => analyzeForGate must hard-stop at the design-spec gate.
+    writeMasterTestList(tdd, { feature_id: "F1", items: [{ id: "T1", description: "happy path", ac_id: "AC1", status: "pending" }] });
+    seedAcs("AC1");
+    writeFileSync(
+      join(tdd, "registration.json"),
+      JSON.stringify({ feature_id: "F1", stories: [{ id: "S1-file-stock", acs: ["AC1-file-stock-record"] }] }),
+    );
+    const analysis = analyzeForGate(tdd, "F1", STORY);
+    const blocker = analysis.transition_blockers.find((b) => b.kind === "registered-breakdown-divergence");
+    expect(blocker).toBeDefined();
+    expect(blocker!.detail).toMatch(/unregistered story "S1"|registered story "S1-file-stock" is missing/);
+  });
 });

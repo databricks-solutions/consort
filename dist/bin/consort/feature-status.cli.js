@@ -7261,6 +7261,9 @@ function readGateApproved(featureId, consortDir, gate) {
 init_esm_shims();
 import { appendFileSync, existsSync as existsSync18, readFileSync as readFileSync20, writeFileSync as writeFileSync13, mkdirSync as mkdirSync11 } from "fs";
 
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+
 // consort/experiment/spike-carryforward.ts
 init_esm_shims();
 

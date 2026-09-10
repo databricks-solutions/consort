@@ -7469,6 +7469,9 @@ function readGateApproved(featureId, consortDir, gate) {
 init_cjs_shims();
 var import_fs7 = require("fs");
 
+// consort/gates/registered-breakdown.ts
+init_cjs_shims();
+
 // consort/experiment/spike-carryforward.ts
 init_cjs_shims();
 

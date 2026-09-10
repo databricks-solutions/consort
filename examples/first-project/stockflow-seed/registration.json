@@ -1,0 +1,18 @@
+{
+  "_comment": "PRE-REGISTRATION for the StockFlow first-project example: the canonical F1-stock-visibility story + AC breakdown (from the recorded reference corpus). Staged to .consort/registration.json; the design-spec gate's registered-breakdown guard halts fail-closed if the live design lane derives a different breakdown (e.g. invents an app-shell story, renames/drops a story, or restructures a story's ACs). Matched by SLUG, so ordinals may shift. Covers F1 only; other features (F2-F9) are unguarded (the guard no-ops without a matching feature_id).",
+  "feature_id": "F1-stock-visibility",
+  "stories": [
+    {
+      "id": "S1-file-stock",
+      "acs": ["AC1-file-stock-record", "AC2-retrieve-stock-record", "AC3-collision-resolved-at-write"]
+    },
+    {
+      "id": "S2-stock-by-location-table",
+      "acs": ["AC1-table-lists-stock-by-location", "AC2-quantity-right-aligned", "AC3-empty-location-state"]
+    },
+    {
+      "id": "S3-sku-detail-view",
+      "acs": ["AC1-lists-stock-across-locations", "AC2-shows-tracking-code", "AC3-par-level-not-tracked", "AC4-sku-with-no-stock-empty-state"]
+    }
+  ]
+}
