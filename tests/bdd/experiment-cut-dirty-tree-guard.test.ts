@@ -144,4 +144,34 @@ describe("cutExperiment is fail-closed on uncommitted TRACKED source, but tolera
     const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: dir, encoding: "utf8" }).trim();
     expect(dirty, "the design corpus churn was committed on the feature branch (tree clean)").toBe("");
   });
+
+  it("COMMITS the UX designer's materialized theme (client/src/styles/{theme,global}.css) before forking", async () => {
+    // Regression (v0.3.84): the UX designer now MATERIALIZES the design system into TRACKED code —
+    // client/src/styles/theme.css (:root generated from the guide) + global.css (its component
+    // classes). Those are design-lane output, but they live outside .consort/, so left uncommitted
+    // they trip the fail-closed tracked-source guard and REFUSE the fork ("experiment cut needs a
+    // clean tree"). cutExperiment must persist them on the feature branch pre-fork, like the corpus.
+    const stylesDir = join(dir, "client", "src", "styles");
+    mkdirSync(stylesDir, { recursive: true });
+    writeFileSync(join(stylesDir, "theme.css"), ":root { --color-brand: #ff3621; }\n");
+    writeFileSync(join(stylesDir, "global.css"), ".card { background: var(--color-card); }\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "seed scaffold theme");
+    // The UX designer re-skins the theme to the guide (indigo) + authors its component vocabulary.
+    writeFileSync(join(stylesDir, "theme.css"), ":root { --color-brand-indigo: #4840BB; }\n");
+    writeFileSync(join(stylesDir, "global.css"), ".hero-value { font-size: var(--text-hero); }\n");
+    let forked = false;
+    await expect(
+      cutExperiment(args(), {
+        createPairedBranch: (async () => {
+          forked = true;
+          throw new Error("REACHED_PAIRED_CUT");
+        }) as never,
+        deletePairedBranch: (async () => {}) as never,
+      }),
+    ).rejects.toThrow(/REACHED_PAIRED_CUT/);
+    expect(forked, "the materialized theme is persisted, not blocking – the cut reaches createPairedBranch").toBe(true);
+    const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: dir, encoding: "utf8" }).trim();
+    expect(dirty, "theme.css + global.css were committed on the feature branch (tree clean)").toBe("");
+  });
 });

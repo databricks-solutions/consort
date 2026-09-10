@@ -6760,7 +6760,15 @@ async function cutExperiment(args, deps = {}) {
       productOverviewMd(consortDir),
       nfrsMd(consortDir),
       designDir(consortDir),
-      architectureDir(consortDir)
+      architectureDir(consortDir),
+      // The UX Designer's MATERIALIZED design system: theme.css (:root tokens generated
+      // from the guide) + global.css (its component classes). These are design-lane output
+      // like the design corpus, but they live in client/src/ as TRACKED code — so left
+      // uncommitted they trip the fail-closed tracked-source guard below and refuse the fork
+      // ("experiment cut needs a clean tree"). Commit them here, pre-fork, so the build lane
+      // inherits the design system and the tree is clean. Absent on a non-UI project (filtered).
+      join2(projectDir, "client", "src", "styles", "theme.css"),
+      join2(projectDir, "client", "src", "styles", "global.css")
     ].filter((p) => existsSync2(p));
     if (corpusPaths.length > 0) {
       execFileSync("git", ["add", "--", ...corpusPaths], { cwd: projectDir });
