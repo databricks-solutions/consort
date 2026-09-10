@@ -65,17 +65,28 @@ function checkAppIcon(input) {
   }
   return violations.length === 0 ? { ok: true, violations: [] } : { ok: false, violations, remediation: APP_ICON_REMEDIATION };
 }
+var COMPONENT_VOCAB_REMEDIATION = "The design guide names component classes its `components` declares, but they are not DEFINED in client/src/styles/global.css \u2014 so the app has no styling for that vocabulary and a page applying the class renders unstyled. The UX Designer must author one class per `components` entry (named exactly its `class`), styled through var(--token). This is what turns 'tokens exist on :root' into 'this project's components actually look like the brief' \u2014 the gap that made every app render the generic baseline. See the `ux-adherence` smell.";
+function checkComponentVocabularyDefined(declaredClasses, globalCss) {
+  if (declaredClasses.length === 0) return { ok: true, missing: [] };
+  const missing = declaredClasses.filter((cls) => {
+    const re = new RegExp(`\\.${cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
+    return !re.test(globalCss);
+  });
+  return missing.length === 0 ? { ok: true, missing: [] } : { ok: false, missing, remediation: COMPONENT_VOCAB_REMEDIATION };
+}
 var UX_CLEAN_REMEDIATION = "The client UI does not fully apply the design guide: a feature page is unreachable (not routed in App.tsx), bare (consumes no design tokens/classes), and/or the declared brand app icon is not applied. Wire every feature page into <Routes> with a nav affordance, style it with the design vocabulary, and install + reference the brand icon. See `ux-adherence`.";
 function summarizeUxViolations(r) {
   const parts = [];
   if (!r.reachability.ok) parts.push(`unreachable pages: ${r.reachability.unreachable.join(", ")}`);
   if (!r.tokens.ok) parts.push(`bare (unstyled) pages: ${r.tokens.bare.join(", ")}`);
+  if (!r.vocabulary.ok) parts.push(`design classes not defined in global.css: ${r.vocabulary.missing.join(", ")}`);
   if (!r.appIcon.ok) parts.push(`brand app icon not applied: ${r.appIcon.violations.join("; ")}`);
   return parts.join("; ");
 }
 function checkUxClean(args) {
   const okIcon = { ok: true, violations: [] };
-  const clean0 = { clean: true, reachability: { ok: true, unreachable: [] }, tokens: { ok: true, bare: [] }, appIcon: okIcon };
+  const okVocab = { ok: true, missing: [] };
+  const clean0 = { clean: true, reachability: { ok: true, unreachable: [] }, tokens: { ok: true, bare: [] }, appIcon: okIcon, vocabulary: okVocab };
   const srcDir = args.clientSrcDir ?? (0, import_node_path.join)(args.projectDir, "client", "src");
   const appTsx = (0, import_node_path.join)(srcDir, "App.tsx");
   const pagesDir = (0, import_node_path.join)(srcDir, "pages");
@@ -95,6 +106,8 @@ function checkUxClean(args) {
   }
   const reachability = checkRouteReachability({ appSource, pageComponents });
   const tokens = checkTokenConsumption({ pageSources, designClasses: args.designClasses });
+  const globalCssPath = (0, import_node_path.join)(srcDir, "styles", "global.css");
+  const vocabulary = args.designClasses && args.designClasses.length > 0 && (0, import_node_fs.existsSync)(globalCssPath) ? checkComponentVocabularyDefined(args.designClasses, (0, import_node_fs.readFileSync)(globalCssPath, "utf8")) : okVocab;
   let appIcon = okIcon;
   if (args.appIcon) {
     const clientDir = (0, import_node_path.join)(srcDir, "..");
@@ -109,8 +122,8 @@ function checkUxClean(args) {
       appShell: appSource
     });
   }
-  const clean = reachability.ok && tokens.ok && appIcon.ok;
-  return clean ? { clean, reachability, tokens, appIcon } : { clean, reachability, tokens, appIcon, remediation: UX_CLEAN_REMEDIATION };
+  const clean = reachability.ok && tokens.ok && appIcon.ok && vocabulary.ok;
+  return clean ? { clean, reachability, tokens, appIcon, vocabulary } : { clean, reachability, tokens, appIcon, vocabulary, remediation: UX_CLEAN_REMEDIATION };
 }
 
 // bin/consort/ux-clean.cli.ts

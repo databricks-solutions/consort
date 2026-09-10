@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   designGuideToCssVars,
+  renderThemeRootCss,
   checkTokenAdherence,
   assertDesignAdherence,
   checkHardcodedValues,
@@ -19,6 +20,7 @@ import {
   checkFeedbackPresent,
   checkRouteReachability,
   checkTokenConsumption,
+  checkComponentVocabularyDefined,
   checkAppIcon,
   checkUxClean,
 } from "../../consort/architecture/design-adherence";
@@ -33,7 +35,7 @@ const GUIDE = {
 describe("designGuideToCssVars: flattens a guide to CSS custom properties", () => {
   it("maps tokens to their --css-var names by convention", () => {
     const vars = designGuideToCssVars(GUIDE);
-    expect(vars["--font-family"]).toBe("DM Sans");
+    expect(vars["--font-sans"]).toBe("DM Sans");
     expect(vars["--font-mono"]).toBe("DM Mono");
     expect(vars["--text-base"]).toBe("15px");
     expect(vars["--color-brand-red"]).toBe("#FF3621");
@@ -64,12 +66,51 @@ describe("designGuideToCssVars: flattens a guide to CSS custom properties", () =
   });
 });
 
+describe("renderThemeRootCss: generates the :root token block FROM the guide", () => {
+  it("emits a :root block declaring every token the checker expects (adherence holds by construction)", () => {
+    const css = renderThemeRootCss(GUIDE);
+    expect(css.startsWith(":root {")).toBe(true);
+    expect(css.trimEnd().endsWith("}")).toBe(true);
+    // Every var designGuideToCssVars produces appears as a declaration.
+    const declared = designGuideToCssVars(GUIDE);
+    for (const [name, value] of Object.entries(declared)) {
+      expect(css).toContain(`  ${name}: ${value};`);
+    }
+  });
+
+  it("round-trips: parsing the generated :root back yields exactly the declared vars", () => {
+    // This is the guarantee that made the UX designer real: what renders IS what
+    // the guide declares. Parse `  --x: v;` lines back and compare to the checker's map.
+    const css = renderThemeRootCss(GUIDE);
+    const parsed: Record<string, string> = {};
+    for (const m of css.matchAll(/^\s*(--[\w-]+):\s*(.+);$/gm)) {
+      parsed[m[1]] = m[2];
+    }
+    expect(parsed).toEqual(designGuideToCssVars(GUIDE));
+    // And that map, fed to the adherence checker as the rendered side, passes.
+    expect(checkTokenAdherence(designGuideToCssVars(GUIDE), parsed).ok).toBe(true);
+  });
+
+  it("re-skins to a DIFFERENT guide's palette (proves it is not the frozen baseline)", () => {
+    const indigo = renderThemeRootCss({
+      typography: { font_family: "Inter", font_mono: "Roboto Mono", scale: { "text-hero": "56px" } },
+      colors: { brand: { "brand-indigo": "#4840BB" }, semantic: { gain: "#047857" } },
+      spacing: { "space-5": "24px" },
+      radius: { lg: "16px" },
+    });
+    expect(indigo).toContain("--color-brand-indigo: #4840BB;");
+    expect(indigo).toContain("--font-sans: Inter;");
+    expect(indigo).not.toContain("#FF3621"); // never the Databricks baseline red
+    expect(indigo).not.toContain("DM Sans");
+  });
+});
+
 describe("checkTokenAdherence: rendered :root vars vs declared tokens", () => {
   const declared = designGuideToCssVars(GUIDE);
 
   it("ok when every declared token matches the rendered value (case/space-insensitive)", () => {
     const rendered = {
-      "--font-family": "DM Sans",
+      "--font-sans": "DM Sans",
       "--font-mono": "DM Mono",
       "--text-base": "15px",
       "--color-brand-red": " #ff3621 ", // whitespace + lowercase still matches
@@ -81,7 +122,7 @@ describe("checkTokenAdherence: rendered :root vars vs declared tokens", () => {
   });
 
   it("reports a mismatch when a rendered value differs from the declared token", () => {
-    const rendered = { ...{ "--font-family": "DM Sans", "--font-mono": "DM Mono", "--text-base": "15px", "--color-success": "#2E844A", "--space-4": "16px", "--radius-none": "0px" }, "--color-brand-red": "#0000FF" };
+    const rendered = { ...{ "--font-sans": "DM Sans", "--font-mono": "DM Mono", "--text-base": "15px", "--color-success": "#2E844A", "--space-4": "16px", "--radius-none": "0px" }, "--color-brand-red": "#0000FF" };
     const r = checkTokenAdherence(declared, rendered);
     expect(r.ok).toBe(false);
     const brand = r.mismatches.find((m) => m.cssVar === "--color-brand-red");
@@ -90,7 +131,7 @@ describe("checkTokenAdherence: rendered :root vars vs declared tokens", () => {
   });
 
   it("reports a missing var when the app does not define a declared token", () => {
-    const rendered = { "--font-family": "DM Sans" }; // everything else absent
+    const rendered = { "--font-sans": "DM Sans" }; // everything else absent
     const r = checkTokenAdherence(declared, rendered);
     expect(r.ok).toBe(false);
     const missing = r.mismatches.find((m) => m.cssVar === "--color-brand-red");
@@ -110,7 +151,7 @@ describe("assertDesignAdherence: reads :root from a page-like reader", () => {
 
   it("resolves when the rendered tokens match the guide", async () => {
     const reader = readerFrom({
-      "--font-family": "DM Sans",
+      "--font-sans": "DM Sans",
       "--font-mono": "DM Mono",
       "--text-base": "15px",
       "--color-brand-red": "#FF3621",
@@ -123,7 +164,7 @@ describe("assertDesignAdherence: reads :root from a page-like reader", () => {
 
   it("throws naming the mismatched token when the UI drifts from the guide", async () => {
     const reader = readerFrom({
-      "--font-family": "DM Sans",
+      "--font-sans": "DM Sans",
       "--font-mono": "DM Mono",
       "--text-base": "15px",
       "--color-brand-red": "#0000FF", // wrong
@@ -296,15 +337,44 @@ describe("checkTokenConsumption: a feature page must consume tokens / the design
   });
 });
 
+describe("checkComponentVocabularyDefined: the guide's component classes must be defined in global.css", () => {
+  it("ok when every declared class has a selector in global.css", () => {
+    const css = ".hero-value { font-size: var(--text-hero); }\n.delta { color: var(--color-gain); }\n.holdings-table { width: 100%; }";
+    expect(checkComponentVocabularyDefined(["hero-value", "delta", "holdings-table"], css).ok).toBe(true);
+  });
+
+  it("flags a class the guide names but global.css never defines (a page applying it renders bare)", () => {
+    const css = ".hero-value { font-size: var(--text-hero); }"; // delta + holdings-table missing
+    const r = checkComponentVocabularyDefined(["hero-value", "delta", "holdings-table"], css);
+    expect(r.ok).toBe(false);
+    expect(r.missing).toEqual(["delta", "holdings-table"]);
+    expect(r.remediation).toMatch(/global\.css/);
+  });
+
+  it("does not treat a --modifier class as defining its base (.badge vs .badge--gain)", () => {
+    // Only `.badge--gain` present must NOT satisfy a declared `.badge`.
+    expect(checkComponentVocabularyDefined(["badge"], ".badge--gain { color: red; }").ok).toBe(false);
+    expect(checkComponentVocabularyDefined(["badge"], ".badge { border-radius: var(--radius-pill); }").ok).toBe(true);
+  });
+
+  it("trivially ok when the guide declares no component classes", () => {
+    expect(checkComponentVocabularyDefined([], "").ok).toBe(true);
+  });
+});
+
 // ── checkUxClean (I/O boundary): scans a project's client/, no-op without one ──
 describe("checkUxClean: project-level UX gate (UI-track only)", () => {
   let dir: string;
-  const mkClient = (app: string, pages: Record<string, string>): void => {
+  const mkClient = (app: string, pages: Record<string, string>, globalCss?: string): void => {
     mkdirSync(join(dir, "client", "src", "pages"), { recursive: true });
     writeFileSync(join(dir, "client", "package.json"), "{}");
     writeFileSync(join(dir, "client", "src", "App.tsx"), app);
     for (const [name, src] of Object.entries(pages)) {
       writeFileSync(join(dir, "client", "src", "pages", name), src);
+    }
+    if (globalCss !== undefined) {
+      mkdirSync(join(dir, "client", "src", "styles"), { recursive: true });
+      writeFileSync(join(dir, "client", "src", "styles", "global.css"), globalCss);
     }
   };
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "uxclean-")); });
@@ -358,6 +428,33 @@ describe("checkUxClean: project-level UX gate (UI-track only)", () => {
       },
     );
     expect(checkUxClean({ projectDir: dir }).clean).toBe(true);
+  });
+
+  it("not clean when the guide names a component class that global.css never defines", () => {
+    // The page applies the guide's own class (.holdings-table), but global.css only
+    // defines .card -> the class the design system promises has no styling -> bare.
+    mkClient(
+      `import {Routes,Route} from "react-router-dom";
+       export function App(){return(<Routes><Route path="/" element={<HomePage/>}/></Routes>);}`,
+      { "HomePage.tsx": `export function HomePage(){return(<table className="holdings-table"/>);}` },
+      ".card { background: var(--color-card); }", // .holdings-table NOT defined
+    );
+    const r = checkUxClean({ projectDir: dir, designClasses: ["card", "holdings-table"] });
+    expect(r.clean).toBe(false);
+    expect(r.vocabulary.ok).toBe(false);
+    expect(r.vocabulary.missing).toContain("holdings-table");
+  });
+
+  it("clean when global.css defines every class the guide's vocabulary names", () => {
+    mkClient(
+      `import {Routes,Route} from "react-router-dom";
+       export function App(){return(<Routes><Route path="/" element={<HomePage/>}/></Routes>);}`,
+      { "HomePage.tsx": `export function HomePage(){return(<main className="page"><table className="holdings-table"/></main>);}` },
+      ".page { max-width: 960px; } .holdings-table { width: 100%; font-family: var(--font-mono); }",
+    );
+    const r = checkUxClean({ projectDir: dir, designClasses: ["page", "holdings-table"] });
+    expect(r.vocabulary.ok).toBe(true);
+    expect(r.clean).toBe(true);
   });
 
   it("flags the brand app icon as not applied when the guide declares it but the shell keeps the placeholder", () => {

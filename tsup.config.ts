@@ -67,6 +67,7 @@ export default defineConfig({
     "bin/consort/story-pipeline.cli": "bin/consort/story-pipeline.cli.ts",
     "bin/consort/cycle.cli": "bin/consort/cycle.cli.ts",
     "bin/consort/response-formatter.cli": "bin/consort/response-formatter.cli.ts",
+    "bin/consort/apply-design-theme.cli": "bin/consort/apply-design-theme.cli.ts",
     "bin/consort/scenario-conditions.cli": "bin/consort/scenario-conditions.cli.ts",
     "bin/consort/story-experiment.cli": "bin/consort/story-experiment.cli.ts",
     "bin/consort/drive.cli": "bin/consort/drive.cli.ts",

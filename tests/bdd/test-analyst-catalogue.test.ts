@@ -66,6 +66,19 @@ describe("behavior vs fitness: a service-internal guard is NOT a .feature scenar
   });
 });
 
+describe("fitness: a service-layer guard is described to survive the layering refactor (Resolution A)", () => {
+  // pm23: a "rejects before the DB" guard proven by calling the service with NO session
+  // breaks once the layering refactor makes the session required (TypeError masks the guard).
+  // The fitness analyst must describe such items to inject the session + assert the repository
+  // write is never reached, never to omit the session.
+  const fit = TEST_ANALYST_CATALOGUE.fitness.focusPrompt;
+  it("names the injected session + repository-not-reached technique and warns against omitting the session", () => {
+    expect(fit).toMatch(/injected session/i);
+    expect(fit).toMatch(/assert-not-called|REPOSITORY WRITE is never reached/i);
+    expect(fit, "warns omitting the session masks the guard after the refactor").toMatch(/omitting the session|driver-refactor/i);
+  });
+});
+
 describe("resolveTestAnalystKind: fail-loud", () => {
   it("resolves a known kind", () => {
     const e: TestAnalystCatalogueEntry = resolveTestAnalystKind("fitness");

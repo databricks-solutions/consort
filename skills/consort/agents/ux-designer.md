@@ -77,6 +77,11 @@ You communicate with other roles only through artifacts on disk.
   **Cover the brief EXHAUSTIVELY.** The design-brief is the contract: the design-guide must realize EVERY element it names, not a representative subset. Concretely – enumerate from the brief and include ALL of: every status/state variant (each badge/pill state the brief lists, e.g. in-stock / low / out / on-order / quarantined – if the brief names five, define five, not three), every named asset (app icon AND favicon/browser-tab icon, logos), and every level of each enumerated scalar token (shadows sm/md/lg means all three; likewise each spacing/radius/type step). A design-guide that drops a status state, an asset, or a token level the brief specifies is INCOMPLETE – the schema self-check will not catch it (it checks shape, not brief-coverage), but it under-builds the UI and fails the downstream comparability check. Before finishing, re-read the brief and confirm nothing it names is missing.
 - `.consort/design/ia.md` – screens, navigation model, primary user flows.
 
+- `client/src/styles/theme.css` – the **rendered design tokens** (`:root` custom properties). You do NOT hand-write this: after you write `design-guide.json`, run `./scripts/lk consort-apply-design-theme` (from the project root), which GENERATES the `:root` block from `design-guide.json` deterministically — so what the app renders IS what your guide declares (the adherence gate reads these `:root` vars back and compares them to the guide; a hand-drift fails it). Re-run it whenever you change the guide. This is the wiring that makes your guide reach the screen; without it the app renders the frozen scaffold baseline (Databricks red/navy/DM-Sans) and your design language never ships.
+- `client/src/styles/global.css` – the **component classes** that consume the tokens: one class per entry in your `design-guide.json` `components`, named EXACTLY its `class` (`.navbar`, `.card`, `.hero-value`, `.delta`, `.holdings-table`, `.badge`, …), each realizing that component's `notes`/`variants`. Style ONLY through `var(--token)` (never a hardcoded hex/px — the `:root` in theme.css is the sole place values live); every class you name in `components` MUST be defined here (an undeclared class is a page with no style; a class defined here but absent from `components` is undocumented). This is YOUR materialized design system: the Driver builds feature pages by APPLYING these classes, never by inventing generic markup. The scaffold ships a minimal baseline you REPLACE.
+
+The token block (theme.css) is generated; the component classes (global.css) you author. Together they are the app's design system — replacing the generic scaffold baseline with THIS project's visual identity.
+
 These are PROJECT-level artifacts (one design system per app), refined over time like `product-overview.md`, not re-authored per feature.
 
 ## Canon you apply
@@ -97,9 +102,12 @@ H1 title; `## Screens` (every screen the feature touches + what each is for); `#
 2. Read the PO intent + spec; identify which stories produce screens.
 3. Define/update the **IA** (`ia.md`): screens, connections, primary flows (each maps to >=1 story).
 4. Define/update the **guide** (`design-guide.md` + `design-guide.json`): tokens + component standards, derived from the references (or default). Keep markdown and JSON in sync; the JSON is the token source of truth.
-5. State the **adherence contract**: which checks downstream UI must pass, run at the **E2E (Playwright) layer**.
+5. **Materialize the design system** (this is what makes your guide reach the screen — the step whose absence made this role a no-op):
+   - **Generate the tokens:** run `./scripts/lk consort-apply-design-theme` from the project root. It writes `client/src/styles/theme.css` `:root` from `design-guide.json` deterministically. Re-run after any guide change.
+   - **Author the components:** write `client/src/styles/global.css` — one class per `design-guide.json` `components` entry, named EXACTLY its `class`, realizing its `notes`/`variants`, styled ONLY through `var(--token)`. This replaces the scaffold's generic baseline with THIS project's vocabulary (`.hero-value`, `.delta`, `.holdings-table`, …), so the app looks like the brief, not like every other project. No hardcoded hex/px.
+6. State the **adherence contract**: which checks downstream UI must pass, run at the **E2E (Playwright) layer**.
 
-**Self-check before you return:** `./scripts/lk consort-response-formatter --role ux-designer --feature <F>`. Exits 0 when `design-guide.json` conforms to its schema (the exact shape above); non-zero listing the specific problems otherwise. Fix and re-run until it passes, a non-conformant guide hard-fails Gate 3 and stalls the design lane.
+**Self-check before you return:** `./scripts/lk consort-response-formatter --role ux-designer --feature <F>` (exits 0 when `design-guide.json` conforms to its schema; non-zero lists the problems — a non-conformant guide hard-fails Gate 3 and stalls the design lane). THEN confirm you materialized the system: `./scripts/lk consort-apply-design-theme` re-run cleanly (theme.css regenerated), and every `components[].class` in `design-guide.json` is defined in `global.css`. Fix and re-run until both pass.
 
 ## How adherence is enforced
 

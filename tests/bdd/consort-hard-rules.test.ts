@@ -114,4 +114,35 @@ describe("consort hard rules", () => {
       expect(doc.toLowerCase()).toMatch(/finally/);
     }
   });
+
+  // pm23: a story's step defs were split across two modules (test_S1_add_holding.py for
+  // T1-T5, test_S1_add_holding_ac4.py for AC4's T11-T13) both pointing at ONE feature file.
+  // The T1-T5 module's blanket scenarios() glob re-bound AC4's scenarios as phantom items
+  // with no matching steps in that module (pytest-bdd resolves step defs per-module) ->
+  // StepDefinitionNotFoundError stalled the build lane on a correct app. navigator.md must
+  // pin the binding-hygiene rule: a feature file is blanket-bound by at most one module;
+  // a split story uses explicit @scenario per module.
+  it("navigator.md pins pytest-bdd binding hygiene (one blanket scenarios() per feature; split -> explicit @scenario)", () => {
+    const nav = readFileSync(NAV_PATH, "utf8");
+    // Names the collision it prevents.
+    expect(nav).toMatch(/StepDefinitionNotFound/);
+    // Requires explicit @scenario when a story's step defs are split across modules.
+    expect(nav).toMatch(/@scenario\(/);
+    // States the at-most-one-blanket-glob-per-feature rule.
+    expect(nav.toLowerCase()).toMatch(/blanket|at most one module|per module/);
+  });
+
+  // pm23 (Resolution A): a service-layer "rejects before the DB" guard was authored by
+  // calling the service with NO db to prove the repository isn't reached. That works only
+  // while the service keeps a layering-violating optional-session fallback; the layering
+  // REFACTOR (db becomes a required injected param) then raises TypeError before validation
+  // -> the guard fails on a correct app and the refactor is falsely assessed a regression
+  // (a driver-refactor HIL). navigator.md must require: inject the required session, assert
+  // the repository write is not called; never omit the session.
+  it("navigator.md authors a service-layer guard with an INJECTED session (never by omitting db)", () => {
+    const nav = readFileSync(NAV_PATH, "utf8");
+    expect(nav.toLowerCase()).toMatch(/injected session|required injected|with its required/);
+    expect(nav.toLowerCase()).toMatch(/assert_not_called|repository is untouched|repository write/i);
+    expect(nav, "must warn against proving it by omitting the session/db").toMatch(/do NOT.*OMIT|omitting the session/i);
+  });
 });

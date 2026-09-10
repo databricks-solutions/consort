@@ -43,7 +43,13 @@ export interface DesignGuide {
 /**
  * Flatten a design guide to the CSS custom properties the app is expected to
  * define on :root. Convention (matches the real theme.css token namespace):
- *   typography.font_family       -> --font-family
+ *   typography.font_family       -> --font-sans        (the body/sans family; the
+ *                                                       CSS var name the shipped
+ *                                                       theme.css + reference assets
+ *                                                       actually define/consume — NOT
+ *                                                       --font-family, which nothing
+ *                                                       renders, so font adherence
+ *                                                       silently never held)
  *   typography.font_mono         -> --font-mono
  *   typography.scale[k]          -> --<k>                 (text-base -> --text-base)
  *   typography.line_heights[k]   -> --line-height-<k>     (body -> --line-height-body)
@@ -56,7 +62,7 @@ export interface DesignGuide {
  */
 export function designGuideToCssVars(guide: DesignGuide): Record<string, string> {
   const vars: Record<string, string> = {};
-  vars["--font-family"] = guide.typography.font_family;
+  vars["--font-sans"] = guide.typography.font_family;
   if (guide.typography.font_mono !== undefined) {
     vars["--font-mono"] = guide.typography.font_mono;
   }
@@ -81,6 +87,27 @@ export function designGuideToCssVars(guide: DesignGuide): Record<string, string>
     }
   }
   return vars;
+}
+
+/**
+ * Render the `:root { … }` CSS custom-property block FROM a design guide — the
+ * inverse of reading :root back for the adherence check. This is the missing
+ * link that made the UX Designer a no-op: the role authored design-guide.json
+ * (its derived colors/fonts/spacing) but NOTHING wrote those tokens into the
+ * theme the app renders, so every project shipped the frozen scaffold baseline
+ * (Databricks red/navy/DM-Sans) regardless of the guide. Generating :root from
+ * the SAME `designGuideToCssVars` map the checker uses guarantees the rendered
+ * tokens are exactly what the guide declares (adherence then holds by
+ * construction), and re-skins the whole app to the guide's palette/type.
+ *
+ * Returns only the token block; the component classes that CONSUME these vars
+ * live elsewhere in the stylesheet. Deterministic: insertion order of
+ * `designGuideToCssVars` (typography → colors → spacing/radius/shadows/breakpoints).
+ */
+export function renderThemeRootCss(guide: DesignGuide): string {
+  const vars = designGuideToCssVars(guide);
+  const lines = Object.entries(vars).map(([name, value]) => `  ${name}: ${value};`);
+  return `:root {\n${lines.join("\n")}\n}\n`;
 }
 
 export interface TokenMismatch {
@@ -451,12 +478,41 @@ export function checkAppIcon(input: AppIconInput): AppIconResult {
     : { ok: false, violations, remediation: APP_ICON_REMEDIATION };
 }
 
+export interface ComponentVocabResult { ok: boolean; missing: string[]; remediation?: string }
+
+const COMPONENT_VOCAB_REMEDIATION =
+  "The design guide names component classes its `components` declares, but they are not DEFINED in " +
+  "client/src/styles/global.css — so the app has no styling for that vocabulary and a page applying " +
+  "the class renders unstyled. The UX Designer must author one class per `components` entry (named " +
+  "exactly its `class`), styled through var(--token). This is what turns 'tokens exist on :root' into " +
+  "'this project's components actually look like the brief' — the gap that made every app render the " +
+  "generic baseline. See the `ux-adherence` smell.";
+
+/**
+ * Every class the guide's `components` vocabulary names MUST be defined as a
+ * selector in global.css. A declared-but-undefined class is a component the
+ * design system promises but does not style — the page that applies it renders
+ * bare. Definition = the `.<class>` selector appears in the stylesheet. No
+ * declared classes (or no stylesheet) -> trivially ok.
+ */
+export function checkComponentVocabularyDefined(declaredClasses: string[], globalCss: string): ComponentVocabResult {
+  if (declaredClasses.length === 0) return { ok: true, missing: [] };
+  const missing = declaredClasses.filter((cls) => {
+    // Match `.<class>` as a class selector (followed by a non-identifier char:
+    // space, {, ,, :, ::, --modifier is a DIFFERENT class so require a boundary).
+    const re = new RegExp(`\\.${cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
+    return !re.test(globalCss);
+  });
+  return missing.length === 0 ? { ok: true, missing: [] } : { ok: false, missing, remediation: COMPONENT_VOCAB_REMEDIATION };
+}
+
 export interface UxCleanArgs {
   /** Project root (the dir that contains client/). */
   projectDir: string;
   /** Override the client src dir (default <projectDir>/client/src). */
   clientSrcDir?: string;
-  /** The design guide's component-class vocabulary, threaded to checkTokenConsumption. */
+  /** The design guide's component-class vocabulary, threaded to checkTokenConsumption
+   *  AND to checkComponentVocabularyDefined (each class must be defined in global.css). */
   designClasses?: string[];
   /** The design guide's declared app icon, threaded to checkAppIcon. */
   appIcon?: { source: string; install_to: string };
@@ -467,6 +523,9 @@ export interface UxCleanResult {
   tokens: TokenConsumptionResult;
   /** App-icon adherence; trivially ok when the guide declares no app_icon. */
   appIcon: AppIconResult;
+  /** The guide's component classes are all defined in global.css; trivially ok
+   *  when no designClasses are threaded. */
+  vocabulary: ComponentVocabResult;
   remediation?: string;
 }
 
@@ -481,6 +540,7 @@ export function summarizeUxViolations(r: UxCleanResult): string {
   const parts: string[] = [];
   if (!r.reachability.ok) parts.push(`unreachable pages: ${r.reachability.unreachable.join(", ")}`);
   if (!r.tokens.ok) parts.push(`bare (unstyled) pages: ${r.tokens.bare.join(", ")}`);
+  if (!r.vocabulary.ok) parts.push(`design classes not defined in global.css: ${r.vocabulary.missing.join(", ")}`);
   if (!r.appIcon.ok) parts.push(`brand app icon not applied: ${r.appIcon.violations.join("; ")}`);
   return parts.join("; ");
 }
@@ -495,7 +555,8 @@ export function summarizeUxViolations(r: UxCleanResult): string {
  */
 export function checkUxClean(args: UxCleanArgs): UxCleanResult {
   const okIcon: AppIconResult = { ok: true, violations: [] };
-  const clean0: UxCleanResult = { clean: true, reachability: { ok: true, unreachable: [] }, tokens: { ok: true, bare: [] }, appIcon: okIcon };
+  const okVocab: ComponentVocabResult = { ok: true, missing: [] };
+  const clean0: UxCleanResult = { clean: true, reachability: { ok: true, unreachable: [] }, tokens: { ok: true, bare: [] }, appIcon: okIcon, vocabulary: okVocab };
   const srcDir = args.clientSrcDir ?? join(args.projectDir, "client", "src");
   const appTsx = join(srcDir, "App.tsx");
   const pagesDir = join(srcDir, "pages");
@@ -515,6 +576,12 @@ export function checkUxClean(args: UxCleanArgs): UxCleanResult {
   }
   const reachability = checkRouteReachability({ appSource, pageComponents });
   const tokens = checkTokenConsumption({ pageSources, designClasses: args.designClasses });
+  // The guide's component vocabulary must be DEFINED in global.css (else a page
+  // applying the class renders bare). global.css lives beside theme.css under styles/.
+  const globalCssPath = join(srcDir, "styles", "global.css");
+  const vocabulary = args.designClasses && args.designClasses.length > 0 && existsSync(globalCssPath)
+    ? checkComponentVocabularyDefined(args.designClasses, readFileSync(globalCssPath, "utf8"))
+    : okVocab;
   // App-icon adherence: only when the guide declares an app_icon. index.html lives at
   // the client root (one dir up from src); the app shell is App.tsx (already read).
   let appIcon: AppIconResult = okIcon;
@@ -531,6 +598,6 @@ export function checkUxClean(args: UxCleanArgs): UxCleanResult {
       appShell: appSource,
     });
   }
-  const clean = reachability.ok && tokens.ok && appIcon.ok;
-  return clean ? { clean, reachability, tokens, appIcon } : { clean, reachability, tokens, appIcon, remediation: UX_CLEAN_REMEDIATION };
+  const clean = reachability.ok && tokens.ok && appIcon.ok && vocabulary.ok;
+  return clean ? { clean, reachability, tokens, appIcon, vocabulary } : { clean, reachability, tokens, appIcon, vocabulary, remediation: UX_CLEAN_REMEDIATION };
 }

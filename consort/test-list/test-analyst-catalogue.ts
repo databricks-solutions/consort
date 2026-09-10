@@ -146,7 +146,12 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO " +
       "emit fitness items for constraints the gate does NOT cover: config-from-env, and any " +
       "service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / " +
-      "negative-quantity write at the SERVICE layer – distinct from a DB CHECK constraint). A " +
+      "negative-quantity write at the SERVICE layer – distinct from a DB CHECK constraint). Describe " +
+      "such a guard so it survives the layering refactor: the service is called WITH its required " +
+      "injected session (the layering contract makes the session a required param, no service-owned " +
+      "fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, " +
+      "assert-not-called) — NOT by omitting the session (that raises TypeError once the session becomes " +
+      "required and masks the guard, the recurring driver-refactor regression). A " +
       "CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is " +
       "NOT yours – the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR " +
       "declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` " +
