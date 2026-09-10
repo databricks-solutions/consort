@@ -8193,6 +8193,67 @@ function assertArchitectureConforms(conventions, architectureJsonContent) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
+// consort/gates/registered-breakdown.ts
+init_cjs_shims();
+var import_fs10 = require("fs");
+var import_path10 = require("path");
+var registrationPath = (consortDir) => (0, import_path10.join)(consortDir, "registration.json");
+function storySlug(id) {
+  return id.replace(/^S\d+-/, "");
+}
+function acSlug(id) {
+  return id.replace(/^AC\d+-/, "");
+}
+function checkRegisteredBreakdown(registration, derived) {
+  const violations = [];
+  const regBySlug = new Map(registration.stories.map((s) => [storySlug(s.id), s]));
+  const derBySlug = new Map(derived.map((s) => [storySlug(s.id), s]));
+  const registeredList = registration.stories.map((s) => s.id).join(", ");
+  for (const d of derived) {
+    if (!regBySlug.has(storySlug(d.id))) {
+      violations.push(`unregistered story "${d.id}" \u2014 not in the registered set (${registeredList}); the design lane must not invent or rename stories for a pre-registered feature`);
+    }
+  }
+  for (const r of registration.stories) {
+    if (!derBySlug.has(storySlug(r.id))) {
+      violations.push(`registered story "${r.id}" is missing from the derived breakdown`);
+    }
+  }
+  for (const r of registration.stories) {
+    const d = derBySlug.get(storySlug(r.id));
+    if (!d || d.acs.length === 0) continue;
+    const regAc = new Set(r.acs.map(acSlug));
+    const derAc = new Set(d.acs.map(acSlug));
+    for (const a of d.acs) {
+      if (!regAc.has(acSlug(a))) violations.push(`story "${d.id}": unregistered AC "${a}" (registered ACs: ${r.acs.join(", ")})`);
+    }
+    for (const a of r.acs) {
+      if (!derAc.has(acSlug(a))) violations.push(`story "${d.id}": registered AC "${a}" is missing`);
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+function readRegistration(consortDir, featureId) {
+  const p = registrationPath(consortDir);
+  if (!(0, import_fs10.existsSync)(p)) return null;
+  try {
+    const reg = JSON.parse((0, import_fs10.readFileSync)(p, "utf8"));
+    if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
+    return reg;
+  } catch {
+    return null;
+  }
+}
+function readDerivedBreakdown(consortDir, featureId) {
+  const sdir = storiesDir(consortDir, featureId);
+  if (!(0, import_fs10.existsSync)(sdir)) return [];
+  return (0, import_fs10.readdirSync)(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+    const adir = acsDir(consortDir, featureId, e.name);
+    const acs = (0, import_fs10.existsSync)(adir) ? (0, import_fs10.readdirSync)(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    return { id: e.name, acs };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
 // consort/gates/gate-conformance-guard.ts
 function featureDir2(consortDir, featureId) {
   return featureResolved(consortDir, featureId);
@@ -8358,6 +8419,13 @@ function platformNfrDefendedReason(consortDir, featureId) {
   const r = checkPlatformNfrDefended(arch);
   if (r.ok) return null;
   return `Platform NFR defense HARD-BLOCK (spec gate): ${r.violations.join("; ")}.`;
+}
+function registeredBreakdownReason(consortDir, featureId) {
+  const registration = readRegistration(consortDir, featureId);
+  if (registration === null) return null;
+  const { ok, violations } = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  if (ok) return null;
+  return `Registered-breakdown HARD-BLOCK (spec gate): the derived breakdown diverges from .consort/registration.json \u2014 ${violations.join("; ")}. Match the registered breakdown, or deliberately update registration.json to re-register the canonical breakdown.`;
 }
 function fitnessCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
@@ -8554,6 +8622,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (acReason !== null) return { reason: acReason };
       const indepReason = storyIndependenceReason(fdir);
       if (indepReason !== null) return { reason: indepReason };
+      const registeredReason = registeredBreakdownReason(consortDir, featureId);
+      if (registeredReason !== null) return { reason: registeredReason };
       const conventionsReason = architectureConventionsReason(consortDir, featureId);
       if (conventionsReason !== null) return { reason: conventionsReason };
       const serviceBacked = serviceBackedReason(consortDir, featureId);
@@ -8687,8 +8757,8 @@ function drainGatesAsHumanProxy(args) {
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_fs10 = require("fs");
-var import_path10 = require("path");
+var import_fs11 = require("fs");
+var import_path11 = require("path");
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
 }
@@ -8697,13 +8767,13 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!(0, import_fs10.existsSync)(p)) return initPipeline(featureId);
-  return JSON.parse((0, import_fs10.readFileSync)(p, "utf8"));
+  if (!(0, import_fs11.existsSync)(p)) return initPipeline(featureId);
+  return JSON.parse((0, import_fs11.readFileSync)(p, "utf8"));
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
-  (0, import_fs10.mkdirSync)((0, import_path10.dirname)(p), { recursive: true });
-  (0, import_fs10.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+  (0, import_fs11.mkdirSync)((0, import_path11.dirname)(p), { recursive: true });
+  (0, import_fs11.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
 }
 function setStoryStatus(pipeline, storyId, status) {
   const existing = pipeline.stories[storyId];
@@ -8717,14 +8787,14 @@ function enqueueReady(pipeline, storyId) {
 }
 function storyHasAcceptanceCriteria(consortDir, featureId, storyId) {
   const acsDir2 = acsDir(consortDir, featureId, storyId);
-  if (!(0, import_fs10.existsSync)(acsDir2)) return false;
-  return (0, import_fs10.readdirSync)(acsDir2).some((f) => f.endsWith(".json"));
+  if (!(0, import_fs11.existsSync)(acsDir2)) return false;
+  return (0, import_fs11.readdirSync)(acsDir2).some((f) => f.endsWith(".json"));
 }
 function findBatchedDraftStories(consortDir, featureId, pipeline, gatingStoryId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
-  if (!(0, import_fs10.existsSync)(storiesDir2)) return [];
+  if (!(0, import_fs11.existsSync)(storiesDir2)) return [];
   const offenders = [];
-  for (const storyId of (0, import_fs10.readdirSync)(storiesDir2)) {
+  for (const storyId of (0, import_fs11.readdirSync)(storiesDir2)) {
     if (storyId === gatingStoryId) continue;
     if (!storyHasAcceptanceCriteria(consortDir, featureId, storyId)) continue;
     const status = pipeline.stories[storyId]?.status;

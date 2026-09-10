@@ -34,6 +34,7 @@ import {
 import { acsForStory } from "../test-list/test-list.js";
 import { featureResolved, architectureJson, dbDesignJson, nfrsMd, featureNfrsMd } from "../../consort/config/consort-paths.js";
 import { readConventions, assertArchitectureConforms } from "../architecture/architecture-conventions.js";
+import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "./registered-breakdown.js";
 
 export function featureDir(consortDir: string, featureId: string): string {
   return featureResolved(consortDir, featureId);
@@ -330,6 +331,27 @@ function platformNfrDefendedReason(consortDir: string, featureId: string): strin
   const r = checkPlatformNfrDefended(arch);
   if (r.ok) return null;
   return `Platform NFR defense HARD-BLOCK (spec gate): ${r.violations.join("; ")}.`;
+}
+
+/**
+ * Pre-registered-example guard, on the LIVE spec-gate path: when the feature
+ * ships a `.consort/registration.json`, the derived story + AC breakdown must
+ * match it (by slug). A divergence — an invented/renamed/dropped story or a
+ * restructured AC set — HARD-BLOCKS the spec gate so a pre-registered example
+ * cannot silently drift from its canonical corpus. Deterministic ground-truth
+ * (a set comparison), so it is fail-closed here, not advisory. Null when there
+ * is no registration for this feature (every non-registered project is a no-op).
+ */
+export function registeredBreakdownReason(consortDir: string, featureId: string): string | null {
+  const registration = readRegistration(consortDir, featureId);
+  if (registration === null) return null; // not a registered feature -> no-op
+  const { ok, violations } = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  if (ok) return null;
+  return (
+    `Registered-breakdown HARD-BLOCK (spec gate): the derived breakdown diverges from ` +
+    `.consort/registration.json — ${violations.join("; ")}. Match the registered breakdown, ` +
+    `or deliberately update registration.json to re-register the canonical breakdown.`
+  );
 }
 
 /**
@@ -657,6 +679,12 @@ export function resolveArtifactInputs(
       // overlap that otherwise stalls the build).
       const indepReason = storyIndependenceReason(fdir);
       if (indepReason !== null) return { reason: indepReason };
+      // Pre-registered example: the derived breakdown must match .consort/registration.json
+      // (fail-closed). Checked early — a wrong breakdown is the most fundamental defect, and
+      // this is the LIVE home of the guard (analyzeForGate, where it used to live, is not
+      // invoked by the drive). No-op for a non-registered feature.
+      const registeredReason = registeredBreakdownReason(consortDir, featureId);
+      if (registeredReason !== null) return { reason: registeredReason };
       // And architecture conventions: once the project canon is established (by an
       // earlier feature), this feature's architecture.json must REUSE the same
       // role -> module layout. Blocks F2 from remapping app/services -> app/logic

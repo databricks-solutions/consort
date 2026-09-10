@@ -2,9 +2,9 @@
   "/_not-found/page": "app/_not-found/page.js",
   "/favicon.ico/route": "app/favicon.ico/route.js",
   "/api/planning/route": "app/api/planning/route.js",
-  "/api/step-outputs/route": "app/api/step-outputs/route.js",
   "/api/artifact/route": "app/api/artifact/route.js",
   "/api/state/route": "app/api/state/route.js",
+  "/api/step-outputs/route": "app/api/step-outputs/route.js",
   "/api/turn/[ord]/route": "app/api/turn/[ord]/route.js",
   "/page": "app/page.js"
 }

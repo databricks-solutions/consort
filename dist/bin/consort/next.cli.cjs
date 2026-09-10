@@ -9839,6 +9839,9 @@ var import_node_path19 = require("path");
 // consort/architecture/architecture-conventions.ts
 init_cjs_shims();
 
+// consort/gates/registered-breakdown.ts
+init_cjs_shims();
+
 // consort/logging/gate-decision-log.ts
 init_cjs_shims();
 
@@ -10009,9 +10012,6 @@ function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
 init_cjs_shims();
 
 // consort/gates/design-spec-gate.ts
-init_cjs_shims();
-
-// consort/gates/registered-breakdown.ts
 init_cjs_shims();
 
 // consort/experiment/spike-carryforward.ts

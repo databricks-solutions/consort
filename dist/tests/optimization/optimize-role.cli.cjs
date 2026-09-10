@@ -17599,6 +17599,9 @@ init_cjs_shims();
 var import_node_fs28 = require("fs");
 var import_node_path32 = require("path");
 
+// consort/gates/registered-breakdown.ts
+init_cjs_shims();
+
 // consort/logging/gate-decision-log.ts
 init_cjs_shims();
 

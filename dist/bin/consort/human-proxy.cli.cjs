@@ -8146,6 +8146,67 @@ function assertArchitectureConforms(conventions, architectureJsonContent) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
+// consort/gates/registered-breakdown.ts
+init_cjs_shims();
+var import_fs10 = require("fs");
+var import_path10 = require("path");
+var registrationPath = (consortDir) => (0, import_path10.join)(consortDir, "registration.json");
+function storySlug(id) {
+  return id.replace(/^S\d+-/, "");
+}
+function acSlug(id) {
+  return id.replace(/^AC\d+-/, "");
+}
+function checkRegisteredBreakdown(registration, derived) {
+  const violations = [];
+  const regBySlug = new Map(registration.stories.map((s) => [storySlug(s.id), s]));
+  const derBySlug = new Map(derived.map((s) => [storySlug(s.id), s]));
+  const registeredList = registration.stories.map((s) => s.id).join(", ");
+  for (const d of derived) {
+    if (!regBySlug.has(storySlug(d.id))) {
+      violations.push(`unregistered story "${d.id}" \u2014 not in the registered set (${registeredList}); the design lane must not invent or rename stories for a pre-registered feature`);
+    }
+  }
+  for (const r of registration.stories) {
+    if (!derBySlug.has(storySlug(r.id))) {
+      violations.push(`registered story "${r.id}" is missing from the derived breakdown`);
+    }
+  }
+  for (const r of registration.stories) {
+    const d = derBySlug.get(storySlug(r.id));
+    if (!d || d.acs.length === 0) continue;
+    const regAc = new Set(r.acs.map(acSlug));
+    const derAc = new Set(d.acs.map(acSlug));
+    for (const a of d.acs) {
+      if (!regAc.has(acSlug(a))) violations.push(`story "${d.id}": unregistered AC "${a}" (registered ACs: ${r.acs.join(", ")})`);
+    }
+    for (const a of r.acs) {
+      if (!derAc.has(acSlug(a))) violations.push(`story "${d.id}": registered AC "${a}" is missing`);
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+function readRegistration(consortDir, featureId) {
+  const p = registrationPath(consortDir);
+  if (!(0, import_fs10.existsSync)(p)) return null;
+  try {
+    const reg = JSON.parse((0, import_fs10.readFileSync)(p, "utf8"));
+    if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
+    return reg;
+  } catch {
+    return null;
+  }
+}
+function readDerivedBreakdown(consortDir, featureId) {
+  const sdir = storiesDir(consortDir, featureId);
+  if (!(0, import_fs10.existsSync)(sdir)) return [];
+  return (0, import_fs10.readdirSync)(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+    const adir = acsDir(consortDir, featureId, e.name);
+    const acs = (0, import_fs10.existsSync)(adir) ? (0, import_fs10.readdirSync)(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    return { id: e.name, acs };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
 // consort/gates/gate-conformance-guard.ts
 function featureDir2(consortDir, featureId) {
   return featureResolved(consortDir, featureId);
@@ -8303,6 +8364,13 @@ function platformNfrDefendedReason(consortDir, featureId) {
   const r = checkPlatformNfrDefended(arch);
   if (r.ok) return null;
   return `Platform NFR defense HARD-BLOCK (spec gate): ${r.violations.join("; ")}.`;
+}
+function registeredBreakdownReason(consortDir, featureId) {
+  const registration = readRegistration(consortDir, featureId);
+  if (registration === null) return null;
+  const { ok, violations } = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  if (ok) return null;
+  return `Registered-breakdown HARD-BLOCK (spec gate): the derived breakdown diverges from .consort/registration.json \u2014 ${violations.join("; ")}. Match the registered breakdown, or deliberately update registration.json to re-register the canonical breakdown.`;
 }
 function fitnessCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
@@ -8499,6 +8567,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (acReason !== null) return { reason: acReason };
       const indepReason = storyIndependenceReason(fdir);
       if (indepReason !== null) return { reason: indepReason };
+      const registeredReason = registeredBreakdownReason(consortDir, featureId);
+      if (registeredReason !== null) return { reason: registeredReason };
       const conventionsReason = architectureConventionsReason(consortDir, featureId);
       if (conventionsReason !== null) return { reason: conventionsReason };
       const serviceBacked = serviceBackedReason(consortDir, featureId);
@@ -8755,8 +8825,8 @@ var import_node_path10 = require("path");
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_fs10 = require("fs");
-var import_path10 = require("path");
+var import_fs11 = require("fs");
+var import_path11 = require("path");
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
 }
@@ -8765,13 +8835,13 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!(0, import_fs10.existsSync)(p)) return initPipeline(featureId);
-  return JSON.parse((0, import_fs10.readFileSync)(p, "utf8"));
+  if (!(0, import_fs11.existsSync)(p)) return initPipeline(featureId);
+  return JSON.parse((0, import_fs11.readFileSync)(p, "utf8"));
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
-  (0, import_fs10.mkdirSync)((0, import_path10.dirname)(p), { recursive: true });
-  (0, import_fs10.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+  (0, import_fs11.mkdirSync)((0, import_path11.dirname)(p), { recursive: true });
+  (0, import_fs11.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
 }
 function setStoryStatus(pipeline, storyId, status) {
   const existing = pipeline.stories[storyId];
@@ -8811,9 +8881,9 @@ function reviseStory(pipeline, storyId, opts) {
 
 // consort/smells/smells.ts
 init_cjs_shims();
-var import_fs11 = require("fs");
+var import_fs12 = require("fs");
 var import_crypto2 = require("crypto");
-var import_path11 = require("path");
+var import_path12 = require("path");
 
 // consort/pipeline/run-cycle.ts
 init_cjs_shims();
@@ -8843,9 +8913,9 @@ PRESERVE every ${artifact} item this story ALREADY has \u2013 they passed prior 
 Re-author this story's ${artifact} to address the above. Do NOT re-emit the same overlap/redundancy; if no honest, not-already-delivered behavior remains, say so as an open question rather than fabricating one.`;
 }
 function readSmellsLog(consortDir) {
-  const file = (0, import_path11.join)(consortDir, "smells.json");
-  if (!(0, import_fs11.existsSync)(file)) return { detected: [] };
-  return JSON.parse((0, import_fs11.readFileSync)(file, "utf8"));
+  const file = (0, import_path12.join)(consortDir, "smells.json");
+  if (!(0, import_fs12.existsSync)(file)) return { detected: [] };
+  return JSON.parse((0, import_fs12.readFileSync)(file, "utf8"));
 }
 function smellMatches(entry, smell, story_id) {
   if (entry.smell !== smell) return false;
@@ -8853,14 +8923,14 @@ function smellMatches(entry, smell, story_id) {
   return entry.story_id === void 0 || entry.story_id === story_id;
 }
 function markSmellResolved(consortDir, smell, opts) {
-  const file = (0, import_path11.join)(consortDir, "smells.json");
-  if (!(0, import_fs11.existsSync)(file)) return false;
-  const log = JSON.parse((0, import_fs11.readFileSync)(file, "utf8"));
+  const file = (0, import_path12.join)(consortDir, "smells.json");
+  if (!(0, import_fs12.existsSync)(file)) return false;
+  const log = JSON.parse((0, import_fs12.readFileSync)(file, "utf8"));
   const entry = log.detected.find((d) => !d.resolution && smellMatches(d, smell, opts.story_id));
   if (!entry) return false;
   entry.resolution = opts.note ?? `${opts.kind} by PO`;
   entry.resolution_kind = opts.kind;
-  (0, import_fs11.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  (0, import_fs12.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return true;
 }
 var REFLECT_SMELL_NAMES = /* @__PURE__ */ new Set([
@@ -8872,17 +8942,17 @@ function isReflectSmell(name) {
 }
 function storyTestListFingerprint(consortDir, featureId, story_id) {
   const f = storyTestListJson(consortDir, featureId, story_id);
-  if (!(0, import_fs11.existsSync)(f)) return "";
+  if (!(0, import_fs12.existsSync)(f)) return "";
   try {
-    return (0, import_crypto2.createHash)("sha1").update((0, import_fs11.readFileSync)(f)).digest("hex");
+    return (0, import_crypto2.createHash)("sha1").update((0, import_fs12.readFileSync)(f)).digest("hex");
   } catch {
     return "";
   }
 }
 function resolveOpenReflectSmellsForStory(consortDir, story_id, note, artifactSha) {
-  const file = (0, import_path11.join)(consortDir, "smells.json");
-  if (!(0, import_fs11.existsSync)(file)) return 0;
-  const log = JSON.parse((0, import_fs11.readFileSync)(file, "utf8"));
+  const file = (0, import_path12.join)(consortDir, "smells.json");
+  if (!(0, import_fs12.existsSync)(file)) return 0;
+  const log = JSON.parse((0, import_fs12.readFileSync)(file, "utf8"));
   let n = 0;
   for (const d of log.detected) {
     if (!d.resolution && isReflectSmell(d.smell) && d.story_id === story_id) {
@@ -8892,27 +8962,27 @@ function resolveOpenReflectSmellsForStory(consortDir, story_id, note, artifactSh
       n++;
     }
   }
-  if (n) (0, import_fs11.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  if (n) (0, import_fs12.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return n;
 }
 
 // consort/smells/reflection.ts
 init_cjs_shims();
-var import_fs12 = require("fs");
+var import_fs13 = require("fs");
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"
 };
 function clearReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
-  if ((0, import_fs12.existsSync)(p)) (0, import_fs12.rmSync)(p, { force: true });
+  if ((0, import_fs13.existsSync)(p)) (0, import_fs13.rmSync)(p, { force: true });
 }
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
-var import_fs13 = require("fs");
-var import_path12 = require("path");
+var import_fs14 = require("fs");
+var import_path13 = require("path");
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
@@ -8980,24 +9050,24 @@ var import_node_path9 = require("path");
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 function resetStoryBuildState(consortDir, featureId, story) {
-  const cyclesDir = (0, import_path12.join)(cyclesRootDir(consortDir), featureId, story);
+  const cyclesDir = (0, import_path13.join)(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
-  if ((0, import_fs13.existsSync)(cyclesDir)) {
-    (0, import_fs13.rmSync)(cyclesDir, { recursive: true, force: true });
+  if ((0, import_fs14.existsSync)(cyclesDir)) {
+    (0, import_fs14.rmSync)(cyclesDir, { recursive: true, force: true });
     cyclesCleared = true;
   }
   let testItemsReset = 0;
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if ((0, import_fs13.existsSync)(tlPath)) {
+  if ((0, import_fs14.existsSync)(tlPath)) {
     try {
-      const tl = JSON.parse((0, import_fs13.readFileSync)(tlPath, "utf8"));
+      const tl = JSON.parse((0, import_fs14.readFileSync)(tlPath, "utf8"));
       for (const item of tl.items ?? []) {
         if (item.status && item.status !== "pending") {
           item.status = "pending";
           testItemsReset++;
         }
       }
-      (0, import_fs13.writeFileSync)(tlPath, JSON.stringify(tl, null, 2) + "\n");
+      (0, import_fs14.writeFileSync)(tlPath, JSON.stringify(tl, null, 2) + "\n");
     } catch {
     }
   }

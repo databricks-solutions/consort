@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The registered-breakdown guard now runs on the LIVE spec gate (it never did).** The guard (v0.3.86) and the chrome/shell guard (v0.3.87) were wired into `analyzeForGate` (design-spec-gate), which the live orchestrator does NOT call — so a pre-registered example diverged from `registration.json` with no block (observed live: the derived breakdown renamed S2/S3 and dropped an AC, `blockers:[]`). Moved the registered-breakdown check onto the live gate path: a new `registeredBreakdownReason` in `resolveArtifactInputs`'s `spec` case (`gate-conformance-guard.ts`, the function `human-proxy` invokes), fail-closed HARD-BLOCK on any story/AC-slug divergence. Live-proven against the real divergent run, and regression-guarded so it cannot be re-orphaned. The chrome/shell guard stays prompt-only for now (its `spec-author.md` positive rule is live; the heuristic deterministic check has no live *advisory* surface and must not hard-block).
+
 ### Added
 
 - **NFR tiering (`platform` vs `product`) — cut the per-story NFR management burden that makes non-registered builds flighty.** `architecture.json` `nfrs[]` gains optional `tier` (`platform`|`product`, default `product`) + `defended_by_gate`. A `platform` NFR (cross-cutting/substrate-guaranteed: layering, config-in-env, observability, auth-ready, operability) is defended ONCE – it is NOT injected into the per-story rubric (`build-context.ts` `contextRubric` filter) and gets no per-story fitness test – but it is never dropped: `checkPlatformNfrDefended` HARD-BLOCKS the spec gate unless it names its defense (`defended_by_gate` in the allowlist `consort-layering-clean`/`config-in-env`, or a single feature-level `fitness_function`). `checkFitnessClauseCoverage` excludes platform NFRs; `checkNfrCoverage` is unchanged (the `R<n>` -> `brief_ref` traceability is preserved). Role prompts (architect-reviewer/test-strategist/navigator/driver) tag + honor the tier. Fully back-compatible: an untiered NFR is `product` and behaves exactly as before.

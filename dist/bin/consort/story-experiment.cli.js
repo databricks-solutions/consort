@@ -6979,6 +6979,9 @@ init_esm_shims();
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
 
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
 

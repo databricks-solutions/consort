@@ -17587,6 +17587,9 @@ init_esm_shims();
 import { existsSync as existsSync52, readFileSync as readFileSync47, readdirSync as readdirSync30, statSync as statSync19 } from "fs";
 import { join as join55, dirname as dirname26 } from "path";
 
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
 

@@ -6974,6 +6974,9 @@ init_cjs_shims();
 // consort/architecture/architecture-conventions.ts
 init_cjs_shims();
 
+// consort/gates/registered-breakdown.ts
+init_cjs_shims();
+
 // consort/logging/gate-decision-log.ts
 init_cjs_shims();
 

@@ -9851,6 +9851,9 @@ import { join as join36, dirname as dirname19 } from "path";
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
 
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
 
@@ -10021,9 +10024,6 @@ function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
 init_esm_shims();
 
 // consort/gates/design-spec-gate.ts
-init_esm_shims();
-
-// consort/gates/registered-breakdown.ts
 init_esm_shims();
 
 // consort/experiment/spike-carryforward.ts

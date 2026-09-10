@@ -7076,6 +7076,9 @@ init_esm_shims();
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
 
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+
 // consort/gates/gate-conformance-guard.ts
 function featureDir2(consortDir, featureId) {
   return featureResolved(consortDir, featureId);

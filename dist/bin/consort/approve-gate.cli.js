@@ -7752,7 +7752,7 @@ function approveBacklogGate(consortDir, approver) {
 
 // consort/gates/human-proxy.ts
 init_esm_shims();
-import { existsSync as existsSync13, readFileSync as readFileSync13, writeFileSync as writeFileSync10, mkdirSync as mkdirSync9 } from "fs";
+import { existsSync as existsSync14, readFileSync as readFileSync14, writeFileSync as writeFileSync10, mkdirSync as mkdirSync9 } from "fs";
 import { dirname as dirname8, basename as basename2 } from "path";
 
 // consort/gates/approve-gate.ts
@@ -8046,8 +8046,8 @@ function appendSelectionLog(consortDir, entry) {
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync12, readFileSync as readFileSync12, readdirSync as readdirSync6, statSync as statSync4 } from "fs";
-import { join as join11, dirname as dirname7 } from "path";
+import { existsSync as existsSync13, readFileSync as readFileSync13, readdirSync as readdirSync7, statSync as statSync4 } from "fs";
+import { join as join12, dirname as dirname7 } from "path";
 
 // consort/config/consort-config-file.ts
 init_esm_shims();
@@ -8188,6 +8188,67 @@ function assertArchitectureConforms(conventions, architectureJsonContent) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+import { existsSync as existsSync12, readFileSync as readFileSync12, readdirSync as readdirSync6 } from "fs";
+import { join as join11 } from "path";
+var registrationPath = (consortDir) => join11(consortDir, "registration.json");
+function storySlug(id) {
+  return id.replace(/^S\d+-/, "");
+}
+function acSlug(id) {
+  return id.replace(/^AC\d+-/, "");
+}
+function checkRegisteredBreakdown(registration, derived) {
+  const violations = [];
+  const regBySlug = new Map(registration.stories.map((s) => [storySlug(s.id), s]));
+  const derBySlug = new Map(derived.map((s) => [storySlug(s.id), s]));
+  const registeredList = registration.stories.map((s) => s.id).join(", ");
+  for (const d of derived) {
+    if (!regBySlug.has(storySlug(d.id))) {
+      violations.push(`unregistered story "${d.id}" \u2014 not in the registered set (${registeredList}); the design lane must not invent or rename stories for a pre-registered feature`);
+    }
+  }
+  for (const r of registration.stories) {
+    if (!derBySlug.has(storySlug(r.id))) {
+      violations.push(`registered story "${r.id}" is missing from the derived breakdown`);
+    }
+  }
+  for (const r of registration.stories) {
+    const d = derBySlug.get(storySlug(r.id));
+    if (!d || d.acs.length === 0) continue;
+    const regAc = new Set(r.acs.map(acSlug));
+    const derAc = new Set(d.acs.map(acSlug));
+    for (const a of d.acs) {
+      if (!regAc.has(acSlug(a))) violations.push(`story "${d.id}": unregistered AC "${a}" (registered ACs: ${r.acs.join(", ")})`);
+    }
+    for (const a of r.acs) {
+      if (!derAc.has(acSlug(a))) violations.push(`story "${d.id}": registered AC "${a}" is missing`);
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+function readRegistration(consortDir, featureId) {
+  const p = registrationPath(consortDir);
+  if (!existsSync12(p)) return null;
+  try {
+    const reg = JSON.parse(readFileSync12(p, "utf8"));
+    if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
+    return reg;
+  } catch {
+    return null;
+  }
+}
+function readDerivedBreakdown(consortDir, featureId) {
+  const sdir = storiesDir(consortDir, featureId);
+  if (!existsSync12(sdir)) return [];
+  return readdirSync6(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+    const adir = acsDir(consortDir, featureId, e.name);
+    const acs = existsSync12(adir) ? readdirSync6(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    return { id: e.name, acs };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
 // consort/gates/gate-conformance-guard.ts
 function featureDir2(consortDir, featureId) {
   return featureResolved(consortDir, featureId);
@@ -8201,16 +8262,16 @@ function conformanceReason(inputs) {
   return problems.length === 0 ? null : `format conformance failed: ${problems.join("; ")}`;
 }
 function storyAcProblems(fdir, story) {
-  const acsDir2 = join11(fdir, "stories", story, "acs");
-  if (!existsSync12(acsDir2)) return [];
+  const acsDir2 = join12(fdir, "stories", story, "acs");
+  if (!existsSync13(acsDir2)) return [];
   const problems = [];
   const acs = [];
-  for (const f of readdirSync6(acsDir2)) {
+  for (const f of readdirSync7(acsDir2)) {
     if (!f.endsWith(".json")) continue;
-    const p = join11(acsDir2, f);
+    const p = join12(acsDir2, f);
     let content;
     try {
-      content = readFileSync12(p, "utf8");
+      content = readFileSync13(p, "utf8");
     } catch {
       continue;
     }
@@ -8227,20 +8288,20 @@ function storyAcsConformanceReason(fdir, story) {
   return problems.length === 0 ? null : `AC conformance failed: ${problems.join("; ")}`;
 }
 function acsConformanceReason(fdir) {
-  const stories = join11(fdir, "stories");
-  if (!existsSync12(stories)) return null;
-  const problems = readdirSync6(stories).flatMap((s) => storyAcProblems(fdir, s));
+  const stories = join12(fdir, "stories");
+  if (!existsSync13(stories)) return null;
+  const problems = readdirSync7(stories).flatMap((s) => storyAcProblems(fdir, s));
   return problems.length === 0 ? null : `AC conformance failed: ${problems.join("; ")}`;
 }
 function collectStoryJsons(fdir) {
-  const stories = join11(fdir, "stories");
-  if (!existsSync12(stories)) return [];
+  const stories = join12(fdir, "stories");
+  if (!existsSync13(stories)) return [];
   const out = [];
-  for (const s of readdirSync6(stories)) {
-    const p = join11(stories, s, "story.json");
-    if (!existsSync12(p)) continue;
+  for (const s of readdirSync7(stories)) {
+    const p = join12(stories, s, "story.json");
+    if (!existsSync13(p)) continue;
     try {
-      out.push({ name: s, content: readFileSync12(p, "utf8") });
+      out.push({ name: s, content: readFileSync13(p, "utf8") });
     } catch {
       continue;
     }
@@ -8256,19 +8317,19 @@ function storyIndependenceForStoryReason(fdir, story) {
   return r.ok ? null : `story independence failed: ${r.violations.join("; ")}`;
 }
 function storyRequiresE2eReason(fdir, story) {
-  const sj = join11(fdir, "stories", story, "story.json");
-  if (!existsSync12(sj)) return null;
+  const sj = join12(fdir, "stories", story, "story.json");
+  if (!existsSync13(sj)) return null;
   try {
-    if (JSON.parse(readFileSync12(sj, "utf8")).requires_e2e !== true) return null;
+    if (JSON.parse(readFileSync13(sj, "utf8")).requires_e2e !== true) return null;
   } catch {
     return null;
   }
-  const ad = join11(fdir, "stories", story, "acs");
-  if (existsSync12(ad)) {
-    for (const f of readdirSync6(ad)) {
+  const ad = join12(fdir, "stories", story, "acs");
+  if (existsSync13(ad)) {
+    for (const f of readdirSync7(ad)) {
       if (!f.endsWith(".json")) continue;
       try {
-        if (JSON.parse(readFileSync12(join11(ad, f), "utf8")).layer === "E2E") return null;
+        if (JSON.parse(readFileSync13(join12(ad, f), "utf8")).layer === "E2E") return null;
       } catch {
       }
     }
@@ -8277,10 +8338,10 @@ function storyRequiresE2eReason(fdir, story) {
 }
 function requiresE2eReason(consortDir, featureId) {
   const fdir = featureDir2(consortDir, featureId);
-  const storiesDir2 = join11(fdir, "stories");
-  if (!existsSync12(storiesDir2)) return null;
-  for (const s of readdirSync6(storiesDir2)) {
-    if (!existsSync12(join11(storiesDir2, s, "acs"))) continue;
+  const storiesDir2 = join12(fdir, "stories");
+  if (!existsSync13(storiesDir2)) return null;
+  for (const s of readdirSync7(storiesDir2)) {
+    if (!existsSync13(join12(storiesDir2, s, "acs"))) continue;
     const r = storyRequiresE2eReason(fdir, s);
     if (r !== null) return r;
   }
@@ -8290,10 +8351,10 @@ function architectureConventionsReason(consortDir, featureId) {
   const conventions = readConventions(consortDir);
   if (!conventions) return null;
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync12(archFile)) return null;
+  if (!existsSync13(archFile)) return null;
   let content;
   try {
-    content = readFileSync12(archFile, "utf8");
+    content = readFileSync13(archFile, "utf8");
   } catch {
     return null;
   }
@@ -8302,9 +8363,9 @@ function architectureConventionsReason(consortDir, featureId) {
 }
 function readArchitecture(consortDir, featureId) {
   const f = architectureJson(consortDir, featureId);
-  if (!existsSync12(f)) return void 0;
+  if (!existsSync13(f)) return void 0;
   try {
-    return readFileSync12(f, "utf8");
+    return readFileSync13(f, "utf8");
   } catch {
     return void 0;
   }
@@ -8319,9 +8380,9 @@ function dbDesignReason(consortDir, featureId) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
   const dbFile = dbDesignJson(consortDir, featureId);
-  const db = existsSync12(dbFile) ? (() => {
+  const db = existsSync13(dbFile) ? (() => {
     try {
-      return readFileSync12(dbFile, "utf8");
+      return readFileSync13(dbFile, "utf8");
     } catch {
       return void 0;
     }
@@ -8334,11 +8395,11 @@ function nfrCoverageReason(consortDir, featureId) {
   if (arch === void 0) return null;
   const featureNfrs = featureNfrsMd(consortDir, featureId);
   const projectNfrs = nfrsMd(consortDir);
-  const nfrsFile = existsSync12(featureNfrs) ? featureNfrs : existsSync12(projectNfrs) ? projectNfrs : void 0;
+  const nfrsFile = existsSync13(featureNfrs) ? featureNfrs : existsSync13(projectNfrs) ? projectNfrs : void 0;
   if (nfrsFile === void 0) return null;
   let nfrsContent;
   try {
-    nfrsContent = readFileSync12(nfrsFile, "utf8");
+    nfrsContent = readFileSync13(nfrsFile, "utf8");
   } catch {
     return null;
   }
@@ -8354,6 +8415,13 @@ function platformNfrDefendedReason(consortDir, featureId) {
   if (r.ok) return null;
   return `Platform NFR defense HARD-BLOCK (spec gate): ${r.violations.join("; ")}.`;
 }
+function registeredBreakdownReason(consortDir, featureId) {
+  const registration = readRegistration(consortDir, featureId);
+  if (registration === null) return null;
+  const { ok, violations } = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  if (ok) return null;
+  return `Registered-breakdown HARD-BLOCK (spec gate): the derived breakdown diverges from .consort/registration.json \u2014 ${violations.join("; ")}. Match the registered breakdown, or deliberately update registration.json to re-register the canonical breakdown.`;
+}
 function fitnessCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
@@ -8367,16 +8435,16 @@ function fitnessClauseCoverageReason(consortDir, featureId, testListJson) {
   return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
 }
 function e2eCoverageReason(consortDir, featureId, testListJson) {
-  const storiesDir2 = join11(featureDir2(consortDir, featureId), "stories");
-  if (!existsSync12(storiesDir2)) return null;
+  const storiesDir2 = join12(featureDir2(consortDir, featureId), "stories");
+  if (!existsSync13(storiesDir2)) return null;
   const e2eAcIds = [];
-  for (const s of readdirSync6(storiesDir2)) {
-    const ad = join11(storiesDir2, s, "acs");
-    if (!existsSync12(ad)) continue;
-    for (const f of readdirSync6(ad)) {
+  for (const s of readdirSync7(storiesDir2)) {
+    const ad = join12(storiesDir2, s, "acs");
+    if (!existsSync13(ad)) continue;
+    for (const f of readdirSync7(ad)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const ac = JSON.parse(readFileSync12(join11(ad, f), "utf8"));
+        const ac = JSON.parse(readFileSync13(join12(ad, f), "utf8"));
         if (ac.layer === "E2E") e2eAcIds.push(ac.id ?? f.replace(/\.json$/, ""));
       } catch {
       }
@@ -8399,11 +8467,11 @@ function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
     return null;
   }
   const items = master.items ?? [];
-  const storiesDir2 = join11(featureDir2(consortDir, featureId), "stories");
-  if (!existsSync12(storiesDir2)) return null;
-  const perStory = readdirSync6(storiesDir2).filter((s) => {
+  const storiesDir2 = join12(featureDir2(consortDir, featureId), "stories");
+  if (!existsSync13(storiesDir2)) return null;
+  const perStory = readdirSync7(storiesDir2).filter((s) => {
     try {
-      return statSync4(join11(storiesDir2, s)).isDirectory();
+      return statSync4(join12(storiesDir2, s)).isDirectory();
     } catch {
       return false;
     }
@@ -8415,8 +8483,8 @@ function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
   const archFile = architectureJson(consortDir, featureId);
   const dbFile = dbDesignJson(consortDir, featureId);
   const owner = invariantRealizingStory(
-    existsSync12(archFile) ? readFileSync12(archFile, "utf8") : void 0,
-    existsSync12(dbFile) ? readFileSync12(dbFile, "utf8") : void 0
+    existsSync13(archFile) ? readFileSync13(archFile, "utf8") : void 0,
+    existsSync13(dbFile) ? readFileSync13(dbFile, "utf8") : void 0
   );
   const r = checkInvariantCoverageDistinct(perStory, owner);
   return r.ok ? null : `invariant coverage not distinct across stories: ${r.violations.join("; ")}`;
@@ -8426,15 +8494,15 @@ function serviceBackedReason(consortDir, featureId) {
   if (arch === void 0) return null;
   const acLayers = [];
   const fdir = featureDir2(consortDir, featureId);
-  const stories = join11(fdir, "stories");
-  if (existsSync12(stories)) {
-    for (const s of readdirSync6(stories)) {
-      const ad = join11(stories, s, "acs");
-      if (!existsSync12(ad)) continue;
-      for (const f of readdirSync6(ad)) {
+  const stories = join12(fdir, "stories");
+  if (existsSync13(stories)) {
+    for (const s of readdirSync7(stories)) {
+      const ad = join12(stories, s, "acs");
+      if (!existsSync13(ad)) continue;
+      for (const f of readdirSync7(ad)) {
         if (!f.endsWith(".json")) continue;
         try {
-          const layer = JSON.parse(readFileSync12(join11(ad, f), "utf8")).layer;
+          const layer = JSON.parse(readFileSync13(join12(ad, f), "utf8")).layer;
           if (typeof layer === "string") acLayers.push(layer);
         } catch {
         }
@@ -8456,21 +8524,21 @@ function e2eLayerPresentReason(consortDir, featureId) {
   const fdir = featureDir2(consortDir, featureId);
   let declared;
   try {
-    declared = JSON.parse(readFileSync12(join11(fdir, "feature-spec.json"), "utf8")).stories ?? [];
+    declared = JSON.parse(readFileSync13(join12(fdir, "feature-spec.json"), "utf8")).stories ?? [];
   } catch {
     return null;
   }
   if (declared.length === 0) return null;
-  const storiesDir2 = join11(fdir, "stories");
-  const hasAcs = (story) => existsSync12(join11(storiesDir2, story, "acs"));
+  const storiesDir2 = join12(fdir, "stories");
+  const hasAcs = (story) => existsSync13(join12(storiesDir2, story, "acs"));
   if (!declared.every(hasAcs)) return null;
   const acLayers = [];
   for (const s of declared) {
-    const ad = join11(storiesDir2, s, "acs");
-    for (const f of readdirSync6(ad)) {
+    const ad = join12(storiesDir2, s, "acs");
+    for (const f of readdirSync7(ad)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse(readFileSync12(join11(ad, f), "utf8")).layer;
+        const layer = JSON.parse(readFileSync13(join12(ad, f), "utf8")).layer;
         if (typeof layer === "string") acLayers.push(layer);
       } catch {
       }
@@ -8487,26 +8555,26 @@ function e2eLayerPresentReason(consortDir, featureId) {
 }
 function schemaChangeStoryRealizesReason(consortDir, featureId) {
   const dbFile = dbDesignJson(consortDir, featureId);
-  if (!existsSync12(dbFile)) return null;
+  if (!existsSync13(dbFile)) return null;
   let db;
   try {
-    db = JSON.parse(readFileSync12(dbFile, "utf8"));
+    db = JSON.parse(readFileSync13(dbFile, "utf8"));
   } catch {
     return null;
   }
   const changes = db.schema_changes ?? [];
   if (changes.length === 0) return null;
-  const storiesDir2 = join11(featureDir2(consortDir, featureId), "stories");
-  if (!existsSync12(storiesDir2)) return null;
+  const storiesDir2 = join12(featureDir2(consortDir, featureId), "stories");
+  if (!existsSync13(storiesDir2)) return null;
   const storyLayers = /* @__PURE__ */ new Map();
-  for (const s of readdirSync6(storiesDir2)) {
-    const ad = join11(storiesDir2, s, "acs");
-    if (!existsSync12(ad)) continue;
+  for (const s of readdirSync7(storiesDir2)) {
+    const ad = join12(storiesDir2, s, "acs");
+    if (!existsSync13(ad)) continue;
     const layers = [];
-    for (const f of readdirSync6(ad)) {
+    for (const f of readdirSync7(ad)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse(readFileSync12(join11(ad, f), "utf8")).layer;
+        const layer = JSON.parse(readFileSync13(join12(ad, f), "utf8")).layer;
         if (typeof layer === "string") layers.push(layer);
       } catch {
       }
@@ -8518,9 +8586,9 @@ function schemaChangeStoryRealizesReason(consortDir, featureId) {
 }
 function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
   const readIfPresent = (name) => {
-    const p = join11(fdir, name);
+    const p = join12(fdir, name);
     try {
-      return existsSync12(p) ? readFileSync12(p, "utf8") : void 0;
+      return existsSync13(p) ? readFileSync13(p, "utf8") : void 0;
     } catch {
       return void 0;
     }
@@ -8549,6 +8617,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (acReason !== null) return { reason: acReason };
       const indepReason = storyIndependenceReason(fdir);
       if (indepReason !== null) return { reason: indepReason };
+      const registeredReason = registeredBreakdownReason(consortDir, featureId);
+      if (registeredReason !== null) return { reason: registeredReason };
       const conventionsReason = architectureConventionsReason(consortDir, featureId);
       if (conventionsReason !== null) return { reason: conventionsReason };
       const serviceBacked = serviceBackedReason(consortDir, featureId);
@@ -8682,8 +8752,8 @@ function drainGatesAsHumanProxy(args) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync14, readFileSync as readFileSync14, writeFileSync as writeFileSync11, mkdirSync as mkdirSync10, readdirSync as readdirSync8, statSync as statSync5, rmSync } from "fs";
-import { dirname as dirname9, join as join13 } from "path";
+import { existsSync as existsSync15, readFileSync as readFileSync15, writeFileSync as writeFileSync11, mkdirSync as mkdirSync10, readdirSync as readdirSync9, statSync as statSync5, rmSync } from "fs";
+import { dirname as dirname9, join as join14 } from "path";
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
 }
@@ -8692,8 +8762,8 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!existsSync14(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync14(p, "utf8"));
+  if (!existsSync15(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync15(p, "utf8"));
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
@@ -8712,14 +8782,14 @@ function enqueueReady(pipeline, storyId) {
 }
 function storyHasAcceptanceCriteria(consortDir, featureId, storyId) {
   const acsDir2 = acsDir(consortDir, featureId, storyId);
-  if (!existsSync14(acsDir2)) return false;
-  return readdirSync8(acsDir2).some((f) => f.endsWith(".json"));
+  if (!existsSync15(acsDir2)) return false;
+  return readdirSync9(acsDir2).some((f) => f.endsWith(".json"));
 }
 function findBatchedDraftStories(consortDir, featureId, pipeline, gatingStoryId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
-  if (!existsSync14(storiesDir2)) return [];
+  if (!existsSync15(storiesDir2)) return [];
   const offenders = [];
-  for (const storyId of readdirSync8(storiesDir2)) {
+  for (const storyId of readdirSync9(storiesDir2)) {
     if (storyId === gatingStoryId) continue;
     if (!storyHasAcceptanceCriteria(consortDir, featureId, storyId)) continue;
     const status = pipeline.stories[storyId]?.status;
