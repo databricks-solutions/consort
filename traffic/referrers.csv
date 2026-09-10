@@ -195,3 +195,11 @@ snapshot_date,referrer,count,uniques
 "2026-09-09","github.com",75,27
 "2026-09-09","lakebase-cookbook.com",1,1
 "2026-09-09","teams.public.onecdn.static.microsoft",18,7
+"2026-09-10","Bing",8,1
+"2026-09-10","Google",27,20
+"2026-09-10","chatgpt.com",4,1
+"2026-09-10","com.slack",2,2
+"2026-09-10","community.databricks.com",1,1
+"2026-09-10","github.com",101,31
+"2026-09-10","lakebase-cookbook.com",2,2
+"2026-09-10","teams.public.onecdn.static.microsoft",19,8
