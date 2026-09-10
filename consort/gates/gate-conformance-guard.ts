@@ -18,6 +18,7 @@ import {
   checkAcIndependence,
   checkLayeringDeclared,
   checkNfrCoverage,
+  checkPlatformNfrDefended,
   projectBriefRefs,
   checkFitnessCoverage,
   checkFitnessClauseCoverage,
@@ -312,6 +313,23 @@ function nfrCoverageReason(consortDir: string, featureId: string): string | null
   // a matching brief_ref (or nfr_out_of_scope) before the gate opens.
   const src = nfrsFile === featureNfrs ? `per-feature nfrs.md (features/${featureId}/nfrs.md)` : "project nfrs.md";
   return `NFR coverage HARD-BLOCK (spec gate): architecture.json does not cover every ## Required NFR in the ${src} – ${r.violations.join("; ")}. Add a matching brief_ref on architecture.json (or declare nfr_out_of_scope).`;
+}
+
+/**
+ * The anti-drop teeth for NFR tiering: a tier:"platform" NFR is exempt from
+ * per-story fitness/rubric burden, but it must still NAME its defense (a known
+ * deterministic gate via defended_by_gate, or a feature-level fitness_function).
+ * A platform NFR with neither HARD-BLOCKS the spec gate — you cannot tier
+ * something to platform to make it vanish. Null when there is no architecture yet
+ * or no platform NFR is under-defended (so a product-only/untiered feature is
+ * never affected).
+ */
+function platformNfrDefendedReason(consortDir: string, featureId: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  const r = checkPlatformNfrDefended(arch);
+  if (r.ok) return null;
+  return `Platform NFR defense HARD-BLOCK (spec gate): ${r.violations.join("; ")}.`;
 }
 
 /**
@@ -678,7 +696,9 @@ export function resolveArtifactInputs(
       const schemaStoryReason = schemaChangeStoryRealizesReason(consortDir, featureId);
       if (schemaStoryReason !== null) return { reason: schemaStoryReason };
       const nfrReason = nfrCoverageReason(consortDir, featureId);
-      return nfrReason === null ? conf : { reason: nfrReason };
+      if (nfrReason !== null) return { reason: nfrReason };
+      const platReason = platformNfrDefendedReason(consortDir, featureId);
+      return platReason === null ? conf : { reason: platReason };
     }
     case "plan": {
       const planJson = readIfPresent("plan.json");

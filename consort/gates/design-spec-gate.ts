@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } fr
 import { dirname, join } from "path";
 import { readMasterTestList, scopeToStory, acsForStory } from "../test-list/test-list.js";
 import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "./registered-breakdown.js";
-import { storyPlanJson } from "../../consort/config/consort-paths.js";
+import { storyPlanJson, storyJson } from "../../consort/config/consort-paths.js";
 import type { TestList, TestListItem } from "../test-list/test-list.js";
 import { readAcLayer } from "../pipeline/run-cycle.js";
 import type { AcLayer } from "../experiment/experiment.js";
@@ -86,7 +86,7 @@ export interface TransitionBlocker {
    *   E2E-tagged ACs but `playwright.config.ts` is missing from the
    *   project root. Fix: run `installPlaywright()` or retag the ACs.
    */
-  kind: "e2e-without-playwright" | "registered-breakdown-divergence";
+  kind: "e2e-without-playwright" | "registered-breakdown-divergence" | "chrome-shell-story";
   detail: string;
   /** AC ids that triggered this blocker. Empty when not AC-scoped. */
   ac_ids?: string[];
@@ -139,6 +139,10 @@ export function analyzeForGate(
       transition_blockers.push({ kind: "registered-breakdown-divergence", detail });
     }
   }
+  // Non-registered complement: flag a NON-BEHAVIORAL "chrome/shell" story (the
+  // recurring invented `app-shell`). Advisory + PO-clearable; no-op for a
+  // registered project (the guard above owns it there deterministically).
+  transition_blockers.push(...checkChromeShellStory(consortDir, featureId, storyId));
   const mode: "N=1" | "N>=2" = gaps.length >= 2 ? "N>=2" : "N=1";
   const proposed: ExperimentPlan = {
     feature_id: featureId,
@@ -183,6 +187,68 @@ export function analyzeForGate(
  * orchestrator surfaces the remediation menu (run `installPlaywright`
  * or retag the ACs) to the PO.
  */
+/** Chrome/shell NOUNS that mark a non-behavioral story (app scaffolding, not a
+ *  user capability). A tight NOUN lexicon on purpose: generic words like
+ *  navigation / layout / view appear in legitimate capability stories, so they are
+ *  deliberately EXCLUDED to avoid false positives. */
+const CHROME_NOUN_LEXICON = [
+  "app shell", "app-shell", "appshell", "navbar", "nav bar", "favicon",
+  "branding", "brand color", "boilerplate", "scaffolding", "scaffold",
+  "site chrome", "global layout", "splash screen",
+];
+
+function matchChromeLexicon(text: string): string | null {
+  const t = text.toLowerCase();
+  for (const term of CHROME_NOUN_LEXICON) if (t.includes(term)) return term;
+  return null;
+}
+
+/**
+ * Advisory decomposition guard (the non-registered complement of the
+ * registered-breakdown guard): flag a NON-BEHAVIORAL "chrome/shell" story — one
+ * that delivers only app scaffolding (navbar / branding / favicon / global
+ * layout), not a user capability. Such a thing belongs in `ia.md` + the design
+ * guide, not the backlog; the design lane repeatedly invents an `app-shell` S1.
+ *
+ * Deterministic CONJUNCTION, to avoid false positives:
+ *   (a) STRUCTURAL — every AC is E2E (no API/Infra behavior), AND
+ *   (b) LEXICAL   — the story's asA/iWantTo/soThat/id matches the tight chrome-noun lexicon.
+ * A legitimate all-E2E UI story (e.g. sku-detail-view) matches (a) but not (b) → not flagged.
+ *
+ * ADVISORY: emitted as a PO-clearable `transition_blocker`, never fail-closed —
+ * the lexical half is a heuristic, so a false positive must be dismissible at the
+ * gate. No-op for a registered project (the stricter, deterministic
+ * registered-breakdown guard owns that case) and for a story with no ACs yet.
+ */
+export function checkChromeShellStory(consortDir: string, featureId: string, storyId: string): TransitionBlocker[] {
+  if (readRegistration(consortDir, featureId)) return []; // registered → covered by the hard guard
+  const acIds = acsForStory(consortDir, featureId, storyId);
+  if (acIds.length === 0) return []; // nothing authored to judge yet
+  const allE2e = acIds.every((id) => (readAcLayer(consortDir, featureId, id) as AcLayer | undefined) === "E2E");
+  if (!allE2e) return []; // has an API/Infra behavioral AC → a real capability, not chrome
+  let intentText = storyId;
+  try {
+    const sj = JSON.parse(readFileSync(storyJson(consortDir, featureId, storyId), "utf8")) as {
+      asA?: string; iWantTo?: string; soThat?: string;
+    };
+    intentText = [storyId, sj.asA, sj.iWantTo, sj.soThat].filter(Boolean).join(" ");
+  } catch {
+    /* story.json unreadable → fall back to the id slug */
+  }
+  const hit = matchChromeLexicon(intentText);
+  if (!hit) return [];
+  return [
+    {
+      kind: "chrome-shell-story",
+      detail:
+        `story "${storyId}" reads as app chrome, not a user capability: all its ACs are E2E-presentation ` +
+        `(no API/Infra behavior) and its intent names "${hit}". Chrome / navigation-shell / branding / favicon ` +
+        `belong in ia.md + the design guide, not the backlog. If this IS a real user-facing capability, clear ` +
+        `this at the gate; otherwise fold it into the IA/design-guide and drop the story.`,
+    },
+  ];
+}
+
 export function checkE2eGate(args: {
   consortDir: string;
   featureId: string;

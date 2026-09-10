@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync
 import { tmpdir } from "os";
 import { join } from "path";
 import { writeMasterTestList } from "../../consort/test-list/test-list";
-import { analyzeForGate, recordPlan, writePlan, readPlan } from "../../consort/gates/design-spec-gate";
+import { analyzeForGate, recordPlan, writePlan, readPlan, checkChromeShellStory } from "../../consort/gates/design-spec-gate";
 
 let tdd: string;
 const FEATURE_DIR = "features/F1-test-feature";
@@ -128,5 +128,65 @@ describe("design-spec-gate", () => {
     const blocker = analysis.transition_blockers.find((b) => b.kind === "registered-breakdown-divergence");
     expect(blocker).toBeDefined();
     expect(blocker!.detail).toMatch(/unregistered story "S1"|registered story "S1-file-stock" is missing/);
+  });
+});
+
+describe("checkChromeShellStory: advisory flag for a non-behavioral chrome/shell story", () => {
+  function seedStory(
+    acs: Array<{ id: string; layer: string }>,
+    intent: { asA?: string; iWantTo?: string; soThat?: string },
+    opts?: { registration?: boolean },
+  ): void {
+    const storyDir = join(tdd, FEATURE_DIR, "stories", STORY);
+    const acsDir = join(storyDir, "acs");
+    mkdirSync(acsDir, { recursive: true });
+    for (const a of acs) writeFileSync(join(acsDir, `${a.id}.json`), JSON.stringify({ id: a.id, layer: a.layer }));
+    writeFileSync(join(storyDir, "story.json"), JSON.stringify({ id: STORY, ...intent }));
+    if (opts?.registration) {
+      writeFileSync(join(tdd, "registration.json"), JSON.stringify({ feature_id: "F1", stories: [{ id: STORY, acs: acs.map((a) => a.id) }] }));
+    }
+  }
+
+  it("FLAGS an all-E2E story whose intent names chrome (navbar/branding)", () => {
+    seedStory(
+      [{ id: "AC1-navbar-shell", layer: "E2E" }, { id: "AC2-favicon", layer: "E2E" }],
+      { asA: "user", iWantTo: "see a navbar and app branding", soThat: "the app looks finished" },
+    );
+    const b = checkChromeShellStory(tdd, "F1", STORY);
+    expect(b.length).toBe(1);
+    expect(b[0].kind).toBe("chrome-shell-story");
+    expect(b[0].detail).toMatch(/navbar/);
+  });
+
+  it("does NOT flag a legit all-E2E UI story with no chrome lexicon (sku-detail-view)", () => {
+    seedStory(
+      [{ id: "AC1-lists-stock", layer: "E2E" }],
+      { asA: "operator", iWantTo: "view stock across locations for a SKU", soThat: "I can decide where to pick" },
+    );
+    expect(checkChromeShellStory(tdd, "F1", STORY)).toEqual([]);
+  });
+
+  it("does NOT flag when the story has a behavioral (API/Infra) AC even if the lexicon matches", () => {
+    seedStory(
+      [{ id: "AC1-navbar", layer: "E2E" }, { id: "AC2-count", layer: "API" }],
+      { iWantTo: "show a navbar with a live count" },
+    );
+    expect(checkChromeShellStory(tdd, "F1", STORY)).toEqual([]);
+  });
+
+  it("no-ops for a registered project (the hard registered-breakdown guard owns it)", () => {
+    seedStory(
+      [{ id: "AC1-navbar-shell", layer: "E2E" }],
+      { iWantTo: "render the app-shell navbar" },
+      { registration: true },
+    );
+    expect(checkChromeShellStory(tdd, "F1", STORY)).toEqual([]);
+  });
+
+  it("analyzeForGate surfaces the chrome-shell-story blocker on a flagged story", () => {
+    writeMasterTestList(tdd, { feature_id: "F1", items: [{ id: "T1", description: "renders navbar", ac_id: "AC1-navbar-shell", status: "pending" }] });
+    seedStory([{ id: "AC1-navbar-shell", layer: "E2E" }], { iWantTo: "render the app-shell navbar with branding" });
+    const analysis = analyzeForGate(tdd, "F1", STORY);
+    expect(analysis.transition_blockers.some((x) => x.kind === "chrome-shell-story")).toBe(true);
   });
 });

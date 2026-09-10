@@ -698,14 +698,17 @@ export function checkPersistenceCoverage(testListJson: string, architectureJson:
  * missing clause is a mechanical shortfall here, before the reflect ever runs.
  */
 export function checkFitnessClauseCoverage(testListJson: string, architectureJson: string): ConformanceResult {
-  let arch: { nfrs?: Array<{ id?: string; fitness_functions?: unknown }> };
+  let arch: { nfrs?: Array<{ id?: string; fitness_functions?: unknown; tier?: string }> };
   try {
     arch = JSON.parse(architectureJson);
   } catch {
     return { ok: true }; // invalid architecture reported elsewhere
   }
   const atomic = (arch.nfrs ?? [])
-    .filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions))
+    // A platform-tier NFR is defended once (a deterministic gate or a single
+    // feature-level fitness item), NOT per-clause per-story — so it is excluded
+    // from the atomic-coverage count. Untiered/product NFRs count as before.
+    .filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform")
     .map((n) => ({ id: n.id as string, clauses: (n.fitness_functions as unknown[]).filter((c) => typeof c === "string" && c.trim().length > 0).length }))
     .filter((n) => n.clauses > 0);
   if (atomic.length === 0) return { ok: true }; // no NFR uses the atomic array form
@@ -733,6 +736,47 @@ export function checkFitnessClauseCoverage(testListJson: string, architectureJso
     };
   }
   return { ok: true };
+}
+
+/** The deterministic gates a platform-tier NFR may name in `defended_by_gate` to
+ *  discharge its obligation without a per-story fitness test. These are the
+ *  substrate guarantees that already defend a cross-cutting concern ONCE (the
+ *  layering/ORM-containment gate; the config-in-env check). Extend as more
+ *  cross-cutting concerns gain a deterministic gate. */
+export const PLATFORM_NFR_GATES: ReadonlySet<string> = new Set(["consort-layering-clean", "config-in-env"]);
+
+/**
+ * The anti-silent-drop teeth for NFR tiering. A `tier:"platform"` NFR is defended
+ * ONCE (not per story), so it is exempt from the per-story fitness/rubric burden —
+ * but it must still be defended, never dropped. It is valid only if it NAMES its
+ * defense: either `defended_by_gate` in the known-gate allowlist, OR a non-empty
+ * `fitness_function`/`fitness_functions` (a single feature-level obligation). A
+ * platform NFR carrying neither is a violation (you cannot tier something to
+ * platform to make it disappear). Product/untiered NFRs never reach this branch.
+ */
+export function checkPlatformNfrDefended(architectureJson: string, knownGates: ReadonlySet<string> = PLATFORM_NFR_GATES): ConformanceResult {
+  let arch: { nfrs?: Array<{ id?: string; brief?: string; requirement?: string; tier?: string; defended_by_gate?: unknown; fitness_function?: unknown; fitness_functions?: unknown }> };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true }; // invalid architecture reported elsewhere
+  }
+  const violations: string[] = [];
+  for (const n of arch.nfrs ?? []) {
+    if (!n || n.tier !== "platform") continue;
+    const label = (typeof n.id === "string" && n.id) || (typeof n.brief === "string" && n.brief) || (typeof n.requirement === "string" && n.requirement) || "(unnamed NFR)";
+    const gate = typeof n.defended_by_gate === "string" ? n.defended_by_gate.trim() : "";
+    const hasSingular = typeof n.fitness_function === "string" && n.fitness_function.trim().length > 0;
+    const hasArray = Array.isArray(n.fitness_functions) && (n.fitness_functions as unknown[]).some((c) => typeof c === "string" && c.trim().length > 0);
+    if (gate && knownGates.has(gate)) continue; // defended by a known deterministic gate
+    if (hasSingular || hasArray) continue; // defended by a feature-level fitness obligation
+    if (gate && !knownGates.has(gate)) {
+      violations.push(`platform NFR ${label} names defended_by_gate:"${gate}" which is not a known deterministic gate (known: ${[...knownGates].join(", ")}); name a real gate or give it a feature-level fitness_function`);
+    } else {
+      violations.push(`platform NFR ${label} names no defense: a tier:"platform" NFR must set defended_by_gate (one of: ${[...knownGates].join(", ")}) OR a feature-level fitness_function — it is defended once, but never dropped`);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
 /**

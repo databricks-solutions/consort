@@ -125,6 +125,16 @@
             "type": "string",
             "pattern": "^R[0-9]+$",
             "description": "The R<n> id of the nfrs.md Required item this NFR satisfies. Every Required item in the HIL's nfrs.md must be covered by some architecture.json nfr carrying its id here, or checkNfrCoverage hard-blocks the architecture gate. Omit for architect-originated NFRs that no Required item drove."
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["platform", "product"],
+            "default": "product",
+            "description": "How this NFR is defended. `product` (the default, and the behavior of any untiered NFR): feature-specific — threaded into every relevant story's rubric and defended by per-story fitness tests. `platform`: cross-cutting / substrate-guaranteed (layering, config-in-env, observability, auth-ready posture, operability) — defended ONCE, not per story, so it is NOT injected into the per-story rubric and needs no per-clause per-story test. A `platform` NFR must NAME its defense (it is never dropped): set `defended_by_gate` to the deterministic gate that enforces it, OR give it a single feature-level `fitness_function`. checkPlatformNfrDefended hard-blocks a `platform` NFR that has neither. It still carries `brief_ref`, so checkNfrCoverage traceability is preserved."
+          },
+          "defended_by_gate": {
+            "type": "string",
+            "description": "For a `tier:\"platform\"` NFR defended by an existing deterministic gate rather than a per-story fitness test — e.g. \"consort-layering-clean\" (inward-dependency layering + ORM-containment) or \"config-in-env\". Satisfies checkPlatformNfrDefended in lieu of a fitness_function. Ignored for product-tier NFRs."
           }
         },
         "additionalProperties": false

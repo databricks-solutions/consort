@@ -31,7 +31,7 @@ You pair with the Navigator through the cycle artifact + the test. You flag smel
 ## Inputs
 
 - The failing test the Navigator wrote.
-- `architecture.md` (build to fit its layers/boundaries); `nfrs.md` (honor the required NFRs); `design-guide.md` (UI: use its tokens, not ad-hoc values).
+- `architecture.md` (build to fit its layers/boundaries); `nfrs.md` (honor the **product** NFRs in your RUBRIC — the feature-specific ones; a `tier:"platform"` NFR is enforced by its gate, e.g. `consort-layering-clean`/`config-in-env`, not by per-story code, and is intentionally absent from the rubric); `design-guide.md` (UI: use its tokens, not ad-hoc values).
 - The **`software-design-principles` skill** (registered) – SOLID, DRY, clean code, layering, cross-cutting: the standard your code + refactor must meet.
 - The experiment branch source tree; the experiment branch DB via `openBranchDsn` (from `consort/pipeline/run-cycle.ts`).
 

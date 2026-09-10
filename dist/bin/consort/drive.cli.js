@@ -13674,7 +13674,7 @@ function contextRubric(consortDir, featureId, story, ac) {
   try {
     const arch = JSON.parse(fs17.readFileSync(architectureJson(consortDir, featureId), "utf8"));
     const nfrs = (arch.nfrs ?? []).filter(
-      (n) => n && typeof n.id === "string" && (n.applies_to === story || n.applies_to === featureId)
+      (n) => n && typeof n.id === "string" && n.tier !== "platform" && (n.applies_to === story || n.applies_to === featureId)
     );
     if (nfrs.length) {
       parts.push(`required NFRs, ${nfrs.map((n) => `${n.id}${n.brief ? ` (${n.brief})` : ""}`).join("; ")}`);

@@ -17,6 +17,7 @@ import {
   checkLayeringDeclared,
   checkFitnessCoverage,
   checkFitnessClauseCoverage,
+  checkPlatformNfrDefended,
   checkE2ECoverage,
   checkPersistenceCoverage,
   checkInvariantCoverageDistinct,
@@ -1127,5 +1128,52 @@ describe("checkFitnessClauseCoverage: per-clause coverage for the ATOMIC fitness
   it("tolerates invalid architecture / test-list JSON without throwing", () => {
     expect(checkFitnessClauseCoverage("{}", "{not json").ok).toBe(true); // arch invalid -> vacuously ok
     expect(checkFitnessClauseCoverage("{not json", archAtomic(["a"])).ok).toBe(false); // atomic present, list invalid
+  });
+
+  it("EXCLUDES a tier:'platform' NFR from per-clause coverage (defended once, not per story)", () => {
+    // A platform NFR carrying a fitness_functions array is defended at feature scope, not
+    // clause-by-clause per story, so an empty test-list must NOT be flagged for it.
+    const arch = JSON.stringify({
+      feature_id: "F1-x",
+      service_backed: true,
+      nfrs: [{ id: "NFR-F1-obs", brief: "observability", tier: "platform", fitness_functions: ["logs a correlation id", "logs failures"] }],
+    });
+    expect(checkFitnessClauseCoverage(JSON.stringify({ items: [] }), arch).ok).toBe(true);
+    // A product NFR with the same array still requires per-clause coverage (regression).
+    expect(checkFitnessClauseCoverage(JSON.stringify({ items: [] }), archAtomic(["a", "b"])).ok).toBe(false);
+  });
+});
+
+describe("checkPlatformNfrDefended: a platform NFR must name its defense (anti-silent-drop)", () => {
+  const arch = (nfr: Record<string, unknown>) => JSON.stringify({ feature_id: "F1-x", nfrs: [nfr] });
+
+  it("ok: platform NFR defended by a known deterministic gate", () => {
+    expect(checkPlatformNfrDefended(arch({ id: "NFR-lay", brief: "layering", tier: "platform", defended_by_gate: "consort-layering-clean" })).ok).toBe(true);
+    expect(checkPlatformNfrDefended(arch({ id: "NFR-cfg", brief: "config in env", tier: "platform", defended_by_gate: "config-in-env" })).ok).toBe(true);
+  });
+
+  it("ok: platform NFR defended by a single feature-level fitness_function", () => {
+    expect(checkPlatformNfrDefended(arch({ id: "NFR-obs", brief: "observability", tier: "platform", fitness_function: "a request emits a structured log line with a correlation id" })).ok).toBe(true);
+  });
+
+  it("ok: product / untiered NFRs never reach the platform branch", () => {
+    expect(checkPlatformNfrDefended(arch({ id: "NFR-x", brief: "exact decimal", tier: "product" })).ok).toBe(true);
+    expect(checkPlatformNfrDefended(arch({ id: "NFR-y", brief: "exact decimal" })).ok).toBe(true); // untiered
+  });
+
+  it("FLAGS a platform NFR that names neither a gate nor a fitness function", () => {
+    const r = checkPlatformNfrDefended(arch({ id: "NFR-obs", brief: "observability", tier: "platform" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.join(" ")).toMatch(/names no defense/);
+  });
+
+  it("FLAGS a platform NFR pointing at a gate not in the allowlist", () => {
+    const r = checkPlatformNfrDefended(arch({ id: "NFR-obs", brief: "observability", tier: "platform", defended_by_gate: "made-up-gate" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.join(" ")).toMatch(/not a known deterministic gate/);
+  });
+
+  it("tolerates invalid architecture JSON without throwing", () => {
+    expect(checkPlatformNfrDefended("{not json").ok).toBe(true);
   });
 });

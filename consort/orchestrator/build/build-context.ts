@@ -54,13 +54,17 @@ function contextRubric(consortDir: string, featureId: string, story: string, ac:
   }
   if (layers.size) parts.push(`layer${layers.size > 1 ? "s" : ""}=${[...layers].join(", ")}`);
 
-  // NFRs scoped to this story or applied feature-wide (applies_to === featureId).
+  // PRODUCT NFRs scoped to this story or applied feature-wide (applies_to === featureId).
+  // A tier:"platform" NFR is defended ONCE by its gate/feature-level fitness, not per
+  // story, so it is NOT threaded into the per-story rubric — this is what stops the
+  // "every cross-cutting NFR reasoned about in every story" flightiness. Untiered NFRs
+  // (tier absent) are product by default and thread as before.
   try {
     const arch = JSON.parse(fs.readFileSync(architectureJson(consortDir, featureId), "utf8")) as {
-      nfrs?: Array<{ id?: string; brief?: string; applies_to?: string }>;
+      nfrs?: Array<{ id?: string; brief?: string; applies_to?: string; tier?: string }>;
     };
     const nfrs = (arch.nfrs ?? []).filter(
-      (n) => n && typeof n.id === "string" && (n.applies_to === story || n.applies_to === featureId),
+      (n) => n && typeof n.id === "string" && n.tier !== "platform" && (n.applies_to === story || n.applies_to === featureId),
     );
     if (nfrs.length) {
       parts.push(`required NFRs, ${nfrs.map((n) => `${n.id}${n.brief ? ` (${n.brief})` : ""}`).join("; ")}`);

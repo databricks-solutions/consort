@@ -7563,7 +7563,7 @@ function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   } catch {
     return { ok: true };
   }
-  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions)).map((n) => ({ id: n.id, clauses: n.fitness_functions.filter((c) => typeof c === "string" && c.trim().length > 0).length })).filter((n) => n.clauses > 0);
+  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform").map((n) => ({ id: n.id, clauses: n.fitness_functions.filter((c) => typeof c === "string" && c.trim().length > 0).length })).filter((n) => n.clauses > 0);
   if (atomic.length === 0) return { ok: true };
   let tl;
   try {
@@ -7585,6 +7585,31 @@ function checkFitnessClauseCoverage(testListJson, architectureJson2) {
     };
   }
   return { ok: true };
+}
+var PLATFORM_NFR_GATES = /* @__PURE__ */ new Set(["consort-layering-clean", "config-in-env"]);
+function checkPlatformNfrDefended(architectureJson2, knownGates = PLATFORM_NFR_GATES) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const violations = [];
+  for (const n of arch.nfrs ?? []) {
+    if (!n || n.tier !== "platform") continue;
+    const label = typeof n.id === "string" && n.id || typeof n.brief === "string" && n.brief || typeof n.requirement === "string" && n.requirement || "(unnamed NFR)";
+    const gate = typeof n.defended_by_gate === "string" ? n.defended_by_gate.trim() : "";
+    const hasSingular = typeof n.fitness_function === "string" && n.fitness_function.trim().length > 0;
+    const hasArray = Array.isArray(n.fitness_functions) && n.fitness_functions.some((c) => typeof c === "string" && c.trim().length > 0);
+    if (gate && knownGates.has(gate)) continue;
+    if (hasSingular || hasArray) continue;
+    if (gate && !knownGates.has(gate)) {
+      violations.push(`platform NFR ${label} names defended_by_gate:"${gate}" which is not a known deterministic gate (known: ${[...knownGates].join(", ")}); name a real gate or give it a feature-level fitness_function`);
+    } else {
+      violations.push(`platform NFR ${label} names no defense: a tier:"platform" NFR must set defended_by_gate (one of: ${[...knownGates].join(", ")}) OR a feature-level fitness_function \u2014 it is defended once, but never dropped`);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 function checkDbDesign(dbDesignJson2, architectureJson2) {
   let arch;
@@ -8264,6 +8289,13 @@ function nfrCoverageReason(consortDir, featureId) {
   const src = nfrsFile === featureNfrs ? `per-feature nfrs.md (features/${featureId}/nfrs.md)` : "project nfrs.md";
   return `NFR coverage HARD-BLOCK (spec gate): architecture.json does not cover every ## Required NFR in the ${src} \u2013 ${r.violations.join("; ")}. Add a matching brief_ref on architecture.json (or declare nfr_out_of_scope).`;
 }
+function platformNfrDefendedReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkPlatformNfrDefended(arch);
+  if (r.ok) return null;
+  return `Platform NFR defense HARD-BLOCK (spec gate): ${r.violations.join("; ")}.`;
+}
 function fitnessCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
@@ -8474,7 +8506,9 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       const schemaStoryReason = schemaChangeStoryRealizesReason(consortDir, featureId);
       if (schemaStoryReason !== null) return { reason: schemaStoryReason };
       const nfrReason = nfrCoverageReason(consortDir, featureId);
-      return nfrReason === null ? conf : { reason: nfrReason };
+      if (nfrReason !== null) return { reason: nfrReason };
+      const platReason = platformNfrDefendedReason(consortDir, featureId);
+      return platReason === null ? conf : { reason: platReason };
     }
     case "plan": {
       const planJson = readIfPresent("plan.json");
