@@ -105,3 +105,41 @@ describe("approveStoryGateFromDisk refuses a malformed AC at the spec gate (Find
     expect(r.queue).toBeUndefined();
   });
 });
+
+// Regression (stockflow-3-88): the registered-breakdown guard must run on the
+// PER-STORY spec gate (approveStoryGateFromDisk), the path an interactive run
+// actually gates on — not only on the feature-level resolveArtifactInputs
+// (human-proxy) path. A run whose design lane diverged from registration.json
+// (invented S2) approved its first story and detonated downstream as a
+// spec-defect, because the guard was wired only to the feature-level path.
+describe("approveStoryGateFromDisk enforces the registered breakdown (per-story path, stockflow-3-88)", () => {
+  function writeRegistration(stories: Array<{ id: string; acs: string[] }>): void {
+    writeFileSync(join(tdd, "registration.json"), JSON.stringify({ feature_id: F, stories }));
+  }
+
+  it("HARD-BLOCKS the first story's spec gate when the derived breakdown diverges from registration", () => {
+    surfaced();
+    writeFileSync(join(acsDir(), "AC1-row-unchanged.json"), JSON.stringify(CONFORMANT_AC)); // AC is conformant...
+    // ...but the derived story (S) is not the registered one -> divergence.
+    writeRegistration([{ id: "S1-registered-different", acs: ["AC1-registered"] }]);
+    const r = approveStoryGateFromDisk(tdd, F, S, { approver: APPROVER });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/Registered-breakdown HARD-BLOCK/);
+    expect(r.queue).toBeUndefined(); // never queued for build
+  });
+
+  it("no-ops (approves) when the feature has no registration.json", () => {
+    surfaced();
+    writeFileSync(join(acsDir(), "AC1-row-unchanged.json"), JSON.stringify(CONFORMANT_AC));
+    // no registration.json written
+    expect(approveStoryGateFromDisk(tdd, F, S, { approver: APPROVER }).ok).toBe(true);
+  });
+
+  it("passes the registered check when the derived breakdown matches registration (by slug)", () => {
+    surfaced();
+    writeFileSync(join(acsDir(), "AC1-row-unchanged.json"), JSON.stringify(CONFORMANT_AC));
+    // Registration declares exactly this story + AC slug (ordinals may differ) -> match.
+    writeRegistration([{ id: "S9-stock-row-unchanged", acs: ["AC7-row-unchanged"] }]);
+    expect(approveStoryGateFromDisk(tdd, F, S, { approver: APPROVER }).ok).toBe(true);
+  });
+});

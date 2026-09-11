@@ -8824,6 +8824,8 @@ function approveStoryGateFromDisk(consortDir, feature, story, opts) {
   const pipeline = readPipeline(consortDir, feature);
   const batched = findBatchedDraftStories(consortDir, feature, pipeline, story);
   if (batched.length > 0) return { ok: false, batched };
+  const registeredReason = registeredBreakdownReason(consortDir, feature);
+  if (registeredReason) return { ok: false, error: registeredReason };
   const acReason = storyAcsConformanceReason(featureDir2(consortDir, feature), story);
   if (acReason) return { ok: false, error: acReason };
   const indepReason = storyIndependenceForStoryReason(featureDir2(consortDir, feature), story);

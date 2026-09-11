@@ -13,7 +13,7 @@ import {
   featureSpecJson,
   featureSpecMd,
 } from "../../consort/config/consort-paths.js";
-import { featureDir, storyAcsConformanceReason, storyIndependenceForStoryReason, storyRequiresE2eReason } from "../../consort/gates/gate-conformance-guard.js";
+import { featureDir, storyAcsConformanceReason, storyIndependenceForStoryReason, storyRequiresE2eReason, registeredBreakdownReason } from "../../consort/gates/gate-conformance-guard.js";
 import { logGateApproved } from "../../consort/logging/gate-decision-log.js";
 
 export const STORY_STATUSES = [
@@ -428,6 +428,15 @@ export function approveStoryGateFromDisk(
   const pipeline = readPipeline(consortDir, feature);
   const batched = findBatchedDraftStories(consortDir, feature, pipeline, story);
   if (batched.length > 0) return { ok: false, batched };
+  // Pre-registered example: the derived story/AC breakdown must match
+  // registration.json (fail-closed). This is a FEATURE-level check that must run
+  // on the PER-STORY spec gate too — the path an interactive run actually gates
+  // on — not only on the feature-level resolveArtifactInputs (human-proxy) path;
+  // otherwise a divergent breakdown (e.g. an invented S2) slips through the first
+  // story's approval and detonates downstream as a spec-defect. Checked FIRST: a
+  // wrong breakdown is the most fundamental defect. No-op for a non-registered feature.
+  const registeredReason = registeredBreakdownReason(consortDir, feature);
+  if (registeredReason) return { ok: false, error: registeredReason };
   // Finding 29: refuse to approve a story whose ACs are malformed (truncated /
   // invalid JSON) or non-conformant. The spec gate previously did not parse the AC
   // files on this per-story approve path, so a spec-author's truncated AC (missing

@@ -6646,8 +6646,8 @@ init_cjs_shims();
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_fs3 = require("fs");
-var import_path6 = require("path");
+var import_fs4 = require("fs");
+var import_path7 = require("path");
 
 // consort/config/consort-paths.ts
 init_cjs_shims();
@@ -7073,6 +7073,64 @@ init_cjs_shims();
 
 // consort/gates/registered-breakdown.ts
 init_cjs_shims();
+var import_fs2 = require("fs");
+var import_path5 = require("path");
+var registrationPath = (consortDir) => (0, import_path5.join)(consortDir, "registration.json");
+function storySlug(id) {
+  return id.replace(/^S\d+-/, "");
+}
+function acSlug(id) {
+  return id.replace(/^AC\d+-/, "");
+}
+function checkRegisteredBreakdown(registration, derived) {
+  const violations = [];
+  const regBySlug = new Map(registration.stories.map((s) => [storySlug(s.id), s]));
+  const derBySlug = new Map(derived.map((s) => [storySlug(s.id), s]));
+  const registeredList = registration.stories.map((s) => s.id).join(", ");
+  for (const d of derived) {
+    if (!regBySlug.has(storySlug(d.id))) {
+      violations.push(`unregistered story "${d.id}" \u2014 not in the registered set (${registeredList}); the design lane must not invent or rename stories for a pre-registered feature`);
+    }
+  }
+  for (const r of registration.stories) {
+    if (!derBySlug.has(storySlug(r.id))) {
+      violations.push(`registered story "${r.id}" is missing from the derived breakdown`);
+    }
+  }
+  for (const r of registration.stories) {
+    const d = derBySlug.get(storySlug(r.id));
+    if (!d || d.acs.length === 0) continue;
+    const regAc = new Set(r.acs.map(acSlug));
+    const derAc = new Set(d.acs.map(acSlug));
+    for (const a of d.acs) {
+      if (!regAc.has(acSlug(a))) violations.push(`story "${d.id}": unregistered AC "${a}" (registered ACs: ${r.acs.join(", ")})`);
+    }
+    for (const a of r.acs) {
+      if (!derAc.has(acSlug(a))) violations.push(`story "${d.id}": registered AC "${a}" is missing`);
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+function readRegistration(consortDir, featureId) {
+  const p = registrationPath(consortDir);
+  if (!(0, import_fs2.existsSync)(p)) return null;
+  try {
+    const reg = JSON.parse((0, import_fs2.readFileSync)(p, "utf8"));
+    if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
+    return reg;
+  } catch {
+    return null;
+  }
+}
+function readDerivedBreakdown(consortDir, featureId) {
+  const sdir = storiesDir(consortDir, featureId);
+  if (!(0, import_fs2.existsSync)(sdir)) return [];
+  return (0, import_fs2.readdirSync)(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+    const adir = acsDir(consortDir, featureId, e.name);
+    const acs = (0, import_fs2.existsSync)(adir) ? (0, import_fs2.readdirSync)(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    return { id: e.name, acs };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
 
 // consort/gates/gate-conformance-guard.ts
 function featureDir2(consortDir, featureId) {
@@ -7143,13 +7201,20 @@ function storyRequiresE2eReason(fdir, story) {
   }
   return `story ${story} sets requires_e2e:true but no acceptance criterion is tagged layer:"E2E" \u2013 the client<->server interaction this story exists for (a form submit + its confirmation, an inline validation the client renders) must be an E2E AC verified by a real Playwright test, NOT flattened into a backend "the record is saved" API AC. Add a client-submit AC tagged layer:"E2E" (a mocked component test cannot verify the real wire contract)`;
 }
+function registeredBreakdownReason(consortDir, featureId) {
+  const registration = readRegistration(consortDir, featureId);
+  if (registration === null) return null;
+  const { ok, violations } = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  if (ok) return null;
+  return `Registered-breakdown HARD-BLOCK (spec gate): the derived breakdown diverges from .consort/registration.json \u2014 ${violations.join("; ")}. Match the registered breakdown, or deliberately update registration.json to re-register the canonical breakdown.`;
+}
 
 // consort/logging/gate-decision-log.ts
 init_cjs_shims();
 
 // consort/logging/agent-log.ts
 init_cjs_shims();
-var import_fs2 = require("fs");
+var import_fs3 = require("fs");
 
 // consort/config/consort-env.ts
 init_cjs_shims();
@@ -7181,7 +7246,7 @@ function warnLegacyEnv(legacyName, suffix) {
 }
 
 // consort/logging/agent-log.ts
-var import_path5 = require("path");
+var import_path6 = require("path");
 
 // consort/logging/agent-log-events.ts
 init_cjs_shims();
@@ -7259,15 +7324,15 @@ function renderEventMessage(event, slots = {}) {
 
 // consort/logging/agent-log.ts
 function logFilePath(consortDir) {
-  return (0, import_path5.join)(consortDir, "agent-log.jsonl");
+  return (0, import_path6.join)(consortDir, "agent-log.jsonl");
 }
 function mirrorToRecordDir(text) {
   const recordDir = consortEnv("RECORD_DIR")?.trim();
   if (!recordDir) return;
   try {
-    const dst = (0, import_path5.join)(recordDir, "agent-log.jsonl");
-    (0, import_fs2.mkdirSync)((0, import_path5.dirname)(dst), { recursive: true });
-    (0, import_fs2.appendFileSync)(dst, text, "utf8");
+    const dst = (0, import_path6.join)(recordDir, "agent-log.jsonl");
+    (0, import_fs3.mkdirSync)((0, import_path6.dirname)(dst), { recursive: true });
+    (0, import_fs3.appendFileSync)(dst, text, "utf8");
   } catch {
   }
 }
@@ -7311,7 +7376,7 @@ function emitAgentLogEvent(input, opts = {}) {
   const event = buildAgentLogEvent(input, now);
   const line = `${JSON.stringify(event)}
 `;
-  (0, import_fs2.appendFileSync)(logFilePath(consortDir), line, "utf8");
+  (0, import_fs3.appendFileSync)(logFilePath(consortDir), line, "utf8");
   mirrorToRecordDir(line);
   return event;
 }
@@ -7357,13 +7422,13 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!(0, import_fs3.existsSync)(p)) return initPipeline(featureId);
-  return JSON.parse((0, import_fs3.readFileSync)(p, "utf8"));
+  if (!(0, import_fs4.existsSync)(p)) return initPipeline(featureId);
+  return JSON.parse((0, import_fs4.readFileSync)(p, "utf8"));
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
-  (0, import_fs3.mkdirSync)((0, import_path6.dirname)(p), { recursive: true });
-  (0, import_fs3.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+  (0, import_fs4.mkdirSync)((0, import_path7.dirname)(p), { recursive: true });
+  (0, import_fs4.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
 }
 function setStoryStatus(pipeline, storyId, status) {
   const existing = pipeline.stories[storyId];
@@ -7374,11 +7439,11 @@ function syncBreakdownToPipeline(consortDir, featureId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
   const pipeline = readPipeline(consortDir, featureId);
   const added = [];
-  if ((0, import_fs3.existsSync)(storiesDir2)) {
-    for (const storyId of (0, import_fs3.readdirSync)(storiesDir2).sort()) {
+  if ((0, import_fs4.existsSync)(storiesDir2)) {
+    for (const storyId of (0, import_fs4.readdirSync)(storiesDir2).sort()) {
       let isDir = false;
       try {
-        isDir = (0, import_fs3.statSync)((0, import_path6.join)(storiesDir2, storyId)).isDirectory();
+        isDir = (0, import_fs4.statSync)((0, import_path7.join)(storiesDir2, storyId)).isDirectory();
       } catch {
         isDir = false;
       }
@@ -7396,7 +7461,7 @@ function resetIncompleteBreakdown(consortDir, featureId) {
   const specPath = featureSpecJson(consortDir, featureId);
   let complete = false;
   try {
-    const spec = JSON.parse((0, import_fs3.readFileSync)(specPath, "utf8"));
+    const spec = JSON.parse((0, import_fs4.readFileSync)(specPath, "utf8"));
     complete = Array.isArray(spec.stories) && spec.stories.length > 0;
   } catch {
     complete = false;
@@ -7404,8 +7469,8 @@ function resetIncompleteBreakdown(consortDir, featureId) {
   if (complete) return { reset: false };
   let reset = false;
   for (const p of [storiesDir(consortDir, featureId), specPath, featureSpecMd(consortDir, featureId)]) {
-    if ((0, import_fs3.existsSync)(p)) {
-      (0, import_fs3.rmSync)(p, { recursive: true, force: true });
+    if ((0, import_fs4.existsSync)(p)) {
+      (0, import_fs4.rmSync)(p, { recursive: true, force: true });
       reset = true;
     }
   }
@@ -7433,14 +7498,14 @@ function completeActive(pipeline) {
 }
 function storyHasAcceptanceCriteria(consortDir, featureId, storyId) {
   const acsDir2 = acsDir(consortDir, featureId, storyId);
-  if (!(0, import_fs3.existsSync)(acsDir2)) return false;
-  return (0, import_fs3.readdirSync)(acsDir2).some((f) => f.endsWith(".json"));
+  if (!(0, import_fs4.existsSync)(acsDir2)) return false;
+  return (0, import_fs4.readdirSync)(acsDir2).some((f) => f.endsWith(".json"));
 }
 function findBatchedDraftStories(consortDir, featureId, pipeline, gatingStoryId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
-  if (!(0, import_fs3.existsSync)(storiesDir2)) return [];
+  if (!(0, import_fs4.existsSync)(storiesDir2)) return [];
   const offenders = [];
-  for (const storyId of (0, import_fs3.readdirSync)(storiesDir2)) {
+  for (const storyId of (0, import_fs4.readdirSync)(storiesDir2)) {
     if (storyId === gatingStoryId) continue;
     if (!storyHasAcceptanceCriteria(consortDir, featureId, storyId)) continue;
     const status = pipeline.stories[storyId]?.status;
@@ -7481,6 +7546,8 @@ function approveStoryGateFromDisk(consortDir, feature, story, opts) {
   const pipeline = readPipeline(consortDir, feature);
   const batched = findBatchedDraftStories(consortDir, feature, pipeline, story);
   if (batched.length > 0) return { ok: false, batched };
+  const registeredReason = registeredBreakdownReason(consortDir, feature);
+  if (registeredReason) return { ok: false, error: registeredReason };
   const acReason = storyAcsConformanceReason(featureDir2(consortDir, feature), story);
   if (acReason) return { ok: false, error: acReason };
   const indepReason = storyIndependenceForStoryReason(featureDir2(consortDir, feature), story);
@@ -7604,8 +7671,8 @@ function storyDesignFingerprint(consortDir, feature, story) {
 
 // consort/intake/spec-sync.ts
 init_cjs_shims();
-var import_fs4 = require("fs");
-var import_path7 = require("path");
+var import_fs5 = require("fs");
+var import_path8 = require("path");
 var STORY_ALLOWED_KEYS = /* @__PURE__ */ new Set(["id", "asA", "iWantTo", "soThat", "acs", "feature_id", "independence", "external_ref"]);
 function parseStoryNarrative(md) {
   const grab = (label) => {
@@ -7622,15 +7689,15 @@ function parseStoryNarrative(md) {
 }
 function normalizeStoryJson(consortDir, featureId) {
   const stories = storiesDir(consortDir, featureId);
-  if (!(0, import_fs4.existsSync)(stories)) return [];
+  if (!(0, import_fs5.existsSync)(stories)) return [];
   const changed = [];
-  for (const s of (0, import_fs4.readdirSync)(stories)) {
-    const dir = (0, import_path7.join)(stories, s);
-    const file = (0, import_path7.join)(dir, "story.json");
-    if (!(0, import_fs4.existsSync)(file)) continue;
+  for (const s of (0, import_fs5.readdirSync)(stories)) {
+    const dir = (0, import_path8.join)(stories, s);
+    const file = (0, import_path8.join)(dir, "story.json");
+    if (!(0, import_fs5.existsSync)(file)) continue;
     let obj;
     try {
-      obj = JSON.parse((0, import_fs4.readFileSync)(file, "utf8"));
+      obj = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
     } catch {
       continue;
     }
@@ -7639,12 +7706,12 @@ function normalizeStoryJson(consortDir, featureId) {
       obj.feature_id = obj.feature;
       mutated = true;
     }
-    const mdPath = (0, import_path7.join)(dir, "story.md");
+    const mdPath = (0, import_path8.join)(dir, "story.md");
     const needsNarrative = ["asA", "iWantTo", "soThat"].some(
       (k) => typeof obj[k] !== "string" || obj[k].trim().length === 0
     );
-    if (needsNarrative && (0, import_fs4.existsSync)(mdPath)) {
-      const narrative = parseStoryNarrative((0, import_fs4.readFileSync)(mdPath, "utf8"));
+    if (needsNarrative && (0, import_fs5.existsSync)(mdPath)) {
+      const narrative = parseStoryNarrative((0, import_fs5.readFileSync)(mdPath, "utf8"));
       for (const k of ["asA", "iWantTo", "soThat"]) {
         const cur = obj[k];
         if ((typeof cur !== "string" || cur.trim().length === 0) && narrative[k]) {
@@ -7660,7 +7727,7 @@ function normalizeStoryJson(consortDir, featureId) {
       }
     }
     if (mutated) {
-      (0, import_fs4.writeFileSync)(file, JSON.stringify(obj, null, 2) + "\n");
+      (0, import_fs5.writeFileSync)(file, JSON.stringify(obj, null, 2) + "\n");
       changed.push(s);
     }
   }
@@ -7671,13 +7738,13 @@ function healAndReportStoryNarrative(consortDir, featureId) {
   const healed = normalizeStoryJson(consortDir, featureId);
   const stories = storiesDir(consortDir, featureId);
   const missing = [];
-  if ((0, import_fs4.existsSync)(stories)) {
-    for (const s of (0, import_fs4.readdirSync)(stories)) {
-      const file = (0, import_path7.join)(stories, s, "story.json");
-      if (!(0, import_fs4.existsSync)(file)) continue;
+  if ((0, import_fs5.existsSync)(stories)) {
+    for (const s of (0, import_fs5.readdirSync)(stories)) {
+      const file = (0, import_path8.join)(stories, s, "story.json");
+      if (!(0, import_fs5.existsSync)(file)) continue;
       let obj;
       try {
-        obj = JSON.parse((0, import_fs4.readFileSync)(file, "utf8"));
+        obj = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
       } catch {
         missing.push({ story: s, fields: ["<unparseable story.json>"] });
         continue;
@@ -7698,9 +7765,9 @@ var import_node_path9 = require("path");
 
 // consort/smells/smells.ts
 init_cjs_shims();
-var import_fs5 = require("fs");
+var import_fs6 = require("fs");
 var import_crypto = require("crypto");
-var import_path8 = require("path");
+var import_path9 = require("path");
 
 // consort/pipeline/run-cycle.ts
 init_cjs_shims();
@@ -7887,9 +7954,9 @@ PRESERVE every ${artifact} item this story ALREADY has \u2013 they passed prior 
 Re-author this story's ${artifact} to address the above. Do NOT re-emit the same overlap/redundancy; if no honest, not-already-delivered behavior remains, say so as an open question rather than fabricating one.`;
 }
 function readSmellsLog(consortDir) {
-  const file = (0, import_path8.join)(consortDir, "smells.json");
-  if (!(0, import_fs5.existsSync)(file)) return { detected: [] };
-  return JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+  const file = (0, import_path9.join)(consortDir, "smells.json");
+  if (!(0, import_fs6.existsSync)(file)) return { detected: [] };
+  return JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
 }
 function smellMatches(entry, smell, story_id) {
   if (entry.smell !== smell) return false;
@@ -7897,20 +7964,20 @@ function smellMatches(entry, smell, story_id) {
   return entry.story_id === void 0 || entry.story_id === story_id;
 }
 function markSmellResolved(consortDir, smell, opts) {
-  const file = (0, import_path8.join)(consortDir, "smells.json");
-  if (!(0, import_fs5.existsSync)(file)) return false;
-  const log = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+  const file = (0, import_path9.join)(consortDir, "smells.json");
+  if (!(0, import_fs6.existsSync)(file)) return false;
+  const log = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
   const entry = log.detected.find((d) => !d.resolution && smellMatches(d, smell, opts.story_id));
   if (!entry) return false;
   entry.resolution = opts.note ?? `${opts.kind} by PO`;
   entry.resolution_kind = opts.kind;
-  (0, import_fs5.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  (0, import_fs6.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return true;
 }
 function resolveAllOpenSmellsForStory(consortDir, story, note) {
-  const file = (0, import_path8.join)(consortDir, "smells.json");
-  if (!(0, import_fs5.existsSync)(file)) return [];
-  const log = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+  const file = (0, import_path9.join)(consortDir, "smells.json");
+  if (!(0, import_fs6.existsSync)(file)) return [];
+  const log = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
   const cleared = [];
   for (const d of log.detected) {
     if (d.resolution || d.story_id !== story) continue;
@@ -7918,7 +7985,7 @@ function resolveAllOpenSmellsForStory(consortDir, story, note) {
     d.resolution_kind = "cleared";
     cleared.push(d.smell);
   }
-  if (cleared.length) (0, import_fs5.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  if (cleared.length) (0, import_fs6.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return cleared;
 }
 var REFLECT_SMELL_NAMES = /* @__PURE__ */ new Set([
@@ -7930,17 +7997,17 @@ function isReflectSmell(name) {
 }
 function storyTestListFingerprint(consortDir, featureId, story_id) {
   const f = storyTestListJson(consortDir, featureId, story_id);
-  if (!(0, import_fs5.existsSync)(f)) return "";
+  if (!(0, import_fs6.existsSync)(f)) return "";
   try {
-    return (0, import_crypto.createHash)("sha1").update((0, import_fs5.readFileSync)(f)).digest("hex");
+    return (0, import_crypto.createHash)("sha1").update((0, import_fs6.readFileSync)(f)).digest("hex");
   } catch {
     return "";
   }
 }
 function resolveOpenReflectSmellsForStory(consortDir, story_id, note, artifactSha) {
-  const file = (0, import_path8.join)(consortDir, "smells.json");
-  if (!(0, import_fs5.existsSync)(file)) return 0;
-  const log = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+  const file = (0, import_path9.join)(consortDir, "smells.json");
+  if (!(0, import_fs6.existsSync)(file)) return 0;
+  const log = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
   let n = 0;
   for (const d of log.detected) {
     if (!d.resolution && isReflectSmell(d.smell) && d.story_id === story_id) {
@@ -7950,27 +8017,27 @@ function resolveOpenReflectSmellsForStory(consortDir, story_id, note, artifactSh
       n++;
     }
   }
-  if (n) (0, import_fs5.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  if (n) (0, import_fs6.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return n;
 }
 
 // consort/smells/reflection.ts
 init_cjs_shims();
-var import_fs6 = require("fs");
+var import_fs7 = require("fs");
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"
 };
 function clearReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
-  if ((0, import_fs6.existsSync)(p)) (0, import_fs6.rmSync)(p, { force: true });
+  if ((0, import_fs7.existsSync)(p)) (0, import_fs7.rmSync)(p, { force: true });
 }
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
-var import_fs7 = require("fs");
-var import_path9 = require("path");
+var import_fs8 = require("fs");
+var import_path10 = require("path");
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
@@ -8069,24 +8136,24 @@ var import_node_path8 = require("path");
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 function resetStoryBuildState(consortDir, featureId, story) {
-  const cyclesDir = (0, import_path9.join)(cyclesRootDir(consortDir), featureId, story);
+  const cyclesDir = (0, import_path10.join)(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
-  if ((0, import_fs7.existsSync)(cyclesDir)) {
-    (0, import_fs7.rmSync)(cyclesDir, { recursive: true, force: true });
+  if ((0, import_fs8.existsSync)(cyclesDir)) {
+    (0, import_fs8.rmSync)(cyclesDir, { recursive: true, force: true });
     cyclesCleared = true;
   }
   let testItemsReset = 0;
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if ((0, import_fs7.existsSync)(tlPath)) {
+  if ((0, import_fs8.existsSync)(tlPath)) {
     try {
-      const tl = JSON.parse((0, import_fs7.readFileSync)(tlPath, "utf8"));
+      const tl = JSON.parse((0, import_fs8.readFileSync)(tlPath, "utf8"));
       for (const item of tl.items ?? []) {
         if (item.status && item.status !== "pending") {
           item.status = "pending";
           testItemsReset++;
         }
       }
-      (0, import_fs7.writeFileSync)(tlPath, JSON.stringify(tl, null, 2) + "\n");
+      (0, import_fs8.writeFileSync)(tlPath, JSON.stringify(tl, null, 2) + "\n");
     } catch {
     }
   }

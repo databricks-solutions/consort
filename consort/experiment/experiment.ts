@@ -64,6 +64,65 @@ function gitRevParse(cwd: string, ref: string): string {
   }
 }
 
+/** Tracked files whose content differs between two commits' trees (both directions),
+ *  or null when the diff cannot be computed – callers fail CLOSED on a null result. */
+function gitDiffNames(cwd: string, a: string, b: string): string[] | null {
+  try {
+    return execFileSync("git", ["diff", "--name-only", a, b], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+  } catch {
+    return null;
+  }
+}
+
+/** GIT<->DB fork-parent agreement (the S3-cut-from-wrong-parent halt), as a pure predicate:
+ *  returns a halt reason, or null when git and the Lakebase fork tier agree on SCHEMA/CODE.
+ *
+ *  The DB branch is forked from `parentBranch`'s tier; this guard exists to catch the case
+ *  where the git fork-parent is MISSING migrations/models the DB tier already has – every
+ *  DB-touching test then fails against a schema the committed code does not match, and the
+ *  driver burns its whole regression budget before an opaque HIL. Agreement holds when:
+ *    - HEAD descends from the local `parentBranch` tip (the common case), OR
+ *    - the ONLY divergence between HEAD and that tip is consort runtime-artifact metadata
+ *      (RUNTIME_ARTIFACT_PREFIXES – e.g. a `pipeline.json` gate-status line or design-corpus
+ *      churn that advanced the tip past the tier commit). Such a divergence carries NO
+ *      schema/code delta, so the split-brain this guard protects against cannot exist –
+ *      halting there is a false positive (a legitimate reopen/re-author leaves exactly this
+ *      trivial metadata commit ahead of the tier, and pushing `parentBranch` does not help
+ *      because the git side forks from the tier commit, not origin). Uses the SAME canonical
+ *      runtime-artifact set the pre-fork dirty guard trusts, so "what does not corrupt a fork"
+ *      has one owner. Fail CLOSED: if the divergence set can't be computed, treat it as source. */
+export function forkParentAgreementReason(projectDir: string, parentBranch: string): string | null {
+  const localParentTip = gitRevParse(projectDir, parentBranch);
+  if (!localParentTip) return null; // no local parent ref to compare against – nothing to assert
+  if (gitIsAncestor(projectDir, localParentTip, "HEAD")) return null; // HEAD descends from the tip
+  const head = gitRevParse(projectDir, "HEAD");
+  const diverging = gitDiffNames(projectDir, "HEAD", localParentTip);
+  const sourceDivergence =
+    diverging === null
+      ? ["<git diff failed – treated as source divergence (fail-closed)>"]
+      : diverging.filter((f) => !RUNTIME_ARTIFACT_PREFIXES.some((pfx) => f.startsWith(pfx)));
+  if (sourceDivergence.length === 0) return null; // runtime-artifact-only divergence – no split-brain possible
+  return (
+    `Experiment cut forked the git branch from a commit that does NOT descend from the local ` +
+    `"${parentBranch}" tip (${localParentTip.slice(0, 8)}); HEAD is ${head.slice(0, 8)}, and they ` +
+    `disagree on SCHEMA/CODE state (not merely consort runtime metadata). The Lakebase branch was ` +
+    `forked from "${parentBranch}"'s tier, so git and the database now disagree on the parent state; ` +
+    `every DB-touching test would fail against a schema the committed code does not match. Diverging ` +
+    `source files: ${sourceDivergence.slice(0, 10).join(", ")}` +
+    (sourceDivergence.length > 10 ? ` (+${sourceDivergence.length - 10} more)` : "") +
+    `. Reconcile the git fork with the tier (advance the feature tier to the tip, or re-fork the git ` +
+    `branch from the tier commit) before cutting; aborting now so this is caught at the cut, not ~3 ` +
+    `self-heal rounds later at HIL.`
+  );
+}
+
 // Tag flavors mirror the AC layer values from the spec format. The Driver's
 // tag-to-runner map keys off these: [API] → vitest, [E2E] →
 // Playwright, [Infra] → migration / schema-diff smoke. The substrate keeps
@@ -322,35 +381,17 @@ export async function cutExperiment(args: CutExperimentArgs, deps: CutExperiment
         `. The build's honest-GREEN verify needs DATABASE_URL; aborting the cut so this is caught now, not at verify time.`,
     );
   }
-  // GIT<->DB fork-parent agreement guard (the S3-cut-from-wrong-parent halt): the
-  // Lakebase branch is forked from parentBranch's tier (the accepted feature state);
-  // the git branch MUST fork from the SAME commit (the local parentBranch tip). The
-  // paired-cut's git side resolves its start-point preferring `origin/<parentBranch>`,
-  // so a stale remote (behind the LOCAL feature tip that carries the just-accepted
-  // merges) makes the git experiment fork from an OLDER commit than the Lakebase
-  // fork tier – a two-way split-brain: the committed alembic head + models are a
-  // prior story's, while the DB already has the later story's schema. Every
-  // DB-touching test then fails ("column does not exist" / unknown alembic head) and
-  // the driver CANNOT fix it in code, so it burns the whole regression-fix budget and
-  // halts to HIL ~3 self-heal rounds later with an opaque failure. Assert agreement
-  // HERE, at the cut, so a mis-fork is caught immediately + correctly attributed
-  // (same immediate-attribution intent as the envSynced guard above). Skipped when
-  // there is no parentBranch (forking from the default tier) or the local parent ref
-  // is absent (nothing to compare against).
+  // GIT<->DB fork-parent agreement guard (the S3-cut-from-wrong-parent halt): assert the git
+  // fork-parent and the Lakebase fork tier agree on SCHEMA/CODE before building on the pair, so
+  // a mis-fork is caught immediately + correctly attributed (same intent as the envSynced guard
+  // above) instead of surfacing ~3 self-heal rounds later as an opaque DB-schema failure. The
+  // check TOLERATES a tip that is ahead only by consort runtime-artifact commits (a reopen /
+  // re-author leaves a trivial pipeline.json / .consort metadata commit ahead of the tier – no
+  // schema/code delta, so no split-brain); see forkParentAgreementReason. Skipped when forking
+  // from the default tier (no parentBranch).
   if (parentBranch) {
-    const localParentTip = gitRevParse(projectDir, parentBranch);
-    if (localParentTip && !gitIsAncestor(projectDir, localParentTip, "HEAD")) {
-      const head = gitRevParse(projectDir, "HEAD");
-      throw new Error(
-        `Experiment cut for "${branch}" forked the git branch from a commit that does NOT descend from the ` +
-          `local "${parentBranch}" tip (${localParentTip.slice(0, 8)}); HEAD is ${head.slice(0, 8)}. The Lakebase ` +
-          `branch was forked from "${parentBranch}"'s tier, so git and the database now disagree on the parent ` +
-          `state (typically a stale origin/${parentBranch} used as the git fork start-point). Every DB-touching ` +
-          `test would fail against a schema the committed code does not match. Push "${parentBranch}" (or fetch) ` +
-          `so origin matches the local tip, then re-cut; aborting now so this is caught at the cut, not ~3 ` +
-          `self-heal rounds later at HIL.`,
-      );
-    }
+    const disagreement = forkParentAgreementReason(projectDir, parentBranch);
+    if (disagreement) throw new Error(disagreement);
   }
   const branchId = branchIdOf(paired.branch);
 

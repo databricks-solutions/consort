@@ -1,6 +1,7 @@
 {
-  "_comment": "MCP server manifest. Points at the lakebase-mcp-server bin shipped by this package. Consumers (Claude Desktop, OpenAI Codex, Cursor when using MCP) read this to spawn the stdio server. Source: apps/mcp-server/.",
+  "_comment": "MCP server manifest. Points at the lakebase-mcp-server bin shipped by this package. Read by Claude Code (this IS the plugin/marketplace manifest) AND by external clients (Claude Desktop, OpenAI Codex, Cursor when using MCP). The path uses ${CLAUDE_PLUGIN_ROOT}: Claude Code resolves it to the installed plugin dir at launch (a RELATIVE path fails — Claude Code launches the server from a cwd that is NOT the plugin dir, so 'node ./dist/...' throws module-not-found and the stdio connection closes). Source: apps/mcp-server/.",
   "_targets": [
+    "Claude Code (plugin: ${CLAUDE_PLUGIN_ROOT} resolved automatically)",
     "Claude Desktop",
     "OpenAI Codex",
     "Cursor (when using MCP rather than skill plugin)"
@@ -8,13 +9,13 @@
   "_install": [
     "1. From a clone: `npm install && npm run build` (npm `prepare` builds dist/).",
     "2. Add this server to your client's MCP config – for Claude Desktop, copy the entry below into ~/Library/Application Support/Claude/claude_desktop_config.json under `mcpServers`.",
-    "3. Replace `node ./dist/apps/mcp-server/index.js` with an absolute path if the client doesn't have a cwd inside the repo.",
+    "3. ${CLAUDE_PLUGIN_ROOT} is substituted by Claude Code only. For an EXTERNAL client (Claude Desktop / Codex / Cursor), replace ${CLAUDE_PLUGIN_ROOT} with the absolute path to this package's install/clone dir (the dir containing dist/).",
     "Note: @modelcontextprotocol/sdk is an OPTIONAL peer dep of this package – kept out of regular `dependencies` so consumers that only import the substrate's TypeScript modules (like lakebase-scm-extension) don't drag the MCP runtime into their node_modules. The dev install in step 1 picks it up via devDependencies."
   ],
   "mcpServers": {
     "consort": {
       "command": "node",
-      "args": ["./dist/apps/mcp-server/index.js"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/apps/mcp-server/index.js"],
       "env": {}
     }
   }

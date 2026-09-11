@@ -6736,6 +6736,27 @@ function gitRevParse(cwd, ref) {
     return "";
   }
 }
+function gitDiffNames(cwd, a, b) {
+  try {
+    return (0, import_node_child_process.execFileSync)("git", ["diff", "--name-only", a, b], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  } catch {
+    return null;
+  }
+}
+function forkParentAgreementReason(projectDir, parentBranch) {
+  const localParentTip = gitRevParse(projectDir, parentBranch);
+  if (!localParentTip) return null;
+  if (gitIsAncestor(projectDir, localParentTip, "HEAD")) return null;
+  const head = gitRevParse(projectDir, "HEAD");
+  const diverging = gitDiffNames(projectDir, "HEAD", localParentTip);
+  const sourceDivergence = diverging === null ? ["<git diff failed \u2013 treated as source divergence (fail-closed)>"] : diverging.filter((f) => !RUNTIME_ARTIFACT_PREFIXES.some((pfx) => f.startsWith(pfx)));
+  if (sourceDivergence.length === 0) return null;
+  return `Experiment cut forked the git branch from a commit that does NOT descend from the local "${parentBranch}" tip (${localParentTip.slice(0, 8)}); HEAD is ${head.slice(0, 8)}, and they disagree on SCHEMA/CODE state (not merely consort runtime metadata). The Lakebase branch was forked from "${parentBranch}"'s tier, so git and the database now disagree on the parent state; every DB-touching test would fail against a schema the committed code does not match. Diverging source files: ${sourceDivergence.slice(0, 10).join(", ")}` + (sourceDivergence.length > 10 ? ` (+${sourceDivergence.length - 10} more)` : "") + `. Reconcile the git fork with the tier (advance the feature tier to the tip, or re-fork the git branch from the tier commit) before cutting; aborting now so this is caught at the cut, not ~3 self-heal rounds later at HIL.`;
+}
 function experimentsRoot(consortDir, featureId, storyId) {
   return (0, import_path.join)(consortDir, "experiments", featureId, storyId);
 }
@@ -6807,13 +6828,8 @@ ${dirtyTracked}`
     );
   }
   if (parentBranch) {
-    const localParentTip = gitRevParse(projectDir, parentBranch);
-    if (localParentTip && !gitIsAncestor(projectDir, localParentTip, "HEAD")) {
-      const head = gitRevParse(projectDir, "HEAD");
-      throw new Error(
-        `Experiment cut for "${branch}" forked the git branch from a commit that does NOT descend from the local "${parentBranch}" tip (${localParentTip.slice(0, 8)}); HEAD is ${head.slice(0, 8)}. The Lakebase branch was forked from "${parentBranch}"'s tier, so git and the database now disagree on the parent state (typically a stale origin/${parentBranch} used as the git fork start-point). Every DB-touching test would fail against a schema the committed code does not match. Push "${parentBranch}" (or fetch) so origin matches the local tip, then re-cut; aborting now so this is caught at the cut, not ~3 self-heal rounds later at HIL.`
-      );
-    }
+    const disagreement = forkParentAgreementReason(projectDir, parentBranch);
+    if (disagreement) throw new Error(disagreement);
   }
   const branchId = branchIdOf(paired.branch);
   const dir = experimentDir(consortDir, featureId, storyId, experimentSlug);
