@@ -6,7 +6,7 @@
 # lane LIVE (real Spec Author / Architect / Test Strategist / UX Designer / PO,
 # gates approved headless by the Human Proxy) so a FRESH design corpus is
 # produced, then pauses at the build handoff for review/comparison against the
-# recorded replay corpus. Answer Y (write to LAKEBASE_SFTDD_GATE_ANSWER_FILE) to
+# recorded replay corpus. Answer Y (write to LAKEBASE_CONSORT_GATE_ANSWER_FILE) to
 # RESUME the SAME run into the live build , one process, so the turn recorder +
 # logs span design and build CONTINUOUSLY (as if there were no pause).
 #
@@ -17,11 +17,11 @@
 #   <RECORD_DIR>/recorded-artifacts/     cumulative .tdd mirror (design corpus)
 #   <RECORD_DIR>/recorded-build/         per-turn code corpus (build corpus)
 #
-# Pausing/holding: set LAKEBASE_SFTDD_GATE_ANSWER_FILE to a control file. Leave it
+# Pausing/holding: set LAKEBASE_CONSORT_GATE_ANSWER_FILE to a control file. Leave it
 # ABSENT to HOLD at the navigator gate; write Y to it to RESUME into the build.
 #
 # Usage:
-#   LAKEBASE_CONSORT_RECORD_DIR=<dir> LAKEBASE_SFTDD_GATE_ANSWER_FILE=<file> \
+#   LAKEBASE_CONSORT_RECORD_DIR=<dir> LAKEBASE_CONSORT_GATE_ANSWER_FILE=<file> \
 #     run-capture.sh --tiers 2 [--kit-ref <ref>] [--project-name <n>]
 #                    [--project-dir <dir>] [--feature <id>] [--corpus <dir>]
 # Env: DATABRICKS_HOST, GITHUB_OWNER, a CLI profile (same as run-smoke.sh).

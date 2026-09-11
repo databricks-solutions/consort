@@ -194,7 +194,7 @@ export LAKEBASE_KIT_NPX="$KIT_NPX"
 source "${ORCHESTRATOR_DIR}/lib/pin-local-kit.sh"
 resolve_kit_single_source "${ORCHESTRATOR_DIR}" "${KIT_REF}" || exit 1
 KIT_ROOT="${KIT_SINGLE_ROOT}"
-KIT_LK="${KIT_ROOT}/templates/project/common/scripts/lk"
+KIT_LK="$(kit_lk_path "$KIT_ROOT")" || exit 1
 
 # Headless run: the human reviewer at each HITL gate is performed by
 # human-proxy, which validates the gate's artifacts exist + carry their
@@ -202,13 +202,13 @@ KIT_LK="${KIT_ROOT}/templates/project/common/scripts/lk"
 # /design run through to test-list.json (and /build) without a human, while
 # conformance still hard-blocks a missing/malformed artifact. See SKILL
 # "Headless / Human Proxy mode".
-export LAKEBASE_SFTDD_HUMAN_PROXY=1
+export LAKEBASE_CONSORT_HUMAN_PROXY=1
 
 # Where the Human Proxy reads pre-recorded HIL intake answers in headless mode.
 # /design's intake precondition (consort-intake) facilitates from here when
 # an artifact is missing; this smoke also pre-supplies them (stage_project_intake)
 # for determinism. Same directory the recorded product-overview.md / nfrs.md live in.
-export LAKEBASE_SFTDD_RECORDED_INTAKE_DIR="${ORCHESTRATOR_DIR}"
+export LAKEBASE_CONSORT_RECORDED_INTAKE_DIR="${ORCHESTRATOR_DIR}"
 
 # This smoke is a UI project (every feature is a browser-facing capability:
 # filing a bug, transitioning its status). It is scaffolded with `--ui-track`
@@ -225,7 +225,7 @@ export LAKEBASE_SFTDD_RECORDED_INTAKE_DIR="${ORCHESTRATOR_DIR}"
 # via --agent-model) and applies its own MCP-isolation flags. Driving the CLI
 # directly (rather than a claude -p "/plan" session) keeps gate mode + env
 # deterministic: a claude -p Bash tool does not reliably inherit
-# LAKEBASE_SFTDD_HUMAN_PROXY, which silently flipped the plan gate to interactive.
+# LAKEBASE_CONSORT_HUMAN_PROXY, which silently flipped the plan gate to interactive.
 
 log_kit_ref() { echo "smoke: kit ref = ${KIT_REF:-main} (npx package: ${KIT_NPX})"; }
 
@@ -622,7 +622,7 @@ run_plan_sprint() {
   # where the PO's artifacts are provided, and headless the Human Proxy supplies
   # them then (logging each). The recorded file is named independently of the
   # feature id (v1-initial-domain.md -> F1-initial-domain), so each pair is
-  # `<feature_id>\t<recorded source>`, passed via LAKEBASE_SFTDD_SPRINT_REQUESTS.
+  # `<feature_id>\t<recorded source>`, passed via LAKEBASE_CONSORT_SPRINT_REQUESTS.
   # This is the identical state machine a human runs; only the provider differs.
   local iter feature_id spec _pairs=""
   for iter in "${iters[@]}"; do
@@ -631,17 +631,17 @@ run_plan_sprint() {
     [[ -f "$spec" ]] || { err "missing iteration spec: $spec"; exit 2; }
     _pairs+="$(printf '%s\t%s' "$feature_id" "$spec")"$'\n'
   done
-  export LAKEBASE_SFTDD_SPRINT_REQUESTS="$_pairs"
+  export LAKEBASE_CONSORT_SPRINT_REQUESTS="$_pairs"
 
   # c. Drive planning through the deterministic orchestrator (the same CLI the
   # scaffolded /plan command runs). The smoke calls the driver DIRECTLY (as it
   # does for the per-feature loop), not through `claude -p "/plan"`: a claude -p
-  # session's Bash tool does not reliably inherit LAKEBASE_SFTDD_HUMAN_PROXY, so the
+  # session's Bash tool does not reliably inherit LAKEBASE_CONSORT_HUMAN_PROXY, so the
   # command's gate-mode check fell through to `interactive` headless and the plan
   # gate was never approved. Calling the driver here (in this shell, where the env
   # is correct) with an explicit `--gates proxy` is deterministic. The driver runs
   # propose (Spec Author -> feature-proposals.md), author-requests (the Human Proxy
-  # supplies the recorded feature-requests from LAKEBASE_SFTDD_SPRINT_REQUESTS + logs
+  # supplies the recorded feature-requests from LAKEBASE_CONSORT_SPRINT_REQUESTS + logs
   # each), sync-backlog (projects backlog.json from them), then the Human Proxy
   # approves the sprint plan gate (teeth: feature-proposals.md exists + conforms)
   # and it stops at planning-complete.

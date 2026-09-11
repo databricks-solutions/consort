@@ -219,9 +219,9 @@ describe("TDD-workflow smoke: orchestrator supplies intake via the Human Proxy",
   it("hands the PO's feature-requests to the Human Proxy WHEN the state machine asks (not pre-staged)", () => {
     // The PO's artifacts are supplied at the author-requests step, not before:
     // run_plan_sprint records the (feature_id, recorded source) pairs in
-    // LAKEBASE_SFTDD_SPRINT_REQUESTS, and the driver's author-requests step has the
+    // LAKEBASE_CONSORT_SPRINT_REQUESTS, and the driver's author-requests step has the
     // Human Proxy supply them. No bare cp, and no up-front proxy_supply into .tdd.
-    expect(runSmoke).toMatch(/export LAKEBASE_SFTDD_SPRINT_REQUESTS=/);
+    expect(runSmoke).toMatch(/export LAKEBASE_CONSORT_SPRINT_REQUESTS=/);
     expect(runSmoke).not.toMatch(/cp "\$spec"/);
     expect(runSmoke, "no up-front feature-request staging").not.toMatch(
       /proxy_supply "\$spec".*feature-request\.md/,
@@ -229,7 +229,7 @@ describe("TDD-workflow smoke: orchestrator supplies intake via the Human Proxy",
     expect(runSmoke).toMatch(/run_plan_sprint\s*\(\)/);
     const planFn = runSmoke.slice(runSmoke.indexOf("run_plan_sprint() {"));
     expect(planFn, "the recorded request pairs are built in run_plan_sprint").toMatch(
-      /LAKEBASE_SFTDD_SPRINT_REQUESTS/,
+      /LAKEBASE_CONSORT_SPRINT_REQUESTS/,
     );
   });
 });

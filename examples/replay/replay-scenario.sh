@@ -16,7 +16,7 @@
 #   replay-scenario.sh --scenario <name> [--to navigator|release-engineer]
 #                      [--kit-ref <ref>] [--project-dir <dir>]
 # Env: DATABRICKS_HOST, GITHUB_OWNER, a CLI profile (same as run-smoke.sh).
-#      LAKEBASE_SFTDD_AUTO_CONTINUE=1 auto-confirms the handoff gate (CI).
+#      LAKEBASE_CONSORT_AUTO_CONTINUE=1 auto-confirms the handoff gate (CI).
 # Exit: 0 ok; 2 bad args / missing scenario; non-zero from a failed replay step.
 set -euo pipefail
 
@@ -71,7 +71,7 @@ if [[ -f "${SCEN}/intake/product-overview.md" ]]; then
 else
   export REPLAY_INTAKE_DIR="${SCEN}/recorded-artifacts"
 fi
-export LAKEBASE_SFTDD_REPLAY_BUILD_DIR="${SCEN}/recorded-build"
+export LAKEBASE_CONSORT_REPLAY_BUILD_DIR="${SCEN}/recorded-build"
 
 # One project for the whole scenario, so feature N+1 builds on feature N's merged
 # state (the recorded DB + git lineage). Default name is scenario-scoped.
