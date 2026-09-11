@@ -3680,49 +3680,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative6, options, skipNormalization) {
+    function resolveComponent(base, relative7, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse(serialize(base, options), options);
-        relative6 = parse(serialize(relative6, options), options);
+        relative7 = parse(serialize(relative7, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative6.scheme) {
-        target.scheme = relative6.scheme;
-        target.userinfo = relative6.userinfo;
-        target.host = relative6.host;
-        target.port = relative6.port;
-        target.path = removeDotSegments(relative6.path || "");
-        target.query = relative6.query;
+      if (!options.tolerant && relative7.scheme) {
+        target.scheme = relative7.scheme;
+        target.userinfo = relative7.userinfo;
+        target.host = relative7.host;
+        target.port = relative7.port;
+        target.path = removeDotSegments(relative7.path || "");
+        target.query = relative7.query;
       } else {
-        if (relative6.userinfo !== void 0 || relative6.host !== void 0 || relative6.port !== void 0) {
-          target.userinfo = relative6.userinfo;
-          target.host = relative6.host;
-          target.port = relative6.port;
-          target.path = removeDotSegments(relative6.path || "");
-          target.query = relative6.query;
+        if (relative7.userinfo !== void 0 || relative7.host !== void 0 || relative7.port !== void 0) {
+          target.userinfo = relative7.userinfo;
+          target.host = relative7.host;
+          target.port = relative7.port;
+          target.path = removeDotSegments(relative7.path || "");
+          target.query = relative7.query;
         } else {
-          if (!relative6.path) {
+          if (!relative7.path) {
             target.path = base.path;
-            if (relative6.query !== void 0) {
-              target.query = relative6.query;
+            if (relative7.query !== void 0) {
+              target.query = relative7.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative6.path[0] === "/") {
-              target.path = removeDotSegments(relative6.path);
+            if (relative7.path[0] === "/") {
+              target.path = removeDotSegments(relative7.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative6.path;
+                target.path = "/" + relative7.path;
               } else if (!base.path) {
-                target.path = relative6.path;
+                target.path = relative7.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative6.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative7.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative6.query;
+            target.query = relative7.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3730,7 +3730,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative6.fragment;
+      target.fragment = relative7.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -7774,7 +7774,7 @@ function resolveConsortSettings(inputs) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_esm_shims();
 import * as fs17 from "fs";
-import { dirname as dirname21, join as join38 } from "path";
+import { dirname as dirname22, join as join39 } from "path";
 
 // consort/orchestrator/drive/orchestrator-drive.ts
 init_esm_shims();
@@ -9375,10 +9375,28 @@ function refactorPending(consortDir, featureId, story) {
 init_esm_shims();
 import { createHash as createHash3 } from "crypto";
 import { readFileSync as readFileSync30 } from "fs";
+var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
+  "status",
+  "green_at",
+  "cycle_ids",
+  "cycles",
+  "last_run",
+  "updated_at"
+]);
+function designOnlyItem(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+  const out = {};
+  for (const [k, v] of Object.entries(item)) {
+    if (!MUTABLE_TESTLIST_FIELDS.has(k)) out[k] = v;
+  }
+  return out;
+}
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
     const raw = readFileSync30(storyTestListJson(consortDir, feature, story), "utf8");
-    const canonical = JSON.stringify(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
+    const canonical = JSON.stringify({ ...parsed, items });
     return createHash3("sha256").update(canonical).digest("hex").slice(0, 16);
   } catch {
     return void 0;
@@ -9872,15 +9890,25 @@ function readPipeline(consortDir, featureId) {
 
 // consort/session/response-formatter.ts
 init_esm_shims();
-import { existsSync as existsSync39, readFileSync as readFileSync37, readdirSync as readdirSync25 } from "fs";
+import { existsSync as existsSync40, readFileSync as readFileSync38, readdirSync as readdirSync26 } from "fs";
+import { dirname as dirname20 } from "path";
+
+// consort/architecture/e2e-route-adherence.ts
+init_esm_shims();
+import { existsSync as existsSync39, readFileSync as readFileSync37, readdirSync as readdirSync25, statSync as statSync16 } from "fs";
+import { join as join37, relative as relative6 } from "path";
+var CLIENT_SRC = join37("client", "src");
+var E2E_DIR = join37("client", "tests", "e2e");
+
+// consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync39(file)) {
+  if (!existsSync40(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = readFileSync37(file, "utf8");
+    content = readFileSync38(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -9892,7 +9920,7 @@ function designGuideConformance(consortDir) {
 init_esm_shims();
 import { execSync as execSync2 } from "child_process";
 import * as fs16 from "fs";
-import { dirname as dirname20, join as join37 } from "path";
+import { dirname as dirname21, join as join38 } from "path";
 
 // consort/orchestrator/build/preconditions.ts
 init_esm_shims();
@@ -9957,7 +9985,7 @@ init_esm_shims();
 
 // consort/gates/sprint-gates.ts
 init_esm_shims();
-import { existsSync as existsSync41, mkdirSync as mkdirSync25, readFileSync as readFileSync40, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync25 } from "fs";
+import { existsSync as existsSync42, mkdirSync as mkdirSync25, readFileSync as readFileSync41, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync25 } from "fs";
 
 // consort/gates/gate-hash.ts
 init_esm_shims();
@@ -9977,10 +10005,10 @@ function sprintGatesFile(consortDir, sprint) {
 function readSprintGates(sprint, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = sprintGatesFile(consortDir, sprint);
-  if (!existsSync41(file)) return defaultSprintGatesState(sprint);
+  if (!existsSync42(file)) return defaultSprintGatesState(sprint);
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync40(file, "utf8"));
+    parsed = JSON.parse(readFileSync41(file, "utf8"));
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);

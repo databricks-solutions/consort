@@ -7664,10 +7664,28 @@ function reviseStory(pipeline, storyId, opts) {
 init_esm_shims();
 import { createHash } from "crypto";
 import { readFileSync as readFileSync7 } from "fs";
+var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
+  "status",
+  "green_at",
+  "cycle_ids",
+  "cycles",
+  "last_run",
+  "updated_at"
+]);
+function designOnlyItem(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+  const out = {};
+  for (const [k, v] of Object.entries(item)) {
+    if (!MUTABLE_TESTLIST_FIELDS.has(k)) out[k] = v;
+  }
+  return out;
+}
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
     const raw = readFileSync7(storyTestListJson(consortDir, feature, story), "utf8");
-    const canonical = JSON.stringify(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
+    const canonical = JSON.stringify({ ...parsed, items });
     return createHash("sha256").update(canonical).digest("hex").slice(0, 16);
   } catch {
     return void 0;

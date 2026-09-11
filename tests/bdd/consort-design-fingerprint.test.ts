@@ -55,6 +55,30 @@ describe("storyDesignFingerprint", () => {
     const after = storyDesignFingerprint(tdd, F, S);
     expect(after).not.toBe(before);
   });
+
+  it("is STABLE when the build mutates item `status` pending -> green (stockflow-3-88 T20)", () => {
+    // The build rewrites the test-list IN PLACE as it greens each test. That must NOT
+    // shift the fingerprint, or a still-valid experiment is falsely flagged stale and the
+    // drive re-cuts (--reset-stale-branch), discarding the just-built GREEN work.
+    writeTestList([
+      { id: "T17", ac_id: "AC1", kind: "behavior", status: "pending", description: "list all stock" },
+      { id: "T20", ac_id: "AC3", kind: "client", status: "pending", description: "empty state" },
+    ]);
+    const atCut = storyDesignFingerprint(tdd, F, S);
+    writeTestList([
+      { id: "T17", ac_id: "AC1", kind: "behavior", status: "green", description: "list all stock" },
+      { id: "T20", ac_id: "AC3", kind: "client", status: "green", description: "empty state" },
+    ]);
+    const afterGreen = storyDesignFingerprint(tdd, F, S);
+    expect(afterGreen).toBe(atCut);
+  });
+
+  it("still CHANGES when a design field moves even though status is excluded", () => {
+    writeTestList([{ id: "T1", ac_id: "AC1", kind: "behavior", status: "green", description: "a" }]);
+    const before = storyDesignFingerprint(tdd, F, S);
+    writeTestList([{ id: "T1", ac_id: "AC2", kind: "behavior", status: "green", description: "a" }]); // ac_id redesigned
+    expect(storyDesignFingerprint(tdd, F, S)).not.toBe(before);
+  });
 });
 
 describe("cutStoryExperiment stamps the design fingerprint", () => {

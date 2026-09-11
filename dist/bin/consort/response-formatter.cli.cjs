@@ -3675,49 +3675,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse2(serialize(base, options), options);
-        relative = parse2(serialize(relative, options), options);
+        relative2 = parse2(serialize(relative2, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative2.scheme) {
+        target.scheme = relative2.scheme;
+        target.userinfo = relative2.userinfo;
+        target.host = relative2.host;
+        target.port = relative2.port;
+        target.path = removeDotSegments(relative2.path || "");
+        target.query = relative2.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
+          target.userinfo = relative2.userinfo;
+          target.host = relative2.host;
+          target.port = relative2.port;
+          target.path = removeDotSegments(relative2.path || "");
+          target.query = relative2.query;
         } else {
-          if (!relative.path) {
+          if (!relative2.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative2.query !== void 0) {
+              target.query = relative2.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative2.path[0] === "/") {
+              target.path = removeDotSegments(relative2.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative2.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative2.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative2.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3725,7 +3725,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative2.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -6758,7 +6758,8 @@ function readAcArchitecturalNotes(tdd, f, acId) {
 
 // consort/session/response-formatter.ts
 init_cjs_shims();
-var import_node_fs = require("fs");
+var import_node_fs2 = require("fs");
+var import_node_path3 = require("path");
 
 // consort/orchestrator/validators/conformance/artifact-conformance.ts
 init_cjs_shims();
@@ -7063,13 +7064,101 @@ function canonicalArtifactName(path) {
   return base;
 }
 
+// consort/architecture/e2e-route-adherence.ts
+init_cjs_shims();
+var import_node_fs = require("fs");
+var import_node_path2 = require("path");
+var CLIENT_SRC = (0, import_node_path2.join)("client", "src");
+var E2E_DIR = (0, import_node_path2.join)("client", "tests", "e2e");
+var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", "dist", ".venv", "__pycache__", ".git"]);
+function walk(root, pred, out = []) {
+  if (!(0, import_node_fs.existsSync)(root)) return out;
+  let entries;
+  try {
+    entries = (0, import_node_fs.readdirSync)(root);
+  } catch {
+    return out;
+  }
+  for (const name of entries) {
+    if (SKIP_DIRS.has(name)) continue;
+    const abs = (0, import_node_path2.join)(root, name);
+    let st;
+    try {
+      st = (0, import_node_fs.statSync)(abs);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) walk(abs, pred, out);
+    else if (pred(name)) out.push(abs);
+  }
+  return out;
+}
+function globToRegExp(glob) {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i + 1] === "*") {
+        re += ".*";
+        i++;
+      } else {
+        re += "[^/]*";
+      }
+    } else {
+      re += c.replace(/[.+?^${}()|[\]\\/-]/g, "\\$&");
+    }
+  }
+  return new RegExp("^" + re + "$");
+}
+function extractRouteGlobs(specSource) {
+  const globs = [];
+  const re = /\bpage\s*\.\s*route\s*\(\s*(['"`])([^'"`]*)\1/g;
+  let m;
+  while ((m = re.exec(specSource)) !== null) globs.push(m[2]);
+  return globs;
+}
+function checkE2eRouteCollision(projectDir) {
+  const srcRoot = (0, import_node_path2.join)(projectDir, CLIENT_SRC);
+  const e2eRoot = (0, import_node_path2.join)(projectDir, E2E_DIR);
+  if (!(0, import_node_fs.existsSync)(srcRoot) || !(0, import_node_fs.existsSync)(e2eRoot)) return { ok: true, violations: [] };
+  const moduleUrls = walk(srcRoot, (n) => /\.(ts|tsx|js|jsx)$/.test(n) && !/\.(test|spec|d)\.[tj]sx?$/.test(n)).map(
+    (abs) => "http://127.0.0.1:5173/src/" + (0, import_node_path2.relative)(srcRoot, abs).split(/[\\/]/).join("/")
+  );
+  const violations = [];
+  for (const spec of walk(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
+    let source;
+    try {
+      source = (0, import_node_fs.readFileSync)(spec, "utf8");
+    } catch {
+      continue;
+    }
+    const specRel = (0, import_node_path2.relative)(projectDir, spec).split(/[\\/]/).join("/");
+    for (const glob of extractRouteGlobs(source)) {
+      if (!glob.includes("*")) continue;
+      const rx = globToRegExp(glob);
+      const hit = moduleUrls.find((u) => rx.test(u));
+      if (hit) {
+        const modRel = hit.replace("http://127.0.0.1:5173/", "");
+        violations.push({
+          spec: specRel,
+          glob,
+          module: modRel,
+          remediation: `page.route("${glob}", ...) also matches the app module ${modRel} (served by Vite from the same origin): the mock fulfills that ES-module request with JSON, the SPA fails to boot ("MIME type application/json"), and the behavior under test can never render. Scope the intercept to the API pathname instead: page.route((url) => new URL(url).pathname === "/api/...", ...).`
+        });
+      }
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+
 // consort/session/response-formatter.ts
 var FORMATTED_ROLES = /* @__PURE__ */ new Set([
   "spec-author",
   "architect-reviewer",
   "dba",
   "test-strategist",
-  "ux-designer"
+  "ux-designer",
+  "navigator"
 ]);
 function needStory(role, story, violations) {
   if (!story) {
@@ -7080,12 +7169,12 @@ function needStory(role, story, violations) {
 }
 function checkSpecAuthorBreakdown(consortDir, featureId, v) {
   const specPath = featureSpecJson(consortDir, featureId);
-  if (!(0, import_node_fs.existsSync)(specPath)) {
+  if (!(0, import_node_fs2.existsSync)(specPath)) {
     v.push({ artifact: "feature-spec.json", problem: "breakdown deliverable missing (write feature-spec.json with a non-empty stories[] array of the story ids)" });
     return;
   }
   try {
-    const spec = JSON.parse((0, import_node_fs.readFileSync)(specPath, "utf8"));
+    const spec = JSON.parse((0, import_node_fs2.readFileSync)(specPath, "utf8"));
     if (!Array.isArray(spec.stories) || spec.stories.length === 0) {
       v.push({ artifact: "feature-spec.json", problem: "stories[] is missing or empty (the breakdown must enumerate >=1 story id)" });
     }
@@ -7094,13 +7183,13 @@ function checkSpecAuthorBreakdown(consortDir, featureId, v) {
     return;
   }
   const sdir = storiesDir(consortDir, featureId);
-  if (!(0, import_node_fs.existsSync)(sdir)) return;
+  if (!(0, import_node_fs2.existsSync)(sdir)) return;
   const storyJsons = [];
-  for (const s of (0, import_node_fs.readdirSync)(sdir)) {
+  for (const s of (0, import_node_fs2.readdirSync)(sdir)) {
     const p = `${sdir}/${s}/story.json`;
-    if (!(0, import_node_fs.existsSync)(p)) continue;
+    if (!(0, import_node_fs2.existsSync)(p)) continue;
     try {
-      storyJsons.push({ name: s, content: (0, import_node_fs.readFileSync)(p, "utf8") });
+      storyJsons.push({ name: s, content: (0, import_node_fs2.readFileSync)(p, "utf8") });
     } catch {
       continue;
     }
@@ -7122,13 +7211,13 @@ function checkSpecAuthor(args, v) {
     v.push({ artifact: `stories/${story}/acs`, problem: "no acceptance criteria written (expected >=1 AC<n>.json)" });
     return;
   }
-  if (!(0, import_node_fs.existsSync)(dir)) return;
+  if (!(0, import_node_fs2.existsSync)(dir)) return;
   const thenById = /* @__PURE__ */ new Map();
-  for (const f of (0, import_node_fs.readdirSync)(dir)) {
+  for (const f of (0, import_node_fs2.readdirSync)(dir)) {
     if (!f.endsWith(".json")) continue;
     let content;
     try {
-      content = (0, import_node_fs.readFileSync)(`${dir}/${f}`, "utf8");
+      content = (0, import_node_fs2.readFileSync)(`${dir}/${f}`, "utf8");
     } catch {
       continue;
     }
@@ -7177,10 +7266,10 @@ function checkArchitect(args, v) {
 }
 function checkNfrFitnessFunctions(consortDir, featureId, v) {
   const archFile = architectureJson(consortDir, featureId);
-  if (!(0, import_node_fs.existsSync)(archFile)) return;
+  if (!(0, import_node_fs2.existsSync)(archFile)) return;
   let nfrs;
   try {
-    nfrs = JSON.parse((0, import_node_fs.readFileSync)(archFile, "utf8")).nfrs ?? [];
+    nfrs = JSON.parse((0, import_node_fs2.readFileSync)(archFile, "utf8")).nfrs ?? [];
   } catch {
     return;
   }
@@ -7196,13 +7285,13 @@ function checkNfrFitnessFunctions(consortDir, featureId, v) {
 function checkDba(args, v) {
   const { consortDir, featureId } = args;
   const archFile = architectureJson(consortDir, featureId);
-  if (!(0, import_node_fs.existsSync)(archFile)) {
+  if (!(0, import_node_fs2.existsSync)(archFile)) {
     v.push({ artifact: "architecture.json", problem: "architecture.json missing (the architect owns the contract the DBA realizes)" });
     return;
   }
-  const archContent = (0, import_node_fs.readFileSync)(archFile, "utf8");
+  const archContent = (0, import_node_fs2.readFileSync)(archFile, "utf8");
   const dbFile = dbDesignJson(consortDir, featureId);
-  const dbContent = (0, import_node_fs.existsSync)(dbFile) ? (0, import_node_fs.readFileSync)(dbFile, "utf8") : void 0;
+  const dbContent = (0, import_node_fs2.existsSync)(dbFile) ? (0, import_node_fs2.readFileSync)(dbFile, "utf8") : void 0;
   if (dbContent !== void 0) {
     const conf = checkArtifactConformance("db-design.json", dbContent);
     if (!conf.ok) v.push({ artifact: "db-design.json", problem: conf.violations.join("; ") });
@@ -7214,13 +7303,13 @@ function checkTestStrategist(args, v) {
   const { consortDir, featureId, story } = args;
   if (!needStory("test-strategist", story, v)) return;
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!(0, import_node_fs.existsSync)(file)) {
+  if (!(0, import_node_fs2.existsSync)(file)) {
     v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: "per-story test list not written" });
     return;
   }
   let parsed;
   try {
-    parsed = JSON.parse((0, import_node_fs.readFileSync)(file, "utf8"));
+    parsed = JSON.parse((0, import_node_fs2.readFileSync)(file, "utf8"));
   } catch (e) {
     v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
     return;
@@ -7261,12 +7350,12 @@ function checkTestStrategist(args, v) {
 }
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs.existsSync)(file)) {
+  if (!(0, import_node_fs2.existsSync)(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = (0, import_node_fs.readFileSync)(file, "utf8");
+    content = (0, import_node_fs2.readFileSync)(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -7275,9 +7364,9 @@ function designGuideConformance(consortDir) {
 }
 function designGuideHasComponents(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs.existsSync)(file)) return { ok: true };
+  if (!(0, import_node_fs2.existsSync)(file)) return { ok: true };
   try {
-    const parsed = JSON.parse((0, import_node_fs.readFileSync)(file, "utf8"));
+    const parsed = JSON.parse((0, import_node_fs2.readFileSync)(file, "utf8"));
     const comps = parsed.components;
     if (!comps || typeof comps !== "object" || Object.keys(comps).length === 0) {
       return {
@@ -7292,18 +7381,18 @@ function designGuideHasComponents(consortDir) {
 }
 function brandAssetDeclared(consortDir) {
   const assetsDir = designAssetsDir(consortDir);
-  if (!(0, import_node_fs.existsSync)(assetsDir)) return { ok: true };
+  if (!(0, import_node_fs2.existsSync)(assetsDir)) return { ok: true };
   let staged;
   try {
-    staged = (0, import_node_fs.readdirSync)(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
+    staged = (0, import_node_fs2.readdirSync)(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
   } catch {
     return { ok: true };
   }
   if (staged.length === 0) return { ok: true };
   const file = designGuideJson(consortDir);
-  if ((0, import_node_fs.existsSync)(file)) {
+  if ((0, import_node_fs2.existsSync)(file)) {
     try {
-      const guide = JSON.parse((0, import_node_fs.readFileSync)(file, "utf8"));
+      const guide = JSON.parse((0, import_node_fs2.readFileSync)(file, "utf8"));
       if (guide.app_icon?.source && guide.app_icon?.install_to) return { ok: true };
     } catch {
       return { ok: true };
@@ -7326,12 +7415,17 @@ function checkUxDesigner(args, v) {
   const b = brandAssetDeclared(args.consortDir);
   if (!b.ok) v.push({ artifact: "design/design-guide.json", problem: b.problem ?? "a staged brand asset is not declared as app_icon" });
 }
+function checkNavigator(args, v) {
+  const r = checkE2eRouteCollision((0, import_node_path3.dirname)(args.consortDir));
+  for (const x of r.violations) v.push({ artifact: x.spec, problem: x.remediation });
+}
 var CHECKERS = {
   "spec-author": checkSpecAuthor,
   "architect-reviewer": checkArchitect,
   dba: checkDba,
   "test-strategist": checkTestStrategist,
-  "ux-designer": checkUxDesigner
+  "ux-designer": checkUxDesigner,
+  navigator: checkNavigator
 };
 function formatRoleResponse(args) {
   const violations = [];

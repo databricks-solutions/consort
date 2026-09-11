@@ -1,10 +1,10 @@
 {
   "/_not-found/page": "/_not-found",
   "/favicon.ico/route": "/favicon.ico",
+  "/api/planning/route": "/api/planning",
+  "/api/artifact/route": "/api/artifact",
   "/api/step-outputs/route": "/api/step-outputs",
   "/api/state/route": "/api/state",
-  "/api/artifact/route": "/api/artifact",
-  "/api/planning/route": "/api/planning",
   "/api/turn/[ord]/route": "/api/turn/[ord]",
   "/page": "/"
 }

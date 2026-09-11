@@ -16,8 +16,10 @@
 // every item maps to one of the story's ACs (the S2 live-stall bug).
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { storyAcIds, readAcLayer, readAcArchitecturalNotes, storyTestListJson, acsDir, designGuideJson, designAssetsDir, architectureJson, dbDesignJson, featureSpecJson, storiesDir } from "../../consort/config/consort-paths.js";
 import { checkArtifactConformance, canonicalArtifactName, checkDbDesign, checkStoryIndependence } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
+import { checkE2eRouteCollision } from "../../consort/architecture/e2e-route-adherence.js";
 
 export interface FormatViolation {
   /** The artifact (relative-ish path / name) that failed. */
@@ -49,6 +51,7 @@ export const FORMATTED_ROLES = new Set([
   "dba",
   "test-strategist",
   "ux-designer",
+  "navigator",
 ]);
 
 function needStory(role: string, story: string | undefined, violations: FormatViolation[]): story is string {
@@ -405,12 +408,24 @@ function checkUxDesigner(args: FormatArgs, v: FormatViolation[]): void {
   if (!b.ok) v.push({ artifact: "design/design-guide.json", problem: b.problem ?? "a staged brand asset is not declared as app_icon" });
 }
 
+/** navigator (build lane, UI track): the RED Playwright E2E specs the navigator just
+ *  authored must not mock an API with a broad glob that also matches a `client/src` module's
+ *  Vite dev URL. That collision fulfills the module request with JSON, breaks SPA boot, and
+ *  dead-locks the cycle on a CORRECT app (stockflow-3-88 T20) — no product change makes it
+ *  GREEN, so the navigator must fix the spec in-turn, not ship it to a stalled verify.
+ *  Project-level scan; a backend-only project (no `client/`) is a clean no-op. */
+function checkNavigator(args: FormatArgs, v: FormatViolation[]): void {
+  const r = checkE2eRouteCollision(dirname(args.consortDir));
+  for (const x of r.violations) v.push({ artifact: x.spec, problem: x.remediation });
+}
+
 const CHECKERS: Record<string, (a: FormatArgs, v: FormatViolation[]) => void> = {
   "spec-author": checkSpecAuthor,
   "architect-reviewer": checkArchitect,
   dba: checkDba,
   "test-strategist": checkTestStrategist,
   "ux-designer": checkUxDesigner,
+  navigator: checkNavigator,
 };
 
 /**
