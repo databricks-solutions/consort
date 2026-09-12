@@ -2,7 +2,7 @@
   "name": "consort",
   "displayName": "Lakebase SCM Workflows",
   "description": "Opinionated git-Lakebase branch-pairing workflows for building applications on Lakebase (Databricks' serverless Postgres): project bootstrap, branch lifecycle, schema diff, PR flow.",
-  "version": "0.3.91",
+  "version": "0.3.92",
   "author": {
     "name": "Databricks"
   },

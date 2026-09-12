@@ -242,8 +242,8 @@ export default function Home() {
           {/* Planning / backlog moved to the LEFT-side pull-out pane (see the flex row above). */}
           {/* The "Current State" role-card grid was removed: the lanes + lifecycle graph already show
               each role's activity, and a role's turn opens from the lane's role-bearing steps. */}
-
-          {state.blockers.length > 0 ? <Blockers state={state} /> : null}
+          {/* The bottom "Open issues" section was removed as redundant with the Orchestrator status
+              card, which now folds the top blocker's source/reason/resolver in on an escalation. */}
             </div>
 
             {/* The event log lives here now: a collapsible right-side pane that SHARES space with
@@ -776,36 +776,6 @@ function WaitingBanner({ waiting }: { waiting: NonNullable<DashboardState["waiti
   );
 }
 
-function Blockers({ state }: { state: DashboardState }) {
-  return (
-    <div style={{ marginTop: 18 }}>
-      <SectionTitle>Open issues → resolver</SectionTitle>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {state.blockers.map((b, i) => (
-          <div key={i} style={{ background: "var(--surface-card)", border: `1px solid var(--status-critical-soft)`, borderLeft: `4px solid var(--status-critical)`, borderRadius: 10, padding: "12px 14px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--status-critical)", textTransform: "uppercase" }}>{b.source}</span>
-              {b.story ? <span style={{ fontSize: "0.68rem", color: "var(--text-faint)" }}>{b.story}</span> : null}
-              {b.resolverRole ? (
-                <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginLeft: "auto" }}>
-                  → fix by <strong style={{ color: "var(--status-critical-text)", textTransform: "uppercase" }}>{b.resolverRole}</strong>
-                </span>
-              ) : null}
-            </div>
-            <div style={{ fontSize: "0.8rem", color: "var(--text-body)", marginTop: 6, lineHeight: 1.4 }}>{truncate(b.reason, 320)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: "0.72rem", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>{children}</div>;
-}
-
 // Top-level section label: Status / Current State / Event Stream.
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -824,6 +794,3 @@ function Placeholder({ message, error }: { message: string; error?: boolean }) {
   );
 }
 
-function truncate(s: string, n: number) {
-  return s.length > n ? s.slice(0, n) + "…" : s;
-}

@@ -14479,8 +14479,17 @@ function checkSpecAuthorBreakdown(consortDir, featureId, v) {
     for (const problem of indep.violations) v.push({ artifact: "stories/*/story.json", problem });
   }
 }
+function checkRegisteredBreakdownConformance(consortDir, featureId, v) {
+  const registration = readRegistration(consortDir, featureId);
+  if (!registration) return;
+  const div = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  for (const problem of div.violations) {
+    v.push({ artifact: "registration.json", problem: `${problem}. Match the registered breakdown (do not rename/add/drop), or re-register registration.json.` });
+  }
+}
 function checkSpecAuthor(args, v) {
   const { consortDir, featureId, story } = args;
+  checkRegisteredBreakdownConformance(consortDir, featureId, v);
   if (story === void 0) {
     checkSpecAuthorBreakdown(consortDir, featureId, v);
     return;

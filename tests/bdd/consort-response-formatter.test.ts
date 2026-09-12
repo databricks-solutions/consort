@@ -417,3 +417,60 @@ describe("response-formatter: roles with no deterministic contract pass", () => 
     expect(r.ok).toBe(true);
   });
 });
+
+describe("response-formatter: spec-author enforces the registered breakdown (the design seed)", () => {
+  const RF = "F1-stock-visibility";
+  function reg(): void {
+    writeJson(join(tdd, "registration.json"), {
+      feature_id: RF,
+      stories: [
+        { id: "S1-file-stock", acs: ["AC1-file-stock-record", "AC2-retrieve-stock-record", "AC3-collision-resolved-at-write"] },
+        { id: "S2-stock-by-location-table", acs: ["AC1-table-lists-stock-by-location"] },
+      ],
+    });
+  }
+  function derivedStory(id: string, acs: string[]): void {
+    const dir = join(tdd, "features", RF, "stories", id, "acs");
+    mkdirSync(dir, { recursive: true });
+    for (const a of acs) writeJson(join(dir, `${a}.json`), { id: a, layer: "API", given: "g", when: "w", then: "t" });
+  }
+  function featureSpec(ids: string[]): void {
+    writeJson(join(tdd, "features", RF, "feature-spec.json"), { id: RF, name: RF, status: "draft", stories: ids });
+  }
+  const regViolations = (res: { violations: { artifact: string; problem: string }[] }) =>
+    res.violations.filter((x) => x.artifact === "registration.json");
+
+  it("breakdown turn FLAGS a renamed story (S2 rename) against the registration", () => {
+    reg();
+    featureSpec(["S1-file-stock", "S2-stock-home-screen"]);
+    derivedStory("S1-file-stock", []);
+    derivedStory("S2-stock-home-screen", []); // renamed from registered S2-stock-by-location-table
+    const res = formatRoleResponse({ role: "spec-author", consortDir: tdd, featureId: RF }); // no story => breakdown turn
+    expect(regViolations(res).some((v) => /unregistered story "S2-stock-home-screen"/.test(v.problem))).toBe(true);
+    expect(regViolations(res).some((v) => /registered story "S2-stock-by-location-table" is missing/.test(v.problem))).toBe(true);
+  });
+
+  it("per-story turn FLAGS renamed ACs (S1 AC drift) against the registration", () => {
+    reg();
+    derivedStory("S1-file-stock", ["AC1-file-new-stock", "AC2-filed-stock-retrievable", "AC3-refile-updates-in-place"]);
+    derivedStory("S2-stock-by-location-table", []);
+    const res = formatRoleResponse({ role: "spec-author", consortDir: tdd, featureId: RF, story: "S1-file-stock" });
+    expect(regViolations(res).some((v) => /unregistered AC "AC1-file-new-stock"/.test(v.problem))).toBe(true);
+    expect(regViolations(res).some((v) => /registered AC "AC1-file-stock-record" is missing/.test(v.problem))).toBe(true);
+  });
+
+  it("PASSES the registration check when the derived breakdown matches (canonical ids by construction)", () => {
+    reg();
+    featureSpec(["S1-file-stock", "S2-stock-by-location-table"]);
+    derivedStory("S1-file-stock", ["AC1-file-stock-record", "AC2-retrieve-stock-record", "AC3-collision-resolved-at-write"]);
+    derivedStory("S2-stock-by-location-table", []); // S2 ACs not authored yet — skipped, not flagged
+    const res = formatRoleResponse({ role: "spec-author", consortDir: tdd, featureId: RF, story: "S1-file-stock" });
+    expect(regViolations(res)).toHaveLength(0);
+  });
+
+  it("is a no-op when the feature is NOT registered", () => {
+    derivedStory("S1-anything", ["AC1-whatever"]); // no registration.json written
+    const res = formatRoleResponse({ role: "spec-author", consortDir: tdd, featureId: RF, story: "S1-anything" });
+    expect(regViolations(res)).toHaveLength(0);
+  });
+});

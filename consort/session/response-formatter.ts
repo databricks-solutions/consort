@@ -20,6 +20,7 @@ import { dirname } from "node:path";
 import { storyAcIds, readAcLayer, readAcArchitecturalNotes, storyTestListJson, acsDir, designGuideJson, designAssetsDir, architectureJson, dbDesignJson, featureSpecJson, storiesDir } from "../../consort/config/consort-paths.js";
 import { checkArtifactConformance, canonicalArtifactName, checkDbDesign, checkStoryIndependence } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { checkE2eRouteCollision } from "../../consort/architecture/e2e-route-adherence.js";
+import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "../../consort/gates/registered-breakdown.js";
 
 export interface FormatViolation {
   /** The artifact (relative-ish path / name) that failed. */
@@ -103,8 +104,30 @@ function checkSpecAuthorBreakdown(consortDir: string, featureId: string, v: Form
   }
 }
 
+/** When the feature is PRE-REGISTERED (`.consort/registration.json`), the derived story + AC
+ *  breakdown MUST match it by slug — the SAME check the spec gate's registered-breakdown guard runs
+ *  (`registeredBreakdownReason`), pulled into the spec-author's own self-check so a renamed/invented/
+ *  dropped story or AC is caught and self-corrected IN-TURN (canonical ids by construction) instead of
+ *  walling the gate turns later. This is the design SEED: a registered feature derives the canonical
+ *  breakdown because the author's precheck rejects anything else. No-op for an unregistered feature.
+ *  It runs at BOTH the breakdown turn (story-slug divergence — a renamed/dropped story) and each
+ *  per-story turn (that story's AC-slug divergence once its ACs are authored); checkRegisteredBreakdown
+ *  skips the AC comparison for a story whose ACs are not authored yet, so it never false-flags. */
+function checkRegisteredBreakdownConformance(consortDir: string, featureId: string, v: FormatViolation[]): void {
+  const registration = readRegistration(consortDir, featureId);
+  if (!registration) return;
+  const div = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  for (const problem of div.violations) {
+    v.push({ artifact: "registration.json", problem: `${problem}. Match the registered breakdown (do not rename/add/drop), or re-register registration.json.` });
+  }
+}
+
 function checkSpecAuthor(args: FormatArgs, v: FormatViolation[]): void {
   const { consortDir, featureId, story } = args;
+  // Pre-registered feature: enforce the canonical breakdown here, at the author's source, so the
+  // design lane produces the registered story/AC ids by construction (not by luck). Runs for the
+  // breakdown turn (story undefined) AND each per-story turn.
+  checkRegisteredBreakdownConformance(consortDir, featureId, v);
   // Breakdown mode (no story): the spec-author's feature-level self-check. The
   // breakdown deliverable is feature-spec.json with a non-empty stories[], and
   // every story after the first must record its independence determination.

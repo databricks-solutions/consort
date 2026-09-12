@@ -7151,6 +7151,67 @@ function checkE2eRouteCollision(projectDir) {
   return { ok: violations.length === 0, violations };
 }
 
+// consort/gates/registered-breakdown.ts
+init_cjs_shims();
+var import_fs2 = require("fs");
+var import_path3 = require("path");
+var registrationPath = (consortDir) => (0, import_path3.join)(consortDir, "registration.json");
+function storySlug(id) {
+  return id.replace(/^S\d+-/, "");
+}
+function acSlug(id) {
+  return id.replace(/^AC\d+-/, "");
+}
+function checkRegisteredBreakdown(registration, derived) {
+  const violations = [];
+  const regBySlug = new Map(registration.stories.map((s) => [storySlug(s.id), s]));
+  const derBySlug = new Map(derived.map((s) => [storySlug(s.id), s]));
+  const registeredList = registration.stories.map((s) => s.id).join(", ");
+  for (const d of derived) {
+    if (!regBySlug.has(storySlug(d.id))) {
+      violations.push(`unregistered story "${d.id}" \u2014 not in the registered set (${registeredList}); the design lane must not invent or rename stories for a pre-registered feature`);
+    }
+  }
+  for (const r of registration.stories) {
+    if (!derBySlug.has(storySlug(r.id))) {
+      violations.push(`registered story "${r.id}" is missing from the derived breakdown`);
+    }
+  }
+  for (const r of registration.stories) {
+    const d = derBySlug.get(storySlug(r.id));
+    if (!d || d.acs.length === 0) continue;
+    const regAc = new Set(r.acs.map(acSlug));
+    const derAc = new Set(d.acs.map(acSlug));
+    for (const a of d.acs) {
+      if (!regAc.has(acSlug(a))) violations.push(`story "${d.id}": unregistered AC "${a}" (registered ACs: ${r.acs.join(", ")})`);
+    }
+    for (const a of r.acs) {
+      if (!derAc.has(acSlug(a))) violations.push(`story "${d.id}": registered AC "${a}" is missing`);
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+function readRegistration(consortDir, featureId) {
+  const p = registrationPath(consortDir);
+  if (!(0, import_fs2.existsSync)(p)) return null;
+  try {
+    const reg = JSON.parse((0, import_fs2.readFileSync)(p, "utf8"));
+    if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
+    return reg;
+  } catch {
+    return null;
+  }
+}
+function readDerivedBreakdown(consortDir, featureId) {
+  const sdir = storiesDir(consortDir, featureId);
+  if (!(0, import_fs2.existsSync)(sdir)) return [];
+  return (0, import_fs2.readdirSync)(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+    const adir = acsDir(consortDir, featureId, e.name);
+    const acs = (0, import_fs2.existsSync)(adir) ? (0, import_fs2.readdirSync)(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    return { id: e.name, acs };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
 // consort/session/response-formatter.ts
 var FORMATTED_ROLES = /* @__PURE__ */ new Set([
   "spec-author",
@@ -7199,8 +7260,17 @@ function checkSpecAuthorBreakdown(consortDir, featureId, v) {
     for (const problem of indep.violations) v.push({ artifact: "stories/*/story.json", problem });
   }
 }
+function checkRegisteredBreakdownConformance(consortDir, featureId, v) {
+  const registration = readRegistration(consortDir, featureId);
+  if (!registration) return;
+  const div = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  for (const problem of div.violations) {
+    v.push({ artifact: "registration.json", problem: `${problem}. Match the registered breakdown (do not rename/add/drop), or re-register registration.json.` });
+  }
+}
 function checkSpecAuthor(args, v) {
   const { consortDir, featureId, story } = args;
+  checkRegisteredBreakdownConformance(consortDir, featureId, v);
   if (story === void 0) {
     checkSpecAuthorBreakdown(consortDir, featureId, v);
     return;

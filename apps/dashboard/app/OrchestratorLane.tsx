@@ -126,6 +126,33 @@ export function OrchestratorLane({ state }: { state: DashboardState }) {
         <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--status-accent-text)", marginTop: 2 }}>▸ {story}</div>
       ) : null}
 
+      {/* On an ISSUE (unresolved HIL escalation) the card carries the blocker's actionable detail —
+          its source, the reason, and which role resolves it — folded in here so the ONE issue surface
+          shows WHY the run is blocked and WHO fixes it (this replaced a redundant bottom "Open issues"
+          section). The top-ranked blocker matches this focus; any others are counted. */}
+      {issue && state.blockers.length > 0
+        ? (() => {
+            const b = state.blockers[0];
+            const reason = b.reason.length > 220 ? b.reason.slice(0, 220) + "…" : b.reason;
+            return (
+              <div style={{ marginTop: 6, fontSize: "0.72rem", color: "var(--status-critical-text)", lineHeight: 1.4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  {b.source ? <span style={{ fontWeight: 700, textTransform: "uppercase" }}>{b.source}</span> : null}
+                  {b.resolverRole ? (
+                    <span style={{ color: "var(--text-muted)" }}>
+                      → fix by <strong style={{ color: "var(--status-critical-text)", textTransform: "uppercase" }}>{b.resolverRole}</strong>
+                    </span>
+                  ) : null}
+                  {state.blockers.length > 1 ? (
+                    <span style={{ color: "var(--text-faint)", marginLeft: "auto" }}>+{state.blockers.length - 1} more</span>
+                  ) : null}
+                </div>
+                <div style={{ marginTop: 3, color: "var(--text-body)" }}>{reason}</div>
+              </div>
+            );
+          })()
+        : null}
+
       {/* The five HIL gates in lifecycle order, scoped to the current story. A gate that has been
           reached is PURPLE — approved (done) and pending alike — with the one the run is parked at
           (focus) pulsing; still-to-come gates are dim grey. Purple, not green, marks a done human

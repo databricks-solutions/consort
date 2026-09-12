@@ -6763,7 +6763,7 @@ function readAcArchitecturalNotes(tdd, f, acId) {
 
 // consort/session/response-formatter.ts
 init_esm_shims();
-import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync3 } from "fs";
+import { existsSync as existsSync5, readFileSync as readFileSync5, readdirSync as readdirSync4 } from "fs";
 import { dirname as dirname2 } from "path";
 
 // consort/orchestrator/validators/conformance/artifact-conformance.ts
@@ -7156,6 +7156,67 @@ function checkE2eRouteCollision(projectDir) {
   return { ok: violations.length === 0, violations };
 }
 
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync3 } from "fs";
+import { join as join5 } from "path";
+var registrationPath = (consortDir) => join5(consortDir, "registration.json");
+function storySlug(id) {
+  return id.replace(/^S\d+-/, "");
+}
+function acSlug(id) {
+  return id.replace(/^AC\d+-/, "");
+}
+function checkRegisteredBreakdown(registration, derived) {
+  const violations = [];
+  const regBySlug = new Map(registration.stories.map((s) => [storySlug(s.id), s]));
+  const derBySlug = new Map(derived.map((s) => [storySlug(s.id), s]));
+  const registeredList = registration.stories.map((s) => s.id).join(", ");
+  for (const d of derived) {
+    if (!regBySlug.has(storySlug(d.id))) {
+      violations.push(`unregistered story "${d.id}" \u2014 not in the registered set (${registeredList}); the design lane must not invent or rename stories for a pre-registered feature`);
+    }
+  }
+  for (const r of registration.stories) {
+    if (!derBySlug.has(storySlug(r.id))) {
+      violations.push(`registered story "${r.id}" is missing from the derived breakdown`);
+    }
+  }
+  for (const r of registration.stories) {
+    const d = derBySlug.get(storySlug(r.id));
+    if (!d || d.acs.length === 0) continue;
+    const regAc = new Set(r.acs.map(acSlug));
+    const derAc = new Set(d.acs.map(acSlug));
+    for (const a of d.acs) {
+      if (!regAc.has(acSlug(a))) violations.push(`story "${d.id}": unregistered AC "${a}" (registered ACs: ${r.acs.join(", ")})`);
+    }
+    for (const a of r.acs) {
+      if (!derAc.has(acSlug(a))) violations.push(`story "${d.id}": registered AC "${a}" is missing`);
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+function readRegistration(consortDir, featureId) {
+  const p = registrationPath(consortDir);
+  if (!existsSync4(p)) return null;
+  try {
+    const reg = JSON.parse(readFileSync4(p, "utf8"));
+    if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
+    return reg;
+  } catch {
+    return null;
+  }
+}
+function readDerivedBreakdown(consortDir, featureId) {
+  const sdir = storiesDir(consortDir, featureId);
+  if (!existsSync4(sdir)) return [];
+  return readdirSync3(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+    const adir = acsDir(consortDir, featureId, e.name);
+    const acs = existsSync4(adir) ? readdirSync3(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    return { id: e.name, acs };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
 // consort/session/response-formatter.ts
 var FORMATTED_ROLES = /* @__PURE__ */ new Set([
   "spec-author",
@@ -7174,12 +7235,12 @@ function needStory(role, story, violations) {
 }
 function checkSpecAuthorBreakdown(consortDir, featureId, v) {
   const specPath = featureSpecJson(consortDir, featureId);
-  if (!existsSync4(specPath)) {
+  if (!existsSync5(specPath)) {
     v.push({ artifact: "feature-spec.json", problem: "breakdown deliverable missing (write feature-spec.json with a non-empty stories[] array of the story ids)" });
     return;
   }
   try {
-    const spec = JSON.parse(readFileSync4(specPath, "utf8"));
+    const spec = JSON.parse(readFileSync5(specPath, "utf8"));
     if (!Array.isArray(spec.stories) || spec.stories.length === 0) {
       v.push({ artifact: "feature-spec.json", problem: "stories[] is missing or empty (the breakdown must enumerate >=1 story id)" });
     }
@@ -7188,13 +7249,13 @@ function checkSpecAuthorBreakdown(consortDir, featureId, v) {
     return;
   }
   const sdir = storiesDir(consortDir, featureId);
-  if (!existsSync4(sdir)) return;
+  if (!existsSync5(sdir)) return;
   const storyJsons = [];
-  for (const s of readdirSync3(sdir)) {
+  for (const s of readdirSync4(sdir)) {
     const p = `${sdir}/${s}/story.json`;
-    if (!existsSync4(p)) continue;
+    if (!existsSync5(p)) continue;
     try {
-      storyJsons.push({ name: s, content: readFileSync4(p, "utf8") });
+      storyJsons.push({ name: s, content: readFileSync5(p, "utf8") });
     } catch {
       continue;
     }
@@ -7204,8 +7265,17 @@ function checkSpecAuthorBreakdown(consortDir, featureId, v) {
     for (const problem of indep.violations) v.push({ artifact: "stories/*/story.json", problem });
   }
 }
+function checkRegisteredBreakdownConformance(consortDir, featureId, v) {
+  const registration = readRegistration(consortDir, featureId);
+  if (!registration) return;
+  const div = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  for (const problem of div.violations) {
+    v.push({ artifact: "registration.json", problem: `${problem}. Match the registered breakdown (do not rename/add/drop), or re-register registration.json.` });
+  }
+}
 function checkSpecAuthor(args, v) {
   const { consortDir, featureId, story } = args;
+  checkRegisteredBreakdownConformance(consortDir, featureId, v);
   if (story === void 0) {
     checkSpecAuthorBreakdown(consortDir, featureId, v);
     return;
@@ -7216,13 +7286,13 @@ function checkSpecAuthor(args, v) {
     v.push({ artifact: `stories/${story}/acs`, problem: "no acceptance criteria written (expected >=1 AC<n>.json)" });
     return;
   }
-  if (!existsSync4(dir)) return;
+  if (!existsSync5(dir)) return;
   const thenById = /* @__PURE__ */ new Map();
-  for (const f of readdirSync3(dir)) {
+  for (const f of readdirSync4(dir)) {
     if (!f.endsWith(".json")) continue;
     let content;
     try {
-      content = readFileSync4(`${dir}/${f}`, "utf8");
+      content = readFileSync5(`${dir}/${f}`, "utf8");
     } catch {
       continue;
     }
@@ -7271,10 +7341,10 @@ function checkArchitect(args, v) {
 }
 function checkNfrFitnessFunctions(consortDir, featureId, v) {
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync4(archFile)) return;
+  if (!existsSync5(archFile)) return;
   let nfrs;
   try {
-    nfrs = JSON.parse(readFileSync4(archFile, "utf8")).nfrs ?? [];
+    nfrs = JSON.parse(readFileSync5(archFile, "utf8")).nfrs ?? [];
   } catch {
     return;
   }
@@ -7290,13 +7360,13 @@ function checkNfrFitnessFunctions(consortDir, featureId, v) {
 function checkDba(args, v) {
   const { consortDir, featureId } = args;
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync4(archFile)) {
+  if (!existsSync5(archFile)) {
     v.push({ artifact: "architecture.json", problem: "architecture.json missing (the architect owns the contract the DBA realizes)" });
     return;
   }
-  const archContent = readFileSync4(archFile, "utf8");
+  const archContent = readFileSync5(archFile, "utf8");
   const dbFile = dbDesignJson(consortDir, featureId);
-  const dbContent = existsSync4(dbFile) ? readFileSync4(dbFile, "utf8") : void 0;
+  const dbContent = existsSync5(dbFile) ? readFileSync5(dbFile, "utf8") : void 0;
   if (dbContent !== void 0) {
     const conf = checkArtifactConformance("db-design.json", dbContent);
     if (!conf.ok) v.push({ artifact: "db-design.json", problem: conf.violations.join("; ") });
@@ -7308,13 +7378,13 @@ function checkTestStrategist(args, v) {
   const { consortDir, featureId, story } = args;
   if (!needStory("test-strategist", story, v)) return;
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync4(file)) {
+  if (!existsSync5(file)) {
     v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: "per-story test list not written" });
     return;
   }
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync4(file, "utf8"));
+    parsed = JSON.parse(readFileSync5(file, "utf8"));
   } catch (e) {
     v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
     return;
@@ -7355,12 +7425,12 @@ function checkTestStrategist(args, v) {
 }
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync4(file)) {
+  if (!existsSync5(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = readFileSync4(file, "utf8");
+    content = readFileSync5(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -7369,9 +7439,9 @@ function designGuideConformance(consortDir) {
 }
 function designGuideHasComponents(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync4(file)) return { ok: true };
+  if (!existsSync5(file)) return { ok: true };
   try {
-    const parsed = JSON.parse(readFileSync4(file, "utf8"));
+    const parsed = JSON.parse(readFileSync5(file, "utf8"));
     const comps = parsed.components;
     if (!comps || typeof comps !== "object" || Object.keys(comps).length === 0) {
       return {
@@ -7386,18 +7456,18 @@ function designGuideHasComponents(consortDir) {
 }
 function brandAssetDeclared(consortDir) {
   const assetsDir = designAssetsDir(consortDir);
-  if (!existsSync4(assetsDir)) return { ok: true };
+  if (!existsSync5(assetsDir)) return { ok: true };
   let staged;
   try {
-    staged = readdirSync3(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
+    staged = readdirSync4(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
   } catch {
     return { ok: true };
   }
   if (staged.length === 0) return { ok: true };
   const file = designGuideJson(consortDir);
-  if (existsSync4(file)) {
+  if (existsSync5(file)) {
     try {
-      const guide = JSON.parse(readFileSync4(file, "utf8"));
+      const guide = JSON.parse(readFileSync5(file, "utf8"));
       if (guide.app_icon?.source && guide.app_icon?.install_to) return { ok: true };
     } catch {
       return { ok: true };

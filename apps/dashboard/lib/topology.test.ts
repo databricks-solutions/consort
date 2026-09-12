@@ -1299,3 +1299,31 @@ for (const { name, path, neverLit } of LOGS) {
     });
   });
 }
+
+describe("laneProgress — a `reasoning` event holds the turn's step (no highlight jump)", () => {
+  it("driver `reasoning` during a REFACTOR turn stays on b-refactor (not b-green)", () => {
+    const events = [
+      ev("phase.start", "driver", { phase: "refactor", buildMode: "refactor" }),
+      ev("reasoning", "driver", {}), // narration: carries no phase/buildMode
+    ];
+    expect(laneProgress(events).current).toEqual({ lane: "build", step: "b-refactor" });
+  });
+
+  it("driver `reasoning` during a base GREEN turn stays on b-green (mode reset at phase.start)", () => {
+    const events = [
+      ev("phase.start", "driver", { phase: "refactor", buildMode: "refactor" }),
+      ev("phase.end", "driver", { phase: "refactor" }),
+      ev("phase.start", "driver", { phase: "green" }), // new green turn — no buildMode
+      ev("reasoning", "driver", {}),
+    ];
+    expect(laneProgress(events).current).toEqual({ lane: "build", step: "b-green" });
+  });
+
+  it("navigator `reasoning` during a REVIEW turn stays on b-review", () => {
+    const events = [
+      ev("phase.start", "navigator", { phase: "review", buildMode: "review" }),
+      ev("reasoning", "navigator", {}),
+    ];
+    expect(laneProgress(events).current).toEqual({ lane: "build", step: "b-review" });
+  });
+});

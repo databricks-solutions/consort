@@ -346,20 +346,28 @@ describe("render — LaneGraph", () => {
     expect(backingRectFor(approved)).not.toContain("glowpulse"); // cleared → quiet, no pulse
   });
 
-  it("renders the per-step 'model · effort · turns' metric on the step it credits (no cost)", () => {
+  it("renders the per-step 'model·effort·turns' metric on the step it credits (no cost)", () => {
     const markup = renderToStaticMarkup(
       <LaneGraph state={{ ...state, laneStepMeta: { "p-propose": { model: "opus", effort: "low", cost: 1.5, turns: 2 } } }} />,
     );
-    expect(markup).toContain("opus · low · 2 turns"); // model · effort · turns, one line
+    expect(markup).toContain("opus·low·2 turns"); // model·effort·turns, one tight line (bare middot, no gaps)
     expect(markup).not.toContain("$1.50"); // cost is summarized in the run-vitals card, not per step
   });
 
-  it("drops effort from the step metric when absent: 'model · turns'", () => {
+  it("abbreviates the wide effort labels so the metric fits the card (medium → med)", () => {
+    const markup = renderToStaticMarkup(
+      <LaneGraph state={{ ...state, laneStepMeta: { "p-propose": { model: "sonnet", effort: "medium", cost: 0, turns: 1 } } }} />,
+    );
+    expect(markup).toContain("sonnet·med·1 turn");
+    expect(markup).not.toContain("medium");
+  });
+
+  it("drops effort from the step metric when absent: 'model·turns'", () => {
     const markup = renderToStaticMarkup(
       <LaneGraph state={{ ...state, laneStepMeta: { "p-propose": { model: "opus", effort: null, cost: 0, turns: 3 } } }} />,
     );
-    expect(markup).toContain("opus · 3 turns");
-    expect(markup).not.toContain("opus · null");
+    expect(markup).toContain("opus·3 turns");
+    expect(markup).not.toContain("opus·null");
   });
 
   it("draws back-edges as labelled branches, not happy path", () => {

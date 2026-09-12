@@ -3,8 +3,8 @@
   "/favicon.ico/route": "/favicon.ico",
   "/api/planning/route": "/api/planning",
   "/api/step-outputs/route": "/api/step-outputs",
-  "/api/state/route": "/api/state",
   "/api/artifact/route": "/api/artifact",
+  "/api/state/route": "/api/state",
   "/api/turn/[ord]/route": "/api/turn/[ord]",
   "/page": "/"
 }

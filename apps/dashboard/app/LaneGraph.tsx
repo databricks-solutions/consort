@@ -46,6 +46,10 @@ const GAP = 30;
 // Body-text size for the step card's sub-title + the model·effort·turns metric + the duration
 // (the card TITLE stays 9/bold above them). One knob so the card body reads at one size.
 const STEP_BODY_FONT = 8.5;
+// Abbreviate the WIDE effort labels so the "model·effort·turns" metric fits the narrow (104px)
+// step card. minimal/medium/xhigh are the long ones; low/high/max are already short. Unknown
+// values pass through. Keeps the metric legible without spilling past the card edge.
+const EFFORT_ABBREV: Record<string, string> = { minimal: "min", medium: "med", xhigh: "xhi" };
 const PAD = 14;
 const BACK_LANE_H = 34; // vertical room under the row for back-edges
 
@@ -826,8 +830,12 @@ function StepBox({
   // drop out there. Cost is summarized in the run-vitals card, not per step. filter(Boolean) keeps the
   // separators tight — no buffered gap where a missing part would be.
   const turnsStr = meta && meta.turns > 0 ? `${meta.turns} turn${meta.turns === 1 ? "" : "s"}` : null;
+  // Abbreviate the effort label (medium -> med, …) and join the parts with a BARE middot: in the
+  // mono metric font a " · " (space-dot-space) reads as a big word gap, so drop the surrounding
+  // spaces to keep "model·effort·turns" tight.
+  const effortStr = meta && meta.effort ? (EFFORT_ABBREV[meta.effort] ?? meta.effort) : null;
   const modelLine =
-    meta && (meta.model || meta.effort || turnsStr) ? [meta.model, meta.effort, turnsStr].filter(Boolean).join(" · ") : null;
+    meta && (meta.model || effortStr || turnsStr) ? [meta.model, effortStr, turnsStr].filter(Boolean).join("·") : null;
 
   return (
     <g
@@ -934,9 +942,16 @@ function StepBox({
           x={x + STEP_W / 2}
           y={y + 49}
           textAnchor="middle"
+          // Fit-to-width safety: a long metric (e.g. "sonnet·med·10 turns") would spill past the
+          // card, so when the natural mono width exceeds the card's inner width, condense it to fit
+          // (lengthAdjust shrinks glyph+spacing). Short lines carry no textLength, so they render at
+          // their natural, un-stretched width (no forced spreading).
+          {...(modelLine.length * STEP_BODY_FONT * 0.6 > STEP_W - 12
+            ? { textLength: STEP_W - 12, lengthAdjust: "spacingAndGlyphs" as const }
+            : {})}
           style={{ fontSize: STEP_BODY_FONT, fill: highlighted ? stroke : "var(--text-muted)", fontFamily: font.mono }}
         >
-          {truncate(modelLine, 28)}
+          {truncate(modelLine, 30)}
         </text>
       ) : null}
       {/* Elapsed working DURATION on the active step — moved to the BOTTOM row (turns took its old

@@ -951,23 +951,44 @@ export function latestTurnOrdinalForStep(
 function* eventsWithFeature(
   events: AgentLogEvent[],
   upTo?: number,
-): Generator<{ e: AgentLogEvent; feature: string | null; phase: string | null }> {
+): Generator<{ e: AgentLogEvent; feature: string | null; phase: string | null; buildMode: string | null }> {
   const end = upTo === undefined ? events.length : Math.max(0, Math.min(upTo, events.length));
   let feature: string | null = null;
   let phase: string | null = null;
+  let buildMode: string | null = null;
   for (let i = 0; i < end; i++) {
-    const f = featureIdOf(events[i]);
+    const e = events[i];
+    const f = featureIdOf(e);
     if (f) feature = f;
-    const p = phaseOf(events[i]);
+    const p = phaseOf(e);
     if (p) phase = p;
-    yield { e: events[i], feature, phase };
+    // buildMode identifies the CURRENT build turn (refactor / review / assess / repair — a base GREEN
+    // turn has none). RESET it at each phase.start (a new turn begins) so a base-green turn never
+    // inherits the prior refactor turn's mode; BETWEEN phase.starts carry it forward to the turn's
+    // phase-less narration (`reasoning` / `turn.usage`) so those events map to the SAME build step as
+    // the turn, not to the base green step. This is the ONE place the active step's turn-identity is
+    // carried — the central rule that keeps a `reasoning` line from jumping the highlight.
+    if (e.event === "phase.start") buildMode = buildModeOf(e);
+    else {
+      const bm = buildModeOf(e);
+      if (bm) buildMode = bm;
+    }
+    yield { e, feature, phase, buildMode };
   }
 }
 
-/** The event as seen with its effective (carried-forward) phase attached, so a phase-less event is
- *  disambiguated by the phase the run is actually in. A no-op when the event already carries one. */
-function withPhase(e: AgentLogEvent, phase: string | null): AgentLogEvent {
-  return phase && phaseOf(e) !== phase ? { ...e, metadata: { ...(e.metadata ?? {}), phase } } : e;
+/** The event as seen with its effective (carried-forward) phase AND buildMode attached, so a
+ *  phase/mode-less narration event (`reasoning` / `turn.usage`) is disambiguated by the TURN the run
+ *  is actually in — otherwise a driver `reasoning` during a REFACTOR turn matches the base GREEN step
+ *  and jumps the highlight. A no-op when the event already carries them. */
+function withCarried(e: AgentLogEvent, phase: string | null, buildMode: string | null): AgentLogEvent {
+  const needPhase = !!phase && phaseOf(e) !== phase;
+  const needMode = !!buildMode && buildModeOf(e) !== buildMode;
+  if (!needPhase && !needMode) return e;
+  return {
+    ...e,
+    metadata: { ...(e.metadata ?? {}), ...(needPhase ? { phase } : {}), ...(needMode ? { buildMode } : {}) },
+  };
 }
 
 /**
@@ -1013,12 +1034,14 @@ export function laneProgress(events: AgentLogEvent[], upTo?: number, feature?: s
   // The playhead event with its effective phase — tracked here (before the feature filter) because
   // `current` is deliberately NOT feature-filtered, while the done-set below is.
   let playhead: AgentLogEvent | null = null;
-  for (const { e, feature: f, phase } of eventsWithFeature(events, upTo)) {
-    playhead = withPhase(e, phase);
+  for (const { e, feature: f, phase, buildMode } of eventsWithFeature(events, upTo)) {
+    // Attach BOTH the carried phase and buildMode, so a phase-less breakdown artifact maps to plan's
+    // p-breakdown (not design's d-spec), a phase-less design artifact still maps into design, AND a
+    // driver `reasoning` during a refactor turn stays on b-refactor instead of falling to b-green.
+    const carried = withCarried(e, phase, buildMode);
+    playhead = carried;
     if (feature !== undefined && f !== feature) continue;
-    // Match with the carried phase attached, so a phase-less breakdown artifact maps to plan's
-    // p-breakdown (not design's d-spec) and a phase-less design artifact still maps into design.
-    const hit = laneStepForEvent(withPhase(e, phase));
+    const hit = laneStepForEvent(carried);
     if (!hit) continue;
     done[hit.lane].add(hit.step);
     last[hit.lane] = hit.step;
@@ -1026,8 +1049,8 @@ export function laneProgress(events: AgentLogEvent[], upTo?: number, feature?: s
 
   // `current` reflects the event AT the playhead, not the last event that happened to match
   // something — otherwise a stale step stays lit across unmatched events. It reads the SAME
-  // carried-phase event as the done-set (via `eventsWithFeature` → `withPhase`), so the two views
-  // agree; a gate.surfaced/handoff still maps to no role step (wrong role), so a gate park stays
+  // carried phase+buildMode event as the done-set (via `eventsWithFeature` → `withCarried`), so the
+  // two views agree; a gate.surfaced/handoff still maps to no role step (wrong role), so a gate park stays
   // step-less.
   //
   // `current` is never a HITL boundary. TWO guards: (1) a gate.surfaced/gate.approved event is not
