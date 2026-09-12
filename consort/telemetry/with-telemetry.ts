@@ -38,11 +38,15 @@ import { TelemetryEmitter, resolveSink, type TelemetrySink } from "./emitter.js"
 import {
   isFirstRun,
   isL2NoticeSeen,
+  isTelemetryAcknowledged,
   isTelemetryEnabled,
   markL2NoticeSeen,
   resolveTelemetryLevel,
   telemetryDebug,
+  wasBeaconSent,
 } from "./home-config.js";
+import { sendInstallBeacon } from "./install-beacon.js";
+import { kitVersion } from "../config/kit-bin.js";
 import { buildResourceAttrs, type ResourceDeps } from "./resource.js";
 import { newSpanId, newTraceId, type GateSpan, type RunSpan, type TurnSpan } from "./spans.js";
 import { takeLastTurnMeta } from "../orchestrator/drive/claude-runner.js";
@@ -180,6 +184,29 @@ function gateOutcome(action: WorkflowAction, threw: boolean): GateOutcome {
   return threw ? "fail" : "pass";
 }
 
+/** Deterministically RETRY the one-time install beacon on the per-run path. The beacon's only
+ *  other trigger is the /consort:start first-run block, which runs only while `acknowledged` is
+ *  false and never re-runs after acknowledgment , so a first POST that missed (e.g. an Azure cold
+ *  start over the beacon's 5s timeout) never retried, leaving an install that then ran many drives
+ *  ABSENT from telemetry.installs (the install-undercount bug). Firing it here, best-effort on every
+ *  run, retries until it lands. Gated on `acknowledged` (the beacon is disclosed in the briefing, so
+ *  it must not fire before disclosure); sendInstallBeacon is itself idempotent (beacon_sent), honors
+ *  CONSORT_TELEMETRY=0, and never throws. Returns the promise so a test can await; the drive calls
+ *  it fire-and-forget (never awaits, never blocks — a long-running drive has ample time to deliver). */
+export async function retryInstallBeaconBestEffort(deps: BeginRunDeps, fetchImpl?: typeof fetch): Promise<void> {
+  try {
+    if (!isTelemetryAcknowledged(deps) || wasBeaconSent(deps)) return;
+    await sendInstallBeacon({
+      version: deps.version ?? kitVersion(),
+      env: deps.env,
+      deps,
+      ...(fetchImpl ? { fetchImpl } : {}),
+    });
+  } catch (err) {
+    telemetryDebug("install-beacon retry skipped", err);
+  }
+}
+
 /**
  * Begin a telemetry run. Opens the root `consort.run` span when consent passes;
  * otherwise returns a no-op session. Building the resource here mints the
@@ -201,6 +228,11 @@ export function beginTelemetryRun(deps: BeginRunDeps): TelemetryRun {
  *  a throw (see the never-throw invariant in TELEMETRY.md). */
 function beginTelemetryRunUnsafe(deps: BeginRunDeps): TelemetryRun {
   const env = deps.env ?? process.env;
+  // Retry the one-time install beacon on this deterministic per-run path, BEFORE the
+  // shouldEmitTelemetry gate below: the beacon is disclosed + opt-out-independent, so it must
+  // still fire (once) even when a user has opted OUT of run telemetry. Fire-and-forget; gated on
+  // `acknowledged` (disclosure) + idempotent, so it is a no-op once landed. See the function note.
+  void retryInstallBeaconBestEffort(deps);
   const isTTY = deps.isTTY ?? !!process.stdout.isTTY;
   const enabledFlag = deps.telemetryEnabled ?? isTelemetryEnabled(deps);
   if (!shouldEmitTelemetry({ telemetryEnabled: enabledFlag, env })) return NOOP_RUN;

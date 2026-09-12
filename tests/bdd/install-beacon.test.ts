@@ -8,7 +8,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sendInstallBeacon } from "../../consort/telemetry/install-beacon";
-import { readStoredConfig, setTelemetryEnabled } from "../../consort/telemetry/home-config";
+import { readStoredConfig, setTelemetryEnabled, markTelemetryAcknowledged, markBeaconSent } from "../../consort/telemetry/home-config";
+import { retryInstallBeaconBestEffort } from "../../consort/telemetry/with-telemetry";
 
 let home: string;
 const deps = () => ({ homedir: home, env: {} as NodeJS.ProcessEnv });
@@ -73,5 +74,41 @@ describe("sendInstallBeacon (one-time, opt-out-independent, disclosed marker)", 
     const calls: Array<{ url: string; body: string }> = [];
     const r = await sendInstallBeacon({ version: "0.3.51", deps: deps(), env: {}, fetchImpl: stubFetch(calls, false, true) });
     expect(r).toMatchObject({ sent: false, reason: "post-failed" });
+  });
+});
+
+describe("retryInstallBeaconBestEffort (deterministic per-run retry, gated on disclosure)", () => {
+  beforeEach(() => { home = mkdtempSync(join(tmpdir(), "beacon-retry-")); });
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+  const rdeps = () => ({ homedir: home, env: {} as NodeJS.ProcessEnv, command: "build" as const, version: "0.3.90" });
+
+  it("FIRES when acknowledged and not yet sent — the missed-first-beacon retry the /consort:start one-shot never did", async () => {
+    markTelemetryAcknowledged(deps());
+    const calls: Array<{ url: string; body: string }> = [];
+    await retryInstallBeaconBestEffort(rdeps(), stubFetch(calls, true));
+    expect(calls).toHaveLength(1);
+    expect(readStoredConfig(deps())?.beacon_sent).toBe(true);
+  });
+
+  it("does NOT fire before disclosure (acknowledged=false) — the honesty invariant", async () => {
+    const calls: Array<{ url: string; body: string }> = [];
+    await retryInstallBeaconBestEffort(rdeps(), stubFetch(calls, true));
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does NOT re-fire once beacon_sent (idempotent)", async () => {
+    markTelemetryAcknowledged(deps());
+    markBeaconSent(deps());
+    const calls: Array<{ url: string; body: string }> = [];
+    await retryInstallBeaconBestEffort(rdeps(), stubFetch(calls, true));
+    expect(calls).toHaveLength(0);
+  });
+
+  it("fires EVEN when run telemetry is opted out (beacon is opt-out-independent)", async () => {
+    markTelemetryAcknowledged(deps());
+    setTelemetryEnabled(false, deps());
+    const calls: Array<{ url: string; body: string }> = [];
+    await retryInstallBeaconBestEffort(rdeps(), stubFetch(calls, true));
+    expect(calls).toHaveLength(1);
   });
 });

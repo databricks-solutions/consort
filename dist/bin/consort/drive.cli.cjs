@@ -15659,6 +15659,15 @@ function updateStoredConfig(patch, deps = {}) {
   };
   return writeStoredConfig({ ...base, ...patch }, deps).cfg;
 }
+function isTelemetryAcknowledged(deps = {}) {
+  return readStoredConfig(deps)?.acknowledged === true;
+}
+function wasBeaconSent(deps = {}) {
+  return readStoredConfig(deps)?.beacon_sent === true;
+}
+function markBeaconSent(deps = {}) {
+  return updateStoredConfig({ beacon_sent: true }, deps);
+}
 function resolveTelemetryLevel(deps = {}) {
   const env = deps.env ?? process.env;
   const raw = (env.CONSORT_TELEMETRY_LEVEL ?? "").trim();
@@ -15671,6 +15680,43 @@ function isL2NoticeSeen(deps = {}) {
 }
 function markL2NoticeSeen(deps = {}) {
   updateStoredConfig({ l2_opt_in_notified: true }, deps);
+}
+
+// consort/telemetry/install-beacon.ts
+init_cjs_shims();
+async function sendInstallBeacon(opts) {
+  const env = opts.env ?? process.env;
+  if (env.CONSORT_TELEMETRY === "0") return { sent: false, reason: "hard-disabled" };
+  const deps = opts.deps ?? {};
+  if (readStoredConfig(deps)?.beacon_sent === true) return { sent: false, reason: "already-sent" };
+  const install_id = ensureInstallId(deps);
+  const endpoint = (opts.endpoint ?? DEFAULT_ENDPOINT).replace(/\/$/, "");
+  const body = JSON.stringify({ name: "consort.install", install_id, version: opts.version, ts: opts.nowIso ?? (/* @__PURE__ */ new Date()).toISOString() }) + "\n";
+  const doFetch = opts.fetchImpl ?? fetch;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5e3);
+    let ok = false;
+    try {
+      const res = await doFetch(`${endpoint}/v1/traces`, {
+        method: "POST",
+        headers: { "content-type": "application/x-ndjson" },
+        body,
+        signal: ctrl.signal
+      });
+      ok = res.ok;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (ok) {
+      markBeaconSent(deps);
+      return { sent: true };
+    }
+    return { sent: false, reason: "post-failed" };
+  } catch (err) {
+    telemetryDebug("install beacon POST failed (will retry next run)", err);
+    return { sent: false, reason: "post-failed" };
+  }
 }
 
 // consort/telemetry/resource.ts
@@ -15830,6 +15876,19 @@ function gateOutcome(action, threw) {
   if (action.kind === "raise-to-hil") return "abort";
   return threw ? "fail" : "pass";
 }
+async function retryInstallBeaconBestEffort(deps, fetchImpl) {
+  try {
+    if (!isTelemetryAcknowledged(deps) || wasBeaconSent(deps)) return;
+    await sendInstallBeacon({
+      version: deps.version ?? kitVersion2(),
+      env: deps.env,
+      deps,
+      ...fetchImpl ? { fetchImpl } : {}
+    });
+  } catch (err) {
+    telemetryDebug("install-beacon retry skipped", err);
+  }
+}
 function beginTelemetryRun(deps) {
   try {
     return beginTelemetryRunUnsafe(deps);
@@ -15840,6 +15899,7 @@ function beginTelemetryRun(deps) {
 }
 function beginTelemetryRunUnsafe(deps) {
   const env = deps.env ?? process.env;
+  void retryInstallBeaconBestEffort(deps);
   const isTTY = deps.isTTY ?? !!process.stdout.isTTY;
   const enabledFlag = deps.telemetryEnabled ?? isTelemetryEnabled(deps);
   if (!shouldEmitTelemetry({ telemetryEnabled: enabledFlag, env })) return NOOP_RUN;
