@@ -346,7 +346,10 @@ elif confirm "Install the Consort plugin for Claude Code (+ pre-download the too
     # `|| true` INSIDE the substitution: a missing cache dir makes ls exit 1, and
     # under pipefail that would abort the script (the fresh-install case!).
     CONSORT_ROOT="$(ls -d "$HOME/.claude/plugins/cache/databricks-solutions/consort"/*/dist 2>/dev/null | sort -V | tail -1 | sed 's#/dist$##' || true)"
-    LK="$CONSORT_ROOT/templates/project/common/scripts/lk"
+    # The lk shim ships with the SUBSTRATE package, not the kit's templates: in an
+    # installed plugin it lives under node_modules (the kit bundles scm-utils as a
+    # dependency; consort's own templates/project/common/scripts has NO lk).
+    LK="$CONSORT_ROOT/node_modules/@databricks-solutions/lakebase-scm-utils/templates/project/common/scripts/lk"
     if [ -n "$CONSORT_ROOT" ] && [ -f "$LK" ]; then
       KIT_VER="$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
       SCM_VER="$(node -e 'const s=((require(process.argv[1]).dependencies)||{})["@databricks-solutions/lakebase-scm-utils"]||"";const m=s.match(/#v?(\d+\.\d+\.\d+)\b/)||s.match(/^v?(\d+\.\d+\.\d+)$/);process.stdout.write(m?m[1]:"")' "$CONSORT_ROOT/package.json" 2>/dev/null || true)"
