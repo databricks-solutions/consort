@@ -51,6 +51,7 @@ import {
 import { checkContractClean, supersededTestCandidates } from "../architecture/contract-clean.js";
 import { readRefactorVerifyAssessMarker, writeRefactorVerifyAssessMarker, clearRefactorVerifyAssessMarker } from "../smells/refactor-verify-assess.js";
 import { checkMigrationAppClean } from "../architecture/migration-app-clean.js";
+import { checkShippedMigrationImmutable } from "../architecture/migration-history-clean.js";
 import { emitAgentLogEvent, type AgentLogEventInput } from "../../consort/logging/agent-log.js";
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -573,6 +574,20 @@ export async function greenOpenCycle(
       if (!mig.clean && mig.remediation) result = { passed: false, summary: mig.remediation };
     } catch {
       /* advisory scan: a gate error must never fail the cycle */
+    }
+    // Shipped-migration-immutability gate (issue #196). The honest verify PASSES on
+    // doctored history (editing a merged migration greens a mis-premised test
+    // locally), so a Driver that rewrites a shipped migration to satisfy a test
+    // would otherwise ship schema-history corruption. Fail the cycle here with a
+    // revert + flag-the-premise directive BEFORE it reaches the parent tier. Same
+    // replay skip + advisory posture as the app-coupling gate above.
+    if (result.passed) {
+      try {
+        const hist = checkShippedMigrationImmutable({ projectDir: dirname(consortDir) });
+        if (!hist.clean && hist.remediation) result = { passed: false, summary: hist.remediation };
+      } catch {
+        /* advisory scan: a gate error must never fail the cycle */
+      }
     }
   }
   // Record the honest verify RUN against the branch, not just its verdict. The migration + the

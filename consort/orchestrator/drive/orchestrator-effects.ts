@@ -1179,6 +1179,7 @@ const CANON_NOTES_BIN = "consort-canon-notes";
 const SCM_PREPARE_PR_BIN = "lakebase-scm-prepare-pr";
 const SCM_WAIT_CI_BIN = "lakebase-scm-wait-ci";
 const SCM_MERGE_BIN = "lakebase-scm-merge";
+const MIGRATION_HISTORY_CLEAN_BIN = "consort-migration-history-clean";
 
 // A story runs ONE experiment by default (N=1); these derive its slug + branch
 // name. `cut` and `accept` (merge) BOTH compute them from here, so the branch
@@ -1907,7 +1908,15 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
       // fix, NOT a green-wash of uncommitted CODE (there is none – 0 code files dirty
       // at promote). Without it, the first feature to reach promote hard-halts on its
       // own capture artifacts.
-      return [{ kind: "cli", bin: SCM_PREPARE_PR_BIN, args: ["--project-dir", cfg.projectDir, "--force"] }];
+      // Backstop (issue #196): refuse to promote a branch whose shipped migrations
+      // were mutated. The cycle-time history gate (cycle-record) is the primary
+      // catch; this guards everything that bypasses it (hand edits, pre-gate state).
+      // A non-zero exit halts the drive HERE, before the PR is pushed, with the
+      // gate's revert + flag-premise remediation as the failure output.
+      return [
+        { kind: "cli", bin: MIGRATION_HISTORY_CLEAN_BIN, args: ["--project-dir", cfg.projectDir] },
+        { kind: "cli", bin: SCM_PREPARE_PR_BIN, args: ["--project-dir", cfg.projectDir, "--force"] },
+      ];
 
     case "wait-ci":
       // PR review step 2: wait for the PR's regression gate to go green (the

@@ -52,6 +52,7 @@ export default defineConfig({
     "bin/consort/approve-gate.cli": "bin/consort/approve-gate.cli.ts",
     "bin/consort/project-canon-notes.cli": "bin/consort/project-canon-notes.cli.ts",
     "bin/consort/migration-app-clean.cli": "bin/consort/migration-app-clean.cli.ts",
+    "bin/consort/migration-history-clean.cli": "bin/consort/migration-history-clean.cli.ts",
     "bin/consort/imports-clean.cli": "bin/consort/imports-clean.cli.ts",
     "bin/consort/layering-clean.cli": "bin/consort/layering-clean.cli.ts",
     "bin/consort/ux-clean.cli": "bin/consort/ux-clean.cli.ts",
