@@ -37,6 +37,7 @@ import {
   resolveAllOpenSmellsForStory,
   isReflectSmell,
   resolveOpenReflectSmellsForStory,
+  bumpReflectReviseCount,
   storyTestListFingerprint,
 } from "../../../consort/smells/smells.js";
 import { clearReflectVerdict } from "../../../consort/smells/reflection.js";
@@ -280,6 +281,10 @@ export function applyReviseSelfHeal(args: ReviseSelfHealArgs): ReviseSelfHealRes
     }
   }
 
+  // Issue #201: the cap counts LAPS, not resolved entries – bump ONCE for this whole
+  // co-heal pass, BEFORE the resolve (so the seed-if-absent never counts this lap's
+  // own entries). A multi-owner, multi-finding lap costs exactly one lap of budget.
+  if (reflect) bumpReflectReviseCount(consortDir, args.story);
   // 3. Resolve the smell(s) as `revised` (spends the budget; a re-fire is a hard
   // halt). A reflect defect CO-HEALS: resolve EVERY open reflect smell for the
   // story in this one revise, so a sibling reflect smell does not immediately
@@ -296,7 +301,6 @@ export function applyReviseSelfHeal(args: ReviseSelfHealArgs): ReviseSelfHealRes
         kind: "revised",
         note: `revised by ${approver}: routed to ${args.routedTo} (${args.gate} gate)`,
       });
-
   return { decided: "revise", story: args.story, routedTo: args.routedTo, resolvedSmell };
 }
 

@@ -27,6 +27,15 @@ export interface ReflectFinding {
   owner: ReflectOwner;
   /** The specific defect (a contradiction, coverage gap, layer conflict, ...). */
   detail: string;
+  /** Materiality (issue #201): `blocking` = the build cannot proceed correctly
+   *  (a contradiction, an unbuildable/unsatisfiable test, a wrong layer, a required
+   *  clause uncovered); `advisory` = a marginal improvement (nice-to-have coverage,
+   *  style, hardening). The gate blocks only on `blocking` findings – a verdict of
+   *  pure advisories passes, so marginal nitpicks never spend a revise lap.
+   *  OPTIONAL for backward compatibility: a finding with NO severity (a verdict
+   *  written by an older kit) is treated as `blocking` (fail-safe: an unknown
+   *  severity never silently passes). */
+  severity?: "blocking" | "advisory";
 }
 
 export interface ReflectVerdict {
@@ -131,15 +140,30 @@ export function recordReflectionGate(consortDir: string, feature: string, story:
     }
     return [];
   }
-  // One smell per DISTINCT owner among the findings (a story can have both a
-  // spec defect and a test-list defect; each routes to its own author).
-  const owners = new Set<ReflectOwner>(verdict.findings.map((f) => f.owner));
+  // Severity split (issue #201): a verdict of pure ADVISORY findings does NOT
+  // block the gate. Marginal nitpicks (nice-to-have coverage, style) ride the
+  // verdict for the human at the spec gate, but they never spend a revise lap –
+  // the unbounded churn this gate previously allowed (~8 laps of marginal revises,
+  // ~90 min opus). An UNRECORDED severity (a verdict from an older kit) counts as
+  // blocking, so a pre-severity verdict can never silently pass.
+  const blocking = verdict.findings.filter((f) => (f.severity ?? "blocking") === "blocking");
+  if (blocking.length === 0) {
+    // Advisory-only: pass the gate + self-clear any lingering open smells, exactly
+    // like a passing verdict (the named defect is gone from the blocking set).
+    for (const smell of REFLECT_SMELLS) {
+      resolveOpenSmells(consortDir, smell, { story_id: story, kind: "cleared", note: "only advisory findings remain (issue #201)" });
+    }
+    return [];
+  }
+  // One smell per DISTINCT owner among the BLOCKING findings (a story can have
+  // both a spec defect and a test-list defect; each routes to its own author).
+  const owners = new Set<ReflectOwner>(blocking.map((f) => f.owner));
   // Defensive: a failed verdict with no attributed owner still must block, not
   // silently pass. Attribute an unowned failure to the spec author (the spec is
   // the upstream source of most design defects).
   if (owners.size === 0) owners.add("spec-author");
   const hits: SmellHit[] = [...owners].map((owner) => {
-    const detail = verdict.findings
+    const detail = blocking
       .filter((f) => f.owner === owner)
       .map((f) => f.detail)
       .join("; ");

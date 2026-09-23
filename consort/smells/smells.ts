@@ -696,6 +696,13 @@ export function detectE2eRowPermaRed(input: DetectorInput): SmellHit[] {
 }
 
 export interface SmellsLog {
+  /** Per-story count of reflect revise LAPS (issue #201): incremented ONCE per
+   *  co-heal revise pass, no matter how many smell entries that pass resolves.
+   *  The old entry-derived count let a 2-owner, multi-finding lap burn most of
+   *  REFLECT_REVISE_CAP in one pass (over-eager halt) while the cap's doc says it
+   *  bounds LAPS. Optional: absent on older logs (the count falls back to the
+   *  entry-derived figure so a mid-flight project never gets NEW free laps). */
+  reflect_revise_count?: Record<string, number>;
   detected: Array<
     SmellHit & {
       detected_at: string;
@@ -720,7 +727,9 @@ export function writeSmellsLog(consortDir: string, hits: SmellHit[]): SmellsLog 
   const existing: SmellsLog = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { detected: [] };
   const ts = new Date().toISOString();
   const newEntries = hits.map((h) => ({ ...h, detected_at: ts }));
-  const merged: SmellsLog = { detected: [...existing.detected, ...newEntries] };
+  // Spread `existing`: top-level fields (the reflect revise-LAP counter) survive
+  // an append – rebuilding from `detected` alone would silently wipe them.
+  const merged: SmellsLog = { ...existing, detected: [...existing.detected, ...newEntries] };
   writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
   return merged;
 }
@@ -861,9 +870,35 @@ export function isReflectSmell(name: string): boolean {
  *  strategist) and the cap are the two hard halts, so the loop still converges. */
 export const REFLECT_REVISE_CAP = 4;
 export function priorReflectReviseCount(consortDir: string, story_id: string): number {
-  return readSmellsLog(consortDir).detected.filter(
+  const log = readSmellsLog(consortDir);
+  const laps = log.reflect_revise_count?.[story_id];
+  if (laps !== undefined) return laps;
+  // Pre-counter log (an upgrade mid-flight): fall back to the legacy ENTRY count,
+  // so an in-progress story keeps its spent budget instead of gaining free laps.
+  return log.detected.filter(
     (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id,
   ).length;
+}
+
+/** Increment the story's reflect revise-LAP counter by ONE, called once per
+ *  co-heal revise pass (regardless of how many smells that pass resolves – a
+ *  multi-owner, multi-finding lap costs exactly one lap of budget). When the
+ *  counter is ABSENT (a pre-counter log), it is SEEDED from the legacy
+ *  entry-derived count first, so an upgraded mid-flight story's history is
+ *  preserved rather than restarted. Call BEFORE the pass's resolve so the seed
+ *  never counts the current lap's own entries. */
+export function bumpReflectReviseCount(consortDir: string, story_id: string): void {
+  const file = join(consortDir, "smells.json");
+  if (!existsSync(file)) return;
+  const log: SmellsLog = JSON.parse(readFileSync(file, "utf8"));
+  log.reflect_revise_count = log.reflect_revise_count ?? {};
+  if (log.reflect_revise_count[story_id] === undefined) {
+    log.reflect_revise_count[story_id] = log.detected.filter(
+      (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id,
+    ).length;
+  }
+  log.reflect_revise_count[story_id] += 1;
+  writeFileSync(file, JSON.stringify(log, null, 2) + "\n");
 }
 
 /** A stable fingerprint of a story's per-story test-list (the artifact a reflect
