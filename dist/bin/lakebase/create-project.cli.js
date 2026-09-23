@@ -15,7 +15,7 @@ import {
 // consort/setup/project-consort-setup.ts
 import * as fs6 from "fs";
 import * as path6 from "path";
-import { fileURLToPath as fileURLToPath3 } from "url";
+import { fileURLToPath as fileURLToPath4 } from "url";
 
 // consort/config/consort-paths.ts
 import * as fs from "fs";
@@ -91,12 +91,86 @@ import { dirname as dirname5, join as join6 } from "path";
 import * as fs4 from "fs";
 import * as path4 from "path";
 
+// consort/lakebase/kit-ref-pin.ts
+import { fileURLToPath as fileURLToPath3 } from "url";
+import { dirname as dirname7, join as join8, resolve } from "path";
+import { readFileSync as readFileSync7, existsSync as existsSync7, mkdirSync as mkdirSync7, writeFileSync as writeFileSync6 } from "fs";
+var CONSORT_PKG = "@databricks-solutions/consort";
+function kitRefPin(env, version) {
+  if (env.LAKEBASE_KIT_REF && env.LAKEBASE_KIT_REF.trim()) return void 0;
+  const v = (version ?? "").trim();
+  return v ? `v${v}` : void 0;
+}
+function recordDevKitLocalDirs(projectDir, env) {
+  const lakebaseDir = join8(projectDir, ".lakebase");
+  const written = [];
+  for (const [envVar, file] of [
+    ["LAKEBASE_KIT_DIR", "kit-local-dir"],
+    ["LAKEBASE_SCM_UTILS_DIR", "scm-utils-local-dir"]
+  ]) {
+    const dir = env[envVar]?.trim();
+    if (!dir) continue;
+    const abs = resolve(dir);
+    if (!existsSync7(join8(abs, "dist"))) continue;
+    try {
+      mkdirSync7(lakebaseDir, { recursive: true });
+      writeFileSync6(join8(lakebaseDir, file), abs + "\n");
+      written.push(file);
+    } catch {
+    }
+  }
+  return written;
+}
+function findConsortPkg(fromDir) {
+  let d = fromDir;
+  for (let i = 0; i < 8; i++) {
+    try {
+      const pkg = JSON.parse(readFileSync7(join8(d, "package.json"), "utf-8"));
+      if (pkg.name === CONSORT_PKG && typeof pkg.version === "string" && pkg.version) {
+        return pkg;
+      }
+    } catch {
+    }
+    const up = dirname7(d);
+    if (up === d) break;
+    d = up;
+  }
+  return void 0;
+}
+function readConsortVersion(fromDir) {
+  const v = findConsortPkg(fromDir)?.version;
+  return typeof v === "string" ? v : void 0;
+}
+function substrateVersionFromPinSpec(spec) {
+  const m = spec.match(/#v?(\d+\.\d+\.\d+)\b/) ?? spec.match(/^v?(\d+\.\d+\.\d+)$/);
+  return m ? m[1] : void 0;
+}
+function declaredSubstrateVersion(fromDir) {
+  const spec = findConsortPkg(fromDir)?.dependencies?.["@databricks-solutions/lakebase-scm-utils"];
+  if (typeof spec !== "string") return void 0;
+  return substrateVersionFromPinSpec(spec);
+}
+function consortVersionFromModule(metaUrl) {
+  try {
+    return readConsortVersion(dirname7(fileURLToPath3(metaUrl)));
+  } catch {
+    return void 0;
+  }
+}
+function declaredSubstrateVersionFromModule(metaUrl) {
+  try {
+    return declaredSubstrateVersion(dirname7(fileURLToPath3(metaUrl)));
+  } catch {
+    return void 0;
+  }
+}
+
 // consort/lakebase/upgrade.ts
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 var AGENT_SYNC_MARKER = path5.join(".claude", "agents", ".kit-version");
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path6.dirname(fileURLToPath3(import.meta.url));
+var __dirname2 = path6.dirname(fileURLToPath4(import.meta.url));
 function kitPackageName() {
   const candidates = [
     path6.resolve(__dirname2, "../../package.json"),
@@ -270,77 +344,6 @@ function formatGateBlockers(blockers) {
   lines.push("");
   lines.push("Re-run `lakebase-doctor` to recheck, or pass --skip-doctor to bypass (not recommended).");
   return lines.join("\n");
-}
-
-// consort/lakebase/kit-ref-pin.ts
-import { fileURLToPath as fileURLToPath4 } from "url";
-import { dirname as dirname9, join as join10, resolve as resolve2 } from "path";
-import { readFileSync as readFileSync9, existsSync as existsSync9, mkdirSync as mkdirSync9, writeFileSync as writeFileSync8 } from "fs";
-var CONSORT_PKG = "@databricks-solutions/consort";
-function kitRefPin(env, version) {
-  if (env.LAKEBASE_KIT_REF && env.LAKEBASE_KIT_REF.trim()) return void 0;
-  const v = (version ?? "").trim();
-  return v ? `v${v}` : void 0;
-}
-function recordDevKitLocalDirs(projectDir, env) {
-  const lakebaseDir = join10(projectDir, ".lakebase");
-  const written = [];
-  for (const [envVar, file] of [
-    ["LAKEBASE_KIT_DIR", "kit-local-dir"],
-    ["LAKEBASE_SCM_UTILS_DIR", "scm-utils-local-dir"]
-  ]) {
-    const dir = env[envVar]?.trim();
-    if (!dir) continue;
-    const abs = resolve2(dir);
-    if (!existsSync9(join10(abs, "dist"))) continue;
-    try {
-      mkdirSync9(lakebaseDir, { recursive: true });
-      writeFileSync8(join10(lakebaseDir, file), abs + "\n");
-      written.push(file);
-    } catch {
-    }
-  }
-  return written;
-}
-function findConsortPkg(fromDir) {
-  let d = fromDir;
-  for (let i = 0; i < 8; i++) {
-    try {
-      const pkg = JSON.parse(readFileSync9(join10(d, "package.json"), "utf-8"));
-      if (pkg.name === CONSORT_PKG && typeof pkg.version === "string" && pkg.version) {
-        return pkg;
-      }
-    } catch {
-    }
-    const up = dirname9(d);
-    if (up === d) break;
-    d = up;
-  }
-  return void 0;
-}
-function readConsortVersion(fromDir) {
-  const v = findConsortPkg(fromDir)?.version;
-  return typeof v === "string" ? v : void 0;
-}
-function declaredSubstrateVersion(fromDir) {
-  const spec = findConsortPkg(fromDir)?.dependencies?.["@databricks-solutions/lakebase-scm-utils"];
-  if (typeof spec !== "string") return void 0;
-  const m = spec.match(/#v?(\d+\.\d+\.\d+)\b/);
-  return m ? m[1] : void 0;
-}
-function consortVersionFromModule(metaUrl) {
-  try {
-    return readConsortVersion(dirname9(fileURLToPath4(metaUrl)));
-  } catch {
-    return void 0;
-  }
-}
-function declaredSubstrateVersionFromModule(metaUrl) {
-  try {
-    return declaredSubstrateVersion(dirname9(fileURLToPath4(metaUrl)));
-  } catch {
-    return void 0;
-  }
 }
 
 // consort/config/kit-bin.ts

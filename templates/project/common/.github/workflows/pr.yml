@@ -31,7 +31,16 @@ jobs:
         # the version this project was scaffolded from, when .lakebase/scm-utils-ref is absent.
         run: |
           SCM_UTILS_REF="$(tr -d '[:space:]' < .lakebase/scm-utils-ref 2>/dev/null || true)"
-          echo "SCM_UTILS_REF=${SCM_UTILS_REF:-v{{LAKEBASE_SCM_UTILS_VERSION}}}" >> "$GITHUB_ENV"
+          SCM_UTILS_REF="${SCM_UTILS_REF:-v{{LAKEBASE_SCM_UTILS_VERSION}}}"
+          echo "SCM_UTILS_REF=${SCM_UTILS_REF}" >> "$GITHUB_ENV"
+          # Registry-first: version-tag refs install the published tarball from the
+          # npm registry (seconds); branch/SHA refs keep the GitHub source form
+          # (their only source).
+          case "$SCM_UTILS_REF" in
+            v[0-9]*) echo "SCM_UTILS_NPX_PKG=@databricks-solutions/lakebase-scm-utils@${SCM_UTILS_REF#v}" >> "$GITHUB_ENV" ;;
+            [0-9]*)  echo "SCM_UTILS_NPX_PKG=@databricks-solutions/lakebase-scm-utils@${SCM_UTILS_REF}" >> "$GITHUB_ENV" ;;
+            *)       echo "SCM_UTILS_NPX_PKG=github:databricks-solutions/lakebase-scm-utils#${SCM_UTILS_REF}" >> "$GITHUB_ENV" ;;
+          esac
 
       - name: Detect project language
         id: detect-lang
@@ -43,7 +52,7 @@ jobs:
         # this project.
         run: |
           LANG="$(npx --yes \
-            --package=github:databricks-solutions/lakebase-scm-utils#"${SCM_UTILS_REF}" \
+            --package="${SCM_UTILS_NPX_PKG}" \
             lakebase-detect-language)"
           echo "lang=$LANG" >> $GITHUB_OUTPUT
           echo "Detected language: $LANG"
@@ -343,7 +352,7 @@ jobs:
           echo "  substrate ref: ${SCM_UTILS_REF}"
           echo "  instance:    $LAKEBASE_PROJECT_ID"
           echo "  branch:      $LAKEBASE_BRANCH_NAME"
-          npx --yes --package=github:databricks-solutions/lakebase-scm-utils#"${SCM_UTILS_REF}" \
+          npx --yes --package="${SCM_UTILS_NPX_PKG}" \
             lakebase-schema-migrate apply \
             --instance "$LAKEBASE_PROJECT_ID" \
             --branch "$LAKEBASE_BRANCH_NAME" \
@@ -469,7 +478,7 @@ jobs:
           # `|| URL=""` clause keeps the workflow green and the env var
           # unset so the downstream Playwright step degrades cleanly.
           URL="$(npx --yes \
-            --package=github:databricks-solutions/lakebase-scm-utils#"${SCM_UTILS_REF}" \
+            --package="${SCM_UTILS_NPX_PKG}" \
             lakebase-ci-app-endpoint \
             --instance "$LAKEBASE_PROJECT_ID" \
             --branch "$CI_BRANCH")" || URL=""
@@ -590,7 +599,7 @@ jobs:
           if [ -n "$PRODUCTION_DATASOURCE_URL" ] && [ -n "$BRANCH" ]; then
             echo "### Schema diff: \`${BRANCH}\` vs parent (\`${PR_BASE_REF}\`)" >> "$MD"
             echo "" >> "$MD"
-            if ! npx --yes --package=github:databricks-solutions/lakebase-scm-utils#"${SCM_UTILS_REF}" \
+            if ! npx --yes --package="${SCM_UTILS_NPX_PKG}" \
                  lakebase-schema-diff \
                  --instance "$LAKEBASE_PROJECT_ID" \
                  --branch "$BRANCH" \

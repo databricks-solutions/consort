@@ -104,18 +104,29 @@ export function readConsortVersion(fromDir: string): string | undefined {
 }
 
 /**
- * The substrate version THIS kit declares it depends on – the `vX.Y.Z` in
- * `dependencies["@databricks-solutions/lakebase-scm-utils"]`
- * (e.g. `github:databricks-solutions/lakebase-scm-utils#v0.2.3` -> `"0.2.3"`).
- * This is the version the scaffold SHOULD run against; compare it to the actually-
- * installed nested substrate to catch a stale-cache mismatch. Returns `undefined`
- * if the dep is absent or not version-pinned (e.g. a `main`/branch/dir spec).
+ * Parse an exact X.Y.Z version from a substrate dep spec: a GitHub tag
+ * (`github:databricks-solutions/lakebase-scm-utils#v0.2.3` -> `"0.2.3"`) or a bare
+ * registry semver (`"0.2.3"` -> `"0.2.3"`). Returns `undefined` for unpinned specs
+ * (branch/SHA/dir) and for semver RANGES (`^0.2.3` is not an exact pin).
+ */
+export function substrateVersionFromPinSpec(spec: string): string | undefined {
+  const m = spec.match(/#v?(\d+\.\d+\.\d+)\b/) ?? spec.match(/^v?(\d+\.\d+\.\d+)$/);
+  return m ? m[1] : undefined;
+}
+
+/**
+ * The substrate version THIS kit declares it depends on – the version in
+ * `dependencies["@databricks-solutions/lakebase-scm-utils"]`, either a GitHub tag
+ * (`github:databricks-solutions/lakebase-scm-utils#v0.2.3` -> `"0.2.3"`) or a bare
+ * registry semver (`"0.2.3"` -> `"0.2.3"`). This is the version the scaffold SHOULD
+ * run against; compare it to the actually-installed nested substrate to catch a
+ * stale-cache mismatch. Returns `undefined` if the dep is absent or not exactly
+ * version-pinned (a `main`/branch/dir spec, or a semver RANGE like `^0.2.3`).
  */
 export function declaredSubstrateVersion(fromDir: string): string | undefined {
   const spec = findConsortPkg(fromDir)?.dependencies?.["@databricks-solutions/lakebase-scm-utils"];
   if (typeof spec !== "string") return undefined;
-  const m = spec.match(/#v?(\d+\.\d+\.\d+)\b/);
-  return m ? m[1] : undefined;
+  return substrateVersionFromPinSpec(spec);
 }
 
 /** Convenience: resolve the version from an ESM module URL (`import.meta.url`). */

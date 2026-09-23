@@ -3011,7 +3011,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3038,7 +3038,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3672,7 +3672,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse(baseURI, schemelessOptions), parse(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3930,7 +3930,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -7772,7 +7772,7 @@ function resolveConsortSettings(inputs) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
 var fs17 = __toESM(require("fs"), 1);
-var import_node_path23 = require("path");
+var import_node_path24 = require("path");
 
 // consort/orchestrator/drive/orchestrator-drive.ts
 init_cjs_shims();
@@ -7930,7 +7930,7 @@ function toDesignView(state) {
 // consort/orchestrator/drive/executor-dispatch.ts
 init_cjs_shims();
 var fs10 = __toESM(require("fs"), 1);
-var import_node_path11 = require("path");
+var import_node_path12 = require("path");
 
 // consort/orchestrator/turns/step-executor.ts
 init_cjs_shims();
@@ -8204,8 +8204,8 @@ init_cjs_shims();
 
 // consort/orchestrator/agents/agent-catalogue.ts
 init_cjs_shims();
-var import_node_path9 = require("path");
-var import_node_fs8 = require("fs");
+var import_node_path10 = require("path");
+var import_node_fs9 = require("fs");
 
 // consort/orchestrator/agents/claude-step-agent.ts
 init_cjs_shims();
@@ -8248,7 +8248,7 @@ function warnLegacyEnv(legacyName, suffix) {
 init_cjs_shims();
 var fs6 = __toESM(require("fs"), 1);
 var path5 = __toESM(require("path"), 1);
-var import_node_url2 = require("url");
+var import_node_url3 = require("url");
 
 // consort/lakebase/adopt-consort.ts
 init_cjs_shims();
@@ -8277,12 +8277,18 @@ init_cjs_shims();
 var fs4 = __toESM(require("fs"), 1);
 var path3 = __toESM(require("path"), 1);
 
+// consort/lakebase/kit-ref-pin.ts
+init_cjs_shims();
+var import_node_url2 = require("url");
+var import_node_path7 = require("path");
+var import_node_fs6 = require("fs");
+
 // consort/lakebase/upgrade.ts
 var import_lakebase = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var AGENT_SYNC_MARKER = path4.join(".claude", "agents", ".kit-version");
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path5.dirname((0, import_node_url2.fileURLToPath)(importMetaUrl));
+var __dirname2 = path5.dirname((0, import_node_url3.fileURLToPath)(importMetaUrl));
 var AGENT_SYNC_MARKER2 = path5.join(".claude", "agents", ".kit-version");
 
 // consort/orchestrator/drive/claude-runner.ts
@@ -8548,8 +8554,8 @@ var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 
 // consort/setup/stray-artifact-recovery.ts
 init_cjs_shims();
-var import_node_fs6 = require("fs");
-var import_node_path7 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path8 = require("path");
 
 // consort/orchestrator/turns/turn-monitor.ts
 init_cjs_shims();
@@ -8562,8 +8568,8 @@ var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e
 
 // consort/orchestrator/agents/mock-replay-agent.ts
 init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path8 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path9 = require("path");
 
 // consort/orchestrator/agents/replay-recorder-wrapper.ts
 init_cjs_shims();
@@ -8571,16 +8577,16 @@ init_cjs_shims();
 // consort/logging/turn-recorder.ts
 init_cjs_shims();
 var import_node_crypto3 = require("crypto");
-var import_node_fs9 = require("fs");
-var import_node_path10 = require("path");
+var import_node_fs10 = require("fs");
+var import_node_path11 = require("path");
 
 // consort/pipeline/record-build.ts
 init_cjs_shims();
 
 // consort/orchestrator/steps/assert-route-satisfiable.ts
 init_cjs_shims();
-var import_node_fs10 = require("fs");
-var import_node_path12 = require("path");
+var import_node_fs11 = require("fs");
+var import_node_path13 = require("path");
 
 // consort/orchestrator/state/orchestrator-derive.ts
 init_cjs_shims();
@@ -8718,8 +8724,8 @@ init_cjs_shims();
 init_cjs_shims();
 var import_node_child_process5 = require("child_process");
 var import_node_crypto4 = require("crypto");
-var import_node_fs12 = require("fs");
-var import_node_path14 = require("path");
+var import_node_fs13 = require("fs");
+var import_node_path15 = require("path");
 var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -9071,8 +9077,8 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs11 = require("fs");
-var import_node_path13 = require("path");
+var import_node_fs12 = require("fs");
+var import_node_path14 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
@@ -9086,9 +9092,9 @@ function deployEvidencePasses(e) {
   return e !== void 0 && e.reachable === true && e.verify?.passed === true;
 }
 function readDeployEvidence(file) {
-  if (!(0, import_node_fs12.existsSync)(file)) return void 0;
+  if (!(0, import_node_fs13.existsSync)(file)) return void 0;
   try {
-    return JSON.parse((0, import_node_fs12.readFileSync)(file, "utf8"));
+    return JSON.parse((0, import_node_fs13.readFileSync)(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9096,20 +9102,20 @@ function readDeployEvidence(file) {
 function storyDeployVerified(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return false;
-  return deployEvidencePasses(readDeployEvidence((0, import_node_path14.join)(fdir, "stories", storyId, "deploy-evidence.json")));
+  return deployEvidencePasses(readDeployEvidence((0, import_node_path15.join)(fdir, "stories", storyId, "deploy-evidence.json")));
 }
 
 // consort/architecture/design-adherence.ts
 init_cjs_shims();
-var import_node_fs13 = require("fs");
-var import_node_path15 = require("path");
+var import_node_fs14 = require("fs");
+var import_node_path16 = require("path");
 
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs13 = __toESM(require("fs"), 1);
-var import_node_path16 = require("path");
+var import_node_path17 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
-  return (0, import_node_path16.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return (0, import_node_path17.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -9145,7 +9151,7 @@ function hasPendingSupersession(tdd, feature, story, ac) {
   return s !== void 0 && s.refactored !== true;
 }
 function greenFailureJson(tdd, feature, story, ac) {
-  return (0, import_node_path16.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return (0, import_node_path17.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 function readGreenFailure(tdd, feature, story, ac) {
   const file = greenFailureJson(tdd, feature, story, ac);
@@ -9173,13 +9179,13 @@ function specDefectFromRole(tdd, feature, story, ac) {
   return gf?.specDefect?.fromRole ?? "test-strategist";
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return (0, import_node_path16.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return (0, import_node_path17.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs14 = require("fs");
-var import_node_path17 = require("path");
+var import_node_fs15 = require("fs");
+var import_node_path18 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -9217,8 +9223,8 @@ function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs15 = require("fs");
-var import_node_path18 = require("path");
+var import_node_fs16 = require("fs");
+var import_node_path19 = require("path");
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
@@ -9362,7 +9368,7 @@ function refactorPending(consortDir, featureId, story) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto5 = require("crypto");
-var import_node_fs16 = require("fs");
+var import_node_fs17 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -9381,7 +9387,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs16.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs17.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
@@ -9851,8 +9857,8 @@ var import_fs9 = require("fs");
 
 // consort/gates/gate-conformance-guard.ts
 init_cjs_shims();
-var import_node_fs17 = require("fs");
-var import_node_path19 = require("path");
+var import_node_fs18 = require("fs");
+var import_node_path20 = require("path");
 
 // consort/architecture/architecture-conventions.ts
 init_cjs_shims();
@@ -9878,25 +9884,25 @@ function readPipeline(consortDir, featureId) {
 
 // consort/session/response-formatter.ts
 init_cjs_shims();
-var import_node_fs19 = require("fs");
-var import_node_path21 = require("path");
+var import_node_fs20 = require("fs");
+var import_node_path22 = require("path");
 
 // consort/architecture/e2e-route-adherence.ts
 init_cjs_shims();
-var import_node_fs18 = require("fs");
-var import_node_path20 = require("path");
-var CLIENT_SRC = (0, import_node_path20.join)("client", "src");
-var E2E_DIR = (0, import_node_path20.join)("client", "tests", "e2e");
+var import_node_fs19 = require("fs");
+var import_node_path21 = require("path");
+var CLIENT_SRC = (0, import_node_path21.join)("client", "src");
+var E2E_DIR = (0, import_node_path21.join)("client", "tests", "e2e");
 
 // consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs19.existsSync)(file)) {
+  if (!(0, import_node_fs20.existsSync)(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = (0, import_node_fs19.readFileSync)(file, "utf8");
+    content = (0, import_node_fs20.readFileSync)(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -9940,7 +9946,7 @@ function deriveFeaturePhase(stories) {
 init_cjs_shims();
 var import_node_child_process6 = require("child_process");
 var fs16 = __toESM(require("fs"), 1);
-var import_node_path22 = require("path");
+var import_node_path23 = require("path");
 
 // consort/orchestrator/build/preconditions.ts
 init_cjs_shims();
@@ -10005,7 +10011,7 @@ init_cjs_shims();
 
 // consort/gates/sprint-gates.ts
 init_cjs_shims();
-var import_node_fs20 = require("fs");
+var import_node_fs21 = require("fs");
 
 // consort/gates/gate-hash.ts
 init_cjs_shims();
@@ -10025,10 +10031,10 @@ function sprintGatesFile(consortDir, sprint) {
 function readSprintGates(sprint, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = sprintGatesFile(consortDir, sprint);
-  if (!(0, import_node_fs20.existsSync)(file)) return defaultSprintGatesState(sprint);
+  if (!(0, import_node_fs21.existsSync)(file)) return defaultSprintGatesState(sprint);
   let parsed;
   try {
-    parsed = JSON.parse((0, import_node_fs20.readFileSync)(file, "utf8"));
+    parsed = JSON.parse((0, import_node_fs21.readFileSync)(file, "utf8"));
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);

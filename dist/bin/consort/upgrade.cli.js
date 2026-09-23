@@ -226,15 +226,24 @@ function updateCommands(args) {
   return { files, changed };
 }
 
+// consort/lakebase/kit-ref-pin.ts
+import { fileURLToPath as fileURLToPath2 } from "url";
+import { dirname as dirname5, join as join6, resolve as resolve2 } from "path";
+import { readFileSync as readFileSync6, existsSync as existsSync6, mkdirSync as mkdirSync5, writeFileSync as writeFileSync5 } from "fs";
+function substrateVersionFromPinSpec(spec) {
+  const m = spec.match(/#v?(\d+\.\d+\.\d+)\b/) ?? spec.match(/^v?(\d+\.\d+\.\d+)$/);
+  return m ? m[1] : void 0;
+}
+
 // consort/lakebase/upgrade.ts
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // consort/config/consort-config-file.ts
-import { existsSync as existsSync6, readFileSync as readFileSync6, mkdirSync as mkdirSync5, writeFileSync as writeFileSync5 } from "fs";
-import { dirname as dirname6, join as join7 } from "path";
+import { existsSync as existsSync7, readFileSync as readFileSync7, mkdirSync as mkdirSync6, writeFileSync as writeFileSync6 } from "fs";
+import { dirname as dirname7, join as join8 } from "path";
 
 // consort/config/agent-models.ts
-import { dirname as dirname5, join as join6 } from "path";
+import { dirname as dirname6, join as join7 } from "path";
 var RECOMMENDED_MODELS = {
   "spec-author": "opus",
   "architect-reviewer": "opus",
@@ -246,21 +255,21 @@ var RECOMMENDED_MODELS = {
   "product-owner": "opus"
 };
 var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
-var AGENT_CONFIG_REL = join6(".lakebase", "agent-config.json");
+var AGENT_CONFIG_REL = join7(".lakebase", "agent-config.json");
 
 // consort/config/consort-config-file.ts
-var CONSORT_CONFIG_REL = join7(".lakebase", "consort-config.json");
+var CONSORT_CONFIG_REL = join8(".lakebase", "consort-config.json");
 var LEGACY_CONFIG_RELS = [
-  join7(".lakebase", "sftdd-config.json"),
-  join7(".lakebase", "tdd-config.json")
+  join8(".lakebase", "sftdd-config.json"),
+  join8(".lakebase", "tdd-config.json")
 ];
 var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
 function loadConsortConfig(projectDir) {
   for (const rel of [CONSORT_CONFIG_REL, ...LEGACY_CONFIG_RELS]) {
-    const f = join7(projectDir, rel);
-    if (!existsSync6(f)) continue;
+    const f = join8(projectDir, rel);
+    if (!existsSync7(f)) continue;
     try {
-      return JSON.parse(readFileSync6(f, "utf8"));
+      return JSON.parse(readFileSync7(f, "utf8"));
     } catch {
       return void 0;
     }
@@ -343,9 +352,7 @@ function resolveSubstrateVersion(kitDir) {
   try {
     const pkg = JSON.parse(fs5.readFileSync(path5.join(kitDir, "package.json"), "utf8"));
     const pin = pkg.dependencies?.["@databricks-solutions/lakebase-scm-utils"] ?? "";
-    const hash = pin.indexOf("#");
-    if (hash < 0) return null;
-    return pin.slice(hash + 1).replace(/^v/, "") || null;
+    return substrateVersionFromPinSpec(pin) ?? null;
   } catch {
     return null;
   }

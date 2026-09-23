@@ -3013,7 +3013,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3040,7 +3040,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3674,7 +3674,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse(baseURI, schemelessOptions), parse(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3932,7 +3932,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -7151,8 +7151,8 @@ var TelemetryEmitter = class {
       if (this.inflight.length === 0) return;
       const pending = Promise.allSettled(this.inflight.splice(0));
       let timer;
-      const capped = new Promise((resolve3) => {
-        timer = setTimeout(resolve3, Math.max(0, timeoutMs));
+      const capped = new Promise((resolve4) => {
+        timer = setTimeout(resolve4, Math.max(0, timeoutMs));
       });
       await Promise.race([pending.then(() => void 0), capped]);
       if (timer) clearTimeout(timer);
@@ -7375,7 +7375,7 @@ function warnLegacyEnv(legacyName, suffix) {
 init_esm_shims();
 import * as fs8 from "fs";
 import * as path8 from "path";
-import { fileURLToPath as fileURLToPath3 } from "url";
+import { fileURLToPath as fileURLToPath4 } from "url";
 
 // consort/config/consort-config-file.ts
 init_esm_shims();
@@ -7432,12 +7432,18 @@ init_esm_shims();
 import * as fs6 from "fs";
 import * as path6 from "path";
 
+// consort/lakebase/kit-ref-pin.ts
+init_esm_shims();
+import { fileURLToPath as fileURLToPath3 } from "url";
+import { dirname as dirname8, join as join12, resolve as resolve2 } from "path";
+import { readFileSync as readFileSync9, existsSync as existsSync8, mkdirSync as mkdirSync8, writeFileSync as writeFileSync8 } from "fs";
+
 // consort/lakebase/upgrade.ts
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 var AGENT_SYNC_MARKER = path7.join(".claude", "agents", ".kit-version");
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path8.dirname(fileURLToPath3(import.meta.url));
+var __dirname2 = path8.dirname(fileURLToPath4(import.meta.url));
 var AGENT_SYNC_MARKER2 = path8.join(".claude", "agents", ".kit-version");
 
 // consort/orchestrator/drive/claude-runner.ts
@@ -7467,16 +7473,16 @@ init_esm_shims();
 // consort/orchestrator/validators/schema-loader.ts
 init_esm_shims();
 var import_ajv = __toESM(require_ajv(), 1);
-import { existsSync as existsSync10, readFileSync as readFileSync11 } from "fs";
-import { join as join14 } from "path";
+import { existsSync as existsSync11, readFileSync as readFileSync12 } from "fs";
+import { join as join15 } from "path";
 function resolveSchemaDir() {
-  const direct = join14(__dirname, "..", "..", "config", "schemas");
-  if (existsSync10(direct)) return direct;
+  const direct = join15(__dirname, "..", "..", "config", "schemas");
+  if (existsSync11(direct)) return direct;
   let dir = __dirname;
   for (let i = 0; i < 8; i++) {
-    const cand = join14(dir, "consort", "config", "schemas");
-    if (existsSync10(cand)) return cand;
-    const parent = join14(dir, "..");
+    const cand = join15(dir, "consort", "config", "schemas");
+    if (existsSync11(cand)) return cand;
+    const parent = join15(dir, "..");
     if (parent === dir) break;
     dir = parent;
   }
@@ -7549,8 +7555,8 @@ init_esm_shims();
 
 // consort/orchestrator/steps/manifest.ts
 init_esm_shims();
-import { readFileSync as readFileSync13, readdirSync as readdirSync8, existsSync as existsSync12 } from "fs";
-import { join as join15 } from "path";
+import { readFileSync as readFileSync14, readdirSync as readdirSync8, existsSync as existsSync13 } from "fs";
+import { join as join16 } from "path";
 
 // consort/orchestrator/drive/turn-key.ts
 init_esm_shims();
@@ -7569,8 +7575,8 @@ import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lake
 
 // consort/setup/stray-artifact-recovery.ts
 init_esm_shims();
-import { existsSync as existsSync13, mkdirSync as mkdirSync11, cpSync as cpSync3, rmSync as rmSync3, readdirSync as readdirSync9, statSync as statSync4 } from "fs";
-import { join as join16, dirname as dirname10, basename } from "path";
+import { existsSync as existsSync14, mkdirSync as mkdirSync12, cpSync as cpSync3, rmSync as rmSync3, readdirSync as readdirSync9, statSync as statSync4 } from "fs";
+import { join as join17, dirname as dirname11, basename } from "path";
 
 // consort/orchestrator/turns/turn-monitor.ts
 init_esm_shims();

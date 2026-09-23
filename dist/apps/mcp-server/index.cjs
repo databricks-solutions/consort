@@ -3016,7 +3016,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve2.call(this, root, ref);
+      let _sch = resolve3.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3043,7 +3043,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve2(root, ref) {
+    function resolve3(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3677,7 +3677,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve2(baseURI, relativeURI, options) {
+    function resolve3(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse(baseURI, schemelessOptions), parse(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3935,7 +3935,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve2,
+      resolve: resolve3,
       resolveComponent,
       equal,
       serialize,
@@ -6673,7 +6673,7 @@ var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 init_cjs_shims();
 var fs6 = __toESM(require("fs"), 1);
 var path5 = __toESM(require("path"), 1);
-var import_node_url2 = require("url");
+var import_node_url3 = require("url");
 
 // consort/config/consort-paths.ts
 init_cjs_shims();
@@ -6864,12 +6864,18 @@ init_cjs_shims();
 var fs4 = __toESM(require("fs"), 1);
 var path3 = __toESM(require("path"), 1);
 
+// consort/lakebase/kit-ref-pin.ts
+init_cjs_shims();
+var import_node_url2 = require("url");
+var import_node_path3 = require("path");
+var import_node_fs2 = require("fs");
+
 // consort/lakebase/upgrade.ts
 var import_lakebase = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var AGENT_SYNC_MARKER = path4.join(".claude", "agents", ".kit-version");
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path5.dirname((0, import_node_url2.fileURLToPath)(importMetaUrl));
+var __dirname2 = path5.dirname((0, import_node_url3.fileURLToPath)(importMetaUrl));
 function kitPackageName() {
   const candidates = [
     path5.resolve(__dirname2, "../../package.json"),
@@ -7169,8 +7175,8 @@ function readMasterTestList(tddDir, featureId) {
 init_cjs_shims();
 var import_node_child_process3 = require("child_process");
 var import_node_crypto = require("crypto");
-var import_node_fs3 = require("fs");
-var import_node_path4 = require("path");
+var import_node_fs4 = require("fs");
+var import_node_path5 = require("path");
 var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -7217,8 +7223,8 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs2 = require("fs");
-var import_node_path3 = require("path");
+var import_node_fs3 = require("fs");
+var import_node_path4 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
@@ -7229,18 +7235,18 @@ var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 
 // consort/architecture/design-adherence.ts
 init_cjs_shims();
-var import_node_fs4 = require("fs");
-var import_node_path5 = require("path");
+var import_node_fs5 = require("fs");
+var import_node_path6 = require("path");
 
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs9 = __toESM(require("fs"), 1);
-var import_node_path6 = require("path");
+var import_node_path7 = require("path");
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs5 = require("fs");
-var import_node_path7 = require("path");
+var import_node_fs6 = require("fs");
+var import_node_path8 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -7256,8 +7262,8 @@ var path7 = __toESM(require("path"), 1);
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs6 = require("fs");
-var import_node_path8 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path9 = require("path");
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
@@ -7284,7 +7290,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto2 = require("crypto");
-var import_node_fs7 = require("fs");
+var import_node_fs8 = require("fs");
 
 // consort/gates/gates.ts
 init_cjs_shims();
@@ -7488,8 +7494,8 @@ var import_fs8 = require("fs");
 
 // consort/gates/gate-conformance-guard.ts
 init_cjs_shims();
-var import_node_fs8 = require("fs");
-var import_node_path9 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path10 = require("path");
 
 // consort/architecture/architecture-conventions.ts
 init_cjs_shims();

@@ -33,7 +33,7 @@ var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 // consort/setup/project-consort-setup.ts
 var fs6 = __toESM(require("fs"), 1);
 var path5 = __toESM(require("path"), 1);
-var import_node_url2 = require("url");
+var import_node_url3 = require("url");
 
 // consort/config/consort-paths.ts
 var fs = __toESM(require("fs"), 1);
@@ -109,12 +109,86 @@ var import_node_path2 = require("path");
 var fs4 = __toESM(require("fs"), 1);
 var path3 = __toESM(require("path"), 1);
 
+// consort/lakebase/kit-ref-pin.ts
+var import_node_url2 = require("url");
+var import_node_path3 = require("path");
+var import_node_fs2 = require("fs");
+var CONSORT_PKG = "@databricks-solutions/consort";
+function kitRefPin(env, version) {
+  if (env.LAKEBASE_KIT_REF && env.LAKEBASE_KIT_REF.trim()) return void 0;
+  const v = (version ?? "").trim();
+  return v ? `v${v}` : void 0;
+}
+function recordDevKitLocalDirs(projectDir, env) {
+  const lakebaseDir = (0, import_node_path3.join)(projectDir, ".lakebase");
+  const written = [];
+  for (const [envVar, file] of [
+    ["LAKEBASE_KIT_DIR", "kit-local-dir"],
+    ["LAKEBASE_SCM_UTILS_DIR", "scm-utils-local-dir"]
+  ]) {
+    const dir = env[envVar]?.trim();
+    if (!dir) continue;
+    const abs = (0, import_node_path3.resolve)(dir);
+    if (!(0, import_node_fs2.existsSync)((0, import_node_path3.join)(abs, "dist"))) continue;
+    try {
+      (0, import_node_fs2.mkdirSync)(lakebaseDir, { recursive: true });
+      (0, import_node_fs2.writeFileSync)((0, import_node_path3.join)(lakebaseDir, file), abs + "\n");
+      written.push(file);
+    } catch {
+    }
+  }
+  return written;
+}
+function findConsortPkg(fromDir) {
+  let d = fromDir;
+  for (let i = 0; i < 8; i++) {
+    try {
+      const pkg = JSON.parse((0, import_node_fs2.readFileSync)((0, import_node_path3.join)(d, "package.json"), "utf-8"));
+      if (pkg.name === CONSORT_PKG && typeof pkg.version === "string" && pkg.version) {
+        return pkg;
+      }
+    } catch {
+    }
+    const up = (0, import_node_path3.dirname)(d);
+    if (up === d) break;
+    d = up;
+  }
+  return void 0;
+}
+function readConsortVersion(fromDir) {
+  const v = findConsortPkg(fromDir)?.version;
+  return typeof v === "string" ? v : void 0;
+}
+function substrateVersionFromPinSpec(spec) {
+  const m = spec.match(/#v?(\d+\.\d+\.\d+)\b/) ?? spec.match(/^v?(\d+\.\d+\.\d+)$/);
+  return m ? m[1] : void 0;
+}
+function declaredSubstrateVersion(fromDir) {
+  const spec = findConsortPkg(fromDir)?.dependencies?.["@databricks-solutions/lakebase-scm-utils"];
+  if (typeof spec !== "string") return void 0;
+  return substrateVersionFromPinSpec(spec);
+}
+function consortVersionFromModule(metaUrl) {
+  try {
+    return readConsortVersion((0, import_node_path3.dirname)((0, import_node_url2.fileURLToPath)(metaUrl)));
+  } catch {
+    return void 0;
+  }
+}
+function declaredSubstrateVersionFromModule(metaUrl) {
+  try {
+    return declaredSubstrateVersion((0, import_node_path3.dirname)((0, import_node_url2.fileURLToPath)(metaUrl)));
+  } catch {
+    return void 0;
+  }
+}
+
 // consort/lakebase/upgrade.ts
 var import_lakebase = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var AGENT_SYNC_MARKER = path4.join(".claude", "agents", ".kit-version");
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path5.dirname((0, import_node_url2.fileURLToPath)(importMetaUrl));
+var __dirname2 = path5.dirname((0, import_node_url3.fileURLToPath)(importMetaUrl));
 function kitPackageName() {
   const candidates = [
     path5.resolve(__dirname2, "../../package.json"),
@@ -286,77 +360,6 @@ function formatGateBlockers(blockers) {
   lines.push("");
   lines.push("Re-run `lakebase-doctor` to recheck, or pass --skip-doctor to bypass (not recommended).");
   return lines.join("\n");
-}
-
-// consort/lakebase/kit-ref-pin.ts
-var import_node_url3 = require("url");
-var import_node_path3 = require("path");
-var import_node_fs2 = require("fs");
-var CONSORT_PKG = "@databricks-solutions/consort";
-function kitRefPin(env, version) {
-  if (env.LAKEBASE_KIT_REF && env.LAKEBASE_KIT_REF.trim()) return void 0;
-  const v = (version ?? "").trim();
-  return v ? `v${v}` : void 0;
-}
-function recordDevKitLocalDirs(projectDir, env) {
-  const lakebaseDir = (0, import_node_path3.join)(projectDir, ".lakebase");
-  const written = [];
-  for (const [envVar, file] of [
-    ["LAKEBASE_KIT_DIR", "kit-local-dir"],
-    ["LAKEBASE_SCM_UTILS_DIR", "scm-utils-local-dir"]
-  ]) {
-    const dir = env[envVar]?.trim();
-    if (!dir) continue;
-    const abs = (0, import_node_path3.resolve)(dir);
-    if (!(0, import_node_fs2.existsSync)((0, import_node_path3.join)(abs, "dist"))) continue;
-    try {
-      (0, import_node_fs2.mkdirSync)(lakebaseDir, { recursive: true });
-      (0, import_node_fs2.writeFileSync)((0, import_node_path3.join)(lakebaseDir, file), abs + "\n");
-      written.push(file);
-    } catch {
-    }
-  }
-  return written;
-}
-function findConsortPkg(fromDir) {
-  let d = fromDir;
-  for (let i = 0; i < 8; i++) {
-    try {
-      const pkg = JSON.parse((0, import_node_fs2.readFileSync)((0, import_node_path3.join)(d, "package.json"), "utf-8"));
-      if (pkg.name === CONSORT_PKG && typeof pkg.version === "string" && pkg.version) {
-        return pkg;
-      }
-    } catch {
-    }
-    const up = (0, import_node_path3.dirname)(d);
-    if (up === d) break;
-    d = up;
-  }
-  return void 0;
-}
-function readConsortVersion(fromDir) {
-  const v = findConsortPkg(fromDir)?.version;
-  return typeof v === "string" ? v : void 0;
-}
-function declaredSubstrateVersion(fromDir) {
-  const spec = findConsortPkg(fromDir)?.dependencies?.["@databricks-solutions/lakebase-scm-utils"];
-  if (typeof spec !== "string") return void 0;
-  const m = spec.match(/#v?(\d+\.\d+\.\d+)\b/);
-  return m ? m[1] : void 0;
-}
-function consortVersionFromModule(metaUrl) {
-  try {
-    return readConsortVersion((0, import_node_path3.dirname)((0, import_node_url3.fileURLToPath)(metaUrl)));
-  } catch {
-    return void 0;
-  }
-}
-function declaredSubstrateVersionFromModule(metaUrl) {
-  try {
-    return declaredSubstrateVersion((0, import_node_path3.dirname)((0, import_node_url3.fileURLToPath)(metaUrl)));
-  } catch {
-    return void 0;
-  }
 }
 
 // consort/config/kit-bin.ts

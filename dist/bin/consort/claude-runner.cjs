@@ -3015,7 +3015,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3042,7 +3042,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3676,7 +3676,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse(baseURI, schemelessOptions), parse(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3934,7 +3934,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -6714,7 +6714,7 @@ function warnLegacyEnv(legacyName, suffix) {
 init_cjs_shims();
 var fs6 = __toESM(require("fs"), 1);
 var path5 = __toESM(require("path"), 1);
-var import_node_url2 = require("url");
+var import_node_url3 = require("url");
 
 // consort/config/consort-paths.ts
 init_cjs_shims();
@@ -6949,6 +6949,12 @@ init_cjs_shims();
 var fs4 = __toESM(require("fs"), 1);
 var path3 = __toESM(require("path"), 1);
 
+// consort/lakebase/kit-ref-pin.ts
+init_cjs_shims();
+var import_node_url2 = require("url");
+var import_node_path3 = require("path");
+var import_node_fs2 = require("fs");
+
 // consort/lakebase/upgrade.ts
 var import_lakebase = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var AGENT_SYNC_MARKER = path4.join(".claude", "agents", ".kit-version");
@@ -6971,7 +6977,7 @@ function commitRefreshedSurface(projectDir, targetVersion, git = (a) => {
 }
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path5.dirname((0, import_node_url2.fileURLToPath)(importMetaUrl));
+var __dirname2 = path5.dirname((0, import_node_url3.fileURLToPath)(importMetaUrl));
 function resolveKitRoot() {
   const candidates = [
     path5.resolve(__dirname2, "../.."),
@@ -7418,8 +7424,8 @@ init_cjs_shims();
 
 // consort/orchestrator/steps/manifest.ts
 init_cjs_shims();
-var import_node_fs2 = require("fs");
-var import_node_path3 = require("path");
+var import_node_fs3 = require("fs");
+var import_node_path4 = require("path");
 
 // consort/orchestrator/steps/manifests/product-owner-intake.json
 var product_owner_intake_default = {
@@ -8533,19 +8539,19 @@ var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 
 // consort/setup/stray-artifact-recovery.ts
 init_cjs_shims();
-var import_node_fs3 = require("fs");
-var import_node_path4 = require("path");
+var import_node_fs4 = require("fs");
+var import_node_path5 = require("path");
 function malformedSiblingRoot(projectDir) {
   const p = projectDir.replace(/\/+$/, "");
-  return `${(0, import_node_path4.dirname)(p)}-${(0, import_node_path4.basename)(p)}`;
+  return `${(0, import_node_path5.dirname)(p)}-${(0, import_node_path5.basename)(p)}`;
 }
 function listFilesRel(dir) {
   const out = [];
   const walk = (abs, rel) => {
-    for (const entry of (0, import_node_fs3.readdirSync)(abs)) {
-      const childAbs = (0, import_node_path4.join)(abs, entry);
-      const childRel = rel ? (0, import_node_path4.join)(rel, entry) : entry;
-      if ((0, import_node_fs3.statSync)(childAbs).isDirectory()) walk(childAbs, childRel);
+    for (const entry of (0, import_node_fs4.readdirSync)(abs)) {
+      const childAbs = (0, import_node_path5.join)(abs, entry);
+      const childRel = rel ? (0, import_node_path5.join)(rel, entry) : entry;
+      if ((0, import_node_fs4.statSync)(childAbs).isDirectory()) walk(childAbs, childRel);
       else out.push(childRel);
     }
   };
@@ -8554,19 +8560,19 @@ function listFilesRel(dir) {
 }
 function relocateStrayDesignArtifacts(projectDir) {
   const sibling = malformedSiblingRoot(projectDir);
-  if (!(0, import_node_fs3.existsSync)(sibling)) return { relocated: false, moved: [] };
+  if (!(0, import_node_fs4.existsSync)(sibling)) return { relocated: false, moved: [] };
   const moved = [];
   for (const artRoot of ALL_ARTIFACT_ROOTS) {
-    const strayRoot = (0, import_node_path4.join)(sibling, artRoot);
-    if (!(0, import_node_fs3.existsSync)(strayRoot)) continue;
-    for (const rel of listFilesRel(strayRoot)) moved.push((0, import_node_path4.join)(artRoot, rel));
-    const realRoot = (0, import_node_path4.join)(projectDir, artRoot);
-    (0, import_node_fs3.mkdirSync)(realRoot, { recursive: true });
-    (0, import_node_fs3.cpSync)(strayRoot, realRoot, { recursive: true, force: true });
-    (0, import_node_fs3.rmSync)(strayRoot, { recursive: true, force: true });
+    const strayRoot = (0, import_node_path5.join)(sibling, artRoot);
+    if (!(0, import_node_fs4.existsSync)(strayRoot)) continue;
+    for (const rel of listFilesRel(strayRoot)) moved.push((0, import_node_path5.join)(artRoot, rel));
+    const realRoot = (0, import_node_path5.join)(projectDir, artRoot);
+    (0, import_node_fs4.mkdirSync)(realRoot, { recursive: true });
+    (0, import_node_fs4.cpSync)(strayRoot, realRoot, { recursive: true, force: true });
+    (0, import_node_fs4.rmSync)(strayRoot, { recursive: true, force: true });
   }
   try {
-    if ((0, import_node_fs3.readdirSync)(sibling).length === 0) (0, import_node_fs3.rmSync)(sibling, { recursive: true, force: true });
+    if ((0, import_node_fs4.readdirSync)(sibling).length === 0) (0, import_node_fs4.rmSync)(sibling, { recursive: true, force: true });
   } catch {
   }
   return moved.length > 0 ? { relocated: true, from: sibling, moved } : { relocated: false, moved: [] };
@@ -8666,7 +8672,7 @@ var CliEffectError = class extends Error {
 };
 var CLI_CAPTURE_MAX = 16e3;
 function spawnCmd(bin, args, cwd) {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const child = (0, import_node_child_process3.spawn)(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const chunks = [];
     child.stdout?.on("data", (d) => {
@@ -8679,7 +8685,7 @@ function spawnCmd(bin, args, cwd) {
     });
     child.on("error", (err) => reject(err));
     child.on("close", (code) => {
-      if (code === 0) return resolve3();
+      if (code === 0) return resolve4();
       const captured = chunks.join("");
       const tail = captured.length > CLI_CAPTURE_MAX ? captured.slice(-CLI_CAPTURE_MAX) : captured;
       reject(new CliEffectError(bin, code, tail.trim() || void 0));
@@ -8777,7 +8783,7 @@ function defaultTurnMonitor(sink) {
   return { onProgress: sink, heartbeatMs, inactivityTimeoutMs };
 }
 function spawnClaudeStreaming(args, cwd, monitorOverride) {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const child = (0, import_node_child_process3.spawn)("claude", args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const lines = [];
     let sawTooLong = false;
@@ -8913,7 +8919,7 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
       recordAgentTranscript(cwd, tx);
       const parsed = parseTurnUsage(lines);
       if (parsed) recordAgentUsage(cwd, parsed);
-      resolve3(parsed);
+      resolve4(parsed);
     });
   });
 }

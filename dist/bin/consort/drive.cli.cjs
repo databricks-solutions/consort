@@ -3016,7 +3016,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3043,7 +3043,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3677,7 +3677,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse(baseURI, schemelessOptions), parse(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3935,7 +3935,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -10377,7 +10377,7 @@ function deliveredFeatures(consortDir) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
 var fs18 = __toESM(require("fs"), 1);
-var import_node_path24 = require("path");
+var import_node_path25 = require("path");
 
 // consort/orchestrator/steps/manifest.ts
 init_cjs_shims();
@@ -11155,7 +11155,7 @@ function manifestForAction(action, manifests = SHIPPED_MANIFESTS) {
 // consort/orchestrator/drive/executor-dispatch.ts
 init_cjs_shims();
 var fs16 = __toESM(require("fs"), 1);
-var import_node_path20 = require("path");
+var import_node_path21 = require("path");
 
 // consort/orchestrator/turns/step-executor.ts
 init_cjs_shims();
@@ -11690,8 +11690,8 @@ var Step = class {
 
 // consort/orchestrator/agents/agent-catalogue.ts
 init_cjs_shims();
-var import_node_path19 = require("path");
-var import_node_fs17 = require("fs");
+var import_node_path20 = require("path");
+var import_node_fs18 = require("fs");
 
 // consort/orchestrator/agents/claude-step-agent.ts
 init_cjs_shims();
@@ -11705,7 +11705,7 @@ var import_node_child_process7 = require("child_process");
 init_cjs_shims();
 var fs13 = __toESM(require("fs"), 1);
 var path8 = __toESM(require("path"), 1);
-var import_node_url2 = require("url");
+var import_node_url3 = require("url");
 
 // consort/lakebase/adopt-consort.ts
 init_cjs_shims();
@@ -11822,6 +11822,12 @@ init_cjs_shims();
 var fs11 = __toESM(require("fs"), 1);
 var path6 = __toESM(require("path"), 1);
 
+// consort/lakebase/kit-ref-pin.ts
+init_cjs_shims();
+var import_node_url2 = require("url");
+var import_node_path17 = require("path");
+var import_node_fs15 = require("fs");
+
 // consort/lakebase/upgrade.ts
 var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var AGENT_SYNC_MARKER = path7.join(".claude", "agents", ".kit-version");
@@ -11844,7 +11850,7 @@ function commitRefreshedSurface(projectDir, targetVersion, git = (a) => {
 }
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path8.dirname((0, import_node_url2.fileURLToPath)(importMetaUrl));
+var __dirname2 = path8.dirname((0, import_node_url3.fileURLToPath)(importMetaUrl));
 function resolveKitRoot() {
   const candidates = [
     path8.resolve(__dirname2, "../.."),
@@ -12275,19 +12281,19 @@ var import_lakebase10 = require("@databricks-solutions/lakebase-scm-utils/lakeba
 
 // consort/setup/stray-artifact-recovery.ts
 init_cjs_shims();
-var import_node_fs15 = require("fs");
-var import_node_path17 = require("path");
+var import_node_fs16 = require("fs");
+var import_node_path18 = require("path");
 function malformedSiblingRoot(projectDir) {
   const p = projectDir.replace(/\/+$/, "");
-  return `${(0, import_node_path17.dirname)(p)}-${(0, import_node_path17.basename)(p)}`;
+  return `${(0, import_node_path18.dirname)(p)}-${(0, import_node_path18.basename)(p)}`;
 }
 function listFilesRel(dir) {
   const out = [];
   const walk2 = (abs, rel) => {
-    for (const entry of (0, import_node_fs15.readdirSync)(abs)) {
-      const childAbs = (0, import_node_path17.join)(abs, entry);
-      const childRel = rel ? (0, import_node_path17.join)(rel, entry) : entry;
-      if ((0, import_node_fs15.statSync)(childAbs).isDirectory()) walk2(childAbs, childRel);
+    for (const entry of (0, import_node_fs16.readdirSync)(abs)) {
+      const childAbs = (0, import_node_path18.join)(abs, entry);
+      const childRel = rel ? (0, import_node_path18.join)(rel, entry) : entry;
+      if ((0, import_node_fs16.statSync)(childAbs).isDirectory()) walk2(childAbs, childRel);
       else out.push(childRel);
     }
   };
@@ -12296,19 +12302,19 @@ function listFilesRel(dir) {
 }
 function relocateStrayDesignArtifacts(projectDir) {
   const sibling = malformedSiblingRoot(projectDir);
-  if (!(0, import_node_fs15.existsSync)(sibling)) return { relocated: false, moved: [] };
+  if (!(0, import_node_fs16.existsSync)(sibling)) return { relocated: false, moved: [] };
   const moved = [];
   for (const artRoot of ALL_ARTIFACT_ROOTS) {
-    const strayRoot = (0, import_node_path17.join)(sibling, artRoot);
-    if (!(0, import_node_fs15.existsSync)(strayRoot)) continue;
-    for (const rel of listFilesRel(strayRoot)) moved.push((0, import_node_path17.join)(artRoot, rel));
-    const realRoot = (0, import_node_path17.join)(projectDir, artRoot);
-    (0, import_node_fs15.mkdirSync)(realRoot, { recursive: true });
-    (0, import_node_fs15.cpSync)(strayRoot, realRoot, { recursive: true, force: true });
-    (0, import_node_fs15.rmSync)(strayRoot, { recursive: true, force: true });
+    const strayRoot = (0, import_node_path18.join)(sibling, artRoot);
+    if (!(0, import_node_fs16.existsSync)(strayRoot)) continue;
+    for (const rel of listFilesRel(strayRoot)) moved.push((0, import_node_path18.join)(artRoot, rel));
+    const realRoot = (0, import_node_path18.join)(projectDir, artRoot);
+    (0, import_node_fs16.mkdirSync)(realRoot, { recursive: true });
+    (0, import_node_fs16.cpSync)(strayRoot, realRoot, { recursive: true, force: true });
+    (0, import_node_fs16.rmSync)(strayRoot, { recursive: true, force: true });
   }
   try {
-    if ((0, import_node_fs15.readdirSync)(sibling).length === 0) (0, import_node_fs15.rmSync)(sibling, { recursive: true, force: true });
+    if ((0, import_node_fs16.readdirSync)(sibling).length === 0) (0, import_node_fs16.rmSync)(sibling, { recursive: true, force: true });
   } catch {
   }
   return moved.length > 0 ? { relocated: true, from: sibling, moved } : { relocated: false, moved: [] };
@@ -12408,7 +12414,7 @@ var CliEffectError = class extends Error {
 };
 var CLI_CAPTURE_MAX = 16e3;
 function spawnCmd(bin, args, cwd) {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const child = (0, import_node_child_process7.spawn)(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const chunks = [];
     child.stdout?.on("data", (d) => {
@@ -12421,7 +12427,7 @@ function spawnCmd(bin, args, cwd) {
     });
     child.on("error", (err) => reject(err));
     child.on("close", (code) => {
-      if (code === 0) return resolve3();
+      if (code === 0) return resolve4();
       const captured = chunks.join("");
       const tail = captured.length > CLI_CAPTURE_MAX ? captured.slice(-CLI_CAPTURE_MAX) : captured;
       reject(new CliEffectError(bin, code, tail.trim() || void 0));
@@ -12513,7 +12519,7 @@ function defaultTurnMonitor(sink) {
   return { onProgress: sink, heartbeatMs, inactivityTimeoutMs };
 }
 function spawnClaudeStreaming(args, cwd, monitorOverride) {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const child = (0, import_node_child_process7.spawn)("claude", args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const lines = [];
     let sawTooLong = false;
@@ -12649,7 +12655,7 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
       recordAgentTranscript(cwd, tx);
       const parsed = parseTurnUsage(lines);
       if (parsed) recordAgentUsage(cwd, parsed);
-      resolve3(parsed);
+      resolve4(parsed);
     });
   });
 }
@@ -13123,27 +13129,27 @@ ${instructions.guidelines.map((g) => `- ${g}`).join("\n")}` : "";
 
 // consort/orchestrator/agents/mock-replay-agent.ts
 init_cjs_shims();
-var import_node_fs16 = require("fs");
-var import_node_path18 = require("path");
+var import_node_fs17 = require("fs");
+var import_node_path19 = require("path");
 function makeMockReplayAgent(opts) {
   const role = opts.role ?? "product-owner";
   return {
     async invoke(invocation) {
       const materialized = [];
       for (const seed of opts.seeds) {
-        const src = (0, import_node_path18.join)(opts.corpusRoot, seed.from);
-        if (!(0, import_node_fs16.existsSync)(src)) {
+        const src = (0, import_node_path19.join)(opts.corpusRoot, seed.from);
+        if (!(0, import_node_fs17.existsSync)(src)) {
           throw new Error(
             `ReplayPoMockAgent: recorded seed for "${seed.outputId}" not found at ${src} \u2013 a replay cannot fabricate it. Check the corpus root + recorded path.`
           );
         }
-        const dst = (0, import_node_path18.join)(invocation.workspaceDir, seed.to);
+        const dst = (0, import_node_path19.join)(invocation.workspaceDir, seed.to);
         if (seed.kind === "tree") {
-          (0, import_node_fs16.mkdirSync)(dst, { recursive: true });
-          (0, import_node_fs16.cpSync)(src, dst, { recursive: true, force: true, filter: codeTreeFilter(src) });
+          (0, import_node_fs17.mkdirSync)(dst, { recursive: true });
+          (0, import_node_fs17.cpSync)(src, dst, { recursive: true, force: true, filter: codeTreeFilter(src) });
         } else {
-          (0, import_node_fs16.mkdirSync)((0, import_node_path18.dirname)(dst), { recursive: true });
-          (0, import_node_fs16.writeFileSync)(dst, (0, import_node_fs16.readFileSync)(src, "utf8"));
+          (0, import_node_fs17.mkdirSync)((0, import_node_path19.dirname)(dst), { recursive: true });
+          (0, import_node_fs17.writeFileSync)(dst, (0, import_node_fs17.readFileSync)(src, "utf8"));
         }
         materialized.push(seed.to);
       }
@@ -13154,9 +13160,9 @@ function makeMockReplayAgent(opts) {
         event: "artifact.written",
         message: `replayed PO authoring: ${materialized.join(", ")}`
       };
-      const logPath = (0, import_node_path18.join)(invocation.workspaceDir, "agent-log.jsonl");
-      const prior = (0, import_node_fs16.existsSync)(logPath) ? (0, import_node_fs16.readFileSync)(logPath, "utf8") : "";
-      (0, import_node_fs16.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
+      const logPath = (0, import_node_path19.join)(invocation.workspaceDir, "agent-log.jsonl");
+      const prior = (0, import_node_fs17.existsSync)(logPath) ? (0, import_node_fs17.readFileSync)(logPath, "utf8") : "";
+      (0, import_node_fs17.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
     }
   };
 }
@@ -13166,10 +13172,10 @@ function actionSignature(a) {
   return JSON.stringify(a);
 }
 function resolveTurnsDir(corpusRoot) {
-  const here = (0, import_node_path18.join)(corpusRoot, "turns");
-  if ((0, import_node_fs16.existsSync)(here)) return here;
-  const parent = (0, import_node_path18.join)((0, import_node_path18.dirname)(corpusRoot), "turns");
-  if ((0, import_node_fs16.existsSync)(parent)) return parent;
+  const here = (0, import_node_path19.join)(corpusRoot, "turns");
+  if ((0, import_node_fs17.existsSync)(here)) return here;
+  const parent = (0, import_node_path19.join)((0, import_node_path19.dirname)(corpusRoot), "turns");
+  if ((0, import_node_fs17.existsSync)(parent)) return parent;
   return void 0;
 }
 function loadCursor(corpusRoot) {
@@ -13182,12 +13188,12 @@ function loadCursor(corpusRoot) {
     );
   }
   const turns = [];
-  for (const name of (0, import_node_fs16.readdirSync)(turnsDir).sort()) {
-    const dir = (0, import_node_path18.join)(turnsDir, name);
-    const tj = (0, import_node_path18.join)(dir, "turn.json");
-    if (!(0, import_node_fs16.existsSync)(tj) || !(0, import_node_fs16.statSync)(dir).isDirectory()) continue;
+  for (const name of (0, import_node_fs17.readdirSync)(turnsDir).sort()) {
+    const dir = (0, import_node_path19.join)(turnsDir, name);
+    const tj = (0, import_node_path19.join)(dir, "turn.json");
+    if (!(0, import_node_fs17.existsSync)(tj) || !(0, import_node_fs17.statSync)(dir).isDirectory()) continue;
     try {
-      const parsed = JSON.parse((0, import_node_fs16.readFileSync)(tj, "utf8"));
+      const parsed = JSON.parse((0, import_node_fs17.readFileSync)(tj, "utf8"));
       if (parsed.action) turns.push({ dir, action: parsed.action });
     } catch {
     }
@@ -13203,26 +13209,26 @@ function isBuildTurn(a) {
   return a.kind === "invoke-role" && (a.role === "navigator" || a.role === "driver") && "story" in a && typeof a.story === "string" && !!a.story && !("buildMode" in a && a.buildMode === "reflect");
 }
 function remapArtifactRoot(rel) {
-  const parts = rel.split(import_node_path18.sep);
+  const parts = rel.split(import_node_path19.sep);
   if (parts.length > 0 && LEGACY_ARTIFACT_ROOTS.includes(parts[0])) {
     parts[0] = ARTIFACT_ROOT;
-    return parts.join(import_node_path18.sep);
+    return parts.join(import_node_path19.sep);
   }
   return rel;
 }
 function materializeFiles(filesDir, workspaceDir) {
   const out = [];
   const walk2 = (abs) => {
-    for (const name of (0, import_node_fs16.readdirSync)(abs)) {
-      const src = (0, import_node_path18.join)(abs, name);
-      if ((0, import_node_fs16.statSync)(src).isDirectory()) {
+    for (const name of (0, import_node_fs17.readdirSync)(abs)) {
+      const src = (0, import_node_path19.join)(abs, name);
+      if ((0, import_node_fs17.statSync)(src).isDirectory()) {
         walk2(src);
         continue;
       }
-      const rel = remapArtifactRoot((0, import_node_path18.relative)(filesDir, src));
-      const dst = (0, import_node_path18.join)(workspaceDir, rel);
-      (0, import_node_fs16.mkdirSync)((0, import_node_path18.dirname)(dst), { recursive: true });
-      (0, import_node_fs16.writeFileSync)(dst, (0, import_node_fs16.readFileSync)(src));
+      const rel = remapArtifactRoot((0, import_node_path19.relative)(filesDir, src));
+      const dst = (0, import_node_path19.join)(workspaceDir, rel);
+      (0, import_node_fs17.mkdirSync)((0, import_node_path19.dirname)(dst), { recursive: true });
+      (0, import_node_fs17.writeFileSync)(dst, (0, import_node_fs17.readFileSync)(src));
       out.push(rel);
     }
   };
@@ -13263,19 +13269,19 @@ function makeStepReplayAgent(opts) {
         );
       }
       cursor.consumed.set(sig2, already + 1);
-      const filesDir = (0, import_node_path18.join)(turn.dir, "files");
-      const materialized = (0, import_node_fs16.existsSync)(filesDir) ? materializeFiles(filesDir, invocation.workspaceDir) : [];
+      const filesDir = (0, import_node_path19.join)(turn.dir, "files");
+      const materialized = (0, import_node_fs17.existsSync)(filesDir) ? materializeFiles(filesDir, invocation.workspaceDir) : [];
       const role = invocation.action.kind === "invoke-role" ? invocation.action.role : "orchestrator";
       const event = {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         level: "info",
         role,
         event: "artifact.written",
-        message: `replayed ${role} turn ${turn.dir.split(import_node_path18.sep).pop()}: ${materialized.join(", ") || "(no files delta)"}`
+        message: `replayed ${role} turn ${turn.dir.split(import_node_path19.sep).pop()}: ${materialized.join(", ") || "(no files delta)"}`
       };
-      const logPath = (0, import_node_path18.join)(invocation.workspaceDir, "agent-log.jsonl");
-      const prior = (0, import_node_fs16.existsSync)(logPath) ? (0, import_node_fs16.readFileSync)(logPath, "utf8") : "";
-      (0, import_node_fs16.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
+      const logPath = (0, import_node_path19.join)(invocation.workspaceDir, "agent-log.jsonl");
+      const prior = (0, import_node_fs17.existsSync)(logPath) ? (0, import_node_fs17.readFileSync)(logPath, "utf8") : "";
+      (0, import_node_fs17.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
     }
   };
 }
@@ -13307,12 +13313,12 @@ function buildMock(config, _context) {
   return {
     async invoke(invocation) {
       for (const [filename, contents] of Object.entries(outputs)) {
-        (0, import_node_fs17.writeFileSync)((0, import_node_path19.join)(invocation.workspaceDir, filename), contents);
+        (0, import_node_fs18.writeFileSync)((0, import_node_path20.join)(invocation.workspaceDir, filename), contents);
       }
-      const logPath = (0, import_node_path19.join)(invocation.workspaceDir, "agent-log.jsonl");
-      const prior = (0, import_node_fs17.existsSync)(logPath) ? (0, import_node_fs17.readFileSync)(logPath, "utf8") : "";
+      const logPath = (0, import_node_path20.join)(invocation.workspaceDir, "agent-log.jsonl");
+      const prior = (0, import_node_fs18.existsSync)(logPath) ? (0, import_node_fs18.readFileSync)(logPath, "utf8") : "";
       const event = { timestamp: (/* @__PURE__ */ new Date()).toISOString(), level: "info", role, event: "artifact.written", message: `mock wrote ${Object.keys(outputs).join(", ") || "(nothing)"}` };
-      (0, import_node_fs17.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
+      (0, import_node_fs18.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
     }
   };
 }
@@ -13482,7 +13488,7 @@ function outputPathsForAction(action, consortDir, featureId, projectDir) {
   if (action.kind !== "invoke-role") return {};
   const f = featureId;
   const story = "story" in action && typeof action.story === "string" ? action.story : void 0;
-  const rel = (abs) => (0, import_node_path20.relative)(consortDir, abs);
+  const rel = (abs) => (0, import_node_path21.relative)(consortDir, abs);
   const META = { "agent-log": "agent-log.jsonl" };
   if ("mode" in action) {
     if (action.role === "spec-author" && action.mode === "breakdown") {
@@ -13525,7 +13531,7 @@ function outputPathsForAction(action, consortDir, featureId, projectDir) {
     return {};
   }
   if (action.role === "navigator" && story && "buildMode" in action && action.buildMode === "assess-deploy") {
-    return { scope: rel((0, import_node_path20.join)(storyResolved(consortDir, f, story), "deploy-verify-scope.json")) };
+    return { scope: rel((0, import_node_path21.join)(storyResolved(consortDir, f, story), "deploy-verify-scope.json")) };
   }
   return {};
 }
@@ -13589,15 +13595,15 @@ async function performTurnViaExecutor(action, state, routerDeps, cfg, deps) {
   const inputPath = (source) => {
     if (source.startsWith("cycle:") || source.startsWith("ac:")) {
       const rel = expandRel(source.slice(source.indexOf(":") + 1));
-      if (!story || !ac) return (0, import_node_path20.join)(cfg.consortDir, rel);
-      return (0, import_node_path20.join)(cycleDir(cfg.consortDir, f, story, ac), rel);
+      if (!story || !ac) return (0, import_node_path21.join)(cfg.consortDir, rel);
+      return (0, import_node_path21.join)(cycleDir(cfg.consortDir, f, story, ac), rel);
     }
     if (source.startsWith("story:")) {
       const rel = expandRel(source.slice("story:".length));
-      if (!story) return (0, import_node_path20.join)(cfg.consortDir, rel);
-      return (0, import_node_path20.join)(storyResolved(cfg.consortDir, f, story), rel);
+      if (!story) return (0, import_node_path21.join)(cfg.consortDir, rel);
+      return (0, import_node_path21.join)(storyResolved(cfg.consortDir, f, story), rel);
     }
-    return (0, import_node_path20.join)(cfg.consortDir, expandRel(source.replace(/^feature:/, "")));
+    return (0, import_node_path21.join)(cfg.consortDir, expandRel(source.replace(/^feature:/, "")));
   };
   const executorDeps = {
     // Uncontained: the agent reads the tree itself, but Step still gates on the presence of
@@ -13684,25 +13690,25 @@ async function performTurnViaExecutor(action, state, routerDeps, cfg, deps) {
 
 // consort/session/response-formatter.ts
 init_cjs_shims();
-var import_node_fs19 = require("fs");
-var import_node_path22 = require("path");
+var import_node_fs20 = require("fs");
+var import_node_path23 = require("path");
 
 // consort/architecture/e2e-route-adherence.ts
 init_cjs_shims();
-var import_node_fs18 = require("fs");
-var import_node_path21 = require("path");
-var CLIENT_SRC = (0, import_node_path21.join)("client", "src");
-var E2E_DIR = (0, import_node_path21.join)("client", "tests", "e2e");
+var import_node_fs19 = require("fs");
+var import_node_path22 = require("path");
+var CLIENT_SRC = (0, import_node_path22.join)("client", "src");
+var E2E_DIR = (0, import_node_path22.join)("client", "tests", "e2e");
 
 // consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs19.existsSync)(file)) {
+  if (!(0, import_node_fs20.existsSync)(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = (0, import_node_fs19.readFileSync)(file, "utf8");
+    content = (0, import_node_fs20.readFileSync)(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -13714,7 +13720,7 @@ function designGuideConformance(consortDir) {
 init_cjs_shims();
 var import_node_child_process8 = require("child_process");
 var fs17 = __toESM(require("fs"), 1);
-var import_node_path23 = require("path");
+var import_node_path24 = require("path");
 function artifactRoot(consortDir) {
   return consortDir;
 }
@@ -13765,7 +13771,7 @@ var defaultDbStateReader = (projectDir) => {
 };
 var defaultFailingTestReader = (projectDir, story) => {
   if (projectLanguage(projectDir) === "nodejs") return void 0;
-  const file = (0, import_node_path23.join)(projectDir, "tests", "step_defs", `test_${story.replace(/-/g, "_")}.py`);
+  const file = (0, import_node_path24.join)(projectDir, "tests", "step_defs", `test_${story.replace(/-/g, "_")}.py`);
   try {
     const body = fs17.readFileSync(file, "utf8");
     return body.length > 4e3 ? body.slice(0, 4e3) + "\n\u2026 (truncated; read the full file if needed)" : body;
@@ -13775,13 +13781,13 @@ var defaultFailingTestReader = (projectDir, story) => {
 };
 function readCtxLeverMarker(consortDir) {
   try {
-    return JSON.parse(fs17.readFileSync((0, import_node_path23.join)(consortDir, "ctx-levers.json"), "utf8"));
+    return JSON.parse(fs17.readFileSync((0, import_node_path24.join)(consortDir, "ctx-levers.json"), "utf8"));
   } catch {
     return {};
   }
 }
 function failingTestBlock(consortDir, story, reader = defaultFailingTestReader) {
-  const body = reader((0, import_node_path23.dirname)(consortDir), story);
+  const body = reader((0, import_node_path24.dirname)(consortDir), story);
   return body ? ` FAILING TEST (make THIS pass; do NOT search for it) ::
 \`\`\`python
 ${body}
@@ -13801,7 +13807,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
     parts.push(` LAYOUT (place/judge code at THESE paths, do not scan for them) :: ${layout}.`);
   }
   {
-    const language = projectLanguage((0, import_node_path23.dirname)(consortDir));
+    const language = projectLanguage((0, import_node_path24.dirname)(consortDir));
     const runHint = language === "nodejs" ? ` RUN/REACHABILITY :: node project \u2013 source under src/ (there is NO app/). To confirm the app boots or is reachable, run the project's OWN start (the package.json start/dev script, e.g. \`node src/index.js\`) and GET the health path over HTTP \u2013 do NOT assume Python or run \`python -c "import app.main"\` (it will false-fail here).` : language === "java" || language === "kotlin" ? ` RUN/REACHABILITY :: ${language} project. To confirm the app boots or is reachable, run \`./mvnw spring-boot:run\` and GET the health path over HTTP \u2013 do NOT assume Python (\`python -c "import app.main"\` false-fails here).` : ` RUN/REACHABILITY :: python project \u2013 source under app/. To confirm the app boots or is reachable, run \`uv run uvicorn app.main:app\` and GET the health path over HTTP. Reachability is an HTTP response, never just an import succeeding.`;
     parts.push(runHint);
   }
@@ -13813,7 +13819,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   const marker = readCtxLeverMarker(consortDir);
   const dbOn = opts.dbState ?? marker.dbState ?? consortEnv("CTX_DBSTATE") === "1";
   if (dbOn) {
-    const st = (opts.dbStateReader ?? defaultDbStateReader)((0, import_node_path23.dirname)(consortDir));
+    const st = (opts.dbStateReader ?? defaultDbStateReader)((0, import_node_path24.dirname)(consortDir));
     if (st && (st.current || st.heads)) {
       parts.push(
         ` DB STATE (already probed, do NOT re-run alembic current/heads) ::${st.current ? ` current=${st.current.replace(/\s+/g, " ")}` : ""}${st.heads ? ` head=${st.heads.replace(/\s+/g, " ")}` : ""}. The branch is migrated to head; iterate with \`uv run --env-file .env pytest <path>\` (no re-migrate).`
@@ -13829,7 +13835,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   if (scopeOn) parts.push(scopeNoteBlock());
   const migrationOn = opts.migration ?? marker.migration ?? consortEnv("CTX_MIGRATION") === "1";
   if (migrationOn) {
-    const language = projectLanguage((0, import_node_path23.dirname)(consortDir));
+    const language = projectLanguage((0, import_node_path24.dirname)(consortDir));
     const migrationGuide = language === "nodejs" ? ` MIGRATION :: knex migrations live in migrations/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Source/models live under src/; apply with \`npm run migrate\`.` : language === "java" || language === "kotlin" ? ` MIGRATION :: flyway migrations live in src/main/resources/db/migration/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Apply with \`./mvnw -q flyway:migrate\`.` : ` MIGRATION :: alembic migrations live in alembic/versions/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author the revision file or grep scripts/lk to find the command). ORM models are in app/models.py; apply with \`uv run --env-file .env alembic upgrade head\`.`;
     parts.push(migrationGuide);
   }
@@ -14099,7 +14105,7 @@ function roleTaskBody(action, featureId, uiTrack, consortDir, build, omit) {
       case "estimate-committed":
         return `Estimate the sprint's COMMITTED feature(s) with a t-shirt size (XS/S/M/L/XL). Read each committed feature's request at ${root}/features/<F>/feature-request.md, then ADD one entry per committed feature to ${root}/planning/estimates.json keyed by its REAL feature id (e.g. "F1-stock-visibility", not a "FP" candidate id), each {"feature_id":"<F>","size":"<XS|S|M|L|XL>","rationale":"<why>"}. KEEP every existing estimate already in the file (merge, do not overwrite the candidate sizes). This is the size sync-backlog stamps into the per-sprint backlog, so the committed backlog shows real sizing.`;
       case "intake": {
-        const seedIntakeDir = (0, import_node_path24.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
+        const seedIntakeDir = (0, import_node_path25.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
         const groundingClause = fs18.existsSync(seedIntakeDir) ? `Ground the shape in the canon above and the StockFlow worked example at ${seedIntakeDir} (READ the files there to learn the format + level of detail; never copy it verbatim).` : `Ground the shape in the canon above (the StockFlow worked example under the kit's examples/first-project/stockflow-seed/intake/ is unavailable here \u2013 rely on the canon).`;
         return `Author the project intake for the Product Owner, DRAFTING each artifact FRESH from the human's answers at ${root}/intake/answers.md (the interview responses; if absent or thin, draft only what the stated intent supports \u2013 never invent). WRITE:
   - ${root}/product-overview.md \u2013 who it's for, its purpose, how it grows, what to see after each sprint (H1 + body, no implementation detail).
@@ -14174,11 +14180,11 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
 `;
         return advisory + `ASSESS a failed honest-GREEN verify for AC ${action.ac} in story ${s}. The Driver made the current test pass, but the full-suite verify against the running app FAILED, some OTHER test(s) now fail.
 ` + scanDirective + `   ./scripts/lk consort-cycle flag-superseded --feature ${featureId} --story ${s} --ac ${action.ac} --reason "<new AC + what changed>" --test <path_or_nodeid> [--test ...] --tdd-dir ${consortDir}
-   The flag-superseded command writes ${(0, import_node_path24.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
+   The flag-superseded command writes ${(0, import_node_path25.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
 (b) If instead the failure is a GENUINE REGRESSION (the AC does NOT intend to change that behavior; the Driver's code is wrong), record your ROOT-CAUSE diagnosis so it travels to the Driver / the human instead of being lost. When the Driver can fix it, ALSO give a concrete repair directive (this routes a bounded Driver repair turn):
    ./scripts/lk consort-cycle assess-regression --feature ${featureId} --story ${s} --ac ${action.ac} --diagnosis "<the WHY: which behavior broke + the root cause>" [--fix "<what the Driver should change>"] --tdd-dir ${consortDir}
    Include --fix ONLY when the fix is clear + within the Driver's reach (e.g. a wrong default, a missing filter, an off-by-one); OMIT --fix when it needs a human / a design or spec change (the orchestration then escalates carrying your diagnosis).
-CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path24.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
+CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path25.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
 Flag ONLY tests the new AC truly supersedes; never flag a test just to make a red go away. For a regression, always record a diagnosis (+ fix when driver-fixable) \u2013 never nothing.`;
       }
       if (action.buildMode === "assess-deploy") {
@@ -14793,7 +14799,7 @@ function buildDriveEffects(cfg) {
     onHandback(handoff, detail) {
       const file = handbackFile(cfg.consortDir, cfg.featureId, handoff.responder, handoff.story);
       try {
-        fs18.mkdirSync((0, import_node_path24.dirname)(file), { recursive: true });
+        fs18.mkdirSync((0, import_node_path25.dirname)(file), { recursive: true });
         fs18.writeFileSync(file, `${detail}
 `, "utf8");
       } catch {
@@ -15086,7 +15092,7 @@ init_cjs_shims();
 
 // consort/gates/sprint-gates.ts
 init_cjs_shims();
-var import_node_fs20 = require("fs");
+var import_node_fs21 = require("fs");
 
 // consort/gates/gate-hash.ts
 init_cjs_shims();
@@ -15106,10 +15112,10 @@ function sprintGatesFile(consortDir, sprint) {
 function readSprintGates(sprint, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = sprintGatesFile(consortDir, sprint);
-  if (!(0, import_node_fs20.existsSync)(file)) return defaultSprintGatesState(sprint);
+  if (!(0, import_node_fs21.existsSync)(file)) return defaultSprintGatesState(sprint);
   let parsed;
   try {
-    parsed = JSON.parse((0, import_node_fs20.readFileSync)(file, "utf8"));
+    parsed = JSON.parse((0, import_node_fs21.readFileSync)(file, "utf8"));
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);
@@ -15459,9 +15465,9 @@ function shouldEmitTelemetry(inp) {
 // consort/telemetry/emitter.ts
 init_cjs_shims();
 var import_node_child_process10 = require("child_process");
-var import_node_fs21 = require("fs");
+var import_node_fs22 = require("fs");
 var import_node_os = require("os");
-var import_node_path25 = require("path");
+var import_node_path26 = require("path");
 var import_node_crypto7 = require("crypto");
 
 // consort/telemetry/spans.ts
@@ -15528,8 +15534,8 @@ function detachedHttpSink(opts) {
     deliver(payload) {
       try {
         const body = payload.spans.map((s) => JSON.stringify(wireLine(s, payload))).join("\n") + "\n";
-        const file = (0, import_node_path25.join)(dir, `consort-telemetry-${(0, import_node_crypto7.randomUUID)()}.ndjson`);
-        (0, import_node_fs21.writeFileSync)(file, body);
+        const file = (0, import_node_path26.join)(dir, `consort-telemetry-${(0, import_node_crypto7.randomUUID)()}.ndjson`);
+        (0, import_node_fs22.writeFileSync)(file, body);
         const child = spawnImpl(process.execPath, [opts.senderJs, file, url, opts.token ?? ""], {
           detached: true,
           stdio: "ignore"
@@ -15604,8 +15610,8 @@ var TelemetryEmitter = class {
       if (this.inflight.length === 0) return;
       const pending = Promise.allSettled(this.inflight.splice(0));
       let timer;
-      const capped = new Promise((resolve3) => {
-        timer = setTimeout(resolve3, Math.max(0, timeoutMs));
+      const capped = new Promise((resolve4) => {
+        timer = setTimeout(resolve4, Math.max(0, timeoutMs));
       });
       await Promise.race([pending.then(() => void 0), capped]);
       if (timer) clearTimeout(timer);
@@ -16220,14 +16226,14 @@ function makeConfirmContinue() {
   const auto = consortEnv("AUTO_CONTINUE") === "1";
   const answerFile = consortEnv("GATE_ANSWER_FILE")?.trim();
   const isYes = (a) => a === "" || a === "y" || a === "yes";
-  return (action) => new Promise((resolve3, reject) => {
+  return (action) => new Promise((resolve4, reject) => {
     const label = describeAction(action);
     const prompt = `
 [drive] PAUSED \u2013 continue past the ${label} handoff? [Y/n] `;
     if (auto) {
       process.stderr.write(`[drive] PAUSE gate (auto-continue): proceeding past ${label}
 `);
-      return resolve3();
+      return resolve4();
     }
     if (answerFile) {
       process.stderr.write(`${prompt}
@@ -16250,7 +16256,7 @@ function makeConfirmContinue() {
           clearInterval(poll);
           process.stderr.write(`[drive] resuming.
 `);
-          resolve3();
+          resolve4();
         } else process.stderr.write(`[drive] holding \u2013 write Y to ${answerFile} when ready.
 `);
       }, 1e3);
@@ -16264,7 +16270,7 @@ function makeConfirmContinue() {
           if (isYes(answer.trim().toLowerCase())) {
             process.stderr.write(`[drive] resuming.
 `);
-            resolve3();
+            resolve4();
           } else {
             process.stderr.write(`[drive] holding \u2013 answer Y when ready.
 `);

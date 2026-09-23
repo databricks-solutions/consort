@@ -26,6 +26,7 @@ import {
 } from "../config/kit-ref.js";
 import { updateAgents } from "./update-agents.js";
 import { updateCommands } from "./update-commands.js";
+import { substrateVersionFromPinSpec } from "./kit-ref-pin.js";
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { loadConsortConfig } from "../config/consort-config-file.js";
 
@@ -171,20 +172,19 @@ function copyKitTree(kitSubtree: string, projectSubtree: string): number {
 }
 
 /** The scm-utils version THIS kit ships, parsed from consort's own dependency pin
- *  (`@databricks-solutions/lakebase-scm-utils: github:...#v<version>`). This is the value the
- *  workflow templates' scaffold-time `{{LAKEBASE_SCM_UTILS_VERSION}}` placeholder must resolve
- *  to – NOT the kit's own version (walking up from the templates would wrongly yield consort's
- *  version). Bare (leading `v` stripped) to match the template's literal `v{{...}}`. Null when
- *  the pin carries no `#ref` (unpinned dev checkout). */
+ *  (`@databricks-solutions/lakebase-scm-utils`: a `github:...#v<version>` tag or a bare
+ *  registry semver). This is the value the workflow templates' scaffold-time
+ *  `{{LAKEBASE_SCM_UTILS_VERSION}}` placeholder must resolve to – NOT the kit's own
+ *  version (walking up from the templates would wrongly yield consort's version).
+ *  Bare (leading `v` stripped) to match the template's literal `v{{...}}`. Null when
+ *  the pin is not an exact version (unpinned dev checkout: branch/SHA/range spec). */
 function resolveSubstrateVersion(kitDir: string): string | null {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(kitDir, "package.json"), "utf8")) as {
       dependencies?: Record<string, string>;
     };
     const pin = pkg.dependencies?.["@databricks-solutions/lakebase-scm-utils"] ?? "";
-    const hash = pin.indexOf("#");
-    if (hash < 0) return null;
-    return pin.slice(hash + 1).replace(/^v/, "") || null;
+    return substrateVersionFromPinSpec(pin) ?? null;
   } catch {
     return null;
   }

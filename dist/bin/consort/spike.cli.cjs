@@ -3016,7 +3016,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3043,7 +3043,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3677,7 +3677,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse(baseURI, schemelessOptions), parse(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3935,7 +3935,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -7159,8 +7159,8 @@ var TelemetryEmitter = class {
       if (this.inflight.length === 0) return;
       const pending = Promise.allSettled(this.inflight.splice(0));
       let timer;
-      const capped = new Promise((resolve3) => {
-        timer = setTimeout(resolve3, Math.max(0, timeoutMs));
+      const capped = new Promise((resolve4) => {
+        timer = setTimeout(resolve4, Math.max(0, timeoutMs));
       });
       await Promise.race([pending.then(() => void 0), capped]);
       if (timer) clearTimeout(timer);
@@ -7383,7 +7383,7 @@ function warnLegacyEnv(legacyName, suffix) {
 init_cjs_shims();
 var fs8 = __toESM(require("fs"), 1);
 var path7 = __toESM(require("path"), 1);
-var import_node_url2 = require("url");
+var import_node_url3 = require("url");
 
 // consort/config/consort-config-file.ts
 init_cjs_shims();
@@ -7440,12 +7440,18 @@ init_cjs_shims();
 var fs6 = __toESM(require("fs"), 1);
 var path5 = __toESM(require("path"), 1);
 
+// consort/lakebase/kit-ref-pin.ts
+init_cjs_shims();
+var import_node_url2 = require("url");
+var import_node_path4 = require("path");
+var import_node_fs3 = require("fs");
+
 // consort/lakebase/upgrade.ts
 var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var AGENT_SYNC_MARKER = path6.join(".claude", "agents", ".kit-version");
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path7.dirname((0, import_node_url2.fileURLToPath)(importMetaUrl));
+var __dirname2 = path7.dirname((0, import_node_url3.fileURLToPath)(importMetaUrl));
 var AGENT_SYNC_MARKER2 = path7.join(".claude", "agents", ".kit-version");
 
 // consort/orchestrator/drive/claude-runner.ts
@@ -7557,8 +7563,8 @@ init_cjs_shims();
 
 // consort/orchestrator/steps/manifest.ts
 init_cjs_shims();
-var import_node_fs3 = require("fs");
-var import_node_path4 = require("path");
+var import_node_fs4 = require("fs");
+var import_node_path5 = require("path");
 
 // consort/orchestrator/drive/turn-key.ts
 init_cjs_shims();
@@ -7577,8 +7583,8 @@ var import_lakebase3 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 
 // consort/setup/stray-artifact-recovery.ts
 init_cjs_shims();
-var import_node_fs4 = require("fs");
-var import_node_path5 = require("path");
+var import_node_fs5 = require("fs");
+var import_node_path6 = require("path");
 
 // consort/orchestrator/turns/turn-monitor.ts
 init_cjs_shims();

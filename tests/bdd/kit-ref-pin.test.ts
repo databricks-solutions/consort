@@ -91,6 +91,16 @@ describe("declaredSubstrateVersion", () => {
     expect(declaredSubstrateVersion(root)).toBe("0.2.3");
   });
 
+  it("extracts the version from a bare registry semver spec", () => {
+    writeConsort("0.2.41");
+    expect(declaredSubstrateVersion(root)).toBe("0.2.41");
+  });
+
+  it("returns undefined for a semver RANGE (^X.Y.Z is not an exact pin)", () => {
+    writeConsort("^0.2.41");
+    expect(declaredSubstrateVersion(root)).toBeUndefined();
+  });
+
   it("returns undefined for an unpinned (branch/main) spec", () => {
     writeConsort("github:databricks-solutions/lakebase-scm-utils#main");
     expect(declaredSubstrateVersion(root)).toBeUndefined();

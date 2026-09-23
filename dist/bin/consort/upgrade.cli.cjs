@@ -246,6 +246,15 @@ function updateCommands(args) {
   return { files, changed };
 }
 
+// consort/lakebase/kit-ref-pin.ts
+var import_node_url = require("url");
+var import_node_path3 = require("path");
+var import_node_fs2 = require("fs");
+function substrateVersionFromPinSpec(spec) {
+  const m = spec.match(/#v?(\d+\.\d+\.\d+)\b/) ?? spec.match(/^v?(\d+\.\d+\.\d+)$/);
+  return m ? m[1] : void 0;
+}
+
 // consort/lakebase/upgrade.ts
 var import_lakebase = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
@@ -363,9 +372,7 @@ function resolveSubstrateVersion(kitDir) {
   try {
     const pkg = JSON.parse(fs5.readFileSync(path4.join(kitDir, "package.json"), "utf8"));
     const pin = pkg.dependencies?.["@databricks-solutions/lakebase-scm-utils"] ?? "";
-    const hash = pin.indexOf("#");
-    if (hash < 0) return null;
-    return pin.slice(hash + 1).replace(/^v/, "") || null;
+    return substrateVersionFromPinSpec(pin) ?? null;
   } catch {
     return null;
   }

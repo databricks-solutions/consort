@@ -3012,7 +3012,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3039,7 +3039,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3673,7 +3673,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse(baseURI, schemelessOptions), parse(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3931,7 +3931,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -6682,7 +6682,7 @@ function warnLegacyEnv(legacyName, suffix) {
 init_esm_shims();
 import * as fs6 from "fs";
 import * as path6 from "path";
-import { fileURLToPath as fileURLToPath3 } from "url";
+import { fileURLToPath as fileURLToPath4 } from "url";
 
 // consort/config/consort-paths.ts
 init_esm_shims();
@@ -6917,6 +6917,12 @@ init_esm_shims();
 import * as fs4 from "fs";
 import * as path4 from "path";
 
+// consort/lakebase/kit-ref-pin.ts
+init_esm_shims();
+import { fileURLToPath as fileURLToPath3 } from "url";
+import { dirname as dirname7, join as join8, resolve } from "path";
+import { readFileSync as readFileSync8, existsSync as existsSync8, mkdirSync as mkdirSync8, writeFileSync as writeFileSync7 } from "fs";
+
 // consort/lakebase/upgrade.ts
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 var AGENT_SYNC_MARKER = path5.join(".claude", "agents", ".kit-version");
@@ -6939,7 +6945,7 @@ function commitRefreshedSurface(projectDir, targetVersion, git = (a) => {
 }
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path6.dirname(fileURLToPath3(import.meta.url));
+var __dirname2 = path6.dirname(fileURLToPath4(import.meta.url));
 function resolveKitRoot() {
   const candidates = [
     path6.resolve(__dirname2, "../.."),
@@ -6991,8 +6997,8 @@ import * as readline from "readline";
 
 // consort/logging/replay-artifacts.ts
 init_esm_shims();
-import { existsSync as existsSync10, mkdirSync as mkdirSync10, readdirSync as readdirSync7, copyFileSync as copyFileSync3, statSync as statSync3 } from "fs";
-import { join as join10, dirname as dirname9 } from "path";
+import { existsSync as existsSync11, mkdirSync as mkdirSync11, readdirSync as readdirSync7, copyFileSync as copyFileSync3, statSync as statSync3 } from "fs";
+import { join as join11, dirname as dirname10 } from "path";
 var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
   "spec-author",
   "architect-reviewer",
@@ -7002,79 +7008,79 @@ var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
   "product-owner"
 ]);
 function cp(src, dst) {
-  if (!existsSync10(src)) return false;
-  mkdirSync10(dirname9(dst), { recursive: true });
+  if (!existsSync11(src)) return false;
+  mkdirSync11(dirname10(dst), { recursive: true });
   copyFileSync3(src, dst);
   return true;
 }
 function cpDir(srcDir, dstDir) {
-  if (!existsSync10(srcDir)) return false;
+  if (!existsSync11(srcDir)) return false;
   let copied = false;
-  mkdirSync10(dstDir, { recursive: true });
+  mkdirSync11(dstDir, { recursive: true });
   for (const name of readdirSync7(srcDir)) {
-    const s = join10(srcDir, name);
+    const s = join11(srcDir, name);
     if (!statSync3(s).isFile()) continue;
-    copyFileSync3(s, join10(dstDir, name));
+    copyFileSync3(s, join11(dstDir, name));
     copied = true;
   }
   return copied;
 }
 function replayDesignTurn(args) {
   const { turn, replayDir, consortDir, featureId } = args;
-  const cf = join10(featuresDir(replayDir), featureId);
-  const tf = join10(featuresDir(consortDir), featureId);
+  const cf = join11(featuresDir(replayDir), featureId);
+  const tf = join11(featuresDir(consortDir), featureId);
   switch (turn.role) {
     case "spec-author": {
       if (turn.mode === "propose") {
-        return cp(join10(replayDir, "planning", "feature-proposals.md"), join10(consortDir, "planning", "feature-proposals.md"));
+        return cp(join11(replayDir, "planning", "feature-proposals.md"), join11(consortDir, "planning", "feature-proposals.md"));
       }
       if (turn.mode === "breakdown") {
-        let ok = cp(join10(cf, "feature-spec.json"), join10(tf, "feature-spec.json"));
-        cp(join10(cf, "feature-spec.md"), join10(tf, "feature-spec.md"));
-        const storiesSrc = join10(cf, "stories");
-        if (existsSync10(storiesSrc)) {
+        let ok = cp(join11(cf, "feature-spec.json"), join11(tf, "feature-spec.json"));
+        cp(join11(cf, "feature-spec.md"), join11(tf, "feature-spec.md"));
+        const storiesSrc = join11(cf, "stories");
+        if (existsSync11(storiesSrc)) {
           for (const s of readdirSync7(storiesSrc)) {
-            cp(join10(storiesSrc, s, "story.json"), join10(tf, "stories", s, "story.json"));
-            cp(join10(storiesSrc, s, "story.md"), join10(tf, "stories", s, "story.md"));
+            cp(join11(storiesSrc, s, "story.json"), join11(tf, "stories", s, "story.json"));
+            cp(join11(storiesSrc, s, "story.md"), join11(tf, "stories", s, "story.md"));
           }
         }
         return ok;
       }
       if (turn.story) {
-        return cpDir(join10(cf, "stories", turn.story, "acs"), join10(tf, "stories", turn.story, "acs"));
+        return cpDir(join11(cf, "stories", turn.story, "acs"), join11(tf, "stories", turn.story, "acs"));
       }
       return false;
     }
     case "architect-reviewer": {
       if (turn.mode === "estimate" || turn.mode === "estimate-committed") {
-        return cp(join10(replayDir, "planning", "estimates.json"), join10(consortDir, "planning", "estimates.json"));
+        return cp(join11(replayDir, "planning", "estimates.json"), join11(consortDir, "planning", "estimates.json"));
       }
-      let ok = cp(join10(cf, "architecture.json"), join10(tf, "architecture.json"));
-      cp(join10(cf, "architecture.md"), join10(tf, "architecture.md"));
+      let ok = cp(join11(cf, "architecture.json"), join11(tf, "architecture.json"));
+      cp(join11(cf, "architecture.md"), join11(tf, "architecture.md"));
       if (turn.story) {
-        const acs = cpDir(join10(cf, "stories", turn.story, "acs"), join10(tf, "stories", turn.story, "acs"));
+        const acs = cpDir(join11(cf, "stories", turn.story, "acs"), join11(tf, "stories", turn.story, "acs"));
         ok = ok || acs;
       }
       return ok;
     }
     case "dba": {
-      let ok = cp(join10(cf, "db-design.json"), join10(tf, "db-design.json"));
-      cp(join10(cf, "db-design.md"), join10(tf, "db-design.md"));
+      let ok = cp(join11(cf, "db-design.json"), join11(tf, "db-design.json"));
+      cp(join11(cf, "db-design.md"), join11(tf, "db-design.md"));
       return ok;
     }
     case "test-strategist": {
-      let ok = cp(join10(cf, "test-list.json"), join10(tf, "test-list.json"));
-      cp(join10(cf, "test-list.md"), join10(tf, "test-list.md"));
+      let ok = cp(join11(cf, "test-list.json"), join11(tf, "test-list.json"));
+      cp(join11(cf, "test-list.md"), join11(tf, "test-list.md"));
       const story = turn.story;
       if (story) {
-        cp(join10(cf, "stories", story, "test-list-per-ac.json"), join10(tf, "stories", story, "test-list-per-ac.json"));
+        cp(join11(cf, "stories", story, "test-list-per-ac.json"), join11(tf, "stories", story, "test-list-per-ac.json"));
       }
       return ok;
     }
     case "ux-designer": {
-      let ok = cp(join10(replayDir, "design", "design-guide.json"), join10(consortDir, "design", "design-guide.json"));
-      cp(join10(replayDir, "design", "design-guide.md"), join10(consortDir, "design", "design-guide.md"));
-      cp(join10(replayDir, "design", "ia.md"), join10(consortDir, "design", "ia.md"));
+      let ok = cp(join11(replayDir, "design", "design-guide.json"), join11(consortDir, "design", "design-guide.json"));
+      cp(join11(replayDir, "design", "design-guide.md"), join11(consortDir, "design", "design-guide.md"));
+      cp(join11(replayDir, "design", "ia.md"), join11(consortDir, "design", "ia.md"));
       return ok;
     }
     default:
@@ -7084,15 +7090,15 @@ function replayDesignTurn(args) {
 function restoreReflectVerdict(args) {
   const { replayDir, consortDir, featureId, story } = args;
   return cp(
-    join10(featuresDir(replayDir), featureId, "stories", story, "reflect-verdict.json"),
-    join10(featuresDir(consortDir), featureId, "stories", story, "reflect-verdict.json")
+    join11(featuresDir(replayDir), featureId, "stories", story, "reflect-verdict.json"),
+    join11(featuresDir(consortDir), featureId, "stories", story, "reflect-verdict.json")
   );
 }
 
 // consort/logging/replay-build.ts
 init_esm_shims();
-import { existsSync as existsSync11, cpSync as cpSync3, readdirSync as readdirSync8, statSync as statSync4, rmSync as rmSync2, readFileSync as readFileSync10 } from "fs";
-import { join as join11, relative } from "path";
+import { existsSync as existsSync12, cpSync as cpSync3, readdirSync as readdirSync8, statSync as statSync4, rmSync as rmSync2, readFileSync as readFileSync11 } from "fs";
+import { join as join12, relative } from "path";
 var SCAFFOLD_OWNED = /* @__PURE__ */ new Set([
   ".git",
   ...ALL_ARTIFACT_ROOTS,
@@ -7138,41 +7144,41 @@ function inScopeFiles(root) {
   const out = /* @__PURE__ */ new Set();
   const walk = (abs) => {
     for (const name of readdirSync8(abs)) {
-      const p = join11(abs, name);
+      const p = join12(abs, name);
       if (!keep(p)) continue;
       if (statSync4(p).isDirectory()) walk(p);
       else out.add(relative(root, p));
     }
   };
-  if (existsSync11(root)) walk(root);
+  if (existsSync12(root)) walk(root);
   return out;
 }
 function syncTreeFromSnapshot(codeSrc, projectDir) {
   const snapshot = inScopeFiles(codeSrc);
   for (const rel of inScopeFiles(projectDir)) {
-    if (!snapshot.has(rel)) rmSync2(join11(projectDir, rel), { force: true });
+    if (!snapshot.has(rel)) rmSync2(join12(projectDir, rel), { force: true });
   }
   cpSync3(codeSrc, projectDir, { recursive: true, force: true, filter: codeTreeFilter(codeSrc) });
 }
 function storyTurnsDir(replayBuildDir, featureId, story) {
-  return join11(featuresDir(replayBuildDir), featureId, "stories", story, "turns");
+  return join12(featuresDir(replayBuildDir), featureId, "stories", story, "turns");
 }
 function listBuildTurns(replayBuildDir, featureId, story) {
   const dir = storyTurnsDir(replayBuildDir, featureId, story);
-  if (!existsSync11(dir)) return [];
+  if (!existsSync12(dir)) return [];
   return readdirSync8(dir).filter((n) => !n.startsWith(".")).sort();
 }
 function replayBuildTurn(args) {
   const { replayBuildDir, projectDir, consortDir, featureId, story, turnIndex } = args;
   const turns = listBuildTurns(replayBuildDir, featureId, story).filter((n) => !/reflect/i.test(n));
   if (turnIndex < 1 || turnIndex > turns.length) return false;
-  const turnDir = join11(storyTurnsDir(replayBuildDir, featureId, story), turns[turnIndex - 1]);
-  const codeSrc = join11(turnDir, "code");
-  if (!existsSync11(codeSrc)) return false;
+  const turnDir = join12(storyTurnsDir(replayBuildDir, featureId, story), turns[turnIndex - 1]);
+  const codeSrc = join12(turnDir, "code");
+  if (!existsSync12(codeSrc)) return false;
   syncTreeFromSnapshot(codeSrc, projectDir);
   const REPLAYED_VERDICTS = ["review-verdict.json", "regression-assessment.json", "superseded-tests.json"];
-  const cyclesSrc = join11(turnDir, "tdd", "cycles");
-  if (existsSync11(cyclesSrc)) {
+  const cyclesSrc = join12(turnDir, "tdd", "cycles");
+  if (existsSync12(cyclesSrc)) {
     cpSync3(cyclesSrc, cyclesRootDir(consortDir), {
       recursive: true,
       force: true,
@@ -7184,22 +7190,22 @@ function replayBuildTurn(args) {
 
 // consort/logging/agent-log.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync13, mkdirSync as mkdirSync11, readFileSync as readFileSync12 } from "fs";
-import { dirname as dirname10, join as join13 } from "path";
+import { appendFileSync, existsSync as existsSync14, mkdirSync as mkdirSync12, readFileSync as readFileSync13 } from "fs";
+import { dirname as dirname11, join as join14 } from "path";
 
 // consort/orchestrator/validators/schema-loader.ts
 init_esm_shims();
 var import_ajv = __toESM(require_ajv(), 1);
-import { existsSync as existsSync12, readFileSync as readFileSync11 } from "fs";
-import { join as join12 } from "path";
+import { existsSync as existsSync13, readFileSync as readFileSync12 } from "fs";
+import { join as join13 } from "path";
 function resolveSchemaDir() {
-  const direct = join12(__dirname, "..", "..", "config", "schemas");
-  if (existsSync12(direct)) return direct;
+  const direct = join13(__dirname, "..", "..", "config", "schemas");
+  if (existsSync13(direct)) return direct;
   let dir = __dirname;
   for (let i = 0; i < 8; i++) {
-    const cand = join12(dir, "consort", "config", "schemas");
-    if (existsSync12(cand)) return cand;
-    const parent = join12(dir, "..");
+    const cand = join13(dir, "consort", "config", "schemas");
+    if (existsSync13(cand)) return cand;
+    const parent = join13(dir, "..");
     if (parent === dir) break;
     dir = parent;
   }
@@ -7210,7 +7216,7 @@ var ajv = new import_ajv.default({ allErrors: true, strict: false });
 ajv.addFormat("date-time", true);
 var validatorCache = /* @__PURE__ */ new Map();
 function loadSchema(name) {
-  return JSON.parse(readFileSync11(join12(SCHEMA_DIR, name), "utf8"));
+  return JSON.parse(readFileSync12(join13(SCHEMA_DIR, name), "utf8"));
 }
 function getValidator(name) {
   const cached = validatorCache.get(name);
@@ -7304,14 +7310,14 @@ function renderEventMessage(event, slots = {}) {
 
 // consort/logging/agent-log.ts
 function logFilePath(consortDir) {
-  return join13(consortDir, "agent-log.jsonl");
+  return join14(consortDir, "agent-log.jsonl");
 }
 function mirrorToRecordDir(text) {
   const recordDir = consortEnv("RECORD_DIR")?.trim();
   if (!recordDir) return;
   try {
-    const dst = join13(recordDir, "agent-log.jsonl");
-    mkdirSync11(dirname10(dst), { recursive: true });
+    const dst = join14(recordDir, "agent-log.jsonl");
+    mkdirSync12(dirname11(dst), { recursive: true });
     appendFileSync(dst, text, "utf8");
   } catch {
   }
@@ -7386,8 +7392,8 @@ init_esm_shims();
 
 // consort/orchestrator/steps/manifest.ts
 init_esm_shims();
-import { readFileSync as readFileSync14, readdirSync as readdirSync9, existsSync as existsSync15 } from "fs";
-import { join as join14 } from "path";
+import { readFileSync as readFileSync15, readdirSync as readdirSync9, existsSync as existsSync16 } from "fs";
+import { join as join15 } from "path";
 
 // consort/orchestrator/steps/manifests/product-owner-intake.json
 var product_owner_intake_default = {
@@ -8501,18 +8507,18 @@ import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lake
 
 // consort/setup/stray-artifact-recovery.ts
 init_esm_shims();
-import { existsSync as existsSync17, mkdirSync as mkdirSync13, cpSync as cpSync4, rmSync as rmSync3, readdirSync as readdirSync10, statSync as statSync5 } from "fs";
-import { join as join16, dirname as dirname12, basename } from "path";
+import { existsSync as existsSync18, mkdirSync as mkdirSync14, cpSync as cpSync4, rmSync as rmSync3, readdirSync as readdirSync10, statSync as statSync5 } from "fs";
+import { join as join17, dirname as dirname13, basename } from "path";
 function malformedSiblingRoot(projectDir) {
   const p = projectDir.replace(/\/+$/, "");
-  return `${dirname12(p)}-${basename(p)}`;
+  return `${dirname13(p)}-${basename(p)}`;
 }
 function listFilesRel(dir) {
   const out = [];
   const walk = (abs, rel) => {
     for (const entry of readdirSync10(abs)) {
-      const childAbs = join16(abs, entry);
-      const childRel = rel ? join16(rel, entry) : entry;
+      const childAbs = join17(abs, entry);
+      const childRel = rel ? join17(rel, entry) : entry;
       if (statSync5(childAbs).isDirectory()) walk(childAbs, childRel);
       else out.push(childRel);
     }
@@ -8522,14 +8528,14 @@ function listFilesRel(dir) {
 }
 function relocateStrayDesignArtifacts(projectDir) {
   const sibling = malformedSiblingRoot(projectDir);
-  if (!existsSync17(sibling)) return { relocated: false, moved: [] };
+  if (!existsSync18(sibling)) return { relocated: false, moved: [] };
   const moved = [];
   for (const artRoot of ALL_ARTIFACT_ROOTS) {
-    const strayRoot = join16(sibling, artRoot);
-    if (!existsSync17(strayRoot)) continue;
-    for (const rel of listFilesRel(strayRoot)) moved.push(join16(artRoot, rel));
-    const realRoot = join16(projectDir, artRoot);
-    mkdirSync13(realRoot, { recursive: true });
+    const strayRoot = join17(sibling, artRoot);
+    if (!existsSync18(strayRoot)) continue;
+    for (const rel of listFilesRel(strayRoot)) moved.push(join17(artRoot, rel));
+    const realRoot = join17(projectDir, artRoot);
+    mkdirSync14(realRoot, { recursive: true });
     cpSync4(strayRoot, realRoot, { recursive: true, force: true });
     rmSync3(strayRoot, { recursive: true, force: true });
   }
@@ -8634,7 +8640,7 @@ var CliEffectError = class extends Error {
 };
 var CLI_CAPTURE_MAX = 16e3;
 function spawnCmd(bin, args, cwd) {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const child = spawn(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const chunks = [];
     child.stdout?.on("data", (d) => {
@@ -8647,7 +8653,7 @@ function spawnCmd(bin, args, cwd) {
     });
     child.on("error", (err) => reject(err));
     child.on("close", (code) => {
-      if (code === 0) return resolve3();
+      if (code === 0) return resolve4();
       const captured = chunks.join("");
       const tail = captured.length > CLI_CAPTURE_MAX ? captured.slice(-CLI_CAPTURE_MAX) : captured;
       reject(new CliEffectError(bin, code, tail.trim() || void 0));
@@ -8745,7 +8751,7 @@ function defaultTurnMonitor(sink) {
   return { onProgress: sink, heartbeatMs, inactivityTimeoutMs };
 }
 function spawnClaudeStreaming(args, cwd, monitorOverride) {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const child = spawn("claude", args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const lines = [];
     let sawTooLong = false;
@@ -8881,7 +8887,7 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
       recordAgentTranscript(cwd, tx);
       const parsed = parseTurnUsage(lines);
       if (parsed) recordAgentUsage(cwd, parsed);
-      resolve3(parsed);
+      resolve4(parsed);
     });
   });
 }
