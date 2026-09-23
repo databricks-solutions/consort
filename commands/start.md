@@ -128,12 +128,12 @@ Before the create questions, on the user's **first** time only, offer the bundle
   - **project name** (kebab-case), **parent directory** (default: the parent of cwd, else `~/code`), and **Databricks host** (offer `$DATABRICKS_HOST` / `~/.databrickscfg`). These are FREE TEXT: ask them in plain prose, and do NOT put them through a multiple-choice question (that is what triggers an "Invalid tool parameters" error: a text answer has no options).
   - **GitHub owner, or `--no-github`**: the one genuine either/or, and it sets the tier count. A GitHub owner ⇒ tiers `2` (prod + staging); `--no-github` ⇒ tiers `1` (prod only). This is the only decision worth a structured choice.
 
-  Then create the project (below), `cd` in, **refresh the project's runtime kit to the current release** (the Part-2 kit download – detach + relay it live, exactly as in the Create flow's Part 2 below), and only AFTER it reports `status=done` bring in the seed files:
+  Then create the project (below), `cd` in, **install the project's runtime kit at the current release** (the Part-2 kit step – instant when the bootstrap pre-warmed this version; detach + relay it live, exactly as in the Create flow's Part 2 below), and only AFTER it reports `status=done` bring in the seed files:
   ```bash
-  ./scripts/lk --refresh --detach   # detached; relay its live log poll-once (see Part 2) until status=done
-  ./scripts/lk lakebase-stage-first-project   # run this ONLY after the refresh above has finished
+  ./scripts/lk --install --detach   # install-if-cold (instant when pre-warmed); relay its live log poll-once (see Part 2) until status=done
+  ./scripts/lk lakebase-stage-first-project   # run this ONLY after the install above has finished
   ```
-  The `--refresh` matters: the Consort toolkit is cached per version in a shared location (`~/.cache/consort/<ref>`), so a project created after you last used an OLDER kit can otherwise run that stale cache and miss newly-added bins like `lakebase-stage-first-project`. `--refresh` reinstalls it unconditionally, so the project runs the kit you just installed. (If `--refresh` reports the bin still missing, your Consort plugin itself is behind – update it per "Check for a newer Consort" above – then re-run.)
+  `--install` (NOT `--refresh`) is the right command here: it installs on a cold cache, on an INCOMPLETE cache (every package.json bin target verified), or when the tag's sha moved – so a stale cache still gets repaired (the old "miss newly-added bins like `lakebase-stage-first-project`" case) – but skips the download entirely when the cache is warm at this version (the bootstrap pre-warm). `--refresh` (`--rewarm`) force-reinstalls unconditionally and would throw that away. (If `--install` reports the bin still missing, your Consort plugin itself is behind – update it per "Check for a newer Consort" above – then re-run.)
   It copies the example's intake (`product-overview.md`, `nfrs.md`, `design-brief.md`, and the warehouse icon) and one `feature-request.md` per feature into the new project's `.consort/`. Then resume: **`/plan`** (the Spec Author proposes a sprint from the staged intake), or **`/design F1-stock-visibility`** to jump straight into the first feature. `examples/first-project/README.md` in the kit is the walkthrough.
 - **If they pick their own project:** proceed with the questions below as normal.
 
@@ -171,7 +171,7 @@ Then run the kit's creator YOURSELF, silently — build the command internally a
 > "Setting up your project now — a one-time setup in two parts. I'll narrate each step as it happens and tell you the moment it's done (or if anything needs you).
 >
 > **Part 1 – provisioning:** GitHub repo → Lakebase database → project files (app + `.consort/` + E2E) → CI service principal → self-hosted CI runner → (tiers 2/3 only) staging tier → initial commit + push.
-> **Part 2 – Consort toolkit install:** right after create I run the kit refresh once for this version (near-instant when the bootstrap pre-warmed this version's cache; instant on every command afterward)."
+> **Part 2 – Consort toolkit install:** right after create I run the kit install once for this version (a no-op when the bootstrap pre-warmed this version's cache; instant on every command afterward)."
 
 **Do not confuse the two parts when you narrate.** Part 1 (scaffolding) does NOT download the toolkit – it runs from the plugin's ALREADY-installed binary, so the first thing you see is `[doctor] …`, not a download. The ONLY kit download is Part 2 (the refresh). Never label a kit download as "Part 1".
 
@@ -236,13 +236,13 @@ On success, `cd` into the new project and run the kit refresh YOURSELF (Part 2 b
 
 ```
 cd <parent-dir>/<name>
-./scripts/lk --refresh --detach   # Part 2 kit install – detached + monitored (see below), NOT foreground
+./scripts/lk --install --detach   # Part 2 kit install – instant when pre-warmed; detached + monitored (see below), NOT foreground
 ```
 
-**Part 2 – the kit install (`./scripts/lk --refresh --detach`): detach + MONITOR it the same way, NEVER foreground.** On a machine whose bootstrap pre-warmed this version's cache this is a seconds-long no-op; on a cold cache it is the one-time download. A foreground run buffers behind a spinner and can hit the harness bash-timeout. Pass **`--detach`**: `lk` re-launches the install in its OWN session and returns at once, printing the child pid + a live-log path. The install streams **what is being installed** to that log (each package: `lk: npm http fetch GET 200 …/<pkg>…`). Monitor it with the SAME canonical watch command as the scaffolder, using the PLUGIN's `consort-watch` (the project's own `./scripts/lk consort-watch` may not be installed YET – that is what this step installs):
+**Part 2 – the kit install (`./scripts/lk --install --detach`): detach + MONITOR it the same way, NEVER foreground.** `--install` SKIPS the download when the cache is already complete at this version (every bin target present, tag sha unchanged) – the bootstrap pre-warm case, a seconds-long no-op – and installs on a cold, incomplete, or tag-moved cache (the stale-cache repair). Do NOT use `--refresh`/`--rewarm` here: it force-reinstalls unconditionally, re-downloading a toolkit that is already installed. A foreground run buffers behind a spinner and can hit the harness bash-timeout. Pass **`--detach`**: `lk` re-launches the install in its OWN session and returns at once, printing the child pid + a live-log path. The install streams **what is being installed** to that log (each package: `lk: npm http fetch GET 200 …/<pkg>…`). Monitor it with the SAME canonical watch command as the scaffolder, using the PLUGIN's `consort-watch` (the project's own `./scripts/lk consort-watch` may not be installed YET – that is what this step installs):
 ```bash
 # from inside the freshly created project dir:
-./scripts/lk --refresh --detach
+./scripts/lk --install --detach
 #   -> prints: "toolkit install detached ... as pid <PID>" + "live log: <LOG>".
 # MONITOR it (Monitor tool, PLUGIN's consort-watch — always present), SAME command as the scaffolder:
 #   node "$CONSORT_ROOT/dist/bin/consort/watch.cli.js" --monitor --log "<LOG>" --pid "<PID>"

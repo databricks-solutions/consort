@@ -39,3 +39,26 @@ describe("/consort:start pins create-project to the release version", () => {
     expect(startMd).toMatch(/KIT_REF="\$\{LAKEBASE_KIT_REF:-\}"/);
   });
 });
+
+describe("/consort:start Part 2 (kit install) uses install-if-cold, never a forced reinstall", () => {
+  const startMd = fs.readFileSync(path.join(repoRoot, "commands", "start.md"), "utf8");
+
+  it("runs the Part-2 toolkit step as `lk --install` (warm-cache skip), NOT `lk --refresh`", () => {
+    // `--refresh` is an alias for --rewarm, which force-reinstalls UNCONDITIONALLY:
+    // Part 2 re-downloaded the toolkit even when the bootstrap pre-warm had already
+    // installed this version's cache. `--install` skips when the cache is complete
+    // at the pinned tag (bin-completeness + tag-sha checks) and still repairs a
+    // cold / incomplete / tag-moved cache.
+    expect(startMd).toContain("./scripts/lk --install --detach");
+    expect(startMd).not.toContain("./scripts/lk --refresh --detach   # Part 2");
+    expect(startMd).not.toContain("Part 2 – the kit install (`./scripts/lk --refresh --detach`)");
+  });
+
+  it("keeps --refresh only on the deliberate upgrade / rollback paths", () => {
+    // The remaining --refresh sites are the explicit kit-upgrade ritual and its
+    // rollback, where a forced fresh download is the point.
+    const refreshSites = startMd.match(/\.\/scripts\/lk --refresh/g) ?? [];
+    expect(refreshSites.length).toBeLessThanOrEqual(4);
+    expect(startMd).toContain("consort-upgrade --rollback");
+  });
+});
