@@ -52,6 +52,7 @@ import { checkContractClean, supersededTestCandidates } from "../architecture/co
 import { readRefactorVerifyAssessMarker, writeRefactorVerifyAssessMarker, clearRefactorVerifyAssessMarker } from "../smells/refactor-verify-assess.js";
 import { checkMigrationAppClean } from "../architecture/migration-app-clean.js";
 import { checkShippedMigrationImmutable } from "../architecture/migration-history-clean.js";
+import { checkTestSmells } from "../architecture/test-smell-clean.js";
 import { emitAgentLogEvent, type AgentLogEventInput } from "../../consort/logging/agent-log.js";
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -631,6 +632,20 @@ export async function greenOpenCycle(
       try {
         const hist = checkShippedMigrationImmutable({ projectDir: dirname(consortDir) });
         if (!hist.clean && hist.remediation) result = { passed: false, summary: hist.remediation };
+      } catch {
+        /* advisory scan: a gate error must never fail the cycle */
+      }
+    }
+    // Test-authoring-smell gate (issue #199): loose locators, vi.mock TDZ,
+    // framenavigated reload detectors, DELETE teardowns, umbrella IntegrityError,
+    // and schema-unsatisfiable table refs make tests flaky/unsatisfiable while the
+    // APP is correct – the verify cannot be trusted to surface them (a strict-mode
+    // collision is data-dependent; a TDZ suite reports "0 tests"). Fail the cycle
+    // here with per-smell fixes routed to the test's AUTHOR, never a code repair.
+    if (result.passed) {
+      try {
+        const smells = checkTestSmells({ projectDir: dirname(consortDir) });
+        if (!smells.clean && smells.remediation) result = { passed: false, summary: smells.remediation };
       } catch {
         /* advisory scan: a gate error must never fail the cycle */
       }

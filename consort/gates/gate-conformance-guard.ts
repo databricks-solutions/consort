@@ -385,6 +385,43 @@ function fitnessClauseCoverageReason(consortDir: string, featureId: string, test
 }
 
 /**
+ * ac_id-reference test_list-gate condition (issue #199): every test-list item's
+ * `ac_id` MUST resolve to a real AC file under the feature's per-story acs dirs. A
+ * dangling ref (typo, re-slug, an AC that was renamed or never existed) anchors
+ * nothing: the item's coverage silently lands nowhere, and the story the author
+ * THOUGHT it traced to ships uncovered. (Semantic mistagging – a valid ac_id on
+ * the wrong AC's meaning – stays with the reflect pass; this catches the
+ * deterministic dangling class.) Null when all refs resolve (or none to check).
+ */
+export function acReferenceReason(consortDir: string, featureId: string, testListJson: string): string | null {
+  const storiesDir = join(consortDir, "features", featureId, "stories");
+  if (!existsSync(storiesDir)) return null;
+  const known = new Set<string>();
+  for (const story of readdirSync(storiesDir)) {
+    const acsDir = join(storiesDir, story, "acs");
+    if (!existsSync(acsDir)) continue;
+    for (const f of readdirSync(acsDir)) {
+      if (f.endsWith(".json")) known.add(f.replace(/\.json$/, ""));
+    }
+  }
+  if (known.size === 0) return null;
+  let tl: { items?: Array<{ id?: string; ac_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch {
+    return null; // malformed JSON is reported by the schema conformance check
+  }
+  const dangling = (tl.items ?? []).filter((i) => typeof i.ac_id === "string" && !known.has(i.ac_id));
+  if (dangling.length === 0) return null;
+  return (
+    `test-list ac_id references failed: ${dangling.map((i) => `${i.id ?? "?"} -> '${i.ac_id}'`).join("; ")} ` +
+    `do not resolve to any AC file under stories/*/acs/ (issue #199's mistagging class: an item attached to a ` +
+    `non-existent AC anchors nothing, and the story it was meant to cover ships uncovered). Re-point each at ` +
+    `the correct existing AC id.`
+  );
+}
+
+/**
  * E2E-coverage test_list-gate condition: every AC tagged `layer:"E2E"` (a client<->server
  * contract – the client rendering a REAL server response) MUST have a real Playwright e2e in the
  * test-list (scenario_file under an `e2e/` path), never only a mocked component test whose
@@ -750,6 +787,10 @@ export function resolveArtifactInputs(
       // must carry >=1 kind:"fitness" item (the architectural regression guard).
       // Claimed as a hard-block in test-list.schema.json but previously unwired.
       if (tlJson !== undefined) {
+        // ac_id references (issue #199): every item's ac_id must resolve to a real
+        // AC file under the feature's stories (a dangling ref anchors nothing).
+        const acRefReason = acReferenceReason(consortDir, featureId, tlJson);
+        if (acRefReason !== null) return { reason: acRefReason };
         const fitnessReason = fitnessCoverageReason(consortDir, featureId, tlJson);
         if (fitnessReason !== null) return { reason: fitnessReason };
         // Per-clause fitness coverage (Gate 3): an NFR on the ATOMIC

@@ -53,6 +53,7 @@ export default defineConfig({
     "bin/consort/project-canon-notes.cli": "bin/consort/project-canon-notes.cli.ts",
     "bin/consort/migration-app-clean.cli": "bin/consort/migration-app-clean.cli.ts",
     "bin/consort/migration-history-clean.cli": "bin/consort/migration-history-clean.cli.ts",
+    "bin/consort/test-smell-clean.cli": "bin/consort/test-smell-clean.cli.ts",
     "bin/consort/imports-clean.cli": "bin/consort/imports-clean.cli.ts",
     "bin/consort/layering-clean.cli": "bin/consort/layering-clean.cli.ts",
     "bin/consort/ux-clean.cli": "bin/consort/ux-clean.cli.ts",
