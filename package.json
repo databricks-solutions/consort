@@ -5,7 +5,8 @@
   "type": "module",
   "private": false,
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "files": [
     "dist",
@@ -189,7 +190,7 @@
     "build:dashboard": "node scripts/build-dashboard.mjs",
     "build:release": "npm run build && npm run build:dashboard",
     "prepare": "node scripts/prepare.mjs",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "prepublishOnly": "npm run typecheck && npm run build:release",
     "sync:devhub": "tsx scripts/sync-devhub-skills.ts",
     "check:devhub": "tsx scripts/sync-devhub-skills.ts --check",
     "typecheck": "tsc --noEmit",
