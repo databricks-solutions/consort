@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -89,9 +89,14 @@ function runInstall(opts: {
   args: string[];
   claudeShim?: boolean;
   stripRealClaude?: boolean;
+  /** Plant a fake installed plugin under the fake HOME (triggers the update path). */
+  fakePluginInstalled?: boolean;
 }): { stdout: string; status: number; home: string; dir: string } {
   const dir = shimDir({});
   const home = mkdtempSync(join(tmpdir(), "consort-bootstrap-home-"));
+  if (opts.fakePluginInstalled) {
+    mkdirSync(join(home, ".claude/plugins/cache/databricks-solutions/consort/0.3.96"), { recursive: true });
+  }
   if (opts.claudeShim) {
     const p = join(dir, "claude");
     writeFileSync(p, `#!/usr/bin/env bash\necho "$@" >> "${home}/claude-calls.log"\nexit 0\n`);
@@ -220,6 +225,19 @@ describe("bootstrap.sh plugin install + toolkit pre-warm", () => {
     const calls = readFileSync(join(home, "claude-calls.log"), "utf8");
     expect(calls).toContain("plugin marketplace add databricks-solutions/consort");
     expect(calls).toContain("plugin install -y consort@databricks-solutions");
+    expect(status).toBe(0);
+  });
+
+  it("--yes UPDATES an already-installed plugin (install is a documented no-op there)", () => {
+    const { stdout, status, home } = runInstall({
+      args: ["--yes"],
+      claudeShim: true,
+      fakePluginInstalled: true,
+    });
+    expect(stdout).toContain("Consort plugin updated to the latest release");
+    const calls = readFileSync(join(home, "claude-calls.log"), "utf8");
+    expect(calls).toContain("plugin update -y consort@databricks-solutions");
+    expect(calls).not.toContain("plugin install");
     expect(status).toBe(0);
   });
 

@@ -318,6 +318,37 @@ fi
 # multi-minute "Part 2" toolkit download at create time: its `lk --refresh`
 # finds the cache warm and returns at once. Every step here degrades to a hint,
 # never a bootstrap failure - /consort:start installs all of it on demand.
+
+# prewarm_toolkit: download the kit + substrate into the shared version-keyed
+# cache, using the JUST-installed/updated plugin's own lk shim (one code path
+# owns the cache layout), registry-first. Always returns 0: every failure is a
+# hint, never a bootstrap failure.
+prewarm_toolkit() {
+  local CONSORT_ROOT LK KIT_VER SCM_VER
+  # `|| true` INSIDE the substitution: a missing cache dir makes ls exit 1, and
+  # under pipefail that would abort the script (the fresh-install case!).
+  CONSORT_ROOT="$(ls -d "$HOME/.claude/plugins/cache/databricks-solutions/consort"/*/dist 2>/dev/null | sort -V | tail -1 | sed 's#/dist$##' || true)"
+  # The lk shim ships with the SUBSTRATE package, not the kit's templates: in an
+  # installed plugin it lives under node_modules (the kit bundles scm-utils as a
+  # dependency; consort's own templates/project/common/scripts has NO lk).
+  LK="$CONSORT_ROOT/node_modules/@databricks-solutions/lakebase-scm-utils/templates/project/common/scripts/lk"
+  if [ -z "$CONSORT_ROOT" ] || [ ! -f "$LK" ]; then return 0; fi
+  KIT_VER="$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
+  SCM_VER="$(node -e 'const s=((require(process.argv[1]).dependencies)||{})["@databricks-solutions/lakebase-scm-utils"]||"";const m=s.match(/#v?(\d+\.\d+\.\d+)\b/)||s.match(/^v?(\d+\.\d+\.\d+)$/);process.stdout.write(m?m[1]:"")' "$CONSORT_ROOT/package.json" 2>/dev/null || true)"
+  if [ -z "$KIT_VER" ] || [ -z "$SCM_VER" ]; then
+    echo -e "  ${YELLOW}!${NC} Could not read the plugin's kit/substrate versions; /consort:start installs the toolkit on demand."
+    return 0
+  fi
+  echo "  Pre-downloading the Consort toolkit (kit v$KIT_VER + substrate v$SCM_VER), one-time…"
+  if LAKEBASE_KIT_PACKAGE="@databricks-solutions/consort" \
+     LAKEBASE_KIT_REF="v$KIT_VER" LAKEBASE_SCM_UTILS_REF="v$SCM_VER" \
+     bash "$LK" --warm; then
+    echo -e "  ${GREEN}✓${NC} Toolkit cached - a first project's setup skips the toolkit download"
+  else
+    echo -e "  ${YELLOW}!${NC} Toolkit pre-download failed; /consort:start installs it on demand (no action needed)."
+  fi
+}
+
 echo
 if ! have claude; then
   echo -e "${YELLOW}Claude Code CLI (claude) not found on PATH.${NC}"
@@ -333,44 +364,29 @@ elif [ "$CHECK_ONLY" = true ]; then
   fi
 elif confirm "Install the Consort plugin for Claude Code (+ pre-download the toolkit)?"; then
   # Add-or-refresh the marketplace (add fails when it already exists; update then
-  # pulls the latest catalog so the install sees the newest version).
+  # pulls the latest catalog so the install/update sees the newest version).
   if ! { claude plugin marketplace add databricks-solutions/consort 2>/dev/null \
          || claude plugin marketplace update databricks-solutions; }; then
     echo -e "  ${YELLOW}!${NC} Could not add/refresh the marketplace (offline?). Later: claude plugin marketplace add databricks-solutions/consort"
+  elif ls -d "$HOME/.claude/plugins/cache/databricks-solutions/consort"/*/ >/dev/null 2>&1; then
+    # Already installed: `plugin install` is a documented no-op, so UPDATE to the
+    # catalog's latest - a re-run must move an older plugin forward.
+    if claude plugin update -y consort@databricks-solutions; then
+      echo -e "  ${GREEN}✓${NC} Consort plugin updated to the latest release (restart Claude Code to apply)"
+      prewarm_toolkit
+    else
+      echo -e "  ${YELLOW}!${NC} Plugin update failed. Retry later: claude plugin update consort@databricks-solutions"
+    fi
   elif ! claude plugin install -y consort@databricks-solutions; then
     echo -e "  ${YELLOW}!${NC} Plugin install failed. Retry later: claude plugin install consort@databricks-solutions"
   else
     echo -e "  ${GREEN}✓${NC} Consort plugin installed"
-    # Pre-warm the toolkit from the JUST-installed plugin: its own shipped lk
-    # shim does the install (one code path owns the cache layout), registry-first.
-    # `|| true` INSIDE the substitution: a missing cache dir makes ls exit 1, and
-    # under pipefail that would abort the script (the fresh-install case!).
-    CONSORT_ROOT="$(ls -d "$HOME/.claude/plugins/cache/databricks-solutions/consort"/*/dist 2>/dev/null | sort -V | tail -1 | sed 's#/dist$##' || true)"
-    # The lk shim ships with the SUBSTRATE package, not the kit's templates: in an
-    # installed plugin it lives under node_modules (the kit bundles scm-utils as a
-    # dependency; consort's own templates/project/common/scripts has NO lk).
-    LK="$CONSORT_ROOT/node_modules/@databricks-solutions/lakebase-scm-utils/templates/project/common/scripts/lk"
-    if [ -n "$CONSORT_ROOT" ] && [ -f "$LK" ]; then
-      KIT_VER="$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
-      SCM_VER="$(node -e 'const s=((require(process.argv[1]).dependencies)||{})["@databricks-solutions/lakebase-scm-utils"]||"";const m=s.match(/#v?(\d+\.\d+\.\d+)\b/)||s.match(/^v?(\d+\.\d+\.\d+)$/);process.stdout.write(m?m[1]:"")' "$CONSORT_ROOT/package.json" 2>/dev/null || true)"
-      if [ -n "$KIT_VER" ] && [ -n "$SCM_VER" ]; then
-        echo "  Pre-downloading the Consort toolkit (kit v$KIT_VER + substrate v$SCM_VER), one-time…"
-        if LAKEBASE_KIT_PACKAGE="@databricks-solutions/consort" \
-           LAKEBASE_KIT_REF="v$KIT_VER" LAKEBASE_SCM_UTILS_REF="v$SCM_VER" \
-           bash "$LK" --warm; then
-          echo -e "  ${GREEN}✓${NC} Toolkit cached - a first project's setup skips the toolkit download"
-        else
-          echo -e "  ${YELLOW}!${NC} Toolkit pre-download failed; /consort:start installs it on demand (no action needed)."
-        fi
-      else
-        echo -e "  ${YELLOW}!${NC} Could not read the plugin's kit/substrate versions; /consort:start installs the toolkit on demand."
-      fi
-    fi
+    prewarm_toolkit
   fi
 else
   echo "  Skipped. When you are ready:"
   echo "    claude plugin marketplace add databricks-solutions/consort"
-  echo "    claude plugin install consort@databricks-solutions"
+  echo "    claude plugin install consort@databricks-solutions   # or: plugin update if already installed"
 fi
 
 echo
