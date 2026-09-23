@@ -9,8 +9,10 @@
 // so the honest-GREEN backstop still halts on any UNflagged regression.
 
 import * as fs from "node:fs";
-import { cycleDir } from "../../consort/config/consort-paths.js";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { cycleDir, ALL_ARTIFACT_ROOTS } from "../../consort/config/consort-paths.js";
+import { dirname, join } from "node:path";
 
 export interface SupersededTests {
   /** Test files / node-ids the new AC supersedes; the Driver may refactor ONLY these. */
@@ -205,6 +207,14 @@ export interface GreenFailure {
    *  routes it to a raise-to-hil that offers `consort-reopen-story --from <fromRole>` (the proportionate
    *  build->design go-back), NOT a Driver repair — the code can't fix a test that is wrong. */
   specDefect?: { fromRole?: string; reason?: string };
+  /** The working-tree state this failure was recorded AGAINST (issue #202):
+   *  `headSha` = git HEAD at write time; `dirtySha` = a sha1 of the porcelain diff
+   *  of CODE paths only (runtime artifacts excluded, so drive churn never counts).
+   *  readGreenFailure treats the record as STALE when the tree has since changed
+   *  (a fix already landed, committed or not) and deletes it, so a resume
+   *  re-verifies fresh instead of re-raising an already-fixed defect. Absent on
+   *  records from older kits (those are kept as-is, no staleness judgment). */
+  treeState?: { headSha: string; dirtySha: string };
 }
 
 /** Bound on assess->repair self-heal rounds for one GREEN-verify failure before
@@ -222,6 +232,39 @@ export function greenFailureJson(
   return join(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 
+/** Prefixes whose churn must NEVER count toward a tree-state change: the run's
+ *  own runtime artifacts (cycle records, drive logs, workflow state) change every
+ *  turn, and vendored/build dirs are not source. Without this every marker would
+ *  read stale on the very next tick. Derived from the kit's artifact roots. */
+const TREE_STATE_EXCLUDE_PREFIXES: readonly string[] = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/",
+];
+
+/** The working-tree state right now: HEAD sha + a sha1 of `git status --porcelain`
+ *  restricted to CODE paths (runtime artifacts excluded). undefined when git
+ *  cannot answer (not a repo / no commits yet) – callers then make no staleness
+ *  judgment (advisory, never a false invalidation). */
+function computeTreeState(projectDir: string): { headSha: string; dirtySha: string } | undefined {
+  try {
+    const headSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectDir, encoding: "utf8" }).trim();
+    const porcelain = execFileSync("git", ["status", "--porcelain"], { cwd: projectDir, encoding: "utf8" });
+    const codeLines = porcelain
+      .split("\n")
+      .filter((l) => l.trim().length > 0)
+      .filter((l) => !TREE_STATE_EXCLUDE_PREFIXES.some((pfx) => l.slice(3).startsWith(pfx)));
+    const dirtySha = createHash("sha1").update(codeLines.join("\n")).digest("hex");
+    return { headSha, dirtySha };
+  } catch {
+    return undefined;
+  }
+}
+
 export function readGreenFailure(
   tdd: string,
   feature: string,
@@ -231,7 +274,20 @@ export function readGreenFailure(
   const file = greenFailureJson(tdd, feature, story, ac);
   if (!fs.existsSync(file)) return undefined;
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as GreenFailure;
+    const value = JSON.parse(fs.readFileSync(file, "utf8")) as GreenFailure;
+    // Stale-failure invalidation (issue #202): the record was made against a tree
+    // that has since changed (a fix landed – a new commit, or uncommitted code
+    // edits). Acting on it would re-raise an already-fixed defect on resume, so
+    // delete it and read as no-failure: the drive then re-verifies FRESH, and a
+    // still-real failure re-records against the current code.
+    if (value.treeState) {
+      const cur = computeTreeState(dirname(tdd));
+      if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
+        fs.rmSync(file, { force: true });
+        return undefined;
+      }
+    }
+    return value;
   } catch {
     return undefined;
   }
@@ -244,8 +300,17 @@ export function writeGreenFailure(
   ac: string,
   value: GreenFailure,
 ): void {
+  // Stamp the tree state this failure is recorded against (issue #202). A caller
+  // that already carries one (a bookkeeping merge like markRegressionFixAttempted)
+  // keeps it; a fresh record (the initial failure, or a re-arm after a fresh
+  // verify) is stamped NOW. Best-effort: no stamp when git cannot answer.
+  let stamped = value;
+  if (stamped.treeState === undefined) {
+    const ts = computeTreeState(dirname(tdd));
+    if (ts) stamped = { ...stamped, treeState: ts };
+  }
   fs.mkdirSync(cycleDir(tdd, feature, story, ac), { recursive: true });
-  fs.writeFileSync(greenFailureJson(tdd, feature, story, ac), JSON.stringify(value, null, 2) + "\n");
+  fs.writeFileSync(greenFailureJson(tdd, feature, story, ac), JSON.stringify(stamped, null, 2) + "\n");
 }
 
 /** Remove the marker (the verify passed, or the cycle moved on). */
