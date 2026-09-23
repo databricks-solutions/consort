@@ -59,9 +59,13 @@ log(`node=${process.version} platform=${process.platform} arch=${process.arch}`)
 log(`mem=${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`);
 
 if (isDevClone) {
-  log("dev clone path: sync + build + husky");
+  // build:release, NOT plain build: tsup's `clean: true` wipes ALL of dist/ –
+  // including the committed dist/dashboard bundle – and only build:dashboard
+  // re-assembles it. A plain build here (npm pack/publish run prepare) would
+  // leave the packed artifact with a pruned dashboard.
+  log("dev clone path: sync + build:release + husky");
   run("sync-devhub-skills", "npx", ["--no-install", "tsx", "scripts/sync-devhub-skills.ts"]);
-  run("npm-build", "npm", ["run", "build"]);
+  run("npm-build", "npm", ["run", "build:release"]);
   run("husky", "npx", ["--no-install", "husky"]);
 } else {
   // Consumer install (npx / npm install github:...). devDependencies are
