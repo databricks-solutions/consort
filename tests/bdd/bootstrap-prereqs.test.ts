@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -79,6 +79,38 @@ function run(shims: Shims): { stdout: string; status: number } {
   } catch (err) {
     const e = err as { stdout?: string; status?: number };
     return { stdout: e.stdout ?? "", status: e.status ?? 1 };
+  }
+}
+
+/** Variant for the plugin-install section: control HOME (the plugin cache lookup
+ *  is $HOME-relative), pass flags, optionally shim a `claude` CLI that records its
+ *  invocations, and optionally hide the real claude from PATH entirely. */
+function runInstall(opts: {
+  args: string[];
+  claudeShim?: boolean;
+  stripRealClaude?: boolean;
+}): { stdout: string; status: number; home: string; dir: string } {
+  const dir = shimDir({});
+  const home = mkdtempSync(join(tmpdir(), "consort-bootstrap-home-"));
+  if (opts.claudeShim) {
+    const p = join(dir, "claude");
+    writeFileSync(p, `#!/usr/bin/env bash\necho "$@" >> "${home}/claude-calls.log"\nexit 0\n`);
+    chmodSync(p, 0o755);
+  }
+  // stripRealClaude: the dev machine HAS claude on PATH, so "absent" only exists
+  // behind a minimal PATH (the shims + the coreutils the script itself needs).
+  const path = opts.stripRealClaude
+    ? `${dir}:/usr/bin:/bin`
+    : `${dir}:${process.env.PATH}`;
+  try {
+    const stdout = execFileSync("bash", [BOOTSTRAP, ...opts.args], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: path, HOME: home, SHELL: "/bin/bash" },
+    });
+    return { stdout, status: 0, home, dir };
+  } catch (err) {
+    const e = err as { stdout?: string; status?: number };
+    return { stdout: e.stdout ?? "", status: e.status ?? 1, home, dir };
   }
 }
 
@@ -162,6 +194,40 @@ describe("bootstrap.sh uv handling (language-scoped, like the JDK)", () => {
     expect(stdout).toContain("uv not found on PATH");
     expect(stdout).toContain("Advisories (not blocking)");
     expect(stdout).toContain("All required tools are present");
+    expect(status).toBe(0);
+  });
+});
+
+describe("bootstrap.sh plugin install + toolkit pre-warm", () => {
+  it("prints the manual plugin steps (never fails) when no claude CLI is present", () => {
+    const { stdout, status } = runInstall({ args: ["--check-only"], stripRealClaude: true });
+    expect(stdout).toContain("Claude Code CLI (claude) not found");
+    expect(stdout).toContain("claude plugin marketplace add databricks-solutions/consort");
+    expect(status).toBe(0);
+  });
+
+  it("--check-only reports an uninstalled plugin without installing it", () => {
+    const { stdout, status, home } = runInstall({ args: ["--check-only"], claudeShim: true });
+    expect(stdout).toContain("Consort plugin not installed");
+    // No claude invocation at all in report-only mode.
+    expect(existsSync(join(home, "claude-calls.log"))).toBe(false);
+    expect(status).toBe(0);
+  });
+
+  it("--yes installs the plugin via the claude CLI (marketplace add + install -y)", () => {
+    const { stdout, status, home } = runInstall({ args: ["--yes"], claudeShim: true });
+    expect(stdout).toContain("Consort plugin installed");
+    const calls = readFileSync(join(home, "claude-calls.log"), "utf8");
+    expect(calls).toContain("plugin marketplace add databricks-solutions/consort");
+    expect(calls).toContain("plugin install -y consort@databricks-solutions");
+    expect(status).toBe(0);
+  });
+
+  it("--yes skips the toolkit pre-warm (with a hint) when the plugin cache is absent", () => {
+    // The pre-warm resolves the JUST-installed plugin under ~/.claude/plugins/cache;
+    // the shimmed install writes nothing there, so the warm must skip gracefully.
+    const { stdout, status } = runInstall({ args: ["--yes"], claudeShim: true });
+    expect(stdout).not.toContain("Pre-downloading the Consort toolkit");
     expect(status).toBe(0);
   });
 });

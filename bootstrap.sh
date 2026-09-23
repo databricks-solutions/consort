@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 #
-# consort - one-line bootstrap: get the tools in place, then point you at /consort:start.
+# consort - one-line bootstrap: install Consort, then point you at /consort:start.
 #
 # Consort runs against a real Lakebase database (no mock mode). This script does
 # the "assemble the tools by hand" work for you: it detects each required tool
 # (Node, npm, Python, JDK, gh, the Databricks CLI), offers to install or upgrade
 # what is missing, and checks that gh and the Databricks CLI are authenticated.
+# It then installs the Consort plugin for Claude Code (when the claude CLI is
+# present) and pre-downloads the toolkit into the shared version-keyed cache, so
+# a first project's /consort:start does not stop for the toolkit download (the
+# "Part 2" install that otherwise happens at create time).
 #
 # It deliberately does NOT probe whether your workspace has Lakebase enabled.
 # That check needs a specific workspace target, and there is no target until you
@@ -308,12 +312,68 @@ if [ "${#AUTH_REMINDERS[@]}" -gt 0 ]; then
   for r in "${AUTH_REMINDERS[@]}"; do echo "  $r"; done
 fi
 
+# --- Install the Consort plugin + pre-warm the toolkit caches -----------------
+# The toolkit (kit + substrate) lives in a shared version-keyed cache (~/.cache).
+# Pre-warming it here is what lets a FIRST project's /consort:start skip the
+# multi-minute "Part 2" toolkit download at create time: its `lk --refresh`
+# finds the cache warm and returns at once. Every step here degrades to a hint,
+# never a bootstrap failure - /consort:start installs all of it on demand.
+echo
+if ! have claude; then
+  echo -e "${YELLOW}Claude Code CLI (claude) not found on PATH.${NC}"
+  echo "  Install Claude Code, then add the plugin:"
+  echo "    claude plugin marketplace add databricks-solutions/consort"
+  echo "    claude plugin install consort@databricks-solutions"
+  echo "  (Using a different coding agent? install.sh copies the skill trees instead.)"
+elif [ "$CHECK_ONLY" = true ]; then
+  if ls -d "$HOME/.claude/plugins/cache/databricks-solutions/consort"/*/ >/dev/null 2>&1; then
+    echo -e "  ${GREEN}✓${NC} Consort plugin installed"
+  else
+    echo -e "  ${YELLOW}!${NC} Consort plugin not installed (re-run without --check-only to install it)"
+  fi
+elif confirm "Install the Consort plugin for Claude Code (+ pre-download the toolkit)?"; then
+  # Add-or-refresh the marketplace (add fails when it already exists; update then
+  # pulls the latest catalog so the install sees the newest version).
+  if ! { claude plugin marketplace add databricks-solutions/consort 2>/dev/null \
+         || claude plugin marketplace update databricks-solutions; }; then
+    echo -e "  ${YELLOW}!${NC} Could not add/refresh the marketplace (offline?). Later: claude plugin marketplace add databricks-solutions/consort"
+  elif ! claude plugin install -y consort@databricks-solutions; then
+    echo -e "  ${YELLOW}!${NC} Plugin install failed. Retry later: claude plugin install consort@databricks-solutions"
+  else
+    echo -e "  ${GREEN}✓${NC} Consort plugin installed"
+    # Pre-warm the toolkit from the JUST-installed plugin: its own shipped lk
+    # shim does the install (one code path owns the cache layout), registry-first.
+    # `|| true` INSIDE the substitution: a missing cache dir makes ls exit 1, and
+    # under pipefail that would abort the script (the fresh-install case!).
+    CONSORT_ROOT="$(ls -d "$HOME/.claude/plugins/cache/databricks-solutions/consort"/*/dist 2>/dev/null | sort -V | tail -1 | sed 's#/dist$##' || true)"
+    LK="$CONSORT_ROOT/templates/project/common/scripts/lk"
+    if [ -n "$CONSORT_ROOT" ] && [ -f "$LK" ]; then
+      KIT_VER="$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
+      SCM_VER="$(node -e 'const s=((require(process.argv[1]).dependencies)||{})["@databricks-solutions/lakebase-scm-utils"]||"";const m=s.match(/#v?(\d+\.\d+\.\d+)\b/)||s.match(/^v?(\d+\.\d+\.\d+)$/);process.stdout.write(m?m[1]:"")' "$CONSORT_ROOT/package.json" 2>/dev/null || true)"
+      if [ -n "$KIT_VER" ] && [ -n "$SCM_VER" ]; then
+        echo "  Pre-downloading the Consort toolkit (kit v$KIT_VER + substrate v$SCM_VER), one-time…"
+        if LAKEBASE_KIT_PACKAGE="@databricks-solutions/consort" \
+           LAKEBASE_KIT_REF="v$KIT_VER" LAKEBASE_SCM_UTILS_REF="v$SCM_VER" \
+           bash "$LK" --warm; then
+          echo -e "  ${GREEN}✓${NC} Toolkit cached - a first project's setup skips the toolkit download"
+        else
+          echo -e "  ${YELLOW}!${NC} Toolkit pre-download failed; /consort:start installs it on demand (no action needed)."
+        fi
+      else
+        echo -e "  ${YELLOW}!${NC} Could not read the plugin's kit/substrate versions; /consort:start installs the toolkit on demand."
+      fi
+    fi
+  fi
+else
+  echo "  Skipped. When you are ready:"
+  echo "    claude plugin marketplace add databricks-solutions/consort"
+  echo "    claude plugin install consort@databricks-solutions"
+fi
+
 echo
 echo -e "${BLUE}Next:${NC}"
-echo "  claude plugin marketplace add databricks-solutions/consort"
-echo "  claude plugin install consort@databricks-solutions"
-echo "  # then, in the folder for your project:"
-echo "  /consort:start"
+echo "  claude"
+echo "  /consort:start    # in the folder for your project"
 echo
 echo "/consort:start runs the full environment doctor against your chosen"
 echo "workspace, INCLUDING the check that it has Lakebase enabled, before it"

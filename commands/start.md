@@ -171,7 +171,7 @@ Then run the kit's creator YOURSELF, silently — build the command internally a
 > "Setting up your project now — a one-time setup in two parts. I'll narrate each step as it happens and tell you the moment it's done (or if anything needs you).
 >
 > **Part 1 – provisioning:** GitHub repo → Lakebase database → project files (app + `.consort/` + E2E) → CI service principal → self-hosted CI runner → (tiers 2/3 only) staging tier → initial commit + push.
-> **Part 2 – Consort toolkit install:** right after create I run the kit refresh once for this version (instant on every command afterward)."
+> **Part 2 – Consort toolkit install:** right after create I run the kit refresh once for this version (near-instant when the bootstrap pre-warmed this version's cache; instant on every command afterward)."
 
 **Do not confuse the two parts when you narrate.** Part 1 (scaffolding) does NOT download the toolkit – it runs from the plugin's ALREADY-installed binary, so the first thing you see is `[doctor] …`, not a download. The ONLY kit download is Part 2 (the refresh). Never label a kit download as "Part 1".
 
@@ -239,7 +239,7 @@ cd <parent-dir>/<name>
 ./scripts/lk --refresh --detach   # Part 2 kit install – detached + monitored (see below), NOT foreground
 ```
 
-**Part 2 – the kit install (`./scripts/lk --refresh --detach`): detach + MONITOR it the same way, NEVER foreground.** A foreground run buffers behind a spinner and can hit the harness bash-timeout. Pass **`--detach`**: `lk` re-launches the install in its OWN session and returns at once, printing the child pid + a live-log path. The install streams **what is being installed** to that log (each package: `lk: npm http fetch GET 200 …/<pkg>…`). Monitor it with the SAME canonical watch command as the scaffolder, using the PLUGIN's `consort-watch` (the project's own `./scripts/lk consort-watch` may not be installed YET – that is what this step installs):
+**Part 2 – the kit install (`./scripts/lk --refresh --detach`): detach + MONITOR it the same way, NEVER foreground.** On a machine whose bootstrap pre-warmed this version's cache this is a seconds-long no-op; on a cold cache it is the one-time download. A foreground run buffers behind a spinner and can hit the harness bash-timeout. Pass **`--detach`**: `lk` re-launches the install in its OWN session and returns at once, printing the child pid + a live-log path. The install streams **what is being installed** to that log (each package: `lk: npm http fetch GET 200 …/<pkg>…`). Monitor it with the SAME canonical watch command as the scaffolder, using the PLUGIN's `consort-watch` (the project's own `./scripts/lk consort-watch` may not be installed YET – that is what this step installs):
 ```bash
 # from inside the freshly created project dir:
 ./scripts/lk --refresh --detach
