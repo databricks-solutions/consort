@@ -850,7 +850,13 @@ export function resolveArtifactInputs(
         return { reason: "deploy-evidence records reachable=false (app not reachable on the target)" };
       }
       if (parsed.verify?.passed !== true) {
-        return { reason: "deploy-evidence records verify.passed=false (feature-verify did not pass against the running app)" };
+        return {
+          reason:
+            `deploy-evidence records verify.passed=false (feature-verify did not pass against the running app). ` +
+            `An approve cannot clear stale failed evidence (issue #198): fix the cause, then re-run the deploy ` +
+            `\`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale deploy server first: ` +
+            `\`lsof -tiTCP:8000 | xargs kill\`) to rewrite the evidence, and approve then.`,
+        };
       }
       return withConformance({ "deploy-evidence.json": evidence });
     }

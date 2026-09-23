@@ -250,6 +250,16 @@ export interface DeployState {
   /** The Navigator assessed the feature-ship failure + chose a scope set the Driver
    *  has not yet refactored. Routes ONE Driver SCOPE-DEPLOY turn (feature scope). */
   verifyRefactorPending?: boolean;
+  /** The feature deploy-evidence's verify verdict (issue #198): true = the feature
+   *  verify passed, false = it FAILED (stale evidence an approve can never clear),
+   *  undefined = no evidence yet. The deploy gate reads only gates.json, so the
+   *  derivation must read the verdict itself to route a failed deploy anywhere but
+   *  a doomed approve. */
+  verifyPassed?: boolean;
+  /** The ONE bounded re-verify after a failed deploy already ran (the
+   *  deploy-reverify.json marker exists): a still-failing verdict now routes a
+   *  terminal HIL instead of repeating an approve that cannot advance (the stall). */
+  reverifyAttempted?: boolean;
 }
 
 /** The promote phase: take the accepted feature through its PR review (the
@@ -337,6 +347,11 @@ export type WorkflowAction =
   // action kind so the build-lane invoke-role keeps its required `story` (its many
   // consumers rely on it) and this feature-scope path stays fully isolated.
   | { kind: "deploy-verify-heal"; role: "navigator" | "driver"; mode: "assess-deploy" | "refactor-deploy" }
+  // Re-verify after a FAILED feature deploy (issue #198): the deploy-evidence
+  // verdict is false and no approve can clear it, so the drive re-runs deploy+verify
+  // ONCE (the effect writes the deploy-reverify marker that bounds the retry; a
+  // repeat failure routes a terminal HIL, never a repeated approve).
+  | { kind: "deploy-verify-reverify" }
   | { kind: "await-acceptance"; story: string }
   | { kind: "accept"; story: string }
   | { kind: "complete"; story: string }
@@ -466,6 +481,7 @@ export function actionLane(action: WorkflowAction): ActionLane {
     case "deploy":
     case "approve-deploy-gate":
     case "deploy-verify-heal":
+    case "deploy-verify-reverify":
       return "deploy";
     case "deploy-complete":
     case "prepare-pr":

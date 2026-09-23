@@ -278,7 +278,30 @@ export function nextTransition(state: DriveState): WorkflowAction {
     // on pass; a repeat failure (one-shot spent) falls through to the terminal HIL.
     if (d.verifyAssessEligible) return { kind: "deploy-verify-heal", role: "navigator", mode: "assess-deploy" };
     if (d.verifyRefactorPending) return { kind: "deploy-verify-heal", role: "driver", mode: "refactor-deploy" };
-    if (!d.gateApproved) return { kind: "approve-deploy-gate" };
+    if (!d.gateApproved) {
+      // Re-verify-after-fix (issue #198): the deploy RAN but the evidence records
+      // verify.passed=false – an approve can NEVER clear stale failed evidence (the
+      // gate refuses it), so deriving approve again is the exact "repeated without
+      // advancing" stall. Route ONE bounded re-verify (re-run deploy+verify, which
+      // rewrites the evidence); a still-failing verdict after that retry is a
+      // terminal HIL with the recovery, never another approve.
+      if (d.verifyPassed === false) {
+        if (d.reverifyAttempted) {
+          return {
+            kind: "raise-to-hil",
+            source: "deploy-verify-failed",
+            reason:
+              `The feature deploy-verify still fails after a re-deploy + re-verify ` +
+              `(deploy-evidence.json records verify.passed=false). This needs a human, not another approve: ` +
+              `inspect the evidence's verify output, fix the cause, then re-run ` +
+              `\`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale ` +
+              `deploy server first: \`lsof -tiTCP:8000 | xargs kill\`) and approve the deploy gate.`,
+          };
+        }
+        return { kind: "deploy-verify-reverify" };
+      }
+      return { kind: "approve-deploy-gate" };
+    }
     // Deploy (local working-software check) done -> enter the promote phase.
     return { kind: "deploy-complete" };
   }

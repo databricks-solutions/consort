@@ -46,6 +46,7 @@ import {
   workflowStateJson,
   featureSpecJson,
   featureDeployEvidenceJson,
+  featureDeployReverifyMarkerJson,
   featureRequestMd,
   hasEstimates,
   storyAcIds,
@@ -143,6 +144,12 @@ export function readDriveContext(consortDir: string, featureId: string, projectD
   // readGates (the authoritative gate model), tolerant of a missing/legacy file.
   const deployed = fs.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
+  // The evidence VERDICT (issue #198): `deployed` above only proves the deploy RAN.
+  // A failed verify leaves approvable-looking state that no approve can clear, so
+  // the derivation needs the verdict itself to route a re-verify (bounded once)
+  // instead of the stall. Tolerant: absent/malformed evidence reads undefined.
+  const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
+  const reverifyAttempted = fs.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   // Feature-ship deploy-verify self-heal: a feature-scope contamination marker
   // (no story) makes the deploy phase route the ASSESS/SCOPE turns before the
   // gate, mirroring the per-story self-heal. Read at feature scope (storyId omitted).
@@ -192,9 +199,23 @@ export function readDriveContext(consortDir: string, featureId: string, projectD
     breakdownDone,
     loop,
     planning: { intakeReady, intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated: hasEstimates(consortDir), backlogCommitted, requestsAuthored },
-    deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending },
+    deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending, verifyPassed, reverifyAttempted },
     promote,
   };
+}
+
+/** The feature deploy-evidence's verify verdict: true/false from
+ *  deploy-evidence.json's verify.passed, undefined when the file is absent or
+ *  malformed (tolerant: a missing verdict never masquerades as a pass). */
+function readDeployVerifyPassed(consortDir: string, featureId: string): boolean | undefined {
+  try {
+    const ev = JSON.parse(fs.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8")) as {
+      verify?: { passed?: boolean };
+    };
+    return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Read one gate's approved-ness from the authoritative gate model, tolerant of

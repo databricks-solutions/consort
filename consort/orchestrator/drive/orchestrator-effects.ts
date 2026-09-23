@@ -30,6 +30,7 @@ import { readPipeline } from "../../pipeline/story-pipeline.js";
 import {
   storyJson, designGuideJson, handbackFile, storyAcIds, architectureJson, readAcLayer,
   featureProposalsMd, featureSpecJson, featureTestListJson, acsDir, planningEstimatesJson, cycleDir,
+  featureDeployReverifyMarkerJson,
 } from "../../config/consort-paths.js";
 import { kitRoot } from "../../config/kit-bin.js";
 import type { TurnKey } from "./turn-key.js";
@@ -1517,6 +1518,24 @@ export function commandsFromManifest(action: WorkflowAction, cfg: DriveEffectsCo
   return cmds;
 }
 
+/** The feature deploy+verify commands (teardown, then consort-deploy --gate, which
+ *  writes the feature deploy-evidence). Shared by the deploy step and the
+ *  deploy-verify-reverify retry (issue #198), which is the SAME deploy re-run once. */
+function deployGateCmds(f: string, cfg: DriveEffectsConfig, deployTarget: string): DriveCommand[] {
+  return [
+    { kind: "cli", bin: DEPLOY_BIN, args: ["--target", deployTarget, "--project-dir", cfg.projectDir, "--stop"] },
+    {
+      kind: "cli",
+      bin: DEPLOY_BIN,
+      args: [
+        "--target", deployTarget, "--feature", f,
+        ...(cfg.featureBranch ? ["--lakebase-branch", cfg.featureBranch] : []),
+        "--project-dir", cfg.projectDir, "--tdd-dir", cfg.consortDir, "--gate",
+      ],
+    },
+  ];
+}
+
 export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfig): DriveCommand[] {
   const f = cfg.featureId;
   const tdd = ["--feature", f, "--tdd-dir", cfg.consortDir];
@@ -1868,18 +1887,19 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
       // then fork an ephemeral child off it to classify shared-state contamination
       // (the feature-ship self-heal) instead of hard-raising to HIL on a flaky test.
       // Teardown first.
-      return [
-        { kind: "cli", bin: DEPLOY_BIN, args: ["--target", deployTarget, "--project-dir", cfg.projectDir, "--stop"] },
-        {
-          kind: "cli",
-          bin: DEPLOY_BIN,
-          args: [
-            "--target", deployTarget, "--feature", f,
-            ...(cfg.featureBranch ? ["--lakebase-branch", cfg.featureBranch] : []),
-            "--project-dir", cfg.projectDir, "--tdd-dir", cfg.consortDir, "--gate",
-          ],
-        },
-      ];
+      return deployGateCmds(f, cfg, deployTarget);
+
+    case "deploy-verify-reverify":
+      // Re-verify after a FAILED feature deploy (issue #198): the gate's approve can
+      // never clear stale failed evidence, so the drive re-runs deploy+verify ONCE.
+      // Write the bound marker FIRST – its presence + a still-failing verdict on the
+      // next tick is what makes this retry one-shot (the derivation then routes the
+      // terminal HIL, never a repeated approve). consort-deploy --gate rewrites
+      // deploy-evidence.json, so a pass flows to approve-deploy-gate next.
+      const markerFile = featureDeployReverifyMarkerJson(cfg.consortDir, f);
+      fs.mkdirSync(dirname(markerFile), { recursive: true });
+      fs.writeFileSync(markerFile, JSON.stringify({ routed_at: new Date().toISOString() }, null, 2) + "\n");
+      return deployGateCmds(f, cfg, deployTarget);
 
     case "approve-deploy-gate":
       return [

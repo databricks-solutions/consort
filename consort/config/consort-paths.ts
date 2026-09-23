@@ -173,6 +173,11 @@ export const featureGatesJson = (tdd: string, f: string): string => join(feature
 export const featureNfrsMd = (tdd: string, f: string): string => join(featureResolved(tdd, f), "nfrs.md");
 export const featureDeployEvidenceJson = (tdd: string, f: string): string =>
   join(featureResolved(tdd, f), "deploy-evidence.json");
+/** The ONE bounded re-verify marker (issue #198): written by the
+ *  deploy-verify-reverify effect, its presence + a still-failing verdict means the
+ *  retry already ran (route the terminal HIL, never a repeated approve). */
+export const featureDeployReverifyMarkerJson = (tdd: string, f: string): string =>
+  join(featureResolved(tdd, f), "deploy-reverify.json");
 
 // ── Story scope ───────────────────────────────────────────────────
 //
