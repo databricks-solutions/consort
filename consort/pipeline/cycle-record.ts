@@ -484,6 +484,17 @@ export function isAuthExpiredSummary(summary: string | undefined): boolean {
   );
 }
 
+/** True when a verify failure summary carries a DB-provisioning fault signature
+ *  (issue #197): the served database is missing schema the tests expect (an
+ *  UNMIGRATED branch serving the E2E app – a stale reused server or a DSN
+ *  mismatch) or is unreachable. This is an INFRASTRUCTURE fault, not an app-code
+ *  regression: assessing it routes a bounded driver repair that can never
+ *  converge (the code is correct; the served DB is not). */
+export function isProvisioningFaultSummary(summary: string | undefined): boolean {
+  if (!summary) return false;
+  return /UndefinedTable|relation "[^"]+" does not exist|no such table|42P01|ECONNREFUSED/i.test(summary);
+}
+
 /** Confirm a cycle is genuinely GREEN: returns true only when the project's
  *  verify suite passes against the running app. Injected in tests; the default
  *  is the real deploy-during-build verifier. */
@@ -561,6 +572,41 @@ export async function greenOpenCycle(
   // orchestration then routes to raise-to-hil rather than advancing.
   const verify = args.verify ?? defaultGreenVerifier;
   let result = await verify({ projectDir: dirname(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+  // DB-PROVISIONING short-circuit (issue #197): a verify that failed because the
+  // E2E app served an UNMIGRATED/unreachable database is an infra fault, not a
+  // regression. The harness never reuses a server anymore (CI=1 + free ports in
+  // run-tests.sh), so ONE bounded fresh-boot re-verify clears a stale-reuse
+  // false-RED with zero risk to user processes. The SAME signature on the retry
+  // is a real provisioning fault: escalate to the HIL with the diagnosis + the
+  // manual remediation, never the driver repair loop (the code is correct; the
+  // served DB is not). A DIFFERENT failure on retry falls through to the normal
+  // failure routing below – the provisioning fault was masking a real one. Runs
+  // here so the gates + logs below always see the FINAL outcome.
+  if (!result.passed && !consortEnv("REPLAY_BUILD_DIR") && isProvisioningFaultSummary(result.summary)) {
+    const retry = await verify({ projectDir: dirname(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+    if (retry.passed) {
+      result = retry;
+    } else if (isProvisioningFaultSummary(retry.summary)) {
+      const escalation = writeEscalation(consortDir, {
+        source: "db-provisioning",
+        reason:
+          `The verify of ${open.test_id} (${open.ac_id}) in ${featureId}/${story} fails with a DB-provisioning fault ` +
+          `(the E2E app is serving an unmigrated or unreachable database: UndefinedTable / relation does not exist / ` +
+          `connection refused), and a fresh-boot re-verify failed the same way. This is an INFRASTRUCTURE fault, ` +
+          `NOT an app-code regression – do NOT repair app code. Remediate the provisioning: migrate the branch the ` +
+          `app serves (\`uv run alembic upgrade head\` against the served branch's DSN), kill any stale server on ` +
+          `the E2E ports (\`lsof -ti tcp:8000,5173 | xargs kill\`), then re-run the verify. (verify: ${retry.summary})`,
+        feature_id: featureId,
+        story_id: story,
+        ac_id: open.ac_id,
+      });
+      return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, escalated: true, escalation, summary: retry.summary };
+    } else {
+      // Provisioning cleared by the fresh boot; the routing below sees the failure
+      // it was masking, not the 500s.
+      result = retry;
+    }
+  }
   // Proactive migration-self-containment gate. Even when the honest verify PASSES
   // (local `alembic upgrade` runs env.py, so an app-importing migration imports
   // fine), a migration that imports app code at module scope breaks CI's
