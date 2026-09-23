@@ -15,6 +15,7 @@
 // --dry-run computes + prints the SINGLE next action and the commands it would
 // run, then exits (no execution) - a safe "what will the driver do next?".
 
+import treeKill from "tree-kill";
 import { consortEnv } from "../../consort/config/consort-env.js";
 import {
   resolveConsortDir,
@@ -101,6 +102,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--deploy-target": out.deployTarget = argv[++i]; break;
       case "--approver": out.approver = argv[++i]; break;
       case "--dry-run": out.dryRun = true; break;
+      case "--stop": out.stop = true; break;
       case "--max-steps": out.maxSteps = Number(argv[++i]); break;
       case "--plan-only": out.planOnly = true; break;
       case "--only": out.only = argv[++i]; break;
@@ -1034,6 +1036,61 @@ function snapshotRunConfig(cfg: DriveEffectsConfig, bound: string, gates: "inter
  *  `.consort/drive-live.log` (so `stdio: "ignore"` here loses nothing). We print the
  *  child PID + the poll-once watch command and exit 0. Returns the child pid, or null
  *  when spawning failed (caller then falls through to a normal in-process run). */
+/** The pid file the ACTUAL drive process records for ITSELF (whatever layer
+ *  launched it – lk shim, --detach parent, or a plain invocation), so
+ *  `consort-drive --stop` always halts the real orchestrator, never a launcher
+ *  (issue #204.3). */
+export function drivePidPath(consortDir: string): string {
+  return path.join(consortDir, "drive.pid");
+}
+
+/** Record THIS drive process's own pid. Written by the process that actually
+ *  runs the loop (after the --detach re-launch), never by a launcher. */
+export function writeDrivePid(consortDir: string): void {
+  try {
+    fs.writeFileSync(
+      drivePidPath(consortDir),
+      JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }) + "\n",
+    );
+  } catch {
+    /* best-effort: a pid file failure never breaks the run */
+  }
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Halt the running drive + its whole process tree (the executor's claude -p
+ *  children included), reading the pid the drive recorded for itself. */
+export async function stopDrive(consortDir: string): Promise<number> {
+  const file = drivePidPath(consortDir);
+  if (!fs.existsSync(file)) {
+    process.stderr.write("consort-drive: no drive.pid found (no drive running here, or it predates pid recording).\n");
+    return 1;
+  }
+  let pid: number | undefined;
+  try {
+    pid = (JSON.parse(fs.readFileSync(file, "utf8")) as { pid?: number }).pid;
+  } catch {
+    pid = undefined;
+  }
+  if (typeof pid !== "number" || !pidAlive(pid)) {
+    fs.rmSync(file, { force: true });
+    process.stdout.write("consort-drive: no live drive (stale drive.pid removed).\n");
+    return 0;
+  }
+  await new Promise<void>((resolve) => treeKill(pid, "SIGTERM", () => resolve()));
+  fs.rmSync(file, { force: true });
+  process.stdout.write(`consort-drive: stopped the drive at pid ${pid} (whole process tree, executor children included).\n`);
+  return 0;
+}
+
 function relaunchDetached(rawArgv: string[], consortDir: string): number | null {
   // stdio "ignore": the drive self-tees its narration to .consort/drive-live.log, so
   // the detached child loses nothing by discarding its stdio.
@@ -1046,7 +1103,8 @@ function relaunchDetached(rawArgv: string[], consortDir: string): number | null 
   process.stdout.write(
     `consort-drive: detached into its own session as pid ${pid} (survives this turn/shell).\n` +
       `  live log: ${logPath}\n` +
-      `  relay it:  ./scripts/lk consort-watch --since 0 --pid ${pid}   (then re-poll with the printed cursor)\n`,
+      `  relay it:  ./scripts/lk consort-watch --since 0 --pid ${pid}   (then re-poll with the printed cursor)\n` +
+      `  stop it:   ./scripts/lk consort-drive --stop   (halts the whole drive process tree)\n`,
   );
   return pid;
 }
@@ -1089,17 +1147,27 @@ async function main(): Promise<number> {
     process.stdout.write(help());
     return 0;
   }
+  // --stop: halt the running drive + its whole tree (reads the pid the DRIVE
+  // recorded for itself, so a launcher pid is never mistaken for the
+  // orchestrator, issue #204.3).
+  if (args.stop) {
+    const cdir = args.consortDir ?? resolveConsortDir(args.projectDir ?? process.cwd());
+    return stopDrive(cdir);
+  }
   // --detach: re-launch in a NEW session and return immediately, so the run survives
   // the launching turn/shell ending (the recurring "reaped between turns" failure).
   // Must happen BEFORE any side effect (log tee, config write, provisioning) so the
   // child – not this short-lived parent – owns them. Falls through to an in-process
   // run only if the re-spawn itself failed (never silently drops the run).
+  const cdir = args.consortDir ?? resolveConsortDir(args.projectDir ?? process.cwd());
   if (rawArgv.includes("--detach")) {
-    const cdir = args.consortDir ?? resolveConsortDir(args.projectDir ?? process.cwd());
     const pid = relaunchDetached(rawArgv, cdir);
     if (pid !== null) return 0;
     process.stderr.write("consort-drive: detach re-spawn failed – running in-process instead.\n");
   }
+  // Record THIS process's own pid (post-detach, so it is always the real
+  // orchestrator's) for `consort-drive --stop` (issue #204.3).
+  writeDrivePid(cdir);
   // Auto-migrate a legacy artifact dir (".sftdd"/".tdd") to ".consort" before any
   // mode runs, so existing projects move to the current name on their next
   // orchestrated run (no-op once ".consort" exists). History follows via git mv.

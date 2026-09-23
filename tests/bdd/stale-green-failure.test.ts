@@ -49,7 +49,7 @@ function gitIn(project: string, args: string[]): void {
 describe("green-failure tree-state stamping + staleness (issue #202)", () => {
   it("writeGreenFailure stamps the tree state (HEAD + code-diff fingerprint)", () => {
     const { tdd } = mkRepo();
-    writeGreenFailure(tdd, F, S, AC, { summary: "verify failed" });
+    writeGreenFailure(tdd, F, S, AC, { assessed: false, summary: "verify failed" });
     const gf = readGreenFailure(tdd, F, S, AC);
     expect(gf?.treeState?.headSha).toMatch(/^[0-9a-f]{40}$/);
     expect(gf?.treeState?.dirtySha).toMatch(/^[0-9a-f]{40}$/);
@@ -57,13 +57,13 @@ describe("green-failure tree-state stamping + staleness (issue #202)", () => {
 
   it("an UNCHANGED tree keeps the marker live (no false invalidation)", () => {
     const { tdd } = mkRepo();
-    writeGreenFailure(tdd, F, S, AC, { summary: "verify failed" });
+    writeGreenFailure(tdd, F, S, AC, { assessed: false, summary: "verify failed" });
     expect(needsGreenAssess(tdd, F, S, AC)).toBe(true);
   });
 
   it("a NEW COMMIT after the record invalidates it (deleted on read, reads as no-failure)", () => {
     const { project, tdd } = mkRepo();
-    writeGreenFailure(tdd, F, S, AC, { summary: "verify failed" });
+    writeGreenFailure(tdd, F, S, AC, { assessed: false, summary: "verify failed" });
     // The fix lands (committed).
     fs.writeFileSync(path.join(project, "app.py"), "# app\n# fixed\n");
     gitIn(project, ["add", "-A"]);
@@ -74,14 +74,14 @@ describe("green-failure tree-state stamping + staleness (issue #202)", () => {
 
   it("an UNCOMMITTED code edit after the record also invalidates it", () => {
     const { project, tdd } = mkRepo();
-    writeGreenFailure(tdd, F, S, AC, { summary: "verify failed" });
+    writeGreenFailure(tdd, F, S, AC, { assessed: false, summary: "verify failed" });
     fs.writeFileSync(path.join(project, "app.py"), "# app\n# fixed but not committed\n");
     expect(readGreenFailure(tdd, F, S, AC)).toBeUndefined();
   });
 
   it("RUNTIME-ARTIFACT churn alone does NOT invalidate (drive metadata changes every turn)", () => {
     const { project, tdd } = mkRepo();
-    writeGreenFailure(tdd, F, S, AC, { summary: "verify failed" });
+    writeGreenFailure(tdd, F, S, AC, { assessed: false, summary: "verify failed" });
     // Drive churn: cycle records + workflow state + a new untracked artifact dir entry.
     fs.mkdirSync(path.join(project, ".sftdd", "cycles", F, S), { recursive: true });
     fs.writeFileSync(path.join(project, ".sftdd", "cycles", F, S, "green-failure.log"), "turn output\n");
@@ -103,13 +103,13 @@ describe("green-failure tree-state stamping + staleness (issue #202)", () => {
 
   it("a FRESH failure after invalidation re-records against the NEW tree state", () => {
     const { project, tdd } = mkRepo();
-    writeGreenFailure(tdd, F, S, AC, { summary: "verify failed" });
+    writeGreenFailure(tdd, F, S, AC, { assessed: false, summary: "verify failed" });
     fs.writeFileSync(path.join(project, "app.py"), "# v2\n");
     gitIn(project, ["add", "-A"]);
     gitIn(project, ["commit", "-m", "v2"]);
     expect(readGreenFailure(tdd, F, S, AC)).toBeUndefined();
     // The still-real failure re-records: stamped with the NEW head.
-    writeGreenFailure(tdd, F, S, AC, { summary: "verify failed again" });
+    writeGreenFailure(tdd, F, S, AC, { assessed: false, summary: "verify failed again" });
     const gf = readGreenFailure(tdd, F, S, AC);
     expect(gf?.treeState?.headSha).toBe(
       execFileSync("git", ["rev-parse", "HEAD"], { cwd: project, encoding: "utf8" }).trim(),

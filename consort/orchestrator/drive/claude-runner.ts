@@ -86,6 +86,9 @@ export interface ParsedArgs {
   gates?: string;
   noSizing?: boolean;
   help?: boolean;
+  /** Halt the running drive + its whole process tree (reads the pid the drive
+   *  recorded for ITSELF in .consort/drive.pid; issue #204.3). */
+  stop?: boolean;
 }
 
 /** A deterministic CLI effect (a kit SCM bin – wait-ci / merge / prepare-pr / deploy ,
