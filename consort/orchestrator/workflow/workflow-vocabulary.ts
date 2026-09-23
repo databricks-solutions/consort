@@ -153,6 +153,15 @@ export interface StoryBuild {
   specDefectAc?: string | null;
   /** The design role a spec-defect recommends re-authoring (the test-list owner by default). */
   specDefectFromRole?: string;
+  /** An AC whose green-failure the Navigator assessed as a genuine regression that is NOT
+   *  driver-fixable (assess-regression with NO fix directive – it needs a human or a design
+   *  change), or null. Routes DIRECTLY to raise-to-hil with the diagnosis (issue #200):
+   *  without this branch the state falls through every route and the drive re-dispatches
+   *  doomed Driver green attempts for the full fixAttempts budget before escalating. */
+  greenUnfixableAc?: string | null;
+  /** The assessed diagnosis for greenUnfixableAc, carried into the HIL reason so the
+   *  human sees the WHY without opening the green-failure record. */
+  greenUnfixableDiagnosis?: string;
   /** The built story was deployed for the PO's acceptance review. */
   awaitingAcceptance: boolean;
   /** The story's deploy verified (reachable + verify.passed on its experiment

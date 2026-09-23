@@ -44,6 +44,8 @@ function fakeProbe(facts: Record<string, Partial<Record<keyof StoryArtifactProbe
     greenSupersededFailureAc: () => null,
     specDefectAc: () => null,
     specDefectFromRole: () => "test-strategist",
+    greenUnfixableAc: () => null,
+    greenUnfixableDiagnosis: () => undefined,
     // No blocking escalation by default (raise-to-hil routing tested separately).
     pendingEscalation: () => null,
     // Stale-experiment guardrail: these derive tests don't exercise a design change,

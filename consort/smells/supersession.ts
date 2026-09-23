@@ -305,6 +305,33 @@ export function hasPendingSpecDefect(
   return gf !== undefined && gf.assessed === true && gf.specDefect !== undefined;
 }
 
+/**
+ * The Navigator assessed the failure as a genuine regression that is NOT
+ * driver-fixable: `assessed` with NO `fixDirective` (the `assess-regression`
+ * contract: omit --fix when it needs a human, a design change, or a spec change),
+ * and neither a spec-defect nor a supersession pending (those have their own
+ * routes). This is a CONFIRMED non-driver-fixable failure: route DIRECTLY to the
+ * HIL with the diagnosis (issue #200) instead of re-dispatching bounded Driver
+ * green attempts that cannot fix it for the full fixAttempts budget. Also catches
+ * the re-diagnosis case: a later assess round that withdraws the directive
+ * (repair already attempted) still means "done – escalate now".
+ */
+export function hasPendingUnfixableRegression(
+  tdd: string,
+  feature: string,
+  story: string,
+  ac: string,
+): boolean {
+  const gf = readGreenFailure(tdd, feature, story, ac);
+  return (
+    gf !== undefined &&
+    gf.assessed === true &&
+    !(typeof gf.fixDirective === "string" && gf.fixDirective.length > 0) &&
+    gf.specDefect === undefined &&
+    !hasPendingSupersession(tdd, feature, story, ac)
+  );
+}
+
 /** The recommended design-lane re-author scope for a spec-defect (the role whose artifact is wrong),
  *  defaulting to the test-strategist (the test-list owner). Read by the drive to build the reopen
  *  recommendation surfaced at the HIL. */

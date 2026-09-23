@@ -82,6 +82,12 @@ export interface StoryArtifactProbe {
   specDefectAc(story: string): string | null;
   /** The design role a spec-defect recommends re-authoring (the test-list owner by default). */
   specDefectFromRole(story: string): string;
+  /** The open AC the Navigator assessed as a genuine regression that is NOT driver-fixable
+   *  (no fix directive – confirmed, issue #200), or null. Drives a DIRECT raise-to-hil with
+   *  the diagnosis, never doomed Driver green attempts for the full fixAttempts budget. */
+  greenUnfixableAc(story: string): string | null;
+  /** The assessed diagnosis for greenUnfixableAc, carried into the HIL reason. */
+  greenUnfixableDiagnosis(story: string): string | undefined;
   /** The story's deploy verified (reachable + verify.passed on its experiment
    *  branch): the teeth on acceptance (features/<F>/stories/<S>/deploy-evidence.json). */
   storyDeployVerified(story: string): boolean;
@@ -221,6 +227,8 @@ function storyView(
       greenSupersededAc: probe.greenSupersededFailureAc(id),
       specDefectAc: probe.specDefectAc(id),
       specDefectFromRole: probe.specDefectFromRole(id),
+      greenUnfixableAc: probe.greenUnfixableAc(id),
+      greenUnfixableDiagnosis: probe.greenUnfixableDiagnosis(id),
       awaitingAcceptance: e.status === "awaiting-acceptance",
       deployVerified: probe.storyDeployVerified(id),
       deployVerifyAssessEligible: probe.deployVerifyAssessEligible(id),

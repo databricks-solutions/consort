@@ -185,6 +185,26 @@ function nextBuildAction(story: string, b: StoryBuild): WorkflowAction {
       story,
     };
   }
+  // CONFIRMED unfixable regression (issue #200): the Navigator assessed the failure
+  // as a genuine regression with NO fix directive (the assess contract: omit --fix
+  // when it needs a human / a design change / a spec change). Without this route
+  // the state falls through every branch and the drive re-dispatches doomed Driver
+  // green attempts for the full fixAttempts budget (3 x ~150s opus turns) before
+  // the cap escalates. Escalate DIRECTLY with the diagnosis instead. Idempotent:
+  // the marker persists, so this re-derives until the human resolves (reopen /
+  // manual fix clears the green-failure).
+  if (b.greenUnfixableAc) {
+    return {
+      kind: "raise-to-hil",
+      source: "green-unfixable",
+      reason:
+        `The GREEN-verify failure for ${b.greenUnfixableAc} was assessed as a genuine regression that is ` +
+        `NOT driver-fixable (no fix directive – it needs a human or a design change). Escalating directly ` +
+        `with the diagnosis instead of burning bounded Driver re-attempts that cannot fix it (issue #200). ` +
+        `Diagnosis: ${b.greenUnfixableDiagnosis ?? "see the green-failure record"}`,
+      story,
+    };
+  }
   // Test-list-driven RED/GREEN handoff for the current (un-reviewed) AC's tests:
   // !testsWritten -> Navigator writes the next pending RED; !codeWritten ->
   // Driver greens the open RED. With the AC-grouped list, "next pending" is

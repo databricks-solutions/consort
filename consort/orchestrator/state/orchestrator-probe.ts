@@ -20,7 +20,7 @@ import {
   reviewPending,
   refactorPending,
 } from "../../pipeline/cycle-record.js";
-import { needsGreenAssess, hasPendingRegressionFix, hasPendingSupersession, hasPendingSpecDefect, specDefectFromRole } from "../../smells/supersession.js";
+import { needsGreenAssess, hasPendingRegressionFix, hasPendingSupersession, hasPendingSpecDefect, specDefectFromRole, hasPendingUnfixableRegression, readGreenFailure } from "../../smells/supersession.js";
 import { driverPhaseForTdd, type StoryArtifactProbe, type DriveContext } from "./orchestrator-derive.js";
 import { storyDesignFingerprint } from "../../pipeline/design-fingerprint.js";
 import type { DriveEscalation } from "../workflow/workflow-vocabulary.js";
@@ -456,6 +456,33 @@ export function diskArtifactProbe(
         acId = undefined;
       }
       return acId ? specDefectFromRole(consortDir, featureId, story, acId) : "test-strategist";
+    },
+
+    greenUnfixableAc(story) {
+      // The open RED cycle's AC, when the Navigator assessed its green-failure as a
+      // genuine regression with NO fix directive (confirmed NOT driver-fixable,
+      // issue #200). Routes DIRECTLY to raise-to-hil with the diagnosis – never
+      // back to doomed Driver green attempts for the full fixAttempts budget.
+      let acId: string | undefined;
+      try {
+        acId = storyTestProgress(consortDir, featureId, story).openRed[0]?.ac_id;
+      } catch {
+        acId = undefined;
+      }
+      if (!acId) return null;
+      return hasPendingUnfixableRegression(consortDir, featureId, story, acId) ? acId : null;
+    },
+
+    greenUnfixableDiagnosis(story) {
+      // The assessed diagnosis for greenUnfixableAc, carried into the HIL reason.
+      let acId: string | undefined;
+      try {
+        acId = storyTestProgress(consortDir, featureId, story).openRed[0]?.ac_id;
+      } catch {
+        acId = undefined;
+      }
+      if (!acId) return undefined;
+      return readGreenFailure(consortDir, featureId, story, acId)?.diagnosis;
     },
 
     storyDeployVerified(story) {
