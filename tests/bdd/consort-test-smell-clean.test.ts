@@ -146,6 +146,59 @@ describe("checkTestSmells", () => {
   });
 });
 
+describe("checkTestSmells: dropped-column-dangling-reference", () => {
+  // create inventory_code, then drop it (the contract), and reference it from
+  // app + seed code. downgrade() re-adds it (must NOT suppress the drop).
+  function seedContractMigrations(dir: string): void {
+    write(dir, "alembic/versions/0001_create.py",
+      `def upgrade():\n    op.create_table("stock_records", sa.Column("inventory_code", sa.String()), sa.Column("location", sa.String()))\n`);
+    write(dir, "alembic/versions/0002_expand.py",
+      `def upgrade():\n    op.add_column("stock_records", sa.Column("batch_number", sa.String()))\n    op.add_column("stock_records", sa.Column("serial_number", sa.String()))\n`);
+    write(dir, "alembic/versions/0003_contract.py",
+      `def upgrade():\n    op.drop_column("stock_records", "inventory_code")\n\ndef downgrade():\n    op.add_column("stock_records", sa.Column("inventory_code", sa.String()))\n`);
+  }
+
+  it("flags a live app/seed reference to a dropped column", () => {
+    const dir = mkProject();
+    seedContractMigrations(dir);
+    write(dir, "seed_dev.py",
+      `ROWS = [StockRecord(sku="S1", location="A1", quantity=1, inventory_code="A12-B7-S001")]\n`);
+    const r = checkTestSmells({ projectDir: dir });
+    expect(r.clean).toBe(false);
+    expect(r.violations[0].smell).toBe("dropped-column-dangling-reference");
+    expect(r.violations[0].file).toBe("seed_dev.py");
+    expect(r.violations[0].detail).toMatch(/contract migration/);
+  });
+
+  it("does NOT flag a docstring mention of the dropped column (the grep-error the diagnosis made)", () => {
+    const dir = mkProject();
+    seedContractMigrations(dir);
+    write(dir, "app/models/stock_record.py",
+      `class StockRecord:\n    """A stock row.\n\n    The combined inventory_code column was dropped by the F6 S2 contract\n    migration; batch_number and serial_number are first-class now.\n    """\n    batch_number: str | None\n    serial_number: str | None\n`);
+    expect(checkTestSmells({ projectDir: dir }).clean).toBe(true);
+  });
+
+  it("does NOT flag a # comment mention, and ignores the migration's own downgrade re-add", () => {
+    const dir = mkProject();
+    seedContractMigrations(dir);
+    write(dir, "app/services/stock_service.py",
+      `def upsert(sku, location, quantity, batch_number, serial_number):\n    # inventory_code was split into batch_number/serial_number by F6\n    return repo.upsert(sku, location, quantity, batch_number, serial_number)\n`);
+    expect(checkTestSmells({ projectDir: dir }).clean).toBe(true);
+  });
+
+  it("stays clean when a column is dropped then re-added by a LATER migration (net present)", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0001_create.py",
+      `def upgrade():\n    op.create_table("t", sa.Column("temp_flag", sa.Boolean()))\n`);
+    write(dir, "alembic/versions/0002_drop.py",
+      `def upgrade():\n    op.drop_column("t", "temp_flag")\n`);
+    write(dir, "alembic/versions/0003_readd.py",
+      `def upgrade():\n    op.add_column("t", sa.Column("temp_flag", sa.Boolean()))\n`);
+    write(dir, "app/svc.py", `x = row.temp_flag\n`);
+    expect(checkTestSmells({ projectDir: dir }).clean).toBe(true);
+  });
+});
+
 describe("checkTestSmells: the three migration/aggregate detectors", () => {
   it("whole-table-aggregate: flags an ABSOLUTE whole-table count with no scope/delta, not a scoped or delta one", () => {
     const dir = mkProject();
@@ -187,6 +240,35 @@ describe("checkTestSmells: the three migration/aggregate detectors", () => {
     write(dir3, "tests/conftest.py",
       `def restore():\n    command.upgrade(Config(ini), "head")\n`);
     expect(checkTestSmells({ projectDir: dir3 }).clean).toBe(true);
+  });
+
+  it("pytest-bdd-parse-conversion: flags a parse() step pattern using !r/!s/!a, not a spec-only or quoted pattern", () => {
+    // !r conversion — the parse lib can't match it → StepDefinitionNotFoundError.
+    const dir = mkProject();
+    write(dir, "tests/step_defs/test_stock.py",
+      `@then(parsers.parse("the serial_number matches {serial!r}"))\ndef then_serial(serial, ctx):\n    pass\n`);
+    const bad = checkTestSmells({ projectDir: dir });
+    expect(bad.clean).toBe(false);
+    expect(bad.violations[0].smell).toBe("pytest-bdd-parse-conversion");
+    expect(bad.violations[0].detail).toMatch(/!r/);
+
+    // !s is equally unsupported.
+    const dir2 = mkProject();
+    write(dir2, "tests/step_defs/test_stock.py",
+      `@given(parsers.parse("a row at location {loc!s} is seeded"))\ndef given_row(loc):\n    pass\n`);
+    expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(false);
+
+    // A quoted value with NO conversion is the correct form — clean.
+    const dir3 = mkProject();
+    write(dir3, "tests/step_defs/test_stock.py",
+      `@then(parsers.parse('the serial_number matches "{serial}"'))\ndef then_serial(serial, ctx):\n    pass\n`);
+    expect(checkTestSmells({ projectDir: dir3 }).clean).toBe(true);
+
+    // A format SPEC ({name:d}) IS supported by parse — not flagged.
+    const dir4 = mkProject();
+    write(dir4, "tests/step_defs/test_stock.py",
+      `@then(parsers.parse("the quantity is {qty:d}"))\ndef then_qty(qty):\n    pass\n`);
+    expect(checkTestSmells({ projectDir: dir4 }).clean).toBe(true);
   });
 
   it("reversible-invariant-round-trip: flags a forward-only test covering a migration_reversible invariant, not a round-trip", () => {

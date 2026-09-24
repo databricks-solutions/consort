@@ -37,7 +37,9 @@ export type TestSmellName =
   | "schema-unsatisfiable-ref"
   | "whole-table-aggregate"
   | "migration-marker-presence"
-  | "reversible-invariant-round-trip";
+  | "reversible-invariant-round-trip"
+  | "pytest-bdd-parse-conversion"
+  | "dropped-column-dangling-reference";
 
 export interface TestSmellViolation {
   smell: TestSmellName;
@@ -133,7 +135,133 @@ const SMELL_FIX: Record<TestSmellName, string> = {
     "a downgrade/upgrade test without @pytest.mark.migration runs on the SHARED verify DB and drops/alters its live schema for every other test. Add @pytest.mark.migration so the verify harness routes it to its OWN ephemeral branch (single-step downgrade -1 + upgrade head, never downgrade base)",
   "reversible-invariant-round-trip":
     "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility – and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade → seed/migrate → upgrade → assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
+  "pytest-bdd-parse-conversion":
+    "a parse()/parsers.parse() step pattern uses a Python str.format conversion flag (!r / !s / !a); the `parse` library backing pytest-bdd supports the format SPEC ({name:type}) but NOT conversions, so the step text never matches the feature and the step raises StepDefinitionNotFoundError – the app can never green it. Drop the conversion and quote the value in the pattern instead (e.g. parse('… \"{name}\"') to match a quoted feature value, or parse('… {name}') for a bare token), matching how the .feature file writes it",
+  "dropped-column-dangling-reference":
+    "a contract migration DROPPED this column, but app/seed code still references it – the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it",
 };
+
+/** The upgrade()-path body of an alembic migration (forward operations only) –
+ *  the downgrade() reverse must NOT count toward the forward schema state (a
+ *  contract migration's downgrade re-adds the column it drops). SQL/other files
+ *  return the whole body. */
+function forwardMigrationRegion(body: string): string {
+  // Allow a return annotation (`def upgrade() -> None:`). Capture the upgrade body
+  // only, up to the next top-level def (downgrade) – the downgrade REVERSES the
+  // forward migration (a contract's downgrade re-adds what it dropped, an expand's
+  // downgrade drops what it added), so counting it would invert the schema state.
+  const m = body.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
+  return m ? m[1] : body;
+}
+
+/** Columns whose NET-LATEST forward migration operation is a drop (created/added
+ *  earlier, dropped later and never re-added), keyed by column name. Migrations
+ *  are ordered by filename (the kit's timestamp-prefixed names sort chronologically). */
+function collectDroppedColumns(projectDir: string, migrationDirs: string[]): Set<string> {
+  const files: string[] = [];
+  for (const md of migrationDirs) {
+    const abs = join(projectDir, md);
+    if (!existsSync(abs)) continue;
+    for (const f of walk(abs, (p) => [".py", ".sql"].includes(extname(p)))) files.push(f);
+  }
+  files.sort();
+  const GENERIC = new Set(["id", "name", "type", "value", "data", "status", "key", "code", "text"]);
+  const last = new Map<string, "add" | "drop">();
+  for (const f of files) {
+    let body: string;
+    try {
+      body = readFileSync(f, "utf8");
+    } catch {
+      continue;
+    }
+    const region = f.endsWith(".py") ? forwardMigrationRegion(body) : body;
+    for (const line of region.split("\n")) {
+      for (const m of line.matchAll(/sa\.Column\(\s*["'](\w+)["']/g)) last.set(m[1], "add");
+      for (const m of line.matchAll(/add_column\([^,]*,\s*sa\.Column\(\s*["'](\w+)["']/g)) last.set(m[1], "add");
+      for (const m of line.matchAll(/ADD\s+COLUMN\s+["'`]?(\w+)/gi)) last.set(m[1].toLowerCase(), "add");
+      for (const m of line.matchAll(/drop_column\([^,]*,\s*["'](\w+)["']/g)) last.set(m[1], "drop");
+      for (const m of line.matchAll(/DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/gi)) last.set(m[1].toLowerCase(), "drop");
+    }
+  }
+  const dropped = new Set<string>();
+  for (const [col, ev] of last) {
+    if (ev === "drop" && col.length >= 4 && !GENERIC.has(col.toLowerCase())) dropped.add(col);
+  }
+  return dropped;
+}
+
+/** Lines in `body` where `col` appears as a LIVE reference – excluding `#`/`//`
+ *  comments and triple-quoted docstring blocks (so an explanatory "the col was
+ *  dropped" docstring is never mistaken for a live use, the grep error the live
+ *  diagnosis made). Returns 1-based line numbers. */
+function liveReferenceLines(body: string, col: string): number[] {
+  const re = new RegExp(`\\b${col}\\b`);
+  const lines = body.split("\n");
+  const out: number[] = [];
+  let inDoc = false;
+  let docQuote = "";
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (inDoc) {
+      if (line.includes(docQuote)) inDoc = false;
+      continue;
+    }
+    const tq = line.match(/"""|'''/);
+    if (tq) {
+      const q = tq[0];
+      const after = line.slice(line.indexOf(q) + 3);
+      if (!after.includes(q)) {
+        line = line.slice(0, line.indexOf(q));
+        inDoc = true;
+        docQuote = q;
+      }
+    }
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const slash = line.indexOf("//");
+    if (slash >= 0) line = line.slice(0, slash);
+    if (re.test(line)) out.push(i + 1);
+  }
+  return out;
+}
+
+/** A column a contract migration dropped, still referenced by LIVE app/seed code:
+ *  the migration succeeds but the app emits SQL for a missing column and crashes
+ *  at runtime – a path a green test suite can miss (the F6/S2 seed_dev.py class). */
+function checkDroppedColumnDanglingRef(projectDir: string, migrationDirs: string[]): TestSmellViolation[] {
+  const dropped = collectDroppedColumns(projectDir, migrationDirs);
+  if (dropped.size === 0) return [];
+  const out: TestSmellViolation[] = [];
+  const migAbs = migrationDirs.map((d) => join(projectDir, d));
+  const SRC_EXCLUDE = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist|build|\.consort|client|tests?|__tests__|e2e)(\/|$)/;
+  // DB-facing code only (.py + raw .sql): the failure mode is the app emitting SQL
+  // for a missing column and crashing. A client .ts/.tsx never talks to the DB, so
+  // a stale field name there is a DIFFERENT (lower-severity) class, not this one.
+  const isSrc = (p: string) => /\.(py|sql)$/.test(p) && !migAbs.some((m) => p.startsWith(m));
+  const srcFiles = walk(projectDir, (p) => isSrc(p) && !SRC_EXCLUDE.test(p));
+  for (const f of srcFiles) {
+    let body: string;
+    try {
+      body = readFileSync(f, "utf8");
+    } catch {
+      continue;
+    }
+    const rel = relative(projectDir, f);
+    for (const col of dropped) {
+      if (!body.includes(col)) continue;
+      for (const line of liveReferenceLines(body, col)) {
+        out.push({
+          smell: "dropped-column-dangling-reference",
+          file: rel,
+          line,
+          text: `live reference to dropped column '${col}'`,
+          detail: SMELL_FIX["dropped-column-dangling-reference"],
+        });
+      }
+    }
+  }
+  return out;
+}
 
 /** A migration_reversible persistence invariant (architecture.json) must be
  *  covered by a test whose description performs a downgrade+upgrade round-trip; a
@@ -281,6 +409,17 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
           }
         }
 
+        // pytest-bdd-parse-conversion (Python): a parsers.parse()/parse() step
+        // pattern using a Python str.format CONVERSION flag ({name!r}/{name!s}/
+        // {name!a}). The `parse` library that backs pytest-bdd supports the format
+        // SPEC ({name:type}) but NOT the !r/!s/!a conversions, so the step text
+        // never matches the feature -> StepDefinitionNotFoundError. The step can
+        // never bind, so the app can never green it (the F6/S2 T19/T20 class).
+        if (isPy && /\bparse(?:rs)?\.(?:parse|re)\s*\(/.test(text) && /\{[^{}]*![rsa][^{}]*\}/.test(text)) {
+          const conv = text.match(/\{[^{}]*(![rsa])[^{}]*\}/);
+          push("pytest-bdd-parse-conversion", rel, line, text, `${conv ? conv[1] : "!r"} conversion in a parse() step pattern`);
+        }
+
         // whole-table-aggregate: an ABSOLUTE whole-table COUNT/SUM with no seed-scope
         // (uuid/unique-key/WHERE filter) and no delta (before/after subtraction). An
         // absolute whole-table total passes on an isolated branch and fails once other
@@ -322,6 +461,12 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
   // reversibility (the F6/S1 T9 class: a reversible PI tagged to a forward-only,
   // unsatisfiable-on-a-migrated-branch test).
   violations.push(...checkReversibleInvariantRoundTrip(args.projectDir));
+
+  // dropped-column-dangling-reference: a contract migration dropped a column but
+  // live app/seed code still references it – the migration succeeds, then the app
+  // crashes at runtime on a path a green test suite can miss (F6/S2 seed_dev.py,
+  // hard rule 9). Deterministic from migrations + a comment-excluding source scan.
+  violations.push(...checkDroppedColumnDanglingRef(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS));
 
   if (violations.length === 0) return { clean: true, violations: [] };
   const list = violations.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}\n      fix: ${v.detail}`).join("\n");
