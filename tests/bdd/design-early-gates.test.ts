@@ -34,8 +34,8 @@ describe("checkMigrationPreservationClass", () => {
       CREATE_ONLY_DB,
     );
     expect(r.ok).toBe(false);
-    expect(r.violations?.[0]).toMatch(/NFR-migration-data-preservation/);
-    expect(r.violations?.[0]).toMatch(/self-contradiction/i);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/NFR-migration-data-preservation/);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/self-contradiction/i);
   });
 
   it("blocks a preservation-class NFR with no forward-only marker on an all-initial-create design", () => {
@@ -44,7 +44,7 @@ describe("checkMigrationPreservationClass", () => {
       CREATE_ONLY_DB,
     );
     expect(r.ok).toBe(false);
-    expect(r.violations?.[0]).toMatch(/unsatisfiable as written/);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/unsatisfiable as written/);
   });
 
   it("passes a FORWARD-ONLY preservation guard on an all-initial-create design (the sanctioned form)", () => {
@@ -80,8 +80,8 @@ describe("checkFitnessSingularCoverage", () => {
       arch([{ id: "NFR-migration-data-preservation", tier: "product", fitness_function: "Seed + upgrade head + assert intact." }]),
     );
     expect(r.ok).toBe(false);
-    expect(r.violations?.[0]).toMatch(/NFR-migration-data-preservation/);
-    expect(r.violations?.[0]).toMatch(/nfr_id/);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/NFR-migration-data-preservation/);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/nfr_id/);
   });
 
   it("passes a covered singular NFR, and leaves the ARRAY form to the clause gate", () => {
@@ -114,9 +114,9 @@ describe("checkClientKindLayerCoherence", () => {
       { "AC3-collision-resolved-at-write": "API" },
     );
     expect(r.ok).toBe(false);
-    expect(r.violations?.[0]).toMatch(/T9/);
-    expect(r.violations?.[0]).toMatch(/AC3-collision-resolved-at-write/);
-    expect(r.violations?.[0]).toMatch(/mechanism conflict/);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/T9/);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/AC3-collision-resolved-at-write/);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/mechanism conflict/);
   });
 
   it("passes a client item on an E2E-layer AC and a behavior item on an API AC", () => {

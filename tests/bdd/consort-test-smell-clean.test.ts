@@ -97,10 +97,26 @@ describe("checkTestSmells", () => {
     expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(true);
   });
 
-  it("flags an umbrella `except IntegrityError` (masks the real failure)", () => {
+  it("flags a bare umbrella swallow (`except IntegrityError: pass`) but NOT a discriminated catch", () => {
     const dir = mkProject();
     write(dir, "tests/test_checks.py",
       `try:\n    insert(row)\nexcept IntegrityError:\n    pass\n`);
+    const bad = checkTestSmells({ projectDir: dir });
+    expect(bad.clean).toBe(false);
+    expect(bad.violations[0].smell).toBe("broad-integrity-except");
+
+    // A broad catch DISCRIMINATED by a message assertion + isinstance on the bound
+    // exception is a narrowing pattern, not a smell (the :68/:85 live-run case).
+    const dir2 = mkProject();
+    write(dir2, "tests/architecture/test_stock_records_schema.py",
+      `try:\n    conn.execute(text("INSERT INTO stock_records VALUES ('S','A',-1,'IC')"))\n    conn.rollback()\n    raise AssertionError("negative accepted")\nexcept Exception as exc:\n    conn.rollback()\n    assert "check" in str(exc).lower() or isinstance(exc, CheckViolation), f"unexpected: {exc}"\n`);
+    expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(true);
+  });
+
+  it("flags a bound exception name that is never discriminated (swallow with a name)", () => {
+    const dir = mkProject();
+    write(dir, "tests/test_swallow.py",
+      `try:\n    insert(row)\nexcept Exception as exc:\n    conn.rollback()\n    pass\n`);
     const r = checkTestSmells({ projectDir: dir });
     expect(r.clean).toBe(false);
     expect(r.violations[0].smell).toBe("broad-integrity-except");

@@ -121,7 +121,7 @@ const SMELL_FIX: Record<TestSmellName, string> = {
   "delete-teardown":
     "a DELETE-based teardown breaks on append-only triggers and ON DELETE RESTRICT FKs, and can wipe a sibling story's seed – rely on per-run uuid keys for isolation (no cleanup); only delete rows the test itself created, scoped by those keys",
   "broad-integrity-except":
-    "`except IntegrityError` catches the UMBRELLA (unique + check + FK violations) and masks the real failure – a wrong table/column name then reads as the expected conflict. Catch the specific subclass (UniqueViolation / CheckViolation) or assert on the error message",
+    "a bare `except IntegrityError`/`except Exception` swallow catches the UMBRELLA (unique + check + FK violations) with no discrimination and masks the real failure – a wrong table/column name then reads as the expected conflict. Catch the specific subclass (UniqueViolation / CheckViolation / NotNullViolation), or discriminate explicitly: assert on the exception's message or isinstance against the subclass (a broad catch WITH a discriminating assert is fine and is not flagged)",
   "schema-unsatisfiable-ref":
     "the test references a table NO migration creates, so it is unsatisfiable (UndefinedTable on every run) – fix the table name (see the known tables below) or add the migration; never paper it over with a broad except",
 };
@@ -191,9 +191,26 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
           push("delete-teardown", rel, line, text);
         }
 
-        // broad-integrity-except (Python): the umbrella catch.
-        if (isPy && /^\s*except\s*(IntegrityError|Exception)\b/.test(text)) {
-          push("broad-integrity-except", rel, line, text);
+        // broad-integrity-except (Python): the umbrella catch – but ONLY when it
+        // is a bare swallow. An `except (IntegrityError|Exception) as <name>` whose
+        // block DISCRIMINATES on <name> (an assert on its message, or an isinstance
+        // check against the specific subclass) is a narrowing pattern, not a smell:
+        // a wrong table (UndefinedTable) cannot pass that assertion. Flag the bare
+        // swallows (`except ... : pass`, or a bound name never asserted on), which
+        // are the ones that actually mask the real failure.
+        if (isPy) {
+          const m = text.match(/^\s*except\s*(IntegrityError|Exception)\b(?:\s+as\s+(\w+))?/);
+          if (m) {
+            const varName = m[2];
+            const discriminated =
+              varName !== undefined &&
+              lines
+                .slice(i + 1, i + 8)
+                .some((l) => new RegExp(`\\b${varName}\\b`).test(l) && /assert|isinstance|str\(|print|log|raise/.test(l));
+            if (!discriminated) {
+              push("broad-integrity-except", rel, line, text);
+            }
+          }
         }
 
         // schema-unsatisfiable-ref: a raw-SQL table ref no migration creates.
