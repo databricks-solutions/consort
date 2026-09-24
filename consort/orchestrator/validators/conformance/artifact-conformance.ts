@@ -1308,3 +1308,143 @@ export function scanFeatureConformance(consortDir: string, featureId: string): F
 
   return { featureId, ok: entries.every((e) => e.ok), entries };
 }
+
+/**
+ * Migration data-preservation class guard (design-lane early gate): a
+ * preservation-class obligation is only meaningful against an ADDITIVE migration
+ * on a PRE-EXISTING table (rows exist to preserve). Two violation arms, both
+ * fully mechanical:
+ *   (a) SELF-CONTRADICTION – an NFR whose own text declares the obligation
+ *       unsatisfiable / to-be-skipped (the architect wrote a requirement and a
+ *       "skip it" note at once; the strategist then cannot both cover it and
+ *       satisfy the coverage gates, so a reflect + revise lap is forced).
+ *   (b) UNSATISFIABLE-AS-WRITTEN – preservation-class text (rows/data survive,
+ *       no loss, values intact) while the db-design is ALL initial create_table
+ *       (no pre-existing rows exist) AND the text carries NO forward-only marker
+ *       (`upgrade head`), which is what makes such a guard satisfiable today
+ *       (seed after create, no-op forward pass) and meaningful once additive
+ *       migrations land. A forward-only phrasing passes: it is the sanctioned
+ *       form for exactly this situation.
+ * Catching it HERE (the architecture gate) stops the contradiction one step
+ * after authoring instead of at the reflect, one revise lap later.
+ */
+export function checkMigrationPreservationClass(architectureJson: string, dbDesignJson?: string): ConformanceResult {
+  let arch: { nfrs?: Array<{ id?: string; tier?: string; statement?: string; brief?: string; fitness_function?: unknown; fitness_functions?: unknown }> };
+  let db: { schema_changes?: Array<{ kind?: string }> } | undefined;
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true }; // invalid architecture reported elsewhere
+  }
+  try {
+    db = dbDesignJson ? JSON.parse(dbDesignJson) : undefined;
+  } catch {
+    db = undefined;
+  }
+  const changes = db?.schema_changes ?? [];
+  if (changes.length === 0) return { ok: true }; // no db-design yet: class unknowable, defer
+  const allInitialCreate = changes.every((c) => c && c.kind === "create_table");
+  if (!allInitialCreate) return { ok: true }; // additive change present: preservation is legitimate
+
+  const SELF_CONTRADICTION = /unsatisfiable|skip (it|this)|cannot be satisfied|do not cover/i;
+  const PRESERVATION = /preserv|surviv|no loss|intact|existing (rows|data)/i;
+  const FORWARD_ONLY = /upgrade head|forward (migration|pass|only)/i;
+  const violations: string[] = [];
+  for (const n of arch.nfrs ?? []) {
+    if (!n || n.tier === "platform") continue;
+    const label = (typeof n.id === "string" && n.id) || "(unnamed NFR)";
+    const text = [n.statement, n.brief, ...(typeof n.fitness_function === "string" ? [n.fitness_function] : []), ...((Array.isArray(n.fitness_functions) ? n.fitness_functions : []) as unknown[]).filter((c): c is string => typeof c === "string")].filter((s): s is string => typeof s === "string").join(" ");
+    if (!text) continue;
+    if (SELF_CONTRADICTION.test(text)) {
+      violations.push(
+        `NFR ${label} declares an obligation its own text calls unsatisfiable / to-be-skipped – a self-contradiction the design lane cannot satisfy AND cannot ignore (the coverage gates demand the test; the architect's own note forbids it). Either remove/re-tier the NFR or reword it as a forward-only standing guard (seed after create, alembic upgrade head, assert intact).`,
+      );
+    } else if (PRESERVATION.test(text) && !FORWARD_ONLY.test(text)) {
+      violations.push(
+        `NFR ${label} promises data/row preservation across migrations, but every schema change in db-design.json is an initial create_table – there are no pre-existing rows to preserve, so the obligation is unsatisfiable as written. Reword it forward-only (seed after create, alembic upgrade head, assert intact) or move it to the additive story that alters the pre-existing table.`,
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+
+/**
+ * Singular-form fitness coverage (the hole the array-form clause gate leaves):
+ * `checkFitnessClauseCoverage` fires ONLY for NFRs on the atomic `fitness_functions`
+ * ARRAY form, so an NFR on the legacy SINGULAR `fitness_function` form has no
+ * per-NFR coverage requirement at all – a missing test escapes the deterministic
+ * test_list gate and surfaces one lap later at the LLM reflect. This is the
+ * singular counterpart: every product/untiered NFR with a non-empty singular
+ * `fitness_function` (and no atomic array) needs at least ONE test-list item
+ * referencing it via `nfr_id`. Platform NFRs are exempt (defended once, by their
+ * gate or a feature-level obligation the platform check already enforces).
+ */
+export function checkFitnessSingularCoverage(testListJson: string, architectureJson: string): ConformanceResult {
+  let arch: { nfrs?: Array<{ id?: string; tier?: string; fitness_function?: unknown; fitness_functions?: unknown }> };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true }; // invalid architecture reported elsewhere
+  }
+  const singular = (arch.nfrs ?? [])
+    .filter(
+      (n) =>
+        n &&
+        typeof n.id === "string" &&
+        n.id.length > 0 &&
+        n.tier !== "platform" &&
+        typeof n.fitness_function === "string" &&
+        (n.fitness_function as string).trim().length > 0 &&
+        !(Array.isArray(n.fitness_functions) && (n.fitness_functions as unknown[]).some((c) => typeof c === "string" && (c as string).trim().length > 0)),
+    )
+    .map((n) => n.id as string);
+  if (singular.length === 0) return { ok: true }; // no legacy singular-form NFRs
+  let tl: { items?: Array<{ nfr_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const have = new Set((tl.items ?? []).map((i) => i.nfr_id).filter((x): x is string => typeof x === "string" && x.length > 0));
+  const missing = singular.filter((id) => !have.has(id));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      violations: missing.map(
+        (id) =>
+          `NFR ${id} declares a singular fitness_function but NO test-list item references it via nfr_id – author one fitness test tagged nfr_id:"${id}" (the array form is clause-gated; the singular form was escaping to the reflect until this check)`,
+      ),
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Client-kind layer coherence (the deterministic form of the reflect's
+ * mechanism-conflict rule): a `kind:"client"` item (a Vitest component test or a
+ * Playwright e2e under client/) can only verify an AC whose declared `layer` is
+ * `E2E` (the client<->server contract). Tagged to a backend-layer AC (API /
+ * Infra / service), it cannot reach the behavior the AC promises – a mocked
+ * component test greens while the real contract drifts. acLayerById maps each AC
+ * id to its declared layer (the gate's per-story acs walk). An AC with no
+ * recorded layer defers (the layer contract check owns that).
+ */
+export function checkClientKindLayerCoherence(testListJson: string, acLayerById: Record<string, string>): ConformanceResult {
+  let tl: { items?: Array<{ id?: string; kind?: string; ac_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations: string[] = [];
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    const layer = acLayerById[it.ac_id];
+    if (layer !== undefined && layer !== "E2E") {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) – a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`,
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}

@@ -30,6 +30,9 @@ import {
   checkServiceBackedDeclaration,
   checkE2eLayerPresent,
   checkDbDesign,
+  checkMigrationPreservationClass,
+  checkFitnessSingularCoverage,
+  checkClientKindLayerCoherence,
 } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { acsForStory } from "../test-list/test-list.js";
 import { featureResolved, architectureJson, dbDesignJson, nfrsMd, featureNfrsMd } from "../../consort/config/consort-paths.js";
@@ -382,6 +385,76 @@ function fitnessClauseCoverageReason(consortDir: string, featureId: string, test
   if (arch === undefined) return null;
   const r = checkFitnessClauseCoverage(testListJson, arch);
   return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
+}
+
+/**
+ * Singular-form fitness coverage test_list-gate condition (the hole the
+ * array-form clause gate leaves): a product/untiered NFR on the legacy SINGULAR
+ * `fitness_function` form needs >=1 test-list item referencing it via nfr_id –
+ * without this, a missing test escapes deterministically to the LLM reflect
+ * (exactly the R1 revise lap this gate exists to prevent). Null when covered /
+ * no architecture / no singular-form NFRs.
+ */
+function fitnessSingularCoverageReason(consortDir: string, featureId: string, testListJson: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  const r = checkFitnessSingularCoverage(testListJson, arch);
+  return r.ok ? null : `singular fitness coverage failed: ${r.violations.join("; ")}`;
+}
+
+/**
+ * Client-kind layer coherence test_list-gate condition (the deterministic form of
+ * the reflect's mechanism-conflict rule): a `kind:"client"` item may anchor ONLY
+ * to an AC whose declared layer is `E2E`. A client test tagged to a backend-layer
+ * AC mocks the envelope instead of exercising the real contract (the T9 class).
+ * Null when coherent / no test-list / no client items.
+ */
+function clientKindLayerReason(consortDir: string, featureId: string, testListJson: string): string | null {
+  const fdir = featureDir(consortDir, featureId);
+  const storiesDir = join(fdir, "stories");
+  if (!existsSync(storiesDir)) return null;
+  const acLayerById: Record<string, string> = {};
+  for (const story of readdirSync(storiesDir)) {
+    const acsDir = join(storiesDir, story, "acs");
+    if (!existsSync(acsDir)) continue;
+    for (const f of readdirSync(acsDir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = (JSON.parse(readFileSync(join(acsDir, f), "utf8")) as { layer?: string }).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+        /* a malformed AC is reported by acsConformanceReason */
+      }
+    }
+  }
+  const r = checkClientKindLayerCoherence(testListJson, acLayerById);
+  return r.ok ? null : `client-kind layer coherence failed: ${r.violations.join("; ")}`;
+}
+
+/**
+ * Data-preservation class spec-gate condition (design-lane early gate): a
+ * preservation-class NFR on an all-initial-create db-design is unsatisfiable as
+ * written (no pre-existing rows), and an NFR whose own text declares itself
+ * unsatisfiable/skippable is a self-contradiction. Blocking it HERE – one step
+ * after the architect authors it – prevents the coverage shortfall, the reflect
+ * verdict, and the revise lap it costs downstream. Null when clean / no
+ * db-design yet (the class is unknowable, defer).
+ */
+export function migrationPreservationClassReason(consortDir: string, featureId: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = existsSync(dbFile)
+    ? (() => {
+        try {
+          return readFileSync(dbFile, "utf8");
+        } catch {
+          return undefined;
+        }
+      })()
+    : undefined;
+  const r = checkMigrationPreservationClass(arch, db);
+  return r.ok ? null : `migration data-preservation class failed: ${r.violations.join("; ")}`;
 }
 
 /**
@@ -760,6 +833,12 @@ export function resolveArtifactInputs(
       // anchor to a scaffold story and get bounced by the navigator reflect gate.
       const schemaStoryReason = schemaChangeStoryRealizesReason(consortDir, featureId);
       if (schemaStoryReason !== null) return { reason: schemaStoryReason };
+      // Data-preservation class (design-lane early gate): a preservation-class NFR
+      // on an all-initial-create design is unsatisfiable as written (or a declared
+      // self-contradiction). Block it HERE, one step after the architect, instead
+      // of a reflect verdict + revise lap downstream.
+      const preservReason = migrationPreservationClassReason(consortDir, featureId);
+      if (preservReason !== null) return { reason: preservReason };
       const nfrReason = nfrCoverageReason(consortDir, featureId);
       if (nfrReason !== null) return { reason: nfrReason };
       const platReason = platformNfrDefendedReason(consortDir, featureId);
@@ -800,6 +879,18 @@ export function resolveArtifactInputs(
         // one-uncovered-clause-per-lap.
         const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
         if (clauseReason !== null) return { reason: clauseReason };
+        // Singular-form fitness coverage (the hole the array-form clause gate
+        // leaves): a legacy singular `fitness_function` NFR needs >=1 nfr_id-tagged
+        // item, else the shortfall escapes deterministically to the LLM reflect
+        // (the R1 revise lap this gate exists to prevent).
+        const singularReason = fitnessSingularCoverageReason(consortDir, featureId, tlJson);
+        if (singularReason !== null) return { reason: singularReason };
+        // Client-kind layer coherence (the deterministic form of the reflect's
+        // mechanism-conflict rule): a kind:"client" item may anchor ONLY to an
+        // E2E-layer AC – a client test tagged to a backend-layer AC mocks the
+        // envelope instead of exercising the real contract (the T9 class).
+        const kindLayerReason = clientKindLayerReason(consortDir, featureId, tlJson);
+        if (kindLayerReason !== null) return { reason: kindLayerReason };
         // Persistence coverage (Gate 3): a service_backed feature must declare its
         // persistence_invariants[] and cover each with a real-branch test (an item
         // referencing its invariant_id), so DB guarantees are tested against the
