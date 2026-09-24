@@ -21,6 +21,25 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { designGuideJson } from "../../consort/config/consort-paths.js";
+
+/** Read the design guide's declared brand `app_icon` (source + install_to), or
+ *  undefined when the guide is absent, malformed, or declares none. The single
+ *  home for the guide read: the ux-clean CLI and the review-cycle adherence scan
+ *  both resolve the icon contract through here. */
+export function readAppIconFromGuide(consortDir: string): { source: string; install_to: string } | undefined {
+  try {
+    const gp = designGuideJson(consortDir);
+    if (!existsSync(gp)) return undefined;
+    const guide = JSON.parse(readFileSync(gp, "utf8")) as { app_icon?: { source?: string; install_to?: string } };
+    const icon = guide.app_icon;
+    return icon && typeof icon.source === "string" && typeof icon.install_to === "string"
+      ? { source: icon.source, install_to: icon.install_to }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface DesignGuide {
   typography: {

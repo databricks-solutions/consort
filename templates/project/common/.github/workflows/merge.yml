@@ -74,14 +74,25 @@ jobs:
           SCM_UTILS_REF="$(tr -d '[:space:]' < .lakebase/scm-utils-ref 2>/dev/null || true)"
           SCM_UTILS_REF="${SCM_UTILS_REF:-v{{LAKEBASE_SCM_UTILS_VERSION}}}"
           echo "SCM_UTILS_REF=${SCM_UTILS_REF}" >> "$GITHUB_ENV"
-          # Registry-first: version-tag refs install the published tarball from the
-          # npm registry (seconds); branch/SHA refs keep the GitHub source form
-          # (their only source).
+          # Registry-first for version tags, with a GitHub fallback when the registry
+          # cannot serve the tarball yet: a freshly-published version is blocked by
+          # the proxy's same-day security screen for ~24h (a staging merge then fails
+          # on npx ETARGET), and a branch/SHA ref only ever has GitHub. Probe the
+          # tarball URL once and pick the source that actually serves it, so a
+          # same-day publish never stalls CI.
+          SPEC=""
           case "$SCM_UTILS_REF" in
-            v[0-9]*) echo "SCM_UTILS_NPX_PKG=@databricks-solutions/lakebase-scm-utils@${SCM_UTILS_REF#v}" >> "$GITHUB_ENV" ;;
-            [0-9]*)  echo "SCM_UTILS_NPX_PKG=@databricks-solutions/lakebase-scm-utils@${SCM_UTILS_REF}" >> "$GITHUB_ENV" ;;
-            *)       echo "SCM_UTILS_NPX_PKG=github:databricks-solutions/lakebase-scm-utils#${SCM_UTILS_REF}" >> "$GITHUB_ENV" ;;
+            v[0-9]*|[0-9]*) SPEC="@databricks-solutions/lakebase-scm-utils@${SCM_UTILS_REF#v}" ;;
           esac
+          if [ -n "$SPEC" ]; then
+            TARBALL_URL="$(npm view "${SPEC}" dist.tarball 2>/dev/null || true)"
+            if [ -z "$TARBALL_URL" ] || ! curl -fsSI --max-time 15 "$TARBALL_URL" >/dev/null 2>&1; then
+              echo "resolve-substrate: registry cannot serve ${SPEC} yet (same-day publish screen); falling back to GitHub."
+              SPEC=""
+            fi
+          fi
+          [ -z "$SPEC" ] && SPEC="github:databricks-solutions/lakebase-scm-utils#${SCM_UTILS_REF}"
+          echo "SCM_UTILS_NPX_PKG=${SPEC}" >> "$GITHUB_ENV"
 
       - name: Detect project language
         id: detect-lang

@@ -37,7 +37,7 @@ import { listExperiments } from "../../consort/experiment/experiment.js";
 import { ensureDeployedAndVerify } from "../deploy/deploy.js";
 import { writeEscalation, type Escalation } from "../../consort/gates/escalation.js";
 import { readSmellsLog, markSmellResolved, isBuildRefactorRoutableSmell, hasOpenBuildRefactorRoutableSmell, writeSmellsLog, hasOpenSmell } from "../smells/smells.js";
-import { checkUxClean, summarizeUxViolations } from "../architecture/design-adherence.js";
+import { checkUxClean, summarizeUxViolations, readAppIconFromGuide } from "../architecture/design-adherence.js";
 import {
   readGreenFailure,
   writeGreenFailure,
@@ -966,6 +966,39 @@ export function installBrandAsset(
   }
 }
 
+/**
+ * Deterministically wire the favicon REFERENCE to the installed brand icon: rewrite
+ * client/index.html's `<link rel="icon">` href to the install_to basename (e.g.
+ * /warehouse.png), replacing the scaffold placeholder. installBrandAsset lands the
+ * BYTES; this lands the REFERENCE, so the design-guide's brand icon is actually
+ * SERVED rather than merely present on disk – the shipped app no longer needs the
+ * icon reference hand-written by the driver to pass checkAppIcon (the stockflow S1
+ * gap: bytes installed, placeholder reference shipped, smell waived). Idempotent (a
+ * correct href is a no-op); inserts the link before </head> when absent. Best-effort:
+ * no index.html -> false, and the adherence check reports as usual.
+ */
+export function applyBrandIconReference(projectDir: string, installTo: string): boolean {
+  const indexHtml = join(projectDir, "client", "index.html");
+  if (!existsSync(indexHtml)) return false;
+  try {
+    const href = `/${basename(installTo)}`;
+    const src = readFileSync(indexHtml, "utf8");
+    const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
+    if (linkRe.test(src)) {
+      const next = src.replace(linkRe, `<link rel="icon"$1href="${href}"$2>`);
+      if (next !== src) writeFileSync(indexHtml, next);
+      return true;
+    }
+    if (/<\/head>/i.test(src)) {
+      writeFileSync(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />\n</head>`));
+      return true;
+    }
+    return false;
+  } catch {
+    return false; // best-effort; a write failure surfaces as the gate's reference violation
+  }
+}
+
 function flagUxAdherenceIfDirty(consortDir: string, story: string): void {
   try {
     // Read the design guide (when present) so the scan enforces its declared
@@ -985,8 +1018,8 @@ function flagUxAdherenceIfDirty(consortDir: string, story: string): void {
           .map((c) => (typeof c?.class === "string" ? c.class : undefined))
           .filter((c): c is string => !!c);
         if (classes.length) designClasses = classes;
-        if (guide.app_icon?.source && guide.app_icon?.install_to) appIcon = guide.app_icon;
       }
+      appIcon = readAppIconFromGuide(consortDir);
     } catch {
       /* malformed guide -> conservative defaults; the guide gate reports its shape */
     }
@@ -995,7 +1028,13 @@ function flagUxAdherenceIfDirty(consortDir: string, story: string): void {
     // so the built app actually SERVES it. A coding agent cannot `cp` a binary via text
     // writes – without this the icon is declared + referenced but never present, and the
     // app ships the placeholder. The driver only has to REFERENCE it (index.html + shell).
-    if (appIcon) installBrandAsset(dirname(consortDir), consortDir, appIcon);
+    // The favicon reference is DETERMINISTIC too (applyBrandIconReference): bytes AND
+    // the index.html href are wired in the same step, so a shipped app never keeps the
+    // scaffold placeholder while the brand asset sits installed-but-unreferenced.
+    if (appIcon) {
+      installBrandAsset(dirname(consortDir), consortDir, appIcon);
+      applyBrandIconReference(dirname(consortDir), appIcon.install_to);
+    }
     const ux = checkUxClean({ projectDir: dirname(consortDir), designClasses, appIcon });
     if (!ux.clean && !hasOpenSmell(consortDir, "ux-adherence", story)) {
       writeSmellsLog(consortDir, [{ smell: "ux-adherence", cycle_ids: [], detail: summarizeUxViolations(ux), story_id: story }]);
@@ -1307,6 +1346,17 @@ export async function refactorStory(
   writeFileSync(file, JSON.stringify({ ...prior, refactored_at: new Date().toISOString() }, null, 2) + "\n");
   for (const d of readSmellsLog(consortDir).detected) {
     if (!d.resolution && isBuildRefactorRoutableSmell(d.smell) && (d.story_id === undefined || d.story_id === story)) {
+      // Re-verify BEFORE resolving: a refactor that did not address a smell must
+      // NOT resolve it (the stockflow S1 case: the ux-adherence icon smell was
+      // marked "accepted" after a refactor that never touched the icon – the
+      // placeholder still shipped). ux-adherence is deterministically re-checkable
+      // here; a still-dirty result leaves the smell OPEN (and the acceptance gate
+      // blocks on it). Other routable smells keep resolve-on-green (the passing
+      // suite IS their verification).
+      if (d.smell === "ux-adherence") {
+        const ux = checkUxClean({ projectDir: dirname(consortDir), appIcon: readAppIconFromGuide(consortDir) });
+        if (!ux.clean) continue;
+      }
       markSmellResolved(consortDir, d.smell, { story_id: d.story_id, kind: "accepted", note: `refactored story: ${story}` });
     }
   }
