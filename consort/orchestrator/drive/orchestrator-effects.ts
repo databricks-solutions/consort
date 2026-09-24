@@ -42,6 +42,7 @@ import { turnKeyForAction } from "./turn-key.js";
 import { designGuideConformance } from "../../session/response-formatter.js";
 import { storyTestProgress, nextPendingBatch, DEFAULT_BATCH_CAP } from "../../pipeline/cycle-record.js";
 import { readSupersededTests, readGreenFailure } from "../../smells/supersession.js";
+import { writeEscalation } from "../../gates/escalation.js";
 import { readDeployVerifyAssessMarker, readDeployVerifyScope } from "../../smells/deploy-verify-assess.js";
 import { readRefactorVerifyAssessMarker } from "../../smells/refactor-verify-assess.js";
 import { readConventions } from "../../architecture/architecture-conventions.js";
@@ -2079,12 +2080,27 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
       ];
     }
 
-    case "raise-to-hil":
-      // Surface + halt: the escalation is already recorded under
-      // .tdd/escalations/ (that is how it was detected). No CLI to run, the
-      // onAction logging emits the loud "RAISED TO HIL" line + runDriver returns
-      // escalated, and drive.cli exits non-zero. A no-op command list.
+    case "raise-to-hil": {
+      // Surface + halt. The escalation record must EXIST before the halt: the
+      // spec-defect, confirmed-unfixable, and deploy-verify-failed routes derive
+      // this action from a MARKER (green-failure.json / the reverify marker), not
+      // from an existing record, so this case's old assumption ("already recorded")
+      // was false for them – consort-next then derives NO HIL option
+      // (awaiting_human:false) and the dashboard falls back to the last gate.
+      // writeEscalation is idempotent (it returns the existing unresolved record),
+      // so the already-recorded routes (auth-expired / db-provisioning) are
+      // unaffected. No CLI to run: the onAction logging emits the loud
+      // "RAISED TO HIL" line, runDriver returns escalated, drive.cli exits non-zero.
+      if (action.source && action.reason) {
+        writeEscalation(cfg.consortDir, {
+          source: action.source,
+          reason: action.reason,
+          feature_id: f,
+          ...("story" in action && typeof action.story === "string" ? { story_id: action.story } : {}),
+        });
+      }
       return [];
+    }
 
     case "design-complete":
       // In the union (from the design sub-machine) but never emitted by
