@@ -63,6 +63,22 @@ describe("reopenStoryForRedesign", () => {
     expect(res.cleared).toHaveLength(0);
   });
 
+  it("clears the story's ORPHANED green-failure markers (the specDefect resume-loop)", () => {
+    write(`features/${F}/stories/${S}/story.json`, { id: S, asA: "op", iWantTo: "x", soThat: "y", acs: ["AC1-a"] });
+    write(`features/${F}/stories/${S}/acs/AC1-a.json`, { id: "AC1-a", given: "g", when: "w", then: "t" });
+    // A green-failure marker with specDefect — the state that a reopen historically
+    // LEFT behind: --list reads none, but consort-next derives BLOCKED off THIS and
+    // a resume re-raises it. The reopen must clear it (backed up).
+    const gfPath = `cycles/${F}/${S}/AC1-a/green-failure.json`;
+    write(gfPath, { assessed: true, summary: "TEST-AUTHORING-SMELL", specDefect: { fromRole: "test-strategist", reason: "broad-integrity-except" } });
+
+    const res = reopenStoryForRedesign(tdd, F, S, { now: () => new Date("2026-08-27T00:00:00Z") });
+
+    expect(existsSync(join(tdd, gfPath)), "orphaned green-failure marker is gone").toBe(false);
+    expect(existsSync(join(res.backupDir, "cycles/AC1-a/green-failure.json")), "marker was backed up first").toBe(true);
+    expect(res.cleared.some((c) => c.includes("green-failure.json"))).toBe(true);
+  });
+
   describe("reopenStoryFromRole (scoped — the proportionate go-back)", () => {
     // A fully-designed + built + accepted story: the case where a build failure turns out to be an
     // upstream DESIGN defect (a flaky/mis-calibrated test) and only a slice must be re-authored.

@@ -30,6 +30,7 @@ import {
   dbDesignMd,
   designGuideJson,
   designDir,
+  cyclesRootDir,
 } from "../config/consort-paths.js";
 import { readPipeline, writePipeline } from "../pipeline/story-pipeline.js";
 import { PHASE_OWNER_KEY } from "./workflow-phase.js";
@@ -160,6 +161,31 @@ function resetBuildStateForReopen(
     }
   } catch {
     /* best-effort: the derivation still re-reads the reset pipeline + deploy-evidence */
+  }
+
+  // Clear this story's per-cycle GREEN-FAILURE markers. A reopen re-authors the
+  // build, so any `green-failure.json` from the old build (a driver-fixable
+  // regression, OR — the loop this closes — a `specDefect` marker for a test-
+  // authoring smell) is ORPHANED: `consort-resolve-escalation --list` reads only
+  // escalation records + blocking smells, so it reports "none pending", yet
+  // `consort-next`/the drive still derive BLOCKED from the surviving marker and a
+  // resume re-raises it. Removing the markers (backed up) with the design artifacts
+  // keeps the three state views coherent, so the reopen deterministically unblocks.
+  try {
+    const storyCyclesDir = join(cyclesRootDir(consortDir), feature, story);
+    if (fs.existsSync(storyCyclesDir)) {
+      for (const acEntry of fs.readdirSync(storyCyclesDir)) {
+        const gf = join(storyCyclesDir, acEntry, "green-failure.json");
+        if (!fs.existsSync(gf)) continue;
+        const dest = join(backupDir, "cycles", acEntry, "green-failure.json");
+        fs.mkdirSync(dirname(dest), { recursive: true });
+        fs.cpSync(gf, dest);
+        fs.rmSync(gf, { force: true });
+        cleared.push(`cycles/${acEntry}/green-failure.json (orphaned build marker)`);
+      }
+    }
+  } catch {
+    /* best-effort: an unremovable marker does not block the design-artifact reset */
   }
 }
 
