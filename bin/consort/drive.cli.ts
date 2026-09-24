@@ -962,7 +962,13 @@ async function runSprintMode(args: ParsedArgs): Promise<number> {
         // only while no feature is claimed (true planning scope). Purely changes next.json
         // CONTENT – an advisory artifact the drive never reads back – so no run/telemetry
         // side effect.
-        const claimed = readWorkflowState(projectDir)?.feature_id?.trim();
+        // A claim shadows the planning snapshot ONLY while the claimed feature is
+        // still IN FLIGHT (its SCM ladder has not reached merged). Once the feature
+        // is merged (complete), its leftover feature_id is stale – a NEW sprint's
+        // planning stop (e.g. sprint-2's intake gate) must emit the planning
+        // snapshot, not the completed feature's "done" snapshot (the dashboard then
+        // shows the stale done instead of the live gate).
+        const claimed = claimActiveForSnapshot(readWorkflowState(projectDir));
         if (claimed) {
           emitNextJson(consortDir, claimed, projectDir, { version: kitVersion() });
         } else {
@@ -1089,6 +1095,18 @@ export async function stopDrive(consortDir: string): Promise<number> {
   fs.rmSync(file, { force: true });
   process.stdout.write(`consort-drive: stopped the drive at pid ${pid} (whole process tree, executor children included).\n`);
   return 0;
+}
+
+/** The feature whose snapshot a sprint stop should emit, or undefined for the
+ *  planning snapshot. A workflow-state feature claim shadows the sprint-planning
+ *  snapshot ONLY while the claimed feature is still IN FLIGHT (its SCM ladder has
+ *  not reached merged): once merged, the leftover feature_id is stale, and a NEW
+ *  sprint's planning stop (e.g. sprint-2's intake gate) must emit the planning
+ *  snapshot, not the completed feature's "done" snapshot (else the dashboard shows
+ *  the stale done instead of the live gate). */
+export function claimActiveForSnapshot(ws: { feature_id?: string; state?: string } | null | undefined): string | undefined {
+  const claimed = ws?.feature_id?.trim();
+  return claimed && ws?.state !== "merged" ? claimed : undefined;
 }
 
 function relaunchDetached(rawArgv: string[], consortDir: string): number | null {
