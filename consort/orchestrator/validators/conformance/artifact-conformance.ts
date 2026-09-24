@@ -697,6 +697,16 @@ export function checkPersistenceCoverage(testListJson: string, architectureJson:
  * ONE-uncovered-clause-per-lap by the reflect (the piecemeal thrash), because a
  * missing clause is a mechanical shortfall here, before the reflect ever runs.
  */
+/** A fitness_functions entry: a bare string (prose; nfr_id-credited) or an object
+ *  with an optional realizing-AC anchor (per-clause, ac-aware credited). */
+type FitnessClause = string | { clause?: string; realized_by?: string[] };
+/** The realizing-AC anchor of a clause, or [] for a bare string / no anchor. */
+function clauseRealizedBy(c: FitnessClause): string[] {
+  return typeof c === "object" && c !== null && Array.isArray(c.realized_by)
+    ? c.realized_by.filter((a) => typeof a === "string" && a.length > 0)
+    : [];
+}
+
 export function checkFitnessClauseCoverage(testListJson: string, architectureJson: string): ConformanceResult {
   let arch: { nfrs?: Array<{ id?: string; fitness_functions?: unknown; tier?: string }> };
   try {
@@ -704,38 +714,93 @@ export function checkFitnessClauseCoverage(testListJson: string, architectureJso
   } catch {
     return { ok: true }; // invalid architecture reported elsewhere
   }
+  // Non-platform NFRs that use the atomic array form (a platform NFR is defended
+  // once, excluded — the shipped tiering behavior, preserved).
   const atomic = (arch.nfrs ?? [])
-    // A platform-tier NFR is defended once (a deterministic gate or a single
-    // feature-level fitness item), NOT per-clause per-story — so it is excluded
-    // from the atomic-coverage count. Untiered/product NFRs count as before.
     .filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform")
-    .map((n) => ({ id: n.id as string, clauses: (n.fitness_functions as unknown[]).filter((c) => typeof c === "string" && c.trim().length > 0).length }))
-    .filter((n) => n.clauses > 0);
-  if (atomic.length === 0) return { ok: true }; // no NFR uses the atomic array form
-  let tl: { items?: Array<{ kind?: string; nfr_id?: string }> };
+    .map((n) => ({
+      id: n.id as string,
+      clauses: (n.fitness_functions as FitnessClause[]).filter((c) => (typeof c === "string" ? c.trim().length > 0 : typeof c?.clause === "string")),
+    }))
+    .filter((n) => n.clauses.length > 0);
+  if (atomic.length === 0) return { ok: true };
+  let tl: { items?: Array<{ kind?: string; nfr_id?: string; ac_id?: string }> };
   try {
     tl = JSON.parse(testListJson);
   } catch (err) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
-  const countById = new Map<string, number>();
-  for (const it of tl.items ?? []) {
-    if (typeof it.nfr_id === "string" && it.nfr_id.length > 0) countById.set(it.nfr_id, (countById.get(it.nfr_id) ?? 0) + 1);
+  const items = tl.items ?? [];
+  const allAcIds = new Set(items.map((it) => it.ac_id).filter((a): a is string => typeof a === "string"));
+  const violations: string[] = [];
+  for (const nfr of atomic) {
+    const nfrItems = items.filter((it) => it.nfr_id === nfr.id);
+    // Object-clauses with a realizing-AC anchor: credited PER-CLAUSE by a test whose
+    // ac_id realizes it (NOT a bare nfr_id match a mis-tag could satisfy). Demanded
+    // only when a realizing AC is present in THIS test-list (else the story that owns
+    // it is not being gated here — deferred; a truly-orphaned clause is checkNfrClauseScope's).
+    const acClauses = nfr.clauses.filter((c) => clauseRealizedBy(c).length > 0);
+    const anchoredAcs = new Set(acClauses.flatMap((c) => clauseRealizedBy(c)));
+    for (const c of acClauses) {
+      const rb = clauseRealizedBy(c);
+      const demanded = rb.some((a) => allAcIds.has(a));
+      if (!demanded) continue;
+      const covered = nfrItems.some((it) => typeof it.ac_id === "string" && rb.includes(it.ac_id));
+      if (!covered) {
+        violations.push(
+          `NFR ${nfr.id} clause "${(typeof c === "object" && c.clause) || ""}" is realized by AC(s) ${rb.join(", ")} present in this test-list ` +
+            `but no fitness item tagged nfr_id:"${nfr.id}" anchors to a realizing AC — author one for it (a bare nfr_id tag on an unrelated AC does not count)`,
+        );
+      }
+    }
+    // Generic clauses (bare strings + objects with no anchor): credited by the count
+    // of nfr_id items NOT consumed by an anchored clause (exactly today's behavior when
+    // the NFR uses only bare-string clauses — no anchors, so every nfr_id item is generic).
+    const genericNeed = nfr.clauses.length - acClauses.length;
+    const genericHave = nfrItems.filter((it) => !(typeof it.ac_id === "string" && anchoredAcs.has(it.ac_id))).length;
+    if (genericHave < genericNeed) {
+      violations.push(
+        `NFR ${nfr.id} declares ${genericNeed} atomic fitness clause(s) (fitness_functions) but only ${genericHave} test-list item(s) reference it via nfr_id ` +
+          `(author one fitness test per clause, each tagged nfr_id:"${nfr.id}"; do not pack multiple clauses into one test)`,
+      );
+    }
   }
-  const short = atomic
-    .map((n) => ({ id: n.id, need: n.clauses, have: countById.get(n.id) ?? 0 }))
-    .filter((n) => n.have < n.need);
-  if (short.length > 0) {
-    return {
-      ok: false,
-      violations: short.map(
-        (n) =>
-          `NFR ${n.id} declares ${n.need} atomic fitness clause(s) (fitness_functions) but only ${n.have} test-list item(s) reference it via nfr_id ` +
-          `(author one fitness test per clause, each tagged nfr_id:"${n.id}"; do not pack multiple clauses into one test)`,
-      ),
-    };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+
+/**
+ * An object-form fitness clause whose `realized_by` names an AC that exists in NO
+ * story of the feature is orphaned/mis-scoped: the operation the clause governs is
+ * introduced by no AC, so the Test Strategist cannot cover it and (before this gate)
+ * kept authoring an unsatisfiable test to discharge it (the F6-S1 / stockflow-3-100
+ * pick-overcommit clause with no pick AC). Flag it to the architect/spec-author: add
+ * the realizing AC, or defer the clause to the story that introduces the operation.
+ * Bare-string clauses (no anchor) are never flagged. `knownAcIds` is every AC id
+ * across the feature's stories.
+ */
+export function checkNfrClauseScope(architectureJson: string, knownAcIds: string[]): ConformanceResult {
+  let arch: { nfrs?: Array<{ id?: string; fitness_functions?: unknown }> };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true };
   }
-  return { ok: true };
+  const known = new Set(knownAcIds);
+  const violations: string[] = [];
+  for (const nfr of arch.nfrs ?? []) {
+    if (!nfr || typeof nfr.id !== "string" || !Array.isArray(nfr.fitness_functions)) continue;
+    for (const c of nfr.fitness_functions as FitnessClause[]) {
+      const rb = clauseRealizedBy(c);
+      if (rb.length === 0) continue; // bare string / no anchor — not scope-checked
+      if (!rb.some((a) => known.has(a))) {
+        violations.push(
+          `NFR ${nfr.id} clause "${(typeof c === "object" && c.clause) || ""}" names realized_by AC(s) ${rb.join(", ")}, none of which exist in any story of this feature — ` +
+            `the operation it governs is introduced by no AC. Add the realizing AC, or defer the clause to the story that introduces the operation (do not scope it to a story that lacks it)`,
+        );
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
 /** The deterministic gates a platform-tier NFR may name in `defended_by_gate` to

@@ -39,4 +39,14 @@ describe("contextRubric: platform NFRs are not threaded into the per-story rubri
     const consortDir = scaffold([{ id: "NFR-legacy", brief: "some guarantee", applies_to: "F1-x" }]);
     expect(contextRubric(consortDir, "F1-x", "S1", "")).toContain("NFR-legacy");
   });
+
+  it("object-clause NFR: threaded only into a story holding a realizing AC (S1 has AC1)", () => {
+    // Anchored to AC1 (present in S1) -> threaded; anchored elsewhere -> NOT threaded,
+    // so a clause governing an operation this story lacks never reaches its rubric
+    // (the pick-overcommit-in-file-stock recurrence).
+    const here = scaffold([{ id: "NFR-here", brief: "b", applies_to: "F1-x", fitness_functions: [{ clause: "c", realized_by: ["AC1"] }] }]);
+    expect(contextRubric(here, "F1-x", "S1", "")).toContain("NFR-here");
+    const elsewhere = scaffold([{ id: "NFR-elsewhere", brief: "b", applies_to: "F1-x", fitness_functions: [{ clause: "pick overcommit", realized_by: ["AC-pick"] }] }]);
+    expect(contextRubric(elsewhere, "F1-x", "S1", "")).not.toContain("NFR-elsewhere");
+  });
 });

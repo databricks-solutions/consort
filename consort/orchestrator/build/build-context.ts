@@ -61,11 +61,25 @@ function contextRubric(consortDir: string, featureId: string, story: string, ac:
   // (tier absent) are product by default and thread as before.
   try {
     const arch = JSON.parse(fs.readFileSync(architectureJson(consortDir, featureId), "utf8")) as {
-      nfrs?: Array<{ id?: string; brief?: string; applies_to?: string; tier?: string }>;
+      nfrs?: Array<{ id?: string; brief?: string; applies_to?: string; tier?: string; fitness_functions?: unknown }>;
     };
-    const nfrs = (arch.nfrs ?? []).filter(
-      (n) => n && typeof n.id === "string" && n.tier !== "platform" && (n.applies_to === story || n.applies_to === featureId),
-    );
+    const acIdSet = new Set(acIds);
+    const nfrs = (arch.nfrs ?? []).filter((n) => {
+      if (!n || typeof n.id !== "string" || n.tier === "platform") return false;
+      if (n.applies_to !== story && n.applies_to !== featureId) return false;
+      // An object-form clause carries realized_by (the AC introducing its operation).
+      // An NFR whose clauses are ALL anchored elsewhere must NOT thread into this story
+      // (the pick-overcommit clause threading into a file-stock story it can't realize).
+      // Thread when it has no anchored clauses (bare-string / feature-wide, as before)
+      // OR at least one anchored clause's realizing AC is in THIS story.
+      const anchored = Array.isArray(n.fitness_functions)
+        ? (n.fitness_functions as Array<{ realized_by?: unknown }>).filter(
+            (c) => c && typeof c === "object" && Array.isArray(c.realized_by) && c.realized_by.length > 0,
+          )
+        : [];
+      if (anchored.length === 0) return true;
+      return anchored.some((c) => (c.realized_by as string[]).some((a) => acIdSet.has(a)));
+    });
     if (nfrs.length) {
       parts.push(`required NFRs, ${nfrs.map((n) => `${n.id}${n.brief ? ` (${n.brief})` : ""}`).join("; ")}`);
     }
