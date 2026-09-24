@@ -20,7 +20,7 @@
 // conservative default – only truly class-less + var-less pages are flagged).
 
 import { checkUxClean, summarizeUxViolations, readAppIconFromGuide, UX_CLEAN_REMEDIATION } from "../../consort/architecture/design-adherence.js";
-import { join } from "node:path";
+import { resolveConsortDir } from "../../consort/config/consort-paths.js";
 
 interface Parsed {
   projectDir: string;
@@ -58,7 +58,7 @@ const p = parse(process.argv.slice(2));
 // the CLI too (it previously ran ONLY from the review-cycle scan, which passes the
 // icon explicitly) – a declared-but-unapplied brand icon must fail THIS gate, at
 // acceptance, not only surface as an advisory smell.
-const appIcon = readAppIconFromGuide(join(p.projectDir, ".consort"));
+const appIcon = readAppIconFromGuide(resolveConsortDir(p.projectDir));
 
 const result = checkUxClean({
   projectDir: p.projectDir,

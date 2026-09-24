@@ -6664,6 +6664,7 @@ function resolveConsortDir(projectDir = process.cwd()) {
   return next;
 }
 var featuresDir = (tdd) => (0, import_node_path.join)(tdd, "features");
+var cyclesRootDir = (tdd) => (0, import_node_path.join)(tdd, "cycles");
 var workflowStateJson = (tdd) => (0, import_node_path.join)(tdd, "workflow-state.json");
 var designDir = (tdd) => (0, import_node_path.join)(tdd, "design");
 var designGuideJson = (tdd) => (0, import_node_path.join)(designDir(tdd), "design-guide.json");
@@ -6936,6 +6937,21 @@ function resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared
         delete ws[PHASE_OWNER_KEY];
         fs3.writeFileSync(wsFile, JSON.stringify(ws, null, 2) + "\n");
         cleared.push("coarse phase cleared (drive re-derives design/build from artifacts)");
+      }
+    }
+  } catch {
+  }
+  try {
+    const storyCyclesDir = (0, import_node_path3.join)(cyclesRootDir(consortDir), feature, story);
+    if (fs3.existsSync(storyCyclesDir)) {
+      for (const acEntry of fs3.readdirSync(storyCyclesDir)) {
+        const gf = (0, import_node_path3.join)(storyCyclesDir, acEntry, "green-failure.json");
+        if (!fs3.existsSync(gf)) continue;
+        const dest = (0, import_node_path3.join)(backupDir, "cycles", acEntry, "green-failure.json");
+        fs3.mkdirSync((0, import_node_path3.dirname)(dest), { recursive: true });
+        fs3.cpSync(gf, dest);
+        fs3.rmSync(gf, { force: true });
+        cleared.push(`cycles/${acEntry}/green-failure.json (orphaned build marker)`);
       }
     }
   } catch {

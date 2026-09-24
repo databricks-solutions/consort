@@ -6674,6 +6674,7 @@ var designGuideJson = (tdd) => (0, import_node_path.join)(designDir(tdd), "desig
 var designAssetsDir = (tdd) => (0, import_node_path.join)(designDir(tdd), "assets");
 var featureDir = (tdd, featureId) => (0, import_node_path.join)(featuresDir(tdd), featureId);
 var featureResolved = (tdd, f) => findFeatureDir(tdd, f) ?? featureDir(tdd, f);
+var architectureJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "architecture.json");
 var featureTestListJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "test-list.json");
 var featureTestListMd = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "test-list.md");
 var storiesDir = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "stories");
@@ -7871,6 +7872,17 @@ function stopLocal(projectDir, targetName) {
 init_cjs_shims();
 var import_node_fs3 = require("fs");
 var import_node_path4 = require("path");
+function readAppIconFromGuide(consortDir) {
+  try {
+    const gp = designGuideJson(consortDir);
+    if (!(0, import_node_fs3.existsSync)(gp)) return void 0;
+    const guide = JSON.parse((0, import_node_fs3.readFileSync)(gp, "utf8"));
+    const icon = guide.app_icon;
+    return icon && typeof icon.source === "string" && typeof icon.install_to === "string" ? { source: icon.source, install_to: icon.install_to } : void 0;
+  } catch {
+    return void 0;
+  }
+}
 var VAR_CALL = /var\(\s*--[A-Za-z0-9-]+[^)]*\)/g;
 var ROUTE_ELEMENT_RE = /element=\{\s*<\s*([A-Z][A-Za-z0-9_]*)/g;
 var ROUTE_COMPONENT_RE = /\bComponent=\{\s*([A-Z][A-Za-z0-9_]*)\s*\}/g;
@@ -8178,6 +8190,7 @@ var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var DEFAULT_CODE_DIRS = ["app", "src", "lib", "templates"];
 var DEFAULT_TEST_DIRS = ["tests", "test"];
+var CLIENT_TEST_DIRS = ["client/tests"];
 var CODE_EXTS = /* @__PURE__ */ new Set([".py", ".ts", ".tsx", ".js", ".jsx", ".html", ".jinja", ".jinja2", ".sql"]);
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -8302,11 +8315,45 @@ function checkContractClean(args) {
 ${list}`;
   return { clean: false, droppedSymbols: dropped, violations, remediation };
 }
+function clientCaseVariants(symbol) {
+  const parts = symbol.split("_").filter(Boolean);
+  if (parts.length < 2) return [symbol];
+  const kebab = parts.join("-");
+  const camel = parts[0] + parts.slice(1).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join("");
+  return [.../* @__PURE__ */ new Set([symbol, kebab, camel])];
+}
+function scanClientSupersededRefs(projectDir, dropped) {
+  const matchers = dropped.flatMap((s) => clientCaseVariants(s).map((v) => ({ symbol: s, re: symbolRefRegex(v) })));
+  const hits = [];
+  for (const cd of CLIENT_TEST_DIRS) {
+    const abs = (0, import_node_path6.join)(projectDir, cd);
+    if (!(0, import_node_fs4.existsSync)(abs)) continue;
+    for (const file of walk(abs, (p) => CODE_EXTS.has((0, import_node_path6.extname)(p)), [], EXCLUDE_DIR_JUNK)) {
+      let lines;
+      try {
+        lines = (0, import_node_fs4.readFileSync)(file, "utf8").split("\n");
+      } catch {
+        continue;
+      }
+      lines.forEach((text, i) => {
+        for (const { symbol, re } of matchers) {
+          if (re.test(text)) {
+            hits.push({ file: (0, import_node_path6.relative)(projectDir, file), line: i + 1, symbol, text: text.trim().slice(0, 200) });
+          }
+        }
+      });
+    }
+  }
+  return hits;
+}
 function supersededTestCandidates(args) {
   const { projectDir } = args;
   const dropped = netDroppedSymbols(projectDir, args.migrationDirs);
   if (dropped.length === 0) return { droppedSymbols: [], candidates: [] };
-  const candidates = scanSymbolRefs(projectDir, args.testDirs ?? DEFAULT_TEST_DIRS, dropped, EXCLUDE_DIR_JUNK);
+  const candidates = [
+    ...scanSymbolRefs(projectDir, args.testDirs ?? DEFAULT_TEST_DIRS, dropped, EXCLUDE_DIR_JUNK),
+    ...scanClientSupersededRefs(projectDir, dropped)
+  ];
   if (candidates.length === 0) return { droppedSymbols: dropped, candidates: [] };
   const syms = [...new Set(candidates.map((c) => c.symbol))].join(", ");
   const list = candidates.map((c) => `  ${c.file}:${c.line}  [${c.symbol}]  ${c.text}`).join("\n");
@@ -8510,6 +8557,7 @@ ${reverts}
 init_cjs_shims();
 var import_node_fs7 = require("fs");
 var import_node_path9 = require("path");
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 var DEFAULT_TEST_DIRS2 = ["tests", "client/tests"];
 var DEFAULT_MIGRATION_DIRS4 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var EXCLUDE_DIR3 = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist)(\/|$)/;
@@ -8571,9 +8619,163 @@ var SMELL_FIX = {
   "vi-mock-tdz": "vi.mock factories hoist ABOVE top-level consts (TDZ ReferenceError, the suite then reports 0 tests) \u2013 build shared fixture data INSIDE the factory, or wrap it in vi.hoisted(() => {...})",
   "framenavigated-reload-detector": "framenavigated fires for History-API (React Router) navigation too \u2013 assert the navigation STATE (page.url() / rendered content), never the event",
   "delete-teardown": "a DELETE-based teardown breaks on append-only triggers and ON DELETE RESTRICT FKs, and can wipe a sibling story's seed \u2013 rely on per-run uuid keys for isolation (no cleanup); only delete rows the test itself created, scoped by those keys",
-  "broad-integrity-except": "`except IntegrityError` catches the UMBRELLA (unique + check + FK violations) and masks the real failure \u2013 a wrong table/column name then reads as the expected conflict. Catch the specific subclass (UniqueViolation / CheckViolation) or assert on the error message",
-  "schema-unsatisfiable-ref": "the test references a table NO migration creates, so it is unsatisfiable (UndefinedTable on every run) \u2013 fix the table name (see the known tables below) or add the migration; never paper it over with a broad except"
+  "broad-integrity-except": "a bare `except IntegrityError`/`except Exception` swallow catches the UMBRELLA (unique + check + FK violations) with no discrimination and masks the real failure \u2013 a wrong table/column name then reads as the expected conflict. Catch the specific subclass (UniqueViolation / CheckViolation / NotNullViolation), or discriminate explicitly: assert on the exception's message or isinstance against the subclass (a broad catch WITH a discriminating assert is fine and is not flagged)",
+  "schema-unsatisfiable-ref": "the test references a table NO migration creates, so it is unsatisfiable (UndefinedTable on every run) \u2013 fix the table name (see the known tables below) or add the migration; never paper it over with a broad except",
+  "whole-table-aggregate": "an ABSOLUTE whole-table COUNT/SUM with no seed-scope and no delta passes on the isolated branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total",
+  "migration-marker-presence": "a downgrade/upgrade test without @pytest.mark.migration runs on the SHARED verify DB and drops/alters its live schema for every other test. Add @pytest.mark.migration so the verify harness routes it to its OWN ephemeral branch (single-step downgrade -1 + upgrade head, never downgrade base)",
+  "reversible-invariant-round-trip": "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility \u2013 and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade \u2192 seed/migrate \u2192 upgrade \u2192 assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
+  "pytest-bdd-parse-conversion": "a parse()/parsers.parse() step pattern uses a Python str.format conversion flag (!r / !s / !a); the `parse` library backing pytest-bdd supports the format SPEC ({name:type}) but NOT conversions, so the step text never matches the feature and the step raises StepDefinitionNotFoundError \u2013 the app can never green it. Drop the conversion and quote the value in the pattern instead (e.g. parse('\u2026 \"{name}\"') to match a quoted feature value, or parse('\u2026 {name}') for a bare token), matching how the .feature file writes it",
+  "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it"
 };
+function forwardMigrationRegion(body) {
+  const m = body.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
+  return m ? m[1] : body;
+}
+function collectDroppedColumns(projectDir, migrationDirs) {
+  const files = [];
+  for (const md of migrationDirs) {
+    const abs = (0, import_node_path9.join)(projectDir, md);
+    if (!(0, import_node_fs7.existsSync)(abs)) continue;
+    for (const f of walk3(abs, (p) => [".py", ".sql"].includes((0, import_node_path9.extname)(p)))) files.push(f);
+  }
+  files.sort();
+  const GENERIC = /* @__PURE__ */ new Set(["id", "name", "type", "value", "data", "status", "key", "code", "text"]);
+  const last = /* @__PURE__ */ new Map();
+  for (const f of files) {
+    let body;
+    try {
+      body = (0, import_node_fs7.readFileSync)(f, "utf8");
+    } catch {
+      continue;
+    }
+    const region = f.endsWith(".py") ? forwardMigrationRegion(body) : body;
+    for (const line of region.split("\n")) {
+      for (const m of line.matchAll(/sa\.Column\(\s*["'](\w+)["']/g)) last.set(m[1], "add");
+      for (const m of line.matchAll(/add_column\([^,]*,\s*sa\.Column\(\s*["'](\w+)["']/g)) last.set(m[1], "add");
+      for (const m of line.matchAll(/ADD\s+COLUMN\s+["'`]?(\w+)/gi)) last.set(m[1].toLowerCase(), "add");
+      for (const m of line.matchAll(/drop_column\([^,]*,\s*["'](\w+)["']/g)) last.set(m[1], "drop");
+      for (const m of line.matchAll(/DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/gi)) last.set(m[1].toLowerCase(), "drop");
+    }
+  }
+  const dropped = /* @__PURE__ */ new Set();
+  for (const [col, ev] of last) {
+    if (ev === "drop" && col.length >= 4 && !GENERIC.has(col.toLowerCase())) dropped.add(col);
+  }
+  return dropped;
+}
+function liveReferenceLines(body, col) {
+  const re = new RegExp(`\\b${col}\\b`);
+  const lines = body.split("\n");
+  const out = [];
+  let inDoc = false;
+  let docQuote = "";
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (inDoc) {
+      if (line.includes(docQuote)) inDoc = false;
+      continue;
+    }
+    const tq = line.match(/"""|'''/);
+    if (tq) {
+      const q = tq[0];
+      const after = line.slice(line.indexOf(q) + 3);
+      if (!after.includes(q)) {
+        line = line.slice(0, line.indexOf(q));
+        inDoc = true;
+        docQuote = q;
+      }
+    }
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const slash = line.indexOf("//");
+    if (slash >= 0) line = line.slice(0, slash);
+    if (re.test(line)) out.push(i + 1);
+  }
+  return out;
+}
+function checkDroppedColumnDanglingRef(projectDir, migrationDirs) {
+  const dropped = collectDroppedColumns(projectDir, migrationDirs);
+  if (dropped.size === 0) return [];
+  const out = [];
+  const migAbs = migrationDirs.map((d) => (0, import_node_path9.join)(projectDir, d));
+  const SRC_EXCLUDE = new RegExp(`(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|dist|build|${ARTIFACT_ROOTS_RE2}|client|tests?|__tests__|e2e)(/|$)`);
+  const isSrc = (p) => /\.(py|sql)$/.test(p) && !migAbs.some((m) => p.startsWith(m));
+  const srcFiles = walk3(projectDir, (p) => isSrc(p) && !SRC_EXCLUDE.test(p));
+  for (const f of srcFiles) {
+    let body;
+    try {
+      body = (0, import_node_fs7.readFileSync)(f, "utf8");
+    } catch {
+      continue;
+    }
+    const rel = (0, import_node_path9.relative)(projectDir, f);
+    for (const col of dropped) {
+      if (!body.includes(col)) continue;
+      for (const line of liveReferenceLines(body, col)) {
+        out.push({
+          smell: "dropped-column-dangling-reference",
+          file: rel,
+          line,
+          text: `live reference to dropped column '${col}'`,
+          detail: SMELL_FIX["dropped-column-dangling-reference"]
+        });
+      }
+    }
+  }
+  return out;
+}
+function checkReversibleInvariantRoundTrip(projectDir) {
+  const tdd = resolveConsortDir(projectDir);
+  const featsDir = featuresDir(tdd);
+  const out = [];
+  if (!(0, import_node_fs7.existsSync)(featsDir)) return out;
+  for (const feature of (0, import_node_fs7.readdirSync)(featsDir)) {
+    const archPath = architectureJson(tdd, feature);
+    if (!(0, import_node_fs7.existsSync)(archPath)) continue;
+    let arch;
+    try {
+      arch = JSON.parse((0, import_node_fs7.readFileSync)(archPath, "utf8"));
+    } catch {
+      continue;
+    }
+    const reversible = (arch.persistence_invariants ?? []).filter(
+      (pi) => typeof pi?.id === "string" && typeof pi?.type === "string" && /reversib/i.test(pi.type)
+    );
+    if (reversible.length === 0) continue;
+    const itemSources = [(0, import_node_path9.join)(featureDir(tdd, feature), "test-list.json")];
+    const stDir = storiesDir(tdd, feature);
+    if ((0, import_node_fs7.existsSync)(stDir)) {
+      for (const s of (0, import_node_fs7.readdirSync)(stDir)) {
+        const p = storyTestListJson(tdd, feature, s);
+        if ((0, import_node_fs7.existsSync)(p)) itemSources.push(p);
+      }
+    }
+    const items = [];
+    for (const src of itemSources) {
+      try {
+        const tl = JSON.parse((0, import_node_fs7.readFileSync)(src, "utf8"));
+        items.push(...tl.items ?? []);
+      } catch {
+      }
+    }
+    for (const pi of reversible) {
+      const covering = items.filter((it) => it.invariant_id === pi.id);
+      const hasRoundTrip = covering.some(
+        (it) => /downgrade[\s\S]{0,80}upgrade|upgrade[\s\S]{0,80}downgrade|round.?trip/i.test(it.description ?? "")
+      );
+      if (!hasRoundTrip) {
+        out.push({
+          smell: "reversible-invariant-round-trip",
+          file: (0, import_node_path9.relative)(projectDir, featureDir(tdd, feature)),
+          line: 1,
+          text: `invariant ${pi.id} (migration_reversible) covered only by forward-only test(s)`,
+          detail: SMELL_FIX["reversible-invariant-round-trip"]
+        });
+      }
+    }
+  }
+  return out;
+}
 function checkTestSmells(args) {
   const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS2;
   const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS4);
@@ -8621,8 +8823,27 @@ function checkTestSmells(args) {
         if (teardownDepth > 0 && /DELETE\s+FROM|deleteMany\(|\.delete\(\s*\{|TRUNCATE/i.test(text)) {
           push("delete-teardown", rel, line, text);
         }
-        if (isPy && /^\s*except\s*(IntegrityError|Exception)\b/.test(text)) {
-          push("broad-integrity-except", rel, line, text);
+        if (isPy) {
+          const m = text.match(/^\s*except\s*(IntegrityError|Exception)\b(?:\s+as\s+(\w+))?/);
+          if (m) {
+            const varName = m[2];
+            const discriminated = varName !== void 0 && lines.slice(i + 1, i + 8).some((l) => new RegExp(`\\b${varName}\\b`).test(l) && /assert|isinstance|str\(|print|log|raise/.test(l));
+            if (!discriminated) {
+              push("broad-integrity-except", rel, line, text);
+            }
+          }
+        }
+        if (isPy && /\bparse(?:rs)?\.(?:parse|re)\s*\(/.test(text) && /\{[^{}]*![rsa][^{}]*\}/.test(text)) {
+          const conv = text.match(/\{[^{}]*(![rsa])[^{}]*\}/);
+          push("pytest-bdd-parse-conversion", rel, line, text, `${conv ? conv[1] : "!r"} conversion in a parse() step pattern`);
+        }
+        if (/COUNT\s*\(\s*\*\)|SELECT\s+COUNT/i.test(text)) {
+          const region = lines.slice(Math.max(0, i - 40), i + 14).join("\n");
+          const absoluteCount = /==\s*\d+|assert(?:Equals|Equal|That)?\s*\(?\s*\d+\s*\)|toBe\(\s*\d+|equals the (seeded|expected|recorded) count/i.test(region);
+          const scopedOrDelta = /uuid|randomUUID|unique|WHERE|where|filter|delta|count_before|probe_before|before_seed|subtract|minus/i.test(region);
+          if (absoluteCount && !scopedOrDelta) {
+            push("whole-table-aggregate", rel, line, text, "absolute whole-table count with no seed-scope and no delta");
+          }
         }
         if (knownTables.size > 0) {
           for (const m of text.matchAll(/\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+["'`]?(\w+)["'`]?/g)) {
@@ -8633,8 +8854,13 @@ function checkTestSmells(args) {
           }
         }
       });
+      if (isPy && /command\.downgrade|alembic\s+downgrade|\.downgrade\(|downgrade\s+-1|run_downgrade/i.test(body) && !/pytest\.mark\.migration|mark\.migration/.test(body)) {
+        push("migration-marker-presence", rel, 1, "(file)", "a downgrade test without @pytest.mark.migration (drops schema on the shared verify DB)");
+      }
     }
   }
+  violations.push(...checkReversibleInvariantRoundTrip(args.projectDir));
+  violations.push(...checkDroppedColumnDanglingRef(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS4));
   if (violations.length === 0) return { clean: true, violations: [] };
   const list = violations.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}
       fix: ${v.detail}`).join("\n");
@@ -8819,6 +9045,7 @@ async function greenOpenCycle(args) {
   };
   const verify = args.verify ?? defaultGreenVerifier;
   let result = await verify({ projectDir: (0, import_path7.dirname)(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+  let testSmellRemediation;
   if (!result.passed && !consortEnv("REPLAY_BUILD_DIR") && isProvisioningFaultSummary(result.summary)) {
     const retry = await verify({ projectDir: (0, import_path7.dirname)(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
     if (retry.passed) {
@@ -8852,7 +9079,10 @@ async function greenOpenCycle(args) {
     if (result.passed) {
       try {
         const smells = checkTestSmells({ projectDir: (0, import_path7.dirname)(consortDir) });
-        if (!smells.clean && smells.remediation) result = { passed: false, summary: smells.remediation };
+        if (!smells.clean && smells.remediation) {
+          result = { passed: false, summary: smells.remediation };
+          testSmellRemediation = smells.remediation;
+        }
       } catch {
       }
     }
@@ -8903,7 +9133,8 @@ async function greenOpenCycle(args) {
         // client component, a broken import), so the ASSESS turn starts from the real failure.
         ...result.failureOutput ? { failureOutput: result.failureOutput } : {},
         ...contractRefs ? { contractRefs } : {},
-        ...supersededTestRefs ? { supersededTestRefs } : {}
+        ...supersededTestRefs ? { supersededTestRefs } : {},
+        ...testSmellRemediation ? { testSmellRefs: testSmellRemediation } : {}
       });
       return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, needsAssess: true, summary: result.summary };
     }
@@ -9010,6 +9241,28 @@ function installBrandAsset(projectDir, consortDir, appIcon) {
     return false;
   }
 }
+function applyBrandIconReference(projectDir, installTo) {
+  const indexHtml = (0, import_path7.join)(projectDir, "client", "index.html");
+  if (!(0, import_fs7.existsSync)(indexHtml)) return false;
+  try {
+    const href = `/${(0, import_path7.basename)(installTo)}`;
+    const src = (0, import_fs7.readFileSync)(indexHtml, "utf8");
+    const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
+    if (linkRe.test(src)) {
+      const next = src.replace(linkRe, `<link rel="icon"$1href="${href}"$2>`);
+      if (next !== src) (0, import_fs7.writeFileSync)(indexHtml, next);
+      return true;
+    }
+    if (/<\/head>/i.test(src)) {
+      (0, import_fs7.writeFileSync)(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />
+</head>`));
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 function flagUxAdherenceIfDirty(consortDir, story) {
   try {
     let designClasses;
@@ -9020,11 +9273,14 @@ function flagUxAdherenceIfDirty(consortDir, story) {
         const guide = JSON.parse((0, import_fs7.readFileSync)(gp, "utf8"));
         const classes = Object.values(guide.components ?? {}).map((c) => typeof c?.class === "string" ? c.class : void 0).filter((c) => !!c);
         if (classes.length) designClasses = classes;
-        if (guide.app_icon?.source && guide.app_icon?.install_to) appIcon = guide.app_icon;
       }
+      appIcon = readAppIconFromGuide(consortDir);
     } catch {
     }
-    if (appIcon) installBrandAsset((0, import_path7.dirname)(consortDir), consortDir, appIcon);
+    if (appIcon) {
+      installBrandAsset((0, import_path7.dirname)(consortDir), consortDir, appIcon);
+      applyBrandIconReference((0, import_path7.dirname)(consortDir), appIcon.install_to);
+    }
     const ux = checkUxClean({ projectDir: (0, import_path7.dirname)(consortDir), designClasses, appIcon });
     if (!ux.clean && !hasOpenSmell(consortDir, "ux-adherence", story)) {
       writeSmellsLog(consortDir, [{ smell: "ux-adherence", cycle_ids: [], detail: summarizeUxViolations(ux), story_id: story }]);
@@ -9183,6 +9439,10 @@ async function refactorStory(consortDir, featureId, story, opts) {
   (0, import_fs7.writeFileSync)(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
   for (const d of readSmellsLog(consortDir).detected) {
     if (!d.resolution && isBuildRefactorRoutableSmell(d.smell) && (d.story_id === void 0 || d.story_id === story)) {
+      if (d.smell === "ux-adherence") {
+        const ux = checkUxClean({ projectDir: (0, import_path7.dirname)(consortDir), appIcon: readAppIconFromGuide(consortDir) });
+        if (!ux.clean) continue;
+      }
       markSmellResolved(consortDir, d.smell, { story_id: d.story_id, kind: "accepted", note: `refactored story: ${story}` });
     }
   }

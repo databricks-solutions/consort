@@ -18,6 +18,19 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
+import {
+  resolveConsortDir,
+  featuresDir,
+  featureDir,
+  architectureJson,
+  storiesDir,
+  storyTestListJson,
+  artifactRootsRegexAlternation,
+} from "../../consort/config/consort-paths.js";
+
+// The workflow-bookkeeping roots (.consort + legacy) as a regex fragment, from the
+// single source of truth in consort-paths – never hardcoded here (consort-paths-guard).
+const ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 
 export interface TestSmellArgs {
   /** Project working-tree root. */
@@ -233,7 +246,7 @@ function checkDroppedColumnDanglingRef(projectDir: string, migrationDirs: string
   if (dropped.size === 0) return [];
   const out: TestSmellViolation[] = [];
   const migAbs = migrationDirs.map((d) => join(projectDir, d));
-  const SRC_EXCLUDE = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist|build|\.consort|client|tests?|__tests__|e2e)(\/|$)/;
+  const SRC_EXCLUDE = new RegExp(`(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|dist|build|${ARTIFACT_ROOTS_RE}|client|tests?|__tests__|e2e)(/|$)`);
   // DB-facing code only (.py + raw .sql): the failure mode is the app emitting SQL
   // for a missing column and crashing. A client .ts/.tsx never talks to the DB, so
   // a stale field name there is a DIFFERENT (lower-severity) class, not this one.
@@ -269,11 +282,12 @@ function checkDroppedColumnDanglingRef(projectDir: string, migrationDirs: string
  *  shared branch a forward-only seed-then-migrate is unsatisfiable). Deterministic
  *  from the invariant's declared type vs the covering item's description. */
 function checkReversibleInvariantRoundTrip(projectDir: string): TestSmellViolation[] {
-  const featuresDir = join(projectDir, ".consort", "features");
+  const tdd = resolveConsortDir(projectDir);
+  const featsDir = featuresDir(tdd);
   const out: TestSmellViolation[] = [];
-  if (!existsSync(featuresDir)) return out;
-  for (const feature of readdirSync(featuresDir)) {
-    const archPath = join(featuresDir, feature, "architecture.json");
+  if (!existsSync(featsDir)) return out;
+  for (const feature of readdirSync(featsDir)) {
+    const archPath = architectureJson(tdd, feature);
     if (!existsSync(archPath)) continue;
     let arch: { persistence_invariants?: Array<{ id?: string; type?: string }> };
     try {
@@ -286,11 +300,11 @@ function checkReversibleInvariantRoundTrip(projectDir: string): TestSmellViolati
         typeof pi?.id === "string" && typeof pi?.type === "string" && /reversib/i.test(pi.type),
     );
     if (reversible.length === 0) continue;
-    const itemSources = [join(featuresDir, feature, "test-list.json")];
-    const storiesDir = join(featuresDir, feature, "stories");
-    if (existsSync(storiesDir)) {
-      for (const s of readdirSync(storiesDir)) {
-        const p = join(storiesDir, s, "test-list-per-story.json");
+    const itemSources = [join(featureDir(tdd, feature), "test-list.json")];
+    const stDir = storiesDir(tdd, feature);
+    if (existsSync(stDir)) {
+      for (const s of readdirSync(stDir)) {
+        const p = storyTestListJson(tdd, feature, s);
         if (existsSync(p)) itemSources.push(p);
       }
     }
@@ -311,7 +325,7 @@ function checkReversibleInvariantRoundTrip(projectDir: string): TestSmellViolati
       if (!hasRoundTrip) {
         out.push({
           smell: "reversible-invariant-round-trip",
-          file: join(".consort", "features", feature),
+          file: relative(projectDir, featureDir(tdd, feature)),
           line: 1,
           text: `invariant ${pi.id} (migration_reversible) covered only by forward-only test(s)`,
           detail: SMELL_FIX["reversible-invariant-round-trip"],

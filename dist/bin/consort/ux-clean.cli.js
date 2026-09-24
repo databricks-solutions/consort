@@ -1,8 +1,39 @@
 #!/usr/bin/env node
 
 // consort/architecture/design-adherence.ts
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { existsSync as existsSync2, readFileSync as readFileSync2, readdirSync as readdirSync2 } from "fs";
+import { join as join2 } from "path";
+
+// consort/config/consort-paths.ts
+import * as fs from "fs";
 import { join } from "path";
+var ARTIFACT_ROOT = ".consort";
+var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
+var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
+function resolveConsortDir(projectDir = process.cwd()) {
+  const next = join(projectDir, ARTIFACT_ROOT);
+  if (fs.existsSync(next)) return next;
+  for (const legacyName of LEGACY_ARTIFACT_ROOTS) {
+    const legacy = join(projectDir, legacyName);
+    if (fs.existsSync(legacy)) return legacy;
+  }
+  return next;
+}
+var designDir = (tdd) => join(tdd, "design");
+var designGuideJson = (tdd) => join(designDir(tdd), "design-guide.json");
+
+// consort/architecture/design-adherence.ts
+function readAppIconFromGuide(consortDir) {
+  try {
+    const gp = designGuideJson(consortDir);
+    if (!existsSync2(gp)) return void 0;
+    const guide = JSON.parse(readFileSync2(gp, "utf8"));
+    const icon = guide.app_icon;
+    return icon && typeof icon.source === "string" && typeof icon.install_to === "string" ? { source: icon.source, install_to: icon.install_to } : void 0;
+  } catch {
+    return void 0;
+  }
+}
 var VAR_CALL = /var\(\s*--[A-Za-z0-9-]+[^)]*\)/g;
 var ROUTE_ELEMENT_RE = /element=\{\s*<\s*([A-Z][A-Za-z0-9_]*)/g;
 var ROUTE_COMPONENT_RE = /\bComponent=\{\s*([A-Z][A-Za-z0-9_]*)\s*\}/g;
@@ -86,16 +117,16 @@ function checkUxClean(args) {
   const okIcon = { ok: true, violations: [] };
   const okVocab = { ok: true, missing: [] };
   const clean0 = { clean: true, reachability: { ok: true, unreachable: [] }, tokens: { ok: true, bare: [] }, appIcon: okIcon, vocabulary: okVocab };
-  const srcDir = args.clientSrcDir ?? join(args.projectDir, "client", "src");
-  const appTsx = join(srcDir, "App.tsx");
-  const pagesDir = join(srcDir, "pages");
-  if (!existsSync(appTsx) || !existsSync(pagesDir)) return clean0;
-  const appSource = readFileSync(appTsx, "utf8");
+  const srcDir = args.clientSrcDir ?? join2(args.projectDir, "client", "src");
+  const appTsx = join2(srcDir, "App.tsx");
+  const pagesDir = join2(srcDir, "pages");
+  if (!existsSync2(appTsx) || !existsSync2(pagesDir)) return clean0;
+  const appSource = readFileSync2(appTsx, "utf8");
   const pageSources = {};
   const pageComponents = [];
-  for (const name of readdirSync(pagesDir)) {
+  for (const name of readdirSync2(pagesDir)) {
     if (!name.endsWith(".tsx") || name.endsWith(".test.tsx")) continue;
-    const src = readFileSync(join(pagesDir, name), "utf8");
+    const src = readFileSync2(join2(pagesDir, name), "utf8");
     pageSources[name] = src;
     for (const re of [/export\s+function\s+([A-Z][A-Za-z0-9_]*)/g, /export\s+const\s+([A-Z][A-Za-z0-9_]*)/g]) {
       re.lastIndex = 0;
@@ -105,24 +136,24 @@ function checkUxClean(args) {
   }
   const reachability = checkRouteReachability({ appSource, pageComponents });
   const tokens = checkTokenConsumption({ pageSources, designClasses: args.designClasses });
-  const globalCssPath = join(srcDir, "styles", "global.css");
-  const vocabulary = args.designClasses && args.designClasses.length > 0 && existsSync(globalCssPath) ? checkComponentVocabularyDefined(args.designClasses, readFileSync(globalCssPath, "utf8")) : okVocab;
-  let appIcon = okIcon;
+  const globalCssPath = join2(srcDir, "styles", "global.css");
+  const vocabulary = args.designClasses && args.designClasses.length > 0 && existsSync2(globalCssPath) ? checkComponentVocabularyDefined(args.designClasses, readFileSync2(globalCssPath, "utf8")) : okVocab;
+  let appIcon2 = okIcon;
   if (args.appIcon) {
-    const clientDir = join(srcDir, "..");
-    const indexHtmlPath = join(clientDir, "index.html");
-    const installToPath = join(args.projectDir, args.appIcon.install_to);
+    const clientDir = join2(srcDir, "..");
+    const indexHtmlPath = join2(clientDir, "index.html");
+    const installToPath = join2(args.projectDir, args.appIcon.install_to);
     const installedBasename = args.appIcon.install_to.split("/").pop() ?? args.appIcon.install_to;
-    appIcon = checkAppIcon({
+    appIcon2 = checkAppIcon({
       appIcon: args.appIcon,
-      installedExists: existsSync(installToPath),
+      installedExists: existsSync2(installToPath),
       installedBasename,
-      indexHtml: existsSync(indexHtmlPath) ? readFileSync(indexHtmlPath, "utf8") : "",
+      indexHtml: existsSync2(indexHtmlPath) ? readFileSync2(indexHtmlPath, "utf8") : "",
       appShell: appSource
     });
   }
-  const clean = reachability.ok && tokens.ok && appIcon.ok && vocabulary.ok;
-  return clean ? { clean, reachability, tokens, appIcon, vocabulary } : { clean, reachability, tokens, appIcon, vocabulary, remediation: UX_CLEAN_REMEDIATION };
+  const clean = reachability.ok && tokens.ok && appIcon2.ok && vocabulary.ok;
+  return clean ? { clean, reachability, tokens, appIcon: appIcon2, vocabulary } : { clean, reachability, tokens, appIcon: appIcon2, vocabulary, remediation: UX_CLEAN_REMEDIATION };
 }
 
 // bin/consort/ux-clean.cli.ts
@@ -152,10 +183,12 @@ Exit 0 = clean / no client workspace; exit 1 = an unreachable or bare feature pa
   process.exit(0);
 }
 var p = parse(process.argv.slice(2));
+var appIcon = readAppIconFromGuide(resolveConsortDir(p.projectDir));
 var result = checkUxClean({
   projectDir: p.projectDir,
   ...p.clientSrc ? { clientSrcDir: p.clientSrc } : {},
-  ...p.designClasses.length ? { designClasses: p.designClasses } : {}
+  ...p.designClasses.length ? { designClasses: p.designClasses } : {},
+  ...appIcon ? { appIcon } : {}
 });
 if (p.json) {
   process.stdout.write(`${JSON.stringify(result)}

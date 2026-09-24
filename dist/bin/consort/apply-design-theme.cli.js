@@ -5,8 +5,28 @@ import { existsSync as existsSync3, readFileSync as readFileSync3, writeFileSync
 import { join as join3 } from "path";
 
 // consort/architecture/design-adherence.ts
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { existsSync as existsSync2, readFileSync as readFileSync2, readdirSync as readdirSync2 } from "fs";
+import { join as join2 } from "path";
+
+// consort/config/consort-paths.ts
+import * as fs from "fs";
 import { join } from "path";
+var ARTIFACT_ROOT = ".consort";
+var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
+var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
+function resolveConsortDir(projectDir = process.cwd()) {
+  const next = join(projectDir, ARTIFACT_ROOT);
+  if (fs.existsSync(next)) return next;
+  for (const legacyName of LEGACY_ARTIFACT_ROOTS) {
+    const legacy = join(projectDir, legacyName);
+    if (fs.existsSync(legacy)) return legacy;
+  }
+  return next;
+}
+var designDir = (tdd) => join(tdd, "design");
+var designGuideJson = (tdd) => join(designDir(tdd), "design-guide.json");
+
+// consort/architecture/design-adherence.ts
 function designGuideToCssVars(guide) {
   const vars = {};
   vars["--font-sans"] = guide.typography.font_family;
@@ -43,24 +63,6 @@ ${lines.join("\n")}
 }
 `;
 }
-
-// consort/config/consort-paths.ts
-import * as fs from "fs";
-import { join as join2 } from "path";
-var ARTIFACT_ROOT = ".consort";
-var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
-var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
-function resolveConsortDir(projectDir = process.cwd()) {
-  const next = join2(projectDir, ARTIFACT_ROOT);
-  if (fs.existsSync(next)) return next;
-  for (const legacyName of LEGACY_ARTIFACT_ROOTS) {
-    const legacy = join2(projectDir, legacyName);
-    if (fs.existsSync(legacy)) return legacy;
-  }
-  return next;
-}
-var designDir = (tdd) => join2(tdd, "design");
-var designGuideJson = (tdd) => join2(designDir(tdd), "design-guide.json");
 
 // consort/architecture/apply-theme.ts
 var THEME_HEADER = `/*

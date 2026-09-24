@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.100] - 2026-09-24
+
+Design-lane + build-lane hardening that cuts the reflect/repair/reopen churn seen in the field, all deterministic and fail-closed.
+
+### Added
+- **Test-authoring smell catalog expanded to 11 deterministic detectors.** New: `whole-table-aggregate` (an absolute whole-table COUNT/SUM with no seed-scope or delta), `migration-marker-presence` (a downgrade test without `@pytest.mark.migration`), `reversible-invariant-round-trip` (a `migration_reversible` invariant covered only by a forward-only test), `pytest-bdd-parse-conversion` (a `parse()` step pattern using an unsupported `!r`/`!s`/`!a` conversion → `StepDefinitionNotFoundError`), and `dropped-column-dangling-reference` (app/seed code still emitting SQL for a contract-dropped column). `broad-integrity-except` now credits a discriminating catch (message/`isinstance` assertion) instead of flagging it.
+- **Design-lane early gates** for the two recurring reflect-lap defect classes (migration-preservation self-contradiction; singular-form NFR coverage; client-kind/layer coherence).
+- **Deterministic brand-icon application** + a fail-closed acceptance gate, with refactor-completion re-verifying the ux-adherence smell before resolving it.
+
+### Changed
+- **A deterministic test-authoring smell now routes a surgical driver repair, not a design-lane reopen.** The smell's known fix is recorded on the green-failure marker (`testSmellRefs`) and the assess directive routes an in-place `assess-regression --fix`, never a `consort-reopen-story` — eliminating the reopen churn a one-line teardown catch used to cause. Authoring-prevention prompt rules added (no teardown on a `@pytest.mark.migration` branch; never blanket-catch a teardown).
+- **The superseded-test pre-localizer also scans client tests** in kebab/camel casing, so a client e2e asserting a dropped column is pre-flagged (not left for the Navigator to catch by hand).
+
+### Fixed
+- **`raise-to-hil` writes the escalation record before halting**, so `consort-next` derives the HIL decision and the dashboard shows the escalation instead of falling back to the last gate.
+- **`reopen-story` clears the story's per-cycle green-failure markers**, so an orphaned `specDefect` marker no longer survives a reopen and re-blocks a resume (the `--list` says clean / `consort-next` says BLOCKED incoherence).
+- **A merged feature's leftover claim no longer shadows the sprint-planning snapshot**, so a new sprint's planning stop is reported correctly.
+- **CI substrate resolve falls back to GitHub** when the registry can't serve a freshly-published tarball yet (the proxy's same-day security screen), so a same-day publish never hard-fails CI.
+
 ## [0.3.96] - 2026-09-17
 
 ### Fixed

@@ -6986,6 +6986,7 @@ var import_node_path6 = require("path");
 init_cjs_shims();
 var import_node_fs5 = require("fs");
 var import_node_path7 = require("path");
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");

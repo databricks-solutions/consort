@@ -7810,6 +7810,92 @@ function canonicalArtifactName(path4) {
   if (basename(dirname(path4)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
 }
+function checkMigrationPreservationClass(architectureJson2, dbDesignJson2) {
+  let arch;
+  let db;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  try {
+    db = dbDesignJson2 ? JSON.parse(dbDesignJson2) : void 0;
+  } catch {
+    db = void 0;
+  }
+  const changes = db?.schema_changes ?? [];
+  if (changes.length === 0) return { ok: true };
+  const allInitialCreate = changes.every((c) => c && c.kind === "create_table");
+  if (!allInitialCreate) return { ok: true };
+  const SELF_CONTRADICTION = /unsatisfiable|skip (it|this)|cannot be satisfied|do not cover/i;
+  const PRESERVATION = /preserv|surviv|no loss|intact|existing (rows|data)/i;
+  const FORWARD_ONLY = /upgrade head|forward (migration|pass|only)/i;
+  const violations = [];
+  for (const n of arch.nfrs ?? []) {
+    if (!n || n.tier === "platform") continue;
+    const label = typeof n.id === "string" && n.id || "(unnamed NFR)";
+    const text = [n.statement, n.brief, ...typeof n.fitness_function === "string" ? [n.fitness_function] : [], ...(Array.isArray(n.fitness_functions) ? n.fitness_functions : []).filter((c) => typeof c === "string")].filter((s) => typeof s === "string").join(" ");
+    if (!text) continue;
+    if (SELF_CONTRADICTION.test(text)) {
+      violations.push(
+        `NFR ${label} declares an obligation its own text calls unsatisfiable / to-be-skipped \u2013 a self-contradiction the design lane cannot satisfy AND cannot ignore (the coverage gates demand the test; the architect's own note forbids it). Either remove/re-tier the NFR or reword it as a forward-only standing guard (seed after create, alembic upgrade head, assert intact).`
+      );
+    } else if (PRESERVATION.test(text) && !FORWARD_ONLY.test(text)) {
+      violations.push(
+        `NFR ${label} promises data/row preservation across migrations, but every schema change in db-design.json is an initial create_table \u2013 there are no pre-existing rows to preserve, so the obligation is unsatisfiable as written. Reword it forward-only (seed after create, alembic upgrade head, assert intact) or move it to the additive story that alters the pre-existing table.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkFitnessSingularCoverage(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const singular = (arch.nfrs ?? []).filter(
+    (n) => n && typeof n.id === "string" && n.id.length > 0 && n.tier !== "platform" && typeof n.fitness_function === "string" && n.fitness_function.trim().length > 0 && !(Array.isArray(n.fitness_functions) && n.fitness_functions.some((c) => typeof c === "string" && c.trim().length > 0))
+  ).map((n) => n.id);
+  if (singular.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const have = new Set((tl.items ?? []).map((i) => i.nfr_id).filter((x) => typeof x === "string" && x.length > 0));
+  const missing = singular.filter((id) => !have.has(id));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      violations: missing.map(
+        (id) => `NFR ${id} declares a singular fitness_function but NO test-list item references it via nfr_id \u2013 author one fitness test tagged nfr_id:"${id}" (the array form is clause-gated; the singular form was escaping to the reflect until this check)`
+      )
+    };
+  }
+  return { ok: true };
+}
+function checkClientKindLayerCoherence(testListJson, acLayerById) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    const layer = acLayerById[it.ac_id];
+    if (layer !== void 0 && layer !== "E2E") {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
 
 // consort/logging/agent-log.ts
 init_esm_shims();
@@ -8376,6 +8462,46 @@ function fitnessClauseCoverageReason(consortDir, featureId, testListJson) {
   const r = checkFitnessClauseCoverage(testListJson, arch);
   return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
 }
+function fitnessSingularCoverageReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkFitnessSingularCoverage(testListJson, arch);
+  return r.ok ? null : `singular fitness coverage failed: ${r.violations.join("; ")}`;
+}
+function clientKindLayerReason(consortDir, featureId, testListJson) {
+  const fdir = featureDir2(consortDir, featureId);
+  const storiesDir2 = join12(fdir, "stories");
+  if (!existsSync12(storiesDir2)) return null;
+  const acLayerById = {};
+  for (const story of readdirSync7(storiesDir2)) {
+    const acsDir2 = join12(storiesDir2, story, "acs");
+    if (!existsSync12(acsDir2)) continue;
+    for (const f of readdirSync7(acsDir2)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse(readFileSync12(join12(acsDir2, f), "utf8")).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+      }
+    }
+  }
+  const r = checkClientKindLayerCoherence(testListJson, acLayerById);
+  return r.ok ? null : `client-kind layer coherence failed: ${r.violations.join("; ")}`;
+}
+function migrationPreservationClassReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = existsSync12(dbFile) ? (() => {
+    try {
+      return readFileSync12(dbFile, "utf8");
+    } catch {
+      return void 0;
+    }
+  })() : void 0;
+  const r = checkMigrationPreservationClass(arch, db);
+  return r.ok ? null : `migration data-preservation class failed: ${r.violations.join("; ")}`;
+}
 function acReferenceReason(consortDir, featureId, testListJson) {
   const storiesDir2 = join12(featureResolved(consortDir, featureId), "stories");
   if (!existsSync12(storiesDir2)) return null;
@@ -8597,6 +8723,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (dbReason !== null) return { reason: dbReason };
       const schemaStoryReason = schemaChangeStoryRealizesReason(consortDir, featureId);
       if (schemaStoryReason !== null) return { reason: schemaStoryReason };
+      const preservReason = migrationPreservationClassReason(consortDir, featureId);
+      if (preservReason !== null) return { reason: preservReason };
       const nfrReason = nfrCoverageReason(consortDir, featureId);
       if (nfrReason !== null) return { reason: nfrReason };
       const platReason = platformNfrDefendedReason(consortDir, featureId);
@@ -8627,6 +8755,10 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (fitnessReason !== null) return { reason: fitnessReason };
         const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
         if (clauseReason !== null) return { reason: clauseReason };
+        const singularReason = fitnessSingularCoverageReason(consortDir, featureId, tlJson);
+        if (singularReason !== null) return { reason: singularReason };
+        const kindLayerReason = clientKindLayerReason(consortDir, featureId, tlJson);
+        if (kindLayerReason !== null) return { reason: kindLayerReason };
         const persistenceReason = persistenceCoverageReason(consortDir, featureId, tlJson);
         if (persistenceReason !== null) return { reason: persistenceReason };
         const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
@@ -9098,6 +9230,7 @@ import { join as join24 } from "path";
 init_esm_shims();
 import { existsSync as existsSync26, readFileSync as readFileSync26, readdirSync as readdirSync16, statSync as statSync9 } from "fs";
 import { join as join25, relative as relative3, extname as extname3 } from "path";
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";

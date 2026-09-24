@@ -37,5 +37,16 @@ declare function writeDrivePid(consortDir: string): void;
 /** Halt the running drive + its whole process tree (the executor's claude -p
  *  children included), reading the pid the drive recorded for itself. */
 declare function stopDrive(consortDir: string): Promise<number>;
+/** The feature whose snapshot a sprint stop should emit, or undefined for the
+ *  planning snapshot. A workflow-state feature claim shadows the sprint-planning
+ *  snapshot ONLY while the claimed feature is still IN FLIGHT (its SCM ladder has
+ *  not reached merged): once merged, the leftover feature_id is stale, and a NEW
+ *  sprint's planning stop (e.g. sprint-2's intake gate) must emit the planning
+ *  snapshot, not the completed feature's "done" snapshot (else the dashboard shows
+ *  the stale done instead of the live gate). */
+declare function claimActiveForSnapshot(ws: {
+    feature_id?: string;
+    state?: string;
+} | null | undefined): string | undefined;
 
-export { composeInputPause, drivePidPath, stopDrive, writeDrivePid };
+export { claimActiveForSnapshot, composeInputPause, drivePidPath, stopDrive, writeDrivePid };

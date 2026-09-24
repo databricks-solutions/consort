@@ -9308,6 +9308,7 @@ import { join as join34 } from "path";
 init_esm_shims();
 import { existsSync as existsSync34, readFileSync as readFileSync30, readdirSync as readdirSync19, statSync as statSync12 } from "fs";
 import { join as join35, relative as relative6, extname as extname3 } from "path";
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";

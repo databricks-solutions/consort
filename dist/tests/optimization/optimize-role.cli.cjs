@@ -8923,7 +8923,11 @@ ${gfAssess.contractRefs}
   const supersededAdvisory = gfAssess?.supersededTestRefs ? `${gfAssess.supersededTestRefs}
 
 ` : "";
-  return failureAdvisory + contractAdvisory + supersededAdvisory;
+  const testSmellAdvisory = gfAssess?.testSmellRefs ? `DETERMINISTIC test-authoring smell(s) localized below with the EXACT fix per occurrence. This is NOT a spec-defect and NOT a reason to reopen the story from the test-strategist \u2013 the fix is a SURGICAL, in-place edit to the TEST file (e.g. narrow a blanket \`except Exception\` to the specific error, or drop a pointless best-effort teardown), and the app is correct. Record it as a driver-fixable repair via assess-regression --fix (path (b)) whose fix directive is EXACTLY the per-smell fix below; do NOT recommend consort-reopen-story:
+${gfAssess.testSmellRefs}
+
+` : "";
+  return failureAdvisory + contractAdvisory + supersededAdvisory + testSmellAdvisory;
 }
 var PRECONDITION_PREPARERS = {
   "context-pack": (ctx) => buildContextPack(ctx.consortDir, ctx.featureId, ctx.story, ctx.ac, {
@@ -11504,6 +11508,7 @@ var import_node_path17 = require("path");
 init_cjs_shims();
 var import_node_fs15 = require("fs");
 var import_node_path18 = require("path");
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
@@ -18159,6 +18164,7 @@ var SCM_PREPARE_PR_BIN = "lakebase-scm-prepare-pr";
 var SCM_WAIT_CI_BIN = "lakebase-scm-wait-ci";
 var SCM_MERGE_BIN = "lakebase-scm-merge";
 var MIGRATION_HISTORY_CLEAN_BIN = "consort-migration-history-clean";
+var UX_CLEAN_BIN = "consort-ux-clean";
 var EXPERIMENT_SLUG = "exp1";
 var experimentBranchName = (storyId) => (0, import_util3.sanitizeBranchName)(`experiment/${storyId}-${EXPERIMENT_SLUG}`);
 function designArtifactExpectation(action, consortDir, featureId) {
@@ -18472,6 +18478,12 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
     }
     case "accept":
       return [
+        // The ux-adherence acceptance gate (fail-closed): a design-guide-declared
+        // brand icon, or an unreachable/bare feature page, must be APPLIED before a
+        // story is accepted – the "accepted" waive path must not ship the scaffold
+        // placeholder while the guide declares a brand (the stockflow S1 gap: the
+        // smell resolved "accepted" and the placeholder favicon shipped).
+        { kind: "cli", bin: UX_CLEAN_BIN, args: ["--project-dir", cfg.projectDir] },
         {
           kind: "cli",
           bin: PIPELINE_BIN,
@@ -18633,8 +18645,17 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
         }
       ];
     }
-    case "raise-to-hil":
+    case "raise-to-hil": {
+      if (action.source && action.reason) {
+        writeEscalation(cfg.consortDir, {
+          source: action.source,
+          reason: action.reason,
+          feature_id: f,
+          ..."story" in action && typeof action.story === "string" ? { story_id: action.story } : {}
+        });
+      }
       return [];
+    }
     case "design-complete":
       return [];
   }

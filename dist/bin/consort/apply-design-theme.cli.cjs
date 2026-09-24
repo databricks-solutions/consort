@@ -29,7 +29,27 @@ var import_node_path3 = require("path");
 
 // consort/architecture/design-adherence.ts
 var import_node_fs = require("fs");
+var import_node_path2 = require("path");
+
+// consort/config/consort-paths.ts
+var fs = __toESM(require("fs"), 1);
 var import_node_path = require("path");
+var ARTIFACT_ROOT = ".consort";
+var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
+var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
+function resolveConsortDir(projectDir = process.cwd()) {
+  const next = (0, import_node_path.join)(projectDir, ARTIFACT_ROOT);
+  if (fs.existsSync(next)) return next;
+  for (const legacyName of LEGACY_ARTIFACT_ROOTS) {
+    const legacy = (0, import_node_path.join)(projectDir, legacyName);
+    if (fs.existsSync(legacy)) return legacy;
+  }
+  return next;
+}
+var designDir = (tdd) => (0, import_node_path.join)(tdd, "design");
+var designGuideJson = (tdd) => (0, import_node_path.join)(designDir(tdd), "design-guide.json");
+
+// consort/architecture/design-adherence.ts
 function designGuideToCssVars(guide) {
   const vars = {};
   vars["--font-sans"] = guide.typography.font_family;
@@ -66,24 +86,6 @@ ${lines.join("\n")}
 }
 `;
 }
-
-// consort/config/consort-paths.ts
-var fs = __toESM(require("fs"), 1);
-var import_node_path2 = require("path");
-var ARTIFACT_ROOT = ".consort";
-var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
-var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
-function resolveConsortDir(projectDir = process.cwd()) {
-  const next = (0, import_node_path2.join)(projectDir, ARTIFACT_ROOT);
-  if (fs.existsSync(next)) return next;
-  for (const legacyName of LEGACY_ARTIFACT_ROOTS) {
-    const legacy = (0, import_node_path2.join)(projectDir, legacyName);
-    if (fs.existsSync(legacy)) return legacy;
-  }
-  return next;
-}
-var designDir = (tdd) => (0, import_node_path2.join)(tdd, "design");
-var designGuideJson = (tdd) => (0, import_node_path2.join)(designDir(tdd), "design-guide.json");
 
 // consort/architecture/apply-theme.ts
 var THEME_HEADER = `/*

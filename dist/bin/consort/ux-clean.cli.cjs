@@ -1,9 +1,62 @@
 #!/usr/bin/env node
 "use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 
 // consort/architecture/design-adherence.ts
 var import_node_fs = require("fs");
+var import_node_path2 = require("path");
+
+// consort/config/consort-paths.ts
+var fs = __toESM(require("fs"), 1);
 var import_node_path = require("path");
+var ARTIFACT_ROOT = ".consort";
+var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
+var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
+function resolveConsortDir(projectDir = process.cwd()) {
+  const next = (0, import_node_path.join)(projectDir, ARTIFACT_ROOT);
+  if (fs.existsSync(next)) return next;
+  for (const legacyName of LEGACY_ARTIFACT_ROOTS) {
+    const legacy = (0, import_node_path.join)(projectDir, legacyName);
+    if (fs.existsSync(legacy)) return legacy;
+  }
+  return next;
+}
+var designDir = (tdd) => (0, import_node_path.join)(tdd, "design");
+var designGuideJson = (tdd) => (0, import_node_path.join)(designDir(tdd), "design-guide.json");
+
+// consort/architecture/design-adherence.ts
+function readAppIconFromGuide(consortDir) {
+  try {
+    const gp = designGuideJson(consortDir);
+    if (!(0, import_node_fs.existsSync)(gp)) return void 0;
+    const guide = JSON.parse((0, import_node_fs.readFileSync)(gp, "utf8"));
+    const icon = guide.app_icon;
+    return icon && typeof icon.source === "string" && typeof icon.install_to === "string" ? { source: icon.source, install_to: icon.install_to } : void 0;
+  } catch {
+    return void 0;
+  }
+}
 var VAR_CALL = /var\(\s*--[A-Za-z0-9-]+[^)]*\)/g;
 var ROUTE_ELEMENT_RE = /element=\{\s*<\s*([A-Z][A-Za-z0-9_]*)/g;
 var ROUTE_COMPONENT_RE = /\bComponent=\{\s*([A-Z][A-Za-z0-9_]*)\s*\}/g;
@@ -87,16 +140,16 @@ function checkUxClean(args) {
   const okIcon = { ok: true, violations: [] };
   const okVocab = { ok: true, missing: [] };
   const clean0 = { clean: true, reachability: { ok: true, unreachable: [] }, tokens: { ok: true, bare: [] }, appIcon: okIcon, vocabulary: okVocab };
-  const srcDir = args.clientSrcDir ?? (0, import_node_path.join)(args.projectDir, "client", "src");
-  const appTsx = (0, import_node_path.join)(srcDir, "App.tsx");
-  const pagesDir = (0, import_node_path.join)(srcDir, "pages");
+  const srcDir = args.clientSrcDir ?? (0, import_node_path2.join)(args.projectDir, "client", "src");
+  const appTsx = (0, import_node_path2.join)(srcDir, "App.tsx");
+  const pagesDir = (0, import_node_path2.join)(srcDir, "pages");
   if (!(0, import_node_fs.existsSync)(appTsx) || !(0, import_node_fs.existsSync)(pagesDir)) return clean0;
   const appSource = (0, import_node_fs.readFileSync)(appTsx, "utf8");
   const pageSources = {};
   const pageComponents = [];
   for (const name of (0, import_node_fs.readdirSync)(pagesDir)) {
     if (!name.endsWith(".tsx") || name.endsWith(".test.tsx")) continue;
-    const src = (0, import_node_fs.readFileSync)((0, import_node_path.join)(pagesDir, name), "utf8");
+    const src = (0, import_node_fs.readFileSync)((0, import_node_path2.join)(pagesDir, name), "utf8");
     pageSources[name] = src;
     for (const re of [/export\s+function\s+([A-Z][A-Za-z0-9_]*)/g, /export\s+const\s+([A-Z][A-Za-z0-9_]*)/g]) {
       re.lastIndex = 0;
@@ -106,15 +159,15 @@ function checkUxClean(args) {
   }
   const reachability = checkRouteReachability({ appSource, pageComponents });
   const tokens = checkTokenConsumption({ pageSources, designClasses: args.designClasses });
-  const globalCssPath = (0, import_node_path.join)(srcDir, "styles", "global.css");
+  const globalCssPath = (0, import_node_path2.join)(srcDir, "styles", "global.css");
   const vocabulary = args.designClasses && args.designClasses.length > 0 && (0, import_node_fs.existsSync)(globalCssPath) ? checkComponentVocabularyDefined(args.designClasses, (0, import_node_fs.readFileSync)(globalCssPath, "utf8")) : okVocab;
-  let appIcon = okIcon;
+  let appIcon2 = okIcon;
   if (args.appIcon) {
-    const clientDir = (0, import_node_path.join)(srcDir, "..");
-    const indexHtmlPath = (0, import_node_path.join)(clientDir, "index.html");
-    const installToPath = (0, import_node_path.join)(args.projectDir, args.appIcon.install_to);
+    const clientDir = (0, import_node_path2.join)(srcDir, "..");
+    const indexHtmlPath = (0, import_node_path2.join)(clientDir, "index.html");
+    const installToPath = (0, import_node_path2.join)(args.projectDir, args.appIcon.install_to);
     const installedBasename = args.appIcon.install_to.split("/").pop() ?? args.appIcon.install_to;
-    appIcon = checkAppIcon({
+    appIcon2 = checkAppIcon({
       appIcon: args.appIcon,
       installedExists: (0, import_node_fs.existsSync)(installToPath),
       installedBasename,
@@ -122,8 +175,8 @@ function checkUxClean(args) {
       appShell: appSource
     });
   }
-  const clean = reachability.ok && tokens.ok && appIcon.ok && vocabulary.ok;
-  return clean ? { clean, reachability, tokens, appIcon, vocabulary } : { clean, reachability, tokens, appIcon, vocabulary, remediation: UX_CLEAN_REMEDIATION };
+  const clean = reachability.ok && tokens.ok && appIcon2.ok && vocabulary.ok;
+  return clean ? { clean, reachability, tokens, appIcon: appIcon2, vocabulary } : { clean, reachability, tokens, appIcon: appIcon2, vocabulary, remediation: UX_CLEAN_REMEDIATION };
 }
 
 // bin/consort/ux-clean.cli.ts
@@ -153,10 +206,12 @@ Exit 0 = clean / no client workspace; exit 1 = an unreachable or bare feature pa
   process.exit(0);
 }
 var p = parse(process.argv.slice(2));
+var appIcon = readAppIconFromGuide(resolveConsortDir(p.projectDir));
 var result = checkUxClean({
   projectDir: p.projectDir,
   ...p.clientSrc ? { clientSrcDir: p.clientSrc } : {},
-  ...p.designClasses.length ? { designClasses: p.designClasses } : {}
+  ...p.designClasses.length ? { designClasses: p.designClasses } : {},
+  ...appIcon ? { appIcon } : {}
 });
 if (p.json) {
   process.stdout.write(`${JSON.stringify(result)}

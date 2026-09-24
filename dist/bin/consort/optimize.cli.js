@@ -6981,6 +6981,7 @@ var sprintsDir = (tdd) => join2(tdd, "sprints");
 var cyclesRootDir = (tdd) => join2(tdd, "cycles");
 var experimentsRootDir = (tdd) => join2(tdd, "experiments");
 var escalationsDir = (tdd) => join2(tdd, "escalations");
+var escalationFile = (tdd, id) => join2(escalationsDir(tdd), `${id}.json`);
 var acReviewJson = (tdd, f, s, ac) => join2(cyclesRootDir(tdd), f, s, ac, "review.json");
 var storyReviewJson = (tdd, f, s) => join2(cyclesRootDir(tdd), f, s, "review.json");
 var workflowStateJson = (tdd) => join2(tdd, "workflow-state.json");
@@ -10799,6 +10800,92 @@ function canonicalArtifactName(path12) {
   if (basename3(dirname14(path12)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
 }
+function checkMigrationPreservationClass(architectureJson2, dbDesignJson2) {
+  let arch;
+  let db;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  try {
+    db = dbDesignJson2 ? JSON.parse(dbDesignJson2) : void 0;
+  } catch {
+    db = void 0;
+  }
+  const changes = db?.schema_changes ?? [];
+  if (changes.length === 0) return { ok: true };
+  const allInitialCreate = changes.every((c) => c && c.kind === "create_table");
+  if (!allInitialCreate) return { ok: true };
+  const SELF_CONTRADICTION = /unsatisfiable|skip (it|this)|cannot be satisfied|do not cover/i;
+  const PRESERVATION = /preserv|surviv|no loss|intact|existing (rows|data)/i;
+  const FORWARD_ONLY = /upgrade head|forward (migration|pass|only)/i;
+  const violations = [];
+  for (const n of arch.nfrs ?? []) {
+    if (!n || n.tier === "platform") continue;
+    const label = typeof n.id === "string" && n.id || "(unnamed NFR)";
+    const text = [n.statement, n.brief, ...typeof n.fitness_function === "string" ? [n.fitness_function] : [], ...(Array.isArray(n.fitness_functions) ? n.fitness_functions : []).filter((c) => typeof c === "string")].filter((s) => typeof s === "string").join(" ");
+    if (!text) continue;
+    if (SELF_CONTRADICTION.test(text)) {
+      violations.push(
+        `NFR ${label} declares an obligation its own text calls unsatisfiable / to-be-skipped \u2013 a self-contradiction the design lane cannot satisfy AND cannot ignore (the coverage gates demand the test; the architect's own note forbids it). Either remove/re-tier the NFR or reword it as a forward-only standing guard (seed after create, alembic upgrade head, assert intact).`
+      );
+    } else if (PRESERVATION.test(text) && !FORWARD_ONLY.test(text)) {
+      violations.push(
+        `NFR ${label} promises data/row preservation across migrations, but every schema change in db-design.json is an initial create_table \u2013 there are no pre-existing rows to preserve, so the obligation is unsatisfiable as written. Reword it forward-only (seed after create, alembic upgrade head, assert intact) or move it to the additive story that alters the pre-existing table.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkFitnessSingularCoverage(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const singular = (arch.nfrs ?? []).filter(
+    (n) => n && typeof n.id === "string" && n.id.length > 0 && n.tier !== "platform" && typeof n.fitness_function === "string" && n.fitness_function.trim().length > 0 && !(Array.isArray(n.fitness_functions) && n.fitness_functions.some((c) => typeof c === "string" && c.trim().length > 0))
+  ).map((n) => n.id);
+  if (singular.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const have = new Set((tl.items ?? []).map((i) => i.nfr_id).filter((x) => typeof x === "string" && x.length > 0));
+  const missing = singular.filter((id) => !have.has(id));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      violations: missing.map(
+        (id) => `NFR ${id} declares a singular fitness_function but NO test-list item references it via nfr_id \u2013 author one fitness test tagged nfr_id:"${id}" (the array form is clause-gated; the singular form was escaping to the reflect until this check)`
+      )
+    };
+  }
+  return { ok: true };
+}
+function checkClientKindLayerCoherence(testListJson, acLayerById) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    const layer = acLayerById[it.ac_id];
+    if (layer !== void 0 && layer !== "E2E") {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
 function featureSpecNonEmptyStories(producedPath) {
@@ -12931,6 +13018,25 @@ var BLOCKING_SMELLS = /* @__PURE__ */ new Set([
 function escalationId(parts) {
   return [parts.source, parts.feature_id, parts.story_id, parts.ac_id].filter(Boolean).join("__").replace(/[^A-Za-z0-9_.-]/g, "-");
 }
+function writeEscalation(consortDir, esc) {
+  const id = esc.id ?? escalationId(esc);
+  const file = escalationFile(consortDir, id);
+  const existing = readEscalationFile(file);
+  if (existing && !existing.resolved_at) return existing;
+  const full = {
+    id,
+    source: esc.source,
+    reason: esc.reason,
+    ...esc.feature_id ? { feature_id: esc.feature_id } : {},
+    ...esc.story_id ? { story_id: esc.story_id } : {},
+    ...esc.ac_id ? { ac_id: esc.ac_id } : {},
+    raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
+    how_to_resolve: `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
+  };
+  fs11.mkdirSync(escalationsDir(consortDir), { recursive: true });
+  fs11.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
+  return full;
+}
 function readEscalationFile(file) {
   if (!fs11.existsSync(file)) return void 0;
   try {
@@ -13213,6 +13319,7 @@ import { join as join40 } from "path";
 init_esm_shims();
 import { existsSync as existsSync41, readFileSync as readFileSync35, readdirSync as readdirSync25, statSync as statSync17 } from "fs";
 import { join as join41, relative as relative7, extname as extname3 } from "path";
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
@@ -14175,6 +14282,46 @@ function fitnessClauseCoverageReason(consortDir, featureId, testListJson) {
   const r = checkFitnessClauseCoverage(testListJson, arch);
   return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
 }
+function fitnessSingularCoverageReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkFitnessSingularCoverage(testListJson, arch);
+  return r.ok ? null : `singular fitness coverage failed: ${r.violations.join("; ")}`;
+}
+function clientKindLayerReason(consortDir, featureId, testListJson) {
+  const fdir = featureDir2(consortDir, featureId);
+  const storiesDir2 = join46(fdir, "stories");
+  if (!existsSync49(storiesDir2)) return null;
+  const acLayerById = {};
+  for (const story of readdirSync31(storiesDir2)) {
+    const acsDir2 = join46(storiesDir2, story, "acs");
+    if (!existsSync49(acsDir2)) continue;
+    for (const f of readdirSync31(acsDir2)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse(readFileSync44(join46(acsDir2, f), "utf8")).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+      }
+    }
+  }
+  const r = checkClientKindLayerCoherence(testListJson, acLayerById);
+  return r.ok ? null : `client-kind layer coherence failed: ${r.violations.join("; ")}`;
+}
+function migrationPreservationClassReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = existsSync49(dbFile) ? (() => {
+    try {
+      return readFileSync44(dbFile, "utf8");
+    } catch {
+      return void 0;
+    }
+  })() : void 0;
+  const r = checkMigrationPreservationClass(arch, db);
+  return r.ok ? null : `migration data-preservation class failed: ${r.violations.join("; ")}`;
+}
 function acReferenceReason(consortDir, featureId, testListJson) {
   const storiesDir2 = join46(featureResolved(consortDir, featureId), "stories");
   if (!existsSync49(storiesDir2)) return null;
@@ -14396,6 +14543,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (dbReason !== null) return { reason: dbReason };
       const schemaStoryReason = schemaChangeStoryRealizesReason(consortDir, featureId);
       if (schemaStoryReason !== null) return { reason: schemaStoryReason };
+      const preservReason = migrationPreservationClassReason(consortDir, featureId);
+      if (preservReason !== null) return { reason: preservReason };
       const nfrReason = nfrCoverageReason(consortDir, featureId);
       if (nfrReason !== null) return { reason: nfrReason };
       const platReason = platformNfrDefendedReason(consortDir, featureId);
@@ -14426,6 +14575,10 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (fitnessReason !== null) return { reason: fitnessReason };
         const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
         if (clauseReason !== null) return { reason: clauseReason };
+        const singularReason = fitnessSingularCoverageReason(consortDir, featureId, tlJson);
+        if (singularReason !== null) return { reason: singularReason };
+        const kindLayerReason = clientKindLayerReason(consortDir, featureId, tlJson);
+        if (kindLayerReason !== null) return { reason: kindLayerReason };
         const persistenceReason = persistenceCoverageReason(consortDir, featureId, tlJson);
         if (persistenceReason !== null) return { reason: persistenceReason };
         const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
@@ -15162,7 +15315,11 @@ ${gfAssess.contractRefs}
   const supersededAdvisory = gfAssess?.supersededTestRefs ? `${gfAssess.supersededTestRefs}
 
 ` : "";
-  return failureAdvisory + contractAdvisory + supersededAdvisory;
+  const testSmellAdvisory = gfAssess?.testSmellRefs ? `DETERMINISTIC test-authoring smell(s) localized below with the EXACT fix per occurrence. This is NOT a spec-defect and NOT a reason to reopen the story from the test-strategist \u2013 the fix is a SURGICAL, in-place edit to the TEST file (e.g. narrow a blanket \`except Exception\` to the specific error, or drop a pointless best-effort teardown), and the app is correct. Record it as a driver-fixable repair via assess-regression --fix (path (b)) whose fix directive is EXACTLY the per-smell fix below; do NOT recommend consort-reopen-story:
+${gfAssess.testSmellRefs}
+
+` : "";
+  return failureAdvisory + contractAdvisory + supersededAdvisory + testSmellAdvisory;
 }
 var PRECONDITION_PREPARERS = {
   "context-pack": (ctx) => buildContextPack(ctx.consortDir, ctx.featureId, ctx.story, ctx.ac, {
@@ -15493,6 +15650,7 @@ var SCM_PREPARE_PR_BIN = "lakebase-scm-prepare-pr";
 var SCM_WAIT_CI_BIN = "lakebase-scm-wait-ci";
 var SCM_MERGE_BIN = "lakebase-scm-merge";
 var MIGRATION_HISTORY_CLEAN_BIN = "consort-migration-history-clean";
+var UX_CLEAN_BIN = "consort-ux-clean";
 var EXPERIMENT_SLUG = "exp1";
 var experimentBranchName = (storyId) => sanitizeBranchName(`experiment/${storyId}-${EXPERIMENT_SLUG}`);
 function designArtifactExpectation(action, consortDir, featureId) {
@@ -15806,6 +15964,12 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
     }
     case "accept":
       return [
+        // The ux-adherence acceptance gate (fail-closed): a design-guide-declared
+        // brand icon, or an unreachable/bare feature page, must be APPLIED before a
+        // story is accepted – the "accepted" waive path must not ship the scaffold
+        // placeholder while the guide declares a brand (the stockflow S1 gap: the
+        // smell resolved "accepted" and the placeholder favicon shipped).
+        { kind: "cli", bin: UX_CLEAN_BIN, args: ["--project-dir", cfg.projectDir] },
         {
           kind: "cli",
           bin: PIPELINE_BIN,
@@ -15967,8 +16131,17 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
         }
       ];
     }
-    case "raise-to-hil":
+    case "raise-to-hil": {
+      if (action.source && action.reason) {
+        writeEscalation(cfg.consortDir, {
+          source: action.source,
+          reason: action.reason,
+          feature_id: f,
+          ..."story" in action && typeof action.story === "string" ? { story_id: action.story } : {}
+        });
+      }
       return [];
+    }
     case "design-complete":
       return [];
   }
