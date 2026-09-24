@@ -165,7 +165,7 @@ describe("readDriveContext", () => {
     // No product-overview.md/nfrs.md on disk → intake not ready (the drive would surface the PO
     // intake step first, interactively). An empty project has done nothing, intake included.
     expect(ctx.planning).toEqual({ intakeReady: false, intakeApproved: false, proposed: false, estimated: false, backlogCommitted: false, requestsAuthored: false });
-    expect(ctx.deploy).toEqual({ deployed: false, gateApproved: false, verifyAssessEligible: false, verifyRefactorPending: false });
+    expect(ctx.deploy).toEqual({ deployed: false, gateApproved: false, verifyAssessEligible: false, verifyRefactorPending: false, verifyPassed: undefined, reverifyAttempted: false });
   });
 
   // Regression (class-k live halt): ctx.loop MUST come from the same single
@@ -248,7 +248,7 @@ describe("readDriveContext", () => {
     expect(ctx.breakdownDone).toBe(true);
     expect(ctx.planning).toEqual({ intakeReady: true, intakeApproved: true, proposed: true, estimated: false, backlogCommitted: true, requestsAuthored: true });
     // deploy ran (evidence present) but the deploy gate is not approved
-    expect(ctx.deploy).toEqual({ deployed: true, gateApproved: false, verifyAssessEligible: false, verifyRefactorPending: false });
+    expect(ctx.deploy).toEqual({ deployed: true, gateApproved: false, verifyAssessEligible: false, verifyRefactorPending: false, verifyPassed: true, reverifyAttempted: false });
   });
 
   it("reads deploy phase + approved deploy gate (evidence + strict gate read)", () => {
@@ -258,14 +258,14 @@ describe("readDriveContext", () => {
     writeFeatureFile("gates.json", gatesJson("approved"));
     const ctx = readDriveContext(consortDir, FEATURE);
     expect(ctx.phase).toBe("deploy");
-    expect(ctx.deploy).toEqual({ deployed: true, gateApproved: true, verifyAssessEligible: false, verifyRefactorPending: false });
+    expect(ctx.deploy).toEqual({ deployed: true, gateApproved: true, verifyAssessEligible: false, verifyRefactorPending: false, verifyPassed: true, reverifyAttempted: false });
   });
 
   it("deployed=false when no deploy-evidence.json was written, even with an approved gate", () => {
     writeFileSync(join(consortDir, "workflow-state.json"), JSON.stringify({ phase: "deploy", phase_feature_id: FEATURE }));
     writeFeatureFile("gates.json", gatesJson("approved"));
     const ctx = readDriveContext(consortDir, FEATURE);
-    expect(ctx.deploy).toEqual({ deployed: false, gateApproved: true, verifyAssessEligible: false, verifyRefactorPending: false });
+    expect(ctx.deploy).toEqual({ deployed: false, gateApproved: true, verifyAssessEligible: false, verifyRefactorPending: false, verifyPassed: undefined, reverifyAttempted: false });
   });
 
   // FEIP-8022: the coarse `phase` slot is per-PROJECT, so it must be honored only

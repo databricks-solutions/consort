@@ -1057,6 +1057,9 @@ describe("commandsForAction: promote phase (PR review + merge to parent)", () =>
     // build never commits (code-only commits; corpus is recorder-captured run-state).
     // Promote CI reads only code, so prepare-pr must push past the corpus dirty-tree.
     expect(commandsForAction({ kind: "prepare-pr" }, cfg())).toEqual([
+      // The shipped-migration-immutability backstop runs first: a branch with
+      // mutated shipped migrations never reaches the PR (fail-closed at promote).
+      { kind: "cli", bin: "consort-migration-history-clean", args: ["--project-dir", "/p"] },
       { kind: "cli", bin: "lakebase-scm-prepare-pr", args: ["--project-dir", "/p", "--force"] },
     ]);
     expect(commandsForAction({ kind: "wait-ci" }, cfg())).toEqual([

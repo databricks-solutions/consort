@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { W as WorkflowAction } from '../../workflow-vocabulary-6_0e61c0.cjs';
+import { W as WorkflowAction } from '../../workflow-vocabulary-BcVQ-ETk.cjs';
 
 /** One role chain's definition (the DATA that drives both the live test + the sweep). */
 interface RoleChain {

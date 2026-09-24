@@ -3678,49 +3678,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative7, options, skipNormalization) {
+    function resolveComponent(base, relative8, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse(serialize(base, options), options);
-        relative7 = parse(serialize(relative7, options), options);
+        relative8 = parse(serialize(relative8, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative7.scheme) {
-        target.scheme = relative7.scheme;
-        target.userinfo = relative7.userinfo;
-        target.host = relative7.host;
-        target.port = relative7.port;
-        target.path = removeDotSegments(relative7.path || "");
-        target.query = relative7.query;
+      if (!options.tolerant && relative8.scheme) {
+        target.scheme = relative8.scheme;
+        target.userinfo = relative8.userinfo;
+        target.host = relative8.host;
+        target.port = relative8.port;
+        target.path = removeDotSegments(relative8.path || "");
+        target.query = relative8.query;
       } else {
-        if (relative7.userinfo !== void 0 || relative7.host !== void 0 || relative7.port !== void 0) {
-          target.userinfo = relative7.userinfo;
-          target.host = relative7.host;
-          target.port = relative7.port;
-          target.path = removeDotSegments(relative7.path || "");
-          target.query = relative7.query;
+        if (relative8.userinfo !== void 0 || relative8.host !== void 0 || relative8.port !== void 0) {
+          target.userinfo = relative8.userinfo;
+          target.host = relative8.host;
+          target.port = relative8.port;
+          target.path = removeDotSegments(relative8.path || "");
+          target.query = relative8.query;
         } else {
-          if (!relative7.path) {
+          if (!relative8.path) {
             target.path = base.path;
-            if (relative7.query !== void 0) {
-              target.query = relative7.query;
+            if (relative8.query !== void 0) {
+              target.query = relative8.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative7.path[0] === "/") {
-              target.path = removeDotSegments(relative7.path);
+            if (relative8.path[0] === "/") {
+              target.path = removeDotSegments(relative8.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative7.path;
+                target.path = "/" + relative8.path;
               } else if (!base.path) {
-                target.path = relative7.path;
+                target.path = relative8.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative7.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative8.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative7.query;
+            target.query = relative8.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3728,7 +3728,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative7.fragment;
+      target.fragment = relative8.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -6690,6 +6690,7 @@ var architectureJson = (tdd, f) => (0, import_node_path.join)(featureResolved(td
 var dbDesignJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "db-design.json");
 var pipelineJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "pipeline.json");
 var featureDeployEvidenceJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "deploy-evidence.json");
+var featureDeployReverifyMarkerJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "deploy-reverify.json");
 var storiesDir = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "stories");
 var storyDir = (tdd, f, s) => (0, import_node_path.join)(storiesDir(tdd, f), s);
 function findStoryDir(tdd, f, s) {
@@ -7772,7 +7773,7 @@ function resolveConsortSettings(inputs) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
 var fs17 = __toESM(require("fs"), 1);
-var import_node_path24 = require("path");
+var import_node_path26 = require("path");
 
 // consort/orchestrator/drive/orchestrator-drive.ts
 init_cjs_shims();
@@ -7856,6 +7857,14 @@ function nextBuildAction(story, b) {
       story
     };
   }
+  if (b.greenUnfixableAc) {
+    return {
+      kind: "raise-to-hil",
+      source: "green-unfixable",
+      reason: `The GREEN-verify failure for ${b.greenUnfixableAc} was assessed as a genuine regression that is NOT driver-fixable (no fix directive \u2013 it needs a human or a design change). Escalating directly with the diagnosis instead of burning bounded Driver re-attempts that cannot fix it (issue #200). Diagnosis: ${b.greenUnfixableDiagnosis ?? "see the green-failure record"}`,
+      story
+    };
+  }
   if (!b.testsWritten) return { kind: "invoke-role", role: "navigator", story };
   if (!b.codeWritten) return { kind: "invoke-role", role: "driver", story };
   if (!b.awaitingAcceptance) return { kind: "await-acceptance", story };
@@ -7886,7 +7895,19 @@ function nextTransition(state) {
     if (!d.deployed) return { kind: "deploy" };
     if (d.verifyAssessEligible) return { kind: "deploy-verify-heal", role: "navigator", mode: "assess-deploy" };
     if (d.verifyRefactorPending) return { kind: "deploy-verify-heal", role: "driver", mode: "refactor-deploy" };
-    if (!d.gateApproved) return { kind: "approve-deploy-gate" };
+    if (!d.gateApproved) {
+      if (d.verifyPassed === false) {
+        if (d.reverifyAttempted) {
+          return {
+            kind: "raise-to-hil",
+            source: "deploy-verify-failed",
+            reason: `The feature deploy-verify still fails after a re-deploy + re-verify (deploy-evidence.json records verify.passed=false). This needs a human, not another approve: inspect the evidence's verify output, fix the cause, then re-run \`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale deploy server first: \`lsof -tiTCP:8000 | xargs kill\`) and approve the deploy gate.`
+          };
+        }
+        return { kind: "deploy-verify-reverify" };
+      }
+      return { kind: "approve-deploy-gate" };
+    }
     return { kind: "deploy-complete" };
   }
   if (state.phase === "promote") {
@@ -8638,6 +8659,8 @@ function storyView(id, e, probe, loop) {
       greenSupersededAc: probe.greenSupersededFailureAc(id),
       specDefectAc: probe.specDefectAc(id),
       specDefectFromRole: probe.specDefectFromRole(id),
+      greenUnfixableAc: probe.greenUnfixableAc(id),
+      greenUnfixableDiagnosis: probe.greenUnfixableDiagnosis(id),
       awaitingAcceptance: e.status === "awaiting-acceptance",
       deployVerified: probe.storyDeployVerified(id),
       deployVerifyAssessEligible: probe.deployVerifyAssessEligible(id),
@@ -8938,7 +8961,10 @@ function isReflectSmell(name) {
 }
 var REFLECT_REVISE_CAP = 4;
 function priorReflectReviseCount(consortDir, story_id) {
-  return readSmellsLog(consortDir).detected.filter(
+  const log = readSmellsLog(consortDir);
+  const laps = log.reflect_revise_count?.[story_id];
+  if (laps !== void 0) return laps;
+  return log.detected.filter(
     (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
   ).length;
 }
@@ -9113,6 +9139,8 @@ var import_node_path16 = require("path");
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs13 = __toESM(require("fs"), 1);
+var import_node_child_process6 = require("child_process");
+var import_node_crypto5 = require("crypto");
 var import_node_path17 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
   return (0, import_node_path17.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
@@ -9153,11 +9181,39 @@ function hasPendingSupersession(tdd, feature, story, ac) {
 function greenFailureJson(tdd, feature, story, ac) {
   return (0, import_node_path17.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+function computeTreeState(projectDir) {
+  try {
+    const headSha = (0, import_node_child_process6.execFileSync)("git", ["rev-parse", "HEAD"], { cwd: projectDir, encoding: "utf8" }).trim();
+    const porcelain = (0, import_node_child_process6.execFileSync)("git", ["status", "--porcelain"], { cwd: projectDir, encoding: "utf8" });
+    const codeLines = porcelain.split("\n").filter((l) => l.trim().length > 0).filter((l) => !TREE_STATE_EXCLUDE_PREFIXES.some((pfx) => l.slice(3).startsWith(pfx)));
+    const dirtySha = (0, import_node_crypto5.createHash)("sha1").update(codeLines.join("\n")).digest("hex");
+    return { headSha, dirtySha };
+  } catch {
+    return void 0;
+  }
+}
 function readGreenFailure(tdd, feature, story, ac) {
   const file = greenFailureJson(tdd, feature, story, ac);
   if (!fs13.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs13.readFileSync(file, "utf8"));
+    const value = JSON.parse(fs13.readFileSync(file, "utf8"));
+    if (value.treeState) {
+      const cur = computeTreeState((0, import_node_path17.dirname)(tdd));
+      if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
+        fs13.rmSync(file, { force: true });
+        return void 0;
+      }
+    }
+    return value;
   } catch {
     return void 0;
   }
@@ -9173,6 +9229,10 @@ function hasPendingRegressionFix(tdd, feature, story, ac) {
 function hasPendingSpecDefect(tdd, feature, story, ac) {
   const gf = readGreenFailure(tdd, feature, story, ac);
   return gf !== void 0 && gf.assessed === true && gf.specDefect !== void 0;
+}
+function hasPendingUnfixableRegression(tdd, feature, story, ac) {
+  const gf = readGreenFailure(tdd, feature, story, ac);
+  return gf !== void 0 && gf.assessed === true && !(typeof gf.fixDirective === "string" && gf.fixDirective.length > 0) && gf.specDefect === void 0 && !hasPendingSupersession(tdd, feature, story, ac);
 }
 function specDefectFromRole(tdd, feature, story, ac) {
   const gf = readGreenFailure(tdd, feature, story, ac);
@@ -9225,6 +9285,17 @@ function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
 init_cjs_shims();
 var import_node_fs16 = require("fs");
 var import_node_path19 = require("path");
+
+// consort/architecture/migration-history-clean.ts
+init_cjs_shims();
+var import_node_child_process7 = require("child_process");
+var import_node_fs17 = require("fs");
+var import_node_path20 = require("path");
+
+// consort/architecture/test-smell-clean.ts
+init_cjs_shims();
+var import_node_fs18 = require("fs");
+var import_node_path21 = require("path");
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
@@ -9367,8 +9438,8 @@ function refactorPending(consortDir, featureId, story) {
 
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
-var import_node_crypto5 = require("crypto");
-var import_node_fs17 = require("fs");
+var import_node_crypto6 = require("crypto");
+var import_node_fs19 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -9387,11 +9458,11 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs17.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs19.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
-    return (0, import_node_crypto5.createHash)("sha256").update(canonical).digest("hex").slice(0, 16);
+    return (0, import_node_crypto6.createHash)("sha256").update(canonical).digest("hex").slice(0, 16);
   } catch {
     return void 0;
   }
@@ -9609,6 +9680,8 @@ function readDriveContext(consortDir, featureId, projectDir) {
   const backlogCommitted = requestsAuthored;
   const deployed = fs15.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
+  const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
+  const reverifyAttempted = fs15.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   const verifyAssessEligible = deployVerifyNeedsAssess(consortDir, featureId);
   const verifyRefactorPending = deployVerifyRefactorPending(consortDir, featureId);
   const proj = projectDir ?? path10.dirname(consortDir);
@@ -9636,9 +9709,17 @@ function readDriveContext(consortDir, featureId, projectDir) {
     breakdownDone,
     loop,
     planning: { intakeReady, intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated: hasEstimates(consortDir), backlogCommitted, requestsAuthored },
-    deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending },
+    deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending, verifyPassed, reverifyAttempted },
     promote
   };
+}
+function readDeployVerifyPassed(consortDir, featureId) {
+  try {
+    const ev = JSON.parse(fs15.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
+    return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : void 0;
+  } catch {
+    return void 0;
+  }
 }
 function readGateApproved(featureId, consortDir, gate) {
   try {
@@ -9794,6 +9875,26 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       }
       return acId ? specDefectFromRole(consortDir, featureId, story, acId) : "test-strategist";
     },
+    greenUnfixableAc(story) {
+      let acId;
+      try {
+        acId = storyTestProgress(consortDir, featureId, story).openRed[0]?.ac_id;
+      } catch {
+        acId = void 0;
+      }
+      if (!acId) return null;
+      return hasPendingUnfixableRegression(consortDir, featureId, story, acId) ? acId : null;
+    },
+    greenUnfixableDiagnosis(story) {
+      let acId;
+      try {
+        acId = storyTestProgress(consortDir, featureId, story).openRed[0]?.ac_id;
+      } catch {
+        acId = void 0;
+      }
+      if (!acId) return void 0;
+      return readGreenFailure(consortDir, featureId, story, acId)?.diagnosis;
+    },
     storyDeployVerified(story) {
       return storyDeployVerified(consortDir, featureId, story);
     },
@@ -9857,8 +9958,8 @@ var import_fs9 = require("fs");
 
 // consort/gates/gate-conformance-guard.ts
 init_cjs_shims();
-var import_node_fs18 = require("fs");
-var import_node_path20 = require("path");
+var import_node_fs20 = require("fs");
+var import_node_path22 = require("path");
 
 // consort/architecture/architecture-conventions.ts
 init_cjs_shims();
@@ -9884,25 +9985,25 @@ function readPipeline(consortDir, featureId) {
 
 // consort/session/response-formatter.ts
 init_cjs_shims();
-var import_node_fs20 = require("fs");
-var import_node_path22 = require("path");
+var import_node_fs22 = require("fs");
+var import_node_path24 = require("path");
 
 // consort/architecture/e2e-route-adherence.ts
 init_cjs_shims();
-var import_node_fs19 = require("fs");
-var import_node_path21 = require("path");
-var CLIENT_SRC = (0, import_node_path21.join)("client", "src");
-var E2E_DIR = (0, import_node_path21.join)("client", "tests", "e2e");
+var import_node_fs21 = require("fs");
+var import_node_path23 = require("path");
+var CLIENT_SRC = (0, import_node_path23.join)("client", "src");
+var E2E_DIR = (0, import_node_path23.join)("client", "tests", "e2e");
 
 // consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs20.existsSync)(file)) {
+  if (!(0, import_node_fs22.existsSync)(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = (0, import_node_fs20.readFileSync)(file, "utf8");
+    content = (0, import_node_fs22.readFileSync)(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -9944,9 +10045,9 @@ function deriveFeaturePhase(stories) {
 
 // consort/orchestrator/build/build-context.ts
 init_cjs_shims();
-var import_node_child_process6 = require("child_process");
+var import_node_child_process8 = require("child_process");
 var fs16 = __toESM(require("fs"), 1);
-var import_node_path23 = require("path");
+var import_node_path25 = require("path");
 
 // consort/orchestrator/build/preconditions.ts
 init_cjs_shims();
@@ -10011,7 +10112,7 @@ init_cjs_shims();
 
 // consort/gates/sprint-gates.ts
 init_cjs_shims();
-var import_node_fs21 = require("fs");
+var import_node_fs23 = require("fs");
 
 // consort/gates/gate-hash.ts
 init_cjs_shims();
@@ -10031,10 +10132,10 @@ function sprintGatesFile(consortDir, sprint) {
 function readSprintGates(sprint, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = sprintGatesFile(consortDir, sprint);
-  if (!(0, import_node_fs21.existsSync)(file)) return defaultSprintGatesState(sprint);
+  if (!(0, import_node_fs23.existsSync)(file)) return defaultSprintGatesState(sprint);
   let parsed;
   try {
-    parsed = JSON.parse((0, import_node_fs21.readFileSync)(file, "utf8"));
+    parsed = JSON.parse((0, import_node_fs23.readFileSync)(file, "utf8"));
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);

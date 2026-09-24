@@ -152,6 +152,7 @@ var GATE_KINDS = [
   "dispatch",
   "cut-experiment",
   "deploy-verify-heal",
+  "deploy-verify-reverify",
   "await-acceptance",
   "accept",
   "complete",

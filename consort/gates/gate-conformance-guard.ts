@@ -394,7 +394,7 @@ function fitnessClauseCoverageReason(consortDir: string, featureId: string, test
  * deterministic dangling class.) Null when all refs resolve (or none to check).
  */
 export function acReferenceReason(consortDir: string, featureId: string, testListJson: string): string | null {
-  const storiesDir = join(consortDir, "features", featureId, "stories");
+  const storiesDir = join(featureResolved(consortDir, featureId), "stories");
   if (!existsSync(storiesDir)) return null;
   const known = new Set<string>();
   for (const story of readdirSync(storiesDir)) {

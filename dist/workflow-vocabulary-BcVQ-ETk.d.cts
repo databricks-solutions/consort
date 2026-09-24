@@ -129,6 +129,15 @@ interface StoryBuild {
     specDefectAc?: string | null;
     /** The design role a spec-defect recommends re-authoring (the test-list owner by default). */
     specDefectFromRole?: string;
+    /** An AC whose green-failure the Navigator assessed as a genuine regression that is NOT
+     *  driver-fixable (assess-regression with NO fix directive – it needs a human or a design
+     *  change), or null. Routes DIRECTLY to raise-to-hil with the diagnosis (issue #200):
+     *  without this branch the state falls through every route and the drive re-dispatches
+     *  doomed Driver green attempts for the full fixAttempts budget before escalating. */
+    greenUnfixableAc?: string | null;
+    /** The assessed diagnosis for greenUnfixableAc, carried into the HIL reason so the
+     *  human sees the WHY without opening the green-failure record. */
+    greenUnfixableDiagnosis?: string;
     /** The built story was deployed for the PO's acceptance review. */
     awaitingAcceptance: boolean;
     /** The story's deploy verified (reachable + verify.passed on its experiment
@@ -222,6 +231,16 @@ interface DeployState {
     /** The Navigator assessed the feature-ship failure + chose a scope set the Driver
      *  has not yet refactored. Routes ONE Driver SCOPE-DEPLOY turn (feature scope). */
     verifyRefactorPending?: boolean;
+    /** The feature deploy-evidence's verify verdict (issue #198): true = the feature
+     *  verify passed, false = it FAILED (stale evidence an approve can never clear),
+     *  undefined = no evidence yet. The deploy gate reads only gates.json, so the
+     *  derivation must read the verdict itself to route a failed deploy anywhere but
+     *  a doomed approve. */
+    verifyPassed?: boolean;
+    /** The ONE bounded re-verify after a failed deploy already ran (the
+     *  deploy-reverify.json marker exists): a still-failing verdict now routes a
+     *  terminal HIL instead of repeating an approve that cannot advance (the stall). */
+    reverifyAttempted?: boolean;
 }
 /** The promote phase: take the accepted feature through its PR review (the
  *  lakebase-scm-workflows ladder) and MERGE it up into its parent tier (e.g.
@@ -325,6 +344,8 @@ type WorkflowAction = DriveAction | {
     kind: "deploy-verify-heal";
     role: "navigator" | "driver";
     mode: "assess-deploy" | "refactor-deploy";
+} | {
+    kind: "deploy-verify-reverify";
 } | {
     kind: "await-acceptance";
     story: string;

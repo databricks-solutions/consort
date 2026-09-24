@@ -3683,49 +3683,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative11, options, skipNormalization) {
+    function resolveComponent(base, relative12, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse(serialize(base, options), options);
-        relative11 = parse(serialize(relative11, options), options);
+        relative12 = parse(serialize(relative12, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative11.scheme) {
-        target.scheme = relative11.scheme;
-        target.userinfo = relative11.userinfo;
-        target.host = relative11.host;
-        target.port = relative11.port;
-        target.path = removeDotSegments(relative11.path || "");
-        target.query = relative11.query;
+      if (!options.tolerant && relative12.scheme) {
+        target.scheme = relative12.scheme;
+        target.userinfo = relative12.userinfo;
+        target.host = relative12.host;
+        target.port = relative12.port;
+        target.path = removeDotSegments(relative12.path || "");
+        target.query = relative12.query;
       } else {
-        if (relative11.userinfo !== void 0 || relative11.host !== void 0 || relative11.port !== void 0) {
-          target.userinfo = relative11.userinfo;
-          target.host = relative11.host;
-          target.port = relative11.port;
-          target.path = removeDotSegments(relative11.path || "");
-          target.query = relative11.query;
+        if (relative12.userinfo !== void 0 || relative12.host !== void 0 || relative12.port !== void 0) {
+          target.userinfo = relative12.userinfo;
+          target.host = relative12.host;
+          target.port = relative12.port;
+          target.path = removeDotSegments(relative12.path || "");
+          target.query = relative12.query;
         } else {
-          if (!relative11.path) {
+          if (!relative12.path) {
             target.path = base.path;
-            if (relative11.query !== void 0) {
-              target.query = relative11.query;
+            if (relative12.query !== void 0) {
+              target.query = relative12.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative11.path[0] === "/") {
-              target.path = removeDotSegments(relative11.path);
+            if (relative12.path[0] === "/") {
+              target.path = removeDotSegments(relative12.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative11.path;
+                target.path = "/" + relative12.path;
               } else if (!base.path) {
-                target.path = relative11.path;
+                target.path = relative12.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative11.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative12.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative11.query;
+            target.query = relative12.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3733,7 +3733,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative11.fragment;
+      target.fragment = relative12.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -6673,24 +6673,24 @@ __export(optimize_role_cli_exports, {
 module.exports = __toCommonJS(optimize_role_cli_exports);
 init_cjs_shims();
 var import_util4 = require("@databricks-solutions/lakebase-scm-utils/util");
-var import_node_fs34 = require("fs");
+var import_node_fs36 = require("fs");
 var import_node_os4 = require("os");
-var import_node_path39 = require("path");
+var import_node_path41 = require("path");
 
 // consort/optimize/role-chains.ts
 init_cjs_shims();
-var import_node_path22 = require("path");
+var import_node_path24 = require("path");
 
 // consort/orchestrator/scenarios/integration-chain.ts
 init_cjs_shims();
-var import_node_fs19 = require("fs");
+var import_node_fs21 = require("fs");
 var import_node_os = require("os");
-var import_node_path21 = require("path");
+var import_node_path23 = require("path");
 
 // consort/orchestrator/runners/manifest-runner.ts
 init_cjs_shims();
-var import_node_fs17 = require("fs");
-var import_node_path19 = require("path");
+var import_node_fs19 = require("fs");
+var import_node_path21 = require("path");
 
 // consort/orchestrator/steps/manifest.ts
 init_cjs_shims();
@@ -7572,6 +7572,7 @@ var dbDesignJson = (tdd, f) => (0, import_node_path2.join)(featureResolved(tdd, 
 var featureTestListJson = (tdd, f) => (0, import_node_path2.join)(featureResolved(tdd, f), "test-list.json");
 var pipelineJson = (tdd, f) => (0, import_node_path2.join)(featureResolved(tdd, f), "pipeline.json");
 var featureDeployEvidenceJson = (tdd, f) => (0, import_node_path2.join)(featureResolved(tdd, f), "deploy-evidence.json");
+var featureDeployReverifyMarkerJson = (tdd, f) => (0, import_node_path2.join)(featureResolved(tdd, f), "deploy-reverify.json");
 var storiesDir = (tdd, f) => (0, import_node_path2.join)(featureResolved(tdd, f), "stories");
 var storyDir = (tdd, f, s) => (0, import_node_path2.join)(storiesDir(tdd, f), s);
 function findStoryDir(tdd, f, s) {
@@ -8730,6 +8731,8 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs3 = __toESM(require("fs"), 1);
+var import_node_child_process2 = require("child_process");
+var import_node_crypto = require("crypto");
 var import_node_path6 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
   return (0, import_node_path6.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
@@ -8770,11 +8773,39 @@ function hasPendingSupersession(tdd, feature, story, ac) {
 function greenFailureJson(tdd, feature, story, ac) {
   return (0, import_node_path6.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+function computeTreeState(projectDir) {
+  try {
+    const headSha = (0, import_node_child_process2.execFileSync)("git", ["rev-parse", "HEAD"], { cwd: projectDir, encoding: "utf8" }).trim();
+    const porcelain = (0, import_node_child_process2.execFileSync)("git", ["status", "--porcelain"], { cwd: projectDir, encoding: "utf8" });
+    const codeLines = porcelain.split("\n").filter((l) => l.trim().length > 0).filter((l) => !TREE_STATE_EXCLUDE_PREFIXES.some((pfx) => l.slice(3).startsWith(pfx)));
+    const dirtySha = (0, import_node_crypto.createHash)("sha1").update(codeLines.join("\n")).digest("hex");
+    return { headSha, dirtySha };
+  } catch {
+    return void 0;
+  }
+}
 function readGreenFailure(tdd, feature, story, ac) {
   const file = greenFailureJson(tdd, feature, story, ac);
   if (!fs3.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs3.readFileSync(file, "utf8"));
+    const value = JSON.parse(fs3.readFileSync(file, "utf8"));
+    if (value.treeState) {
+      const cur = computeTreeState((0, import_node_path6.dirname)(tdd));
+      if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
+        fs3.rmSync(file, { force: true });
+        return void 0;
+      }
+    }
+    return value;
   } catch {
     return void 0;
   }
@@ -8790,6 +8821,10 @@ function hasPendingRegressionFix(tdd, feature, story, ac) {
 function hasPendingSpecDefect(tdd, feature, story, ac) {
   const gf = readGreenFailure(tdd, feature, story, ac);
   return gf !== void 0 && gf.assessed === true && gf.specDefect !== void 0;
+}
+function hasPendingUnfixableRegression(tdd, feature, story, ac) {
+  const gf = readGreenFailure(tdd, feature, story, ac);
+  return gf !== void 0 && gf.assessed === true && !(typeof gf.fixDirective === "string" && gf.fixDirective.length > 0) && gf.specDefect === void 0 && !hasPendingSupersession(tdd, feature, story, ac);
 }
 function specDefectFromRole(tdd, feature, story, ac) {
   const gf = readGreenFailure(tdd, feature, story, ac);
@@ -8921,11 +8956,11 @@ var import_node_fs8 = require("fs");
 
 // consort/orchestrator/agents/claude-step-agent.ts
 init_cjs_shims();
-var import_node_crypto2 = require("crypto");
+var import_node_crypto3 = require("crypto");
 
 // consort/orchestrator/drive/claude-runner.ts
 init_cjs_shims();
-var import_node_child_process4 = require("child_process");
+var import_node_child_process5 = require("child_process");
 
 // consort/setup/project-consort-setup.ts
 init_cjs_shims();
@@ -8948,7 +8983,7 @@ var path2 = __toESM(require("path"), 1);
 init_cjs_shims();
 var fs7 = __toESM(require("fs"), 1);
 var path4 = __toESM(require("path"), 1);
-var import_node_child_process2 = require("child_process");
+var import_node_child_process3 = require("child_process");
 
 // consort/config/kit-ref.ts
 init_cjs_shims();
@@ -9091,7 +9126,7 @@ var kitConsortHooks = {
 };
 
 // consort/orchestrator/drive/claude-runner.ts
-var import_node_crypto = require("crypto");
+var import_node_crypto2 = require("crypto");
 var fs11 = __toESM(require("fs"), 1);
 var path7 = __toESM(require("path"), 1);
 var readline = __toESM(require("readline"), 1);
@@ -9702,7 +9737,7 @@ init_cjs_shims();
 
 // consort/config/kit-bin.ts
 init_cjs_shims();
-var import_node_child_process3 = require("child_process");
+var import_node_child_process4 = require("child_process");
 var fs10 = __toESM(require("fs"), 1);
 var path6 = __toESM(require("path"), 1);
 var kitRootCache;
@@ -9901,7 +9936,7 @@ var CliEffectError = class extends Error {
 var CLI_CAPTURE_MAX = 16e3;
 function spawnCmd(bin, args, cwd) {
   return new Promise((resolve4, reject) => {
-    const child = (0, import_node_child_process4.spawn)(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
+    const child = (0, import_node_child_process5.spawn)(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const chunks = [];
     child.stdout?.on("data", (d) => {
       process.stdout.write(d);
@@ -9989,7 +10024,7 @@ function defaultTurnMonitor(sink) {
 }
 function spawnClaudeStreaming(args, cwd, monitorOverride) {
   return new Promise((resolve4, reject) => {
-    const child = (0, import_node_child_process4.spawn)("claude", args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
+    const child = (0, import_node_child_process5.spawn)("claude", args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const lines = [];
     let sawTooLong = false;
     let sawTransient = false;
@@ -10146,7 +10181,7 @@ function ensureUxBrowserChromium() {
   uxBrowserEnsured = true;
   try {
     process.stderr.write("[drive] ensuring Playwright Chromium for the ux-designer browser (one-time)\u2026\n");
-    (0, import_node_child_process4.execFileSync)(UX_BROWSER_INSTALL_CMD.command, [...UX_BROWSER_INSTALL_CMD.args], { stdio: "ignore" });
+    (0, import_node_child_process5.execFileSync)(UX_BROWSER_INSTALL_CMD.command, [...UX_BROWSER_INSTALL_CMD.args], { stdio: "ignore" });
   } catch {
     process.stderr.write(
       "[drive] could not pre-install Chromium \u2014 the ux-designer will degrade to the brief if the browser can't launch\n"
@@ -10256,7 +10291,7 @@ function execRunner(cfg) {
         const sessionArgsFor = (forceFresh) => {
           if (!cmd.resumeKey) return [];
           if (startsFreshEachTurn(cmd.role)) {
-            const id2 = (0, import_node_crypto.randomUUID)();
+            const id2 = (0, import_node_crypto2.randomUUID)();
             sessions.set(cmd.resumeKey, id2);
             sessionContext.delete(cmd.resumeKey);
             return ["--session-id", id2];
@@ -10271,7 +10306,7 @@ function execRunner(cfg) {
 `
             );
           }
-          const id = (0, import_node_crypto.randomUUID)();
+          const id = (0, import_node_crypto2.randomUUID)();
           sessions.set(cmd.resumeKey, id);
           sessionContext.delete(cmd.resumeKey);
           return ["--session-id", id];
@@ -10445,10 +10480,10 @@ ${instructions.guidelines.map((g) => `- ${g}`).join("\n")}` : "";
     if (this.levers.session === "resume") {
       const id = this.sessionId ?? this.levers.resumeKey;
       if (id) return ["--resume", id];
-      this.sessionId = (0, import_node_crypto2.randomUUID)();
+      this.sessionId = (0, import_node_crypto3.randomUUID)();
       return ["--session-id", this.sessionId];
     }
-    this.sessionId = (0, import_node_crypto2.randomUUID)();
+    this.sessionId = (0, import_node_crypto3.randomUUID)();
     return ["--session-id", this.sessionId];
   }
   /** The full spawn arg vector for an invocation (exported for guarding via buildCommand). */
@@ -10718,7 +10753,7 @@ var import_lakebase4 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 init_cjs_shims();
 var import_fs8 = require("fs");
 var import_path8 = require("path");
-var import_node_child_process5 = require("child_process");
+var import_node_child_process6 = require("child_process");
 var import_lakebase3 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var RUNTIME_ARTIFACT_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -10732,7 +10767,7 @@ function branchIdOf(info) {
 }
 function gitIsAncestor(cwd, ancestor, descendant) {
   try {
-    (0, import_node_child_process5.execFileSync)("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+    (0, import_node_child_process6.execFileSync)("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
       cwd,
       stdio: ["ignore", "ignore", "pipe"]
     });
@@ -10745,7 +10780,7 @@ function gitIsAncestor(cwd, ancestor, descendant) {
 }
 function gitRevParse(cwd, ref) {
   try {
-    return (0, import_node_child_process5.execFileSync)("git", ["rev-parse", "--verify", "--quiet", ref], {
+    return (0, import_node_child_process6.execFileSync)("git", ["rev-parse", "--verify", "--quiet", ref], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -10756,7 +10791,7 @@ function gitRevParse(cwd, ref) {
 }
 function gitDiffNames(cwd, a, b) {
   try {
-    return (0, import_node_child_process5.execFileSync)("git", ["diff", "--name-only", a, b], {
+    return (0, import_node_child_process6.execFileSync)("git", ["diff", "--name-only", a, b], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
@@ -10805,17 +10840,17 @@ async function cutExperiment(args, deps = {}) {
       (0, import_path8.join)(projectDir, "client", "src", "styles", "global.css")
     ].filter((p) => (0, import_fs8.existsSync)(p));
     if (corpusPaths.length > 0) {
-      (0, import_node_child_process5.execFileSync)("git", ["add", "--", ...corpusPaths], { cwd: projectDir });
-      const staged = (0, import_node_child_process5.execFileSync)("git", ["diff", "--cached", "--name-only", "--", ...corpusPaths], { cwd: projectDir, encoding: "utf8" }).trim();
+      (0, import_node_child_process6.execFileSync)("git", ["add", "--", ...corpusPaths], { cwd: projectDir });
+      const staged = (0, import_node_child_process6.execFileSync)("git", ["diff", "--cached", "--name-only", "--", ...corpusPaths], { cwd: projectDir, encoding: "utf8" }).trim();
       if (staged) {
-        (0, import_node_child_process5.execFileSync)("git", ["commit", "--no-verify", "-m", `design corpus: ${featureId}/${storyId} (pre-experiment persist)`, "--", ...corpusPaths], { cwd: projectDir });
+        (0, import_node_child_process6.execFileSync)("git", ["commit", "--no-verify", "-m", `design corpus: ${featureId}/${storyId} (pre-experiment persist)`, "--", ...corpusPaths], { cwd: projectDir });
       }
     }
   } catch {
   }
   let dirtyTracked = "";
   try {
-    dirtyTracked = (0, import_node_child_process5.execFileSync)("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: projectDir, encoding: "utf8" }).split("\n").filter((l) => l.trim().length > 0 && !RUNTIME_ARTIFACT_PREFIXES.some((pfx) => l.slice(3).startsWith(pfx))).join("\n").trim();
+    dirtyTracked = (0, import_node_child_process6.execFileSync)("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: projectDir, encoding: "utf8" }).split("\n").filter((l) => l.trim().length > 0 && !RUNTIME_ARTIFACT_PREFIXES.some((pfx) => l.slice(3).startsWith(pfx))).join("\n").trim();
   } catch {
     dirtyTracked = "";
   }
@@ -10991,8 +11026,8 @@ init_cjs_shims();
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
-var import_node_child_process6 = require("child_process");
-var import_node_crypto3 = require("crypto");
+var import_node_child_process7 = require("child_process");
+var import_node_crypto4 = require("crypto");
 var import_node_fs10 = require("fs");
 var import_node_path13 = require("path");
 var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
@@ -11207,7 +11242,10 @@ function isReflectSmell(name) {
 }
 var REFLECT_REVISE_CAP = 4;
 function priorReflectReviseCount(consortDir, story_id) {
-  return readSmellsLog(consortDir).detected.filter(
+  const log = readSmellsLog(consortDir);
+  const laps = log.reflect_revise_count?.[story_id];
+  if (laps !== void 0) return laps;
+  return log.detected.filter(
     (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
   ).length;
 }
@@ -11456,6 +11494,17 @@ init_cjs_shims();
 var import_node_fs13 = require("fs");
 var import_node_path16 = require("path");
 
+// consort/architecture/migration-history-clean.ts
+init_cjs_shims();
+var import_node_child_process8 = require("child_process");
+var import_node_fs14 = require("fs");
+var import_node_path17 = require("path");
+
+// consort/architecture/test-smell-clean.ts
+init_cjs_shims();
+var import_node_fs15 = require("fs");
+var import_node_path18 = require("path");
+
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
@@ -11686,6 +11735,8 @@ function storyView(id, e, probe, loop) {
       greenSupersededAc: probe.greenSupersededFailureAc(id),
       specDefectAc: probe.specDefectAc(id),
       specDefectFromRole: probe.specDefectFromRole(id),
+      greenUnfixableAc: probe.greenUnfixableAc(id),
+      greenUnfixableDiagnosis: probe.greenUnfixableDiagnosis(id),
       awaitingAcceptance: e.status === "awaiting-acceptance",
       deployVerified: probe.storyDeployVerified(id),
       deployVerifyAssessEligible: probe.deployVerifyAssessEligible(id),
@@ -11734,8 +11785,8 @@ function driverPhaseForTdd(tddPhase) {
 
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
-var import_node_crypto4 = require("crypto");
-var import_node_fs14 = require("fs");
+var import_node_crypto5 = require("crypto");
+var import_node_fs16 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -11754,11 +11805,11 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs14.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs16.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
-    return (0, import_node_crypto4.createHash)("sha256").update(canonical).digest("hex").slice(0, 16);
+    return (0, import_node_crypto5.createHash)("sha256").update(canonical).digest("hex").slice(0, 16);
   } catch {
     return void 0;
   }
@@ -11976,6 +12027,8 @@ function readDriveContext(consortDir, featureId, projectDir) {
   const backlogCommitted = requestsAuthored;
   const deployed = fs15.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
+  const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
+  const reverifyAttempted = fs15.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   const verifyAssessEligible = deployVerifyNeedsAssess(consortDir, featureId);
   const verifyRefactorPending = deployVerifyRefactorPending(consortDir, featureId);
   const proj = projectDir ?? path10.dirname(consortDir);
@@ -12003,9 +12056,17 @@ function readDriveContext(consortDir, featureId, projectDir) {
     breakdownDone,
     loop,
     planning: { intakeReady, intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated: hasEstimates(consortDir), backlogCommitted, requestsAuthored },
-    deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending },
+    deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending, verifyPassed, reverifyAttempted },
     promote
   };
+}
+function readDeployVerifyPassed(consortDir, featureId) {
+  try {
+    const ev = JSON.parse(fs15.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
+    return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : void 0;
+  } catch {
+    return void 0;
+  }
 }
 function readGateApproved(featureId, consortDir, gate) {
   try {
@@ -12161,6 +12222,26 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       }
       return acId ? specDefectFromRole(consortDir, featureId, story, acId) : "test-strategist";
     },
+    greenUnfixableAc(story) {
+      let acId;
+      try {
+        acId = storyTestProgress(consortDir, featureId, story).openRed[0]?.ac_id;
+      } catch {
+        acId = void 0;
+      }
+      if (!acId) return null;
+      return hasPendingUnfixableRegression(consortDir, featureId, story, acId) ? acId : null;
+    },
+    greenUnfixableDiagnosis(story) {
+      let acId;
+      try {
+        acId = storyTestProgress(consortDir, featureId, story).openRed[0]?.ac_id;
+      } catch {
+        acId = void 0;
+      }
+      if (!acId) return void 0;
+      return readGreenFailure(consortDir, featureId, story, acId)?.diagnosis;
+    },
     storyDeployVerified(story) {
       return storyDeployVerified(consortDir, featureId, story);
     },
@@ -12235,8 +12316,8 @@ function probeDriveState(consortDir, featureId, buildActive = null) {
 
 // consort/orchestrator/turns/step-executor.ts
 init_cjs_shims();
-var import_node_fs15 = require("fs");
-var import_node_path17 = require("path");
+var import_node_fs17 = require("fs");
+var import_node_path19 = require("path");
 
 // consort/orchestrator/steps/step-contract.ts
 init_cjs_shims();
@@ -12352,8 +12433,8 @@ async function execute(step, ctx, deps) {
   for (const spec of outputSpecs) {
     const rel = outputPaths?.[spec.id] ?? spec.filename;
     const root = resolveChannelRoot(spec.channel, { workspaceDir, artifactDir, metaDir });
-    const abs = producedPaths.find((p) => p.endsWith(rel)) ?? (0, import_node_path17.join)(root, rel);
-    if (!(0, import_node_fs15.existsSync)(abs)) {
+    const abs = producedPaths.find((p) => p.endsWith(rel)) ?? (0, import_node_path19.join)(root, rel);
+    if (!(0, import_node_fs17.existsSync)(abs)) {
       if (!spec.optional && runResult.produced) violations.push(`declared output "${spec.id}" (${spec.filename}) was not produced`);
       continue;
     }
@@ -12371,8 +12452,8 @@ async function execute(step, ctx, deps) {
 
 // consort/orchestrator/turns/agent-report-formatter.ts
 init_cjs_shims();
-var import_node_fs16 = require("fs");
-var import_node_path18 = require("path");
+var import_node_fs18 = require("fs");
+var import_node_path20 = require("path");
 function extractReportBlock(text) {
   const labeled = text.match(/```agent-report\s*\n([\s\S]*?)```/);
   if (labeled) return labeled[1].trim();
@@ -12381,7 +12462,7 @@ function extractReportBlock(text) {
   return void 0;
 }
 function formatAgentReport(args) {
-  const logPath = (0, import_node_path18.join)(args.workspaceDir, args.logFile ?? "agent-log.jsonl");
+  const logPath = (0, import_node_path20.join)(args.workspaceDir, args.logFile ?? "agent-log.jsonl");
   let reportJson;
   let source;
   if (args.reportText !== void 0) {
@@ -12391,12 +12472,12 @@ function formatAgentReport(args) {
       return { ok: false, entries: 0, error: `no \`\`\`agent-report block in the agent's final message \u2013 it surfaced nothing about what it did.` };
     }
   } else {
-    const reportPath = (0, import_node_path18.join)(args.workspaceDir, args.reportFile ?? ".agent-report.json");
+    const reportPath = (0, import_node_path20.join)(args.workspaceDir, args.reportFile ?? ".agent-report.json");
     source = reportPath;
-    if (!(0, import_node_fs16.existsSync)(reportPath)) {
+    if (!(0, import_node_fs18.existsSync)(reportPath)) {
       return { ok: false, entries: 0, error: `agent report absent at ${reportPath} \u2013 the agent surfaced nothing about what it did.` };
     }
-    reportJson = (0, import_node_fs16.readFileSync)(reportPath, "utf8");
+    reportJson = (0, import_node_fs18.readFileSync)(reportPath, "utf8");
   }
   let raw;
   try {
@@ -12430,11 +12511,11 @@ function formatAgentReport(args) {
     formatted.push(JSON.stringify(obj));
   }
   const payload = formatted.join("\n") + "\n";
-  if ((0, import_node_fs16.existsSync)(logPath)) {
-    (0, import_node_fs16.appendFileSync)(logPath, payload);
+  if ((0, import_node_fs18.existsSync)(logPath)) {
+    (0, import_node_fs18.appendFileSync)(logPath, payload);
   } else {
-    (0, import_node_fs16.mkdirSync)((0, import_node_path18.dirname)(logPath), { recursive: true });
-    (0, import_node_fs16.writeFileSync)(logPath, payload);
+    (0, import_node_fs18.mkdirSync)((0, import_node_path20.dirname)(logPath), { recursive: true });
+    (0, import_node_fs18.writeFileSync)(logPath, payload);
   }
   return { ok: true, entries: formatted.length };
 }
@@ -12446,12 +12527,12 @@ function resolveInputsFromWorkspace(manifest, workspaceDir, featureId, action) {
   const out = {};
   for (const input of manifest.inputs) {
     const file = expand(input.source.replace(/^feature:/, ""));
-    const p = (0, import_node_path19.join)(workspaceDir, file);
-    if (!(0, import_node_fs17.existsSync)(p)) {
+    const p = (0, import_node_path21.join)(workspaceDir, file);
+    if (!(0, import_node_fs19.existsSync)(p)) {
       if (input.optional) continue;
       return { missing: input.id };
     }
-    out[input.id] = (0, import_node_fs17.readFileSync)(p, "utf8");
+    out[input.id] = (0, import_node_fs19.readFileSync)(p, "utf8");
   }
   return out;
 }
@@ -12588,31 +12669,31 @@ async function runManifestChain(start, manifests, deps, options = {}) {
 
 // consort/orchestrator/provisioning/bundle.ts
 init_cjs_shims();
-var import_node_fs18 = require("fs");
-var import_node_path20 = require("path");
+var import_node_fs20 = require("fs");
+var import_node_path22 = require("path");
 function layDownKitAgents(workspaceDir, kitDir = process.cwd()) {
-  const src = (0, import_node_path20.join)(kitDir, "skills", "consort", "agents");
-  if (!(0, import_node_fs18.existsSync)(src)) throw new Error(`layDownKitAgents: kit agents dir not found at ${src}`);
-  const dest = (0, import_node_path20.join)(workspaceDir, ".claude", "agents");
-  (0, import_node_fs18.mkdirSync)(dest, { recursive: true });
-  (0, import_node_fs18.cpSync)(src, dest, { recursive: true });
+  const src = (0, import_node_path22.join)(kitDir, "skills", "consort", "agents");
+  if (!(0, import_node_fs20.existsSync)(src)) throw new Error(`layDownKitAgents: kit agents dir not found at ${src}`);
+  const dest = (0, import_node_path22.join)(workspaceDir, ".claude", "agents");
+  (0, import_node_fs20.mkdirSync)(dest, { recursive: true });
+  (0, import_node_fs20.cpSync)(src, dest, { recursive: true });
 }
 function overlayBundle(destRoot, overlay) {
   for (const t of overlay.trees ?? []) {
-    (0, import_node_fs18.cpSync)(t.from, (0, import_node_path20.join)(destRoot, t.to), { recursive: true });
+    (0, import_node_fs20.cpSync)(t.from, (0, import_node_path22.join)(destRoot, t.to), { recursive: true });
   }
   for (const f of overlay.files ?? []) {
-    const dst = (0, import_node_path20.join)(destRoot, f.to);
-    (0, import_node_fs18.mkdirSync)((0, import_node_path20.dirname)(dst), { recursive: true });
-    (0, import_node_fs18.cpSync)(f.from, dst);
+    const dst = (0, import_node_path22.join)(destRoot, f.to);
+    (0, import_node_fs20.mkdirSync)((0, import_node_path22.dirname)(dst), { recursive: true });
+    (0, import_node_fs20.cpSync)(f.from, dst);
   }
 }
 
 // consort/orchestrator/scenarios/integration-chain.ts
 async function runIntegrationChain(config) {
   const manifests = loadStepManifests(config.manifestDir);
-  const workspaceDir = (0, import_node_fs19.mkdtempSync)((0, import_node_path21.join)((0, import_node_os.tmpdir)(), "integration-chain-"));
-  (0, import_node_fs19.mkdirSync)((0, import_node_path21.join)(workspaceDir, ARTIFACT_ROOT), { recursive: true });
+  const workspaceDir = (0, import_node_fs21.mkdtempSync)((0, import_node_path23.join)((0, import_node_os.tmpdir)(), "integration-chain-"));
+  (0, import_node_fs21.mkdirSync)((0, import_node_path23.join)(workspaceDir, ARTIFACT_ROOT), { recursive: true });
   layDownKitAgents(workspaceDir);
   config.seedWorkspace?.(workspaceDir);
   const agentContext = {
@@ -12624,7 +12705,7 @@ async function runIntegrationChain(config) {
     workspaceDir,
     cfg: {
       projectDir: workspaceDir,
-      consortDir: (0, import_node_path21.join)(workspaceDir, ARTIFACT_ROOT),
+      consortDir: (0, import_node_path23.join)(workspaceDir, ARTIFACT_ROOT),
       featureId: config.feature,
       ...recordedPrompt !== void 0 ? { instructionsOverride: () => recordedPrompt } : {}
     },
@@ -12672,23 +12753,23 @@ async function runIntegrationChain(config) {
   process.env.LAKEBASE_KIT_DIR = process.cwd();
   try {
     const turns = await runManifestChain(config.start, manifests, runnerDeps);
-    const producedArtifacts = snapshotTree((0, import_node_path21.join)(workspaceDir, ARTIFACT_ROOT), workspaceDir);
+    const producedArtifacts = snapshotTree((0, import_node_path23.join)(workspaceDir, ARTIFACT_ROOT), workspaceDir);
     for (const root of config.extraSnapshotRoots ?? []) {
-      Object.assign(producedArtifacts, snapshotTree((0, import_node_path21.join)(workspaceDir, root), workspaceDir));
+      Object.assign(producedArtifacts, snapshotTree((0, import_node_path23.join)(workspaceDir, root), workspaceDir));
     }
     return { turns, workspaceDir, producedArtifacts };
   } finally {
-    (0, import_node_fs19.rmSync)(workspaceDir, { recursive: true, force: true });
+    (0, import_node_fs21.rmSync)(workspaceDir, { recursive: true, force: true });
   }
 }
 function snapshotTree(root, relTo) {
   const out = {};
-  if (!(0, import_node_fs19.existsSync)(root)) return out;
+  if (!(0, import_node_fs21.existsSync)(root)) return out;
   const walk2 = (dir) => {
-    for (const entry of (0, import_node_fs19.readdirSync)(dir, { withFileTypes: true })) {
-      const abs = (0, import_node_path21.join)(dir, entry.name);
+    for (const entry of (0, import_node_fs21.readdirSync)(dir, { withFileTypes: true })) {
+      const abs = (0, import_node_path23.join)(dir, entry.name);
       if (entry.isDirectory()) walk2(abs);
-      else if (entry.isFile()) out[(0, import_node_path21.relative)(relTo, abs)] = (0, import_node_fs19.readFileSync)(abs, "utf8");
+      else if (entry.isFile()) out[(0, import_node_path23.relative)(relTo, abs)] = (0, import_node_fs21.readFileSync)(abs, "utf8");
     }
   };
   walk2(root);
@@ -12781,8 +12862,8 @@ Realize EVERY element the brief names: all token scales (typography, colors, spa
 async function runRoleChainLive(chain, opts = {}) {
   const kit = opts.kitDir ?? process.cwd();
   const { turns, producedArtifacts } = await runIntegrationChain({
-    manifestDir: (0, import_node_path22.join)(kit, MANIFESTS_REL, chain.dir),
-    intakeDir: (0, import_node_path22.join)(kit, INTAKE_REL),
+    manifestDir: (0, import_node_path24.join)(kit, MANIFESTS_REL, chain.dir),
+    intakeDir: (0, import_node_path24.join)(kit, INTAKE_REL),
     feature: FEATURE,
     start: PO_SEED,
     // A design role writes its output at the WORKSPACE ROOT (features/... or planning/...), NOT
@@ -12805,7 +12886,7 @@ async function runRoleChainLive(chain, opts = {}) {
 
 // consort/optimize/build-role-chains.ts
 init_cjs_shims();
-var import_node_path23 = require("path");
+var import_node_path25 = require("path");
 var BUILD_MANIFESTS_REL = "tests/integration/manifests";
 var BUILD_CORPUS_REL = "consort/evaluation/reference-assets/stockflow";
 var BUILD_FEATURE = "F6-split-tracking-code";
@@ -12880,8 +12961,8 @@ Do NOT edit product code or specs. Run no command.` + NO_SHELL2 + REPORT_BLOCK2
 async function runBuildRoleChainLive(chain, opts = {}) {
   const kit = opts.kitDir ?? process.cwd();
   const { turns, producedArtifacts } = await runIntegrationChain({
-    manifestDir: (0, import_node_path23.join)(kit, BUILD_MANIFESTS_REL, chain.dir),
-    intakeDir: (0, import_node_path23.join)(kit, BUILD_CORPUS_REL),
+    manifestDir: (0, import_node_path25.join)(kit, BUILD_MANIFESTS_REL, chain.dir),
+    intakeDir: (0, import_node_path25.join)(kit, BUILD_CORPUS_REL),
     feature: BUILD_FEATURE,
     start: BUILD_PO_SEED,
     extraSnapshotRoots: chain.extraSnapshotRoots,
@@ -12998,8 +13079,8 @@ function driverGreenCandidates() {
 
 // tests/optimization/driver-green-enforcement.ts
 init_cjs_shims();
-var import_node_fs20 = require("fs");
-var import_node_path24 = require("path");
+var import_node_fs22 = require("fs");
+var import_node_path26 = require("path");
 
 // node_modules/js-yaml/dist/js-yaml.mjs
 init_cjs_shims();
@@ -15594,14 +15675,14 @@ function deployPortForIndex(index) {
   return BASE_DEPLOY_PORT + Math.max(0, index);
 }
 function assignWorktreePort(projectDir, port) {
-  const file = (0, import_node_path24.join)(projectDir, "deploy-targets.yaml");
-  const doc = load((0, import_node_fs20.readFileSync)(file, "utf8")) ?? {};
+  const file = (0, import_node_path26.join)(projectDir, "deploy-targets.yaml");
+  const doc = load((0, import_node_fs22.readFileSync)(file, "utf8")) ?? {};
   const local = doc.targets?.local;
   if (!local) throw new Error(`assignWorktreePort: no 'local' target in ${file}`);
   const baseUrl = `http://localhost:${port}`;
   local.base_url = baseUrl;
   local.run = `uv run --env-file .env uvicorn app.main:app --host 127.0.0.1 --port ${port}`;
-  (0, import_node_fs20.writeFileSync)(file, dump(doc), "utf8");
+  (0, import_node_fs22.writeFileSync)(file, dump(doc), "utf8");
   return baseUrl;
 }
 function guardHookScript(opts) {
@@ -15657,9 +15738,9 @@ sys.exit(0)
 var SINGLE_TEST_GUARD_HOOK = guardHookScript({ suite: true, scan: false });
 var GUARD_HOOK_REL = ".claude/hooks/driver-guard.py";
 function readSettings(file) {
-  if (!(0, import_node_fs20.existsSync)(file)) return {};
+  if (!(0, import_node_fs22.existsSync)(file)) return {};
   try {
-    return JSON.parse((0, import_node_fs20.readFileSync)(file, "utf8"));
+    return JSON.parse((0, import_node_fs22.readFileSync)(file, "utf8"));
   } catch {
     return {};
   }
@@ -15678,9 +15759,9 @@ function applyDriverLevers(workspaceDir, levers, consortDir) {
   const env = ctxPackEnv(levers.ctxPack);
   const result = { env };
   if ((levers.ctxPack?.length ?? 0) > 0 && consortDir) {
-    const markerPath3 = (0, import_node_path24.join)(consortDir, "ctx-levers.json");
-    (0, import_node_fs20.mkdirSync)(consortDir, { recursive: true });
-    (0, import_node_fs20.writeFileSync)(
+    const markerPath3 = (0, import_node_path26.join)(consortDir, "ctx-levers.json");
+    (0, import_node_fs22.mkdirSync)(consortDir, { recursive: true });
+    (0, import_node_fs22.writeFileSync)(
       markerPath3,
       JSON.stringify(
         {
@@ -15699,7 +15780,7 @@ function applyDriverLevers(workspaceDir, levers, consortDir) {
   const needsHook = levers.guardSuite === true || levers.guardScan === true;
   const needsSettings = needsHook || (levers.denyBash?.length ?? 0) > 0;
   if (!needsSettings) return result;
-  const settingsPath = (0, import_node_path24.join)(workspaceDir, ".claude", "settings.json");
+  const settingsPath = (0, import_node_path26.join)(workspaceDir, ".claude", "settings.json");
   const settings = readSettings(settingsPath);
   if (levers.denyBash?.length) {
     const perms = settings.permissions ??= {};
@@ -15708,18 +15789,18 @@ function applyDriverLevers(workspaceDir, levers, consortDir) {
     perms.deny = [...deny];
   }
   if (needsHook) {
-    const hookPath = (0, import_node_path24.join)(workspaceDir, GUARD_HOOK_REL);
-    (0, import_node_fs20.mkdirSync)((0, import_node_path24.dirname)(hookPath), { recursive: true });
-    (0, import_node_fs20.writeFileSync)(hookPath, guardHookScript({ suite: levers.guardSuite === true, scan: levers.guardScan === true }), "utf8");
-    (0, import_node_fs20.chmodSync)(hookPath, 493);
+    const hookPath = (0, import_node_path26.join)(workspaceDir, GUARD_HOOK_REL);
+    (0, import_node_fs22.mkdirSync)((0, import_node_path26.dirname)(hookPath), { recursive: true });
+    (0, import_node_fs22.writeFileSync)(hookPath, guardHookScript({ suite: levers.guardSuite === true, scan: levers.guardScan === true }), "utf8");
+    (0, import_node_fs22.chmodSync)(hookPath, 493);
     const hooks = settings.hooks ??= {};
     const pre = hooks.PreToolUse ??= [];
     const already = pre.some((m) => m.hooks?.some((h) => h.command === hookPath));
     if (!already) pre.push({ matcher: "Bash", hooks: [{ type: "command", command: hookPath }] });
     result.hookPath = hookPath;
   }
-  (0, import_node_fs20.mkdirSync)((0, import_node_path24.dirname)(settingsPath), { recursive: true });
-  (0, import_node_fs20.writeFileSync)(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  (0, import_node_fs22.mkdirSync)((0, import_node_path26.dirname)(settingsPath), { recursive: true });
+  (0, import_node_fs22.writeFileSync)(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
   result.settingsPath = settingsPath;
   return result;
 }
@@ -15917,8 +15998,8 @@ init_cjs_shims();
 
 // consort/optimize/role-telemetry.ts
 init_cjs_shims();
-var import_node_fs21 = require("fs");
-var import_node_path25 = require("path");
+var import_node_fs23 = require("fs");
+var import_node_path27 = require("path");
 
 // tests/optimization/role-sweep-report.ts
 function classificationNote(classification) {
@@ -15996,10 +16077,10 @@ function formatRoleSweepReport(r) {
 
 // tests/integration/live/driver-build-support.ts
 init_cjs_shims();
-var import_node_fs32 = require("fs");
-var import_node_child_process10 = require("child_process");
+var import_node_fs34 = require("fs");
+var import_node_child_process12 = require("child_process");
 var import_node_os3 = require("os");
-var import_node_path37 = require("path");
+var import_node_path39 = require("path");
 
 // consort/optimize/optimize-build-trial.ts
 init_cjs_shims();
@@ -16027,7 +16108,7 @@ function classifyBuildTrial(sig2) {
 
 // consort/orchestrator/runners/run-config-loader.ts
 init_cjs_shims();
-var import_node_fs22 = require("fs");
+var import_node_fs24 = require("fs");
 function resolveEnvTemplate(value) {
   const withDefault = value.match(/^\$\{([A-Z0-9_]+):-(.*)\}$/s);
   if (withDefault) {
@@ -16070,7 +16151,7 @@ function resolveDeep(node) {
   return node;
 }
 function loadRunConfig(path11) {
-  const raw = JSON.parse((0, import_node_fs22.readFileSync)(path11, "utf8"));
+  const raw = JSON.parse((0, import_node_fs24.readFileSync)(path11, "utf8"));
   return resolveDeep(raw);
 }
 
@@ -16079,11 +16160,11 @@ init_cjs_shims();
 
 // consort/orchestrator/provisioning/credentials.ts
 init_cjs_shims();
-var import_node_child_process7 = require("child_process");
+var import_node_child_process9 = require("child_process");
 var import_lakebase11 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 function resolveHostFromProfile(profile, timeoutMs = 15e3) {
   try {
-    const raw = (0, import_node_child_process7.execFileSync)("databricks", ["auth", "describe", "--profile", profile, "-o", "json"], {
+    const raw = (0, import_node_child_process9.execFileSync)("databricks", ["auth", "describe", "--profile", profile, "-o", "json"], {
       encoding: "utf-8",
       timeout: timeoutMs
     });
@@ -16113,29 +16194,29 @@ function resolveTestEnv() {
 
 // tests/integration/live/kit-resolution.ts
 init_cjs_shims();
-var import_node_fs23 = require("fs");
-var import_node_path26 = require("path");
+var import_node_fs25 = require("fs");
+var import_node_path28 = require("path");
 var import_node_os2 = require("os");
 var LOCAL_KIT_REF_DEFAULT = "sftdd-livetest-local";
 function localKitCacheLink(ref = LOCAL_KIT_REF_DEFAULT) {
-  const cacheRoot = (0, import_node_path26.join)(process.env.XDG_CACHE_HOME ?? (0, import_node_path26.join)((0, import_node_os2.homedir)(), ".cache"), "consort");
-  return (0, import_node_path26.join)(cacheRoot, ref, "node_modules", "@databricks-solutions", "consort");
+  const cacheRoot = (0, import_node_path28.join)(process.env.XDG_CACHE_HOME ?? (0, import_node_path28.join)((0, import_node_os2.homedir)(), ".cache"), "consort");
+  return (0, import_node_path28.join)(cacheRoot, ref, "node_modules", "@databricks-solutions", "consort");
 }
 function pinLocalKitCache(kitRoot2, ref = LOCAL_KIT_REF_DEFAULT) {
-  if (!(0, import_node_fs23.existsSync)((0, import_node_path26.join)(kitRoot2, "dist"))) {
+  if (!(0, import_node_fs25.existsSync)((0, import_node_path28.join)(kitRoot2, "dist"))) {
     throw new Error(`kit-resolution: kit dist missing at ${kitRoot2}/dist \u2013 run 'npm run build' in the kit first.`);
   }
   const link = localKitCacheLink(ref);
-  (0, import_node_fs23.mkdirSync)((0, import_node_path26.dirname)(link), { recursive: true });
-  (0, import_node_fs23.rmSync)(link, { recursive: true, force: true });
-  (0, import_node_fs23.symlinkSync)(kitRoot2, link);
+  (0, import_node_fs25.mkdirSync)((0, import_node_path28.dirname)(link), { recursive: true });
+  (0, import_node_fs25.rmSync)(link, { recursive: true, force: true });
+  (0, import_node_fs25.symlinkSync)(kitRoot2, link);
 }
 function recordLocalKitHint(projectDir, kitRoot2, ref = LOCAL_KIT_REF_DEFAULT) {
-  const dir = (0, import_node_path26.join)(projectDir, ".lakebase");
-  (0, import_node_fs23.mkdirSync)(dir, { recursive: true });
-  (0, import_node_fs23.writeFileSync)((0, import_node_path26.join)(dir, "kit-ref"), `${ref}
+  const dir = (0, import_node_path28.join)(projectDir, ".lakebase");
+  (0, import_node_fs25.mkdirSync)(dir, { recursive: true });
+  (0, import_node_fs25.writeFileSync)((0, import_node_path28.join)(dir, "kit-ref"), `${ref}
 `);
-  (0, import_node_fs23.writeFileSync)((0, import_node_path26.join)(dir, "kit-local-dir"), `${(0, import_node_fs23.realpathSync)(kitRoot2)}
+  (0, import_node_fs25.writeFileSync)((0, import_node_path28.join)(dir, "kit-local-dir"), `${(0, import_node_fs25.realpathSync)(kitRoot2)}
 `);
 }
 function resolveKitSingleSource(kitRoot2, ref = LOCAL_KIT_REF_DEFAULT) {
@@ -16151,9 +16232,9 @@ function resolveKitSingleSource(kitRoot2, ref = LOCAL_KIT_REF_DEFAULT) {
 function assertKitSingleSource(projectDir, kitRoot2, ref = LOCAL_KIT_REF_DEFAULT) {
   recordLocalKitHint(projectDir, kitRoot2, ref);
   const link = localKitCacheLink(ref);
-  if (!(0, import_node_fs23.existsSync)(link)) return;
-  const want = (0, import_node_fs23.realpathSync)(kitRoot2);
-  const got = (0, import_node_fs23.realpathSync)(link);
+  if (!(0, import_node_fs25.existsSync)(link)) return;
+  const want = (0, import_node_fs25.realpathSync)(kitRoot2);
+  const got = (0, import_node_fs25.realpathSync)(link);
   if (got !== want) {
     throw new Error(
       `kit-resolution: kit resolution drift \u2013 ref '${ref}' resolves to '${got}', expected '${want}'. Aborting so the run cannot use a stale/other kit.`
@@ -16166,9 +16247,9 @@ function clearKitSingleSource() {
 
 // consort/orchestrator/provisioning/lifecycle-catalogue.ts
 init_cjs_shims();
-var import_node_fs24 = require("fs");
-var import_node_path27 = require("path");
-var import_node_child_process8 = require("child_process");
+var import_node_fs26 = require("fs");
+var import_node_path29 = require("path");
+var import_node_child_process10 = require("child_process");
 
 // consort/lakebase/create-project.ts
 init_cjs_shims();
@@ -16226,7 +16307,7 @@ async function realRemoveProjectEffects() {
     stopRunner: (name) => scm.stopRunner(name),
     removeRunner: (a) => scm.removeRunner(a),
     deleteGithubRepo: (repo) => {
-      (0, import_node_child_process8.execFileSync)("gh", ["repo", "delete", repo, "--yes"], { stdio: "ignore", timeout: 3e4 });
+      (0, import_node_child_process10.execFileSync)("gh", ["repo", "delete", repo, "--yes"], { stdio: "ignore", timeout: 3e4 });
     },
     deleteLakebaseProject: (a) => scm.deleteLakebaseProject({ projectId: a.projectId, host: a.host })
   };
@@ -16270,7 +16351,7 @@ async function removeProject(config, context, effectsOverride) {
   if (handle.projectDir) {
     if (lakebaseDeleted) {
       try {
-        (0, import_node_fs24.rmSync)(handle.projectDir, { recursive: true, force: true });
+        (0, import_node_fs26.rmSync)(handle.projectDir, { recursive: true, force: true });
       } catch (e) {
         errors.push(`dir remove: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -16285,7 +16366,7 @@ async function injectEscalation(config, context) {
   if (!c.source) return { ok: false, error: 'inject-escalation requires config.source (e.g. "smell:reflect-spec-defect")' };
   if (!c.reason) return { ok: false, error: "inject-escalation requires config.reason" };
   try {
-    const esc = writeEscalation((0, import_node_path27.join)(context.workspaceDir, ARTIFACT_ROOT), {
+    const esc = writeEscalation((0, import_node_path29.join)(context.workspaceDir, ARTIFACT_ROOT), {
       source: c.source,
       reason: c.reason,
       ...c.feature_id ? { feature_id: c.feature_id } : {},
@@ -16327,22 +16408,22 @@ var catalogueLifecycleDeps = {
 
 // tests/integration/live/shared-scaffold-support.ts
 init_cjs_shims();
-var import_node_fs25 = require("fs");
-var import_node_path28 = require("path");
-var import_node_child_process9 = require("child_process");
+var import_node_fs27 = require("fs");
+var import_node_path30 = require("path");
+var import_node_child_process11 = require("child_process");
 var import_git2 = require("@databricks-solutions/lakebase-scm-utils/git");
 function forceRemoveWorktree(projectDir, wtDir) {
   try {
-    (0, import_node_child_process9.execFileSync)("git", ["worktree", "remove", "--force", wtDir], { cwd: projectDir, stdio: "ignore", timeout: 3e4 });
+    (0, import_node_child_process11.execFileSync)("git", ["worktree", "remove", "--force", wtDir], { cwd: projectDir, stdio: "ignore", timeout: 3e4 });
     return;
   } catch {
   }
   try {
-    (0, import_node_fs25.rmSync)(wtDir, { recursive: true, force: true });
+    (0, import_node_fs27.rmSync)(wtDir, { recursive: true, force: true });
   } catch {
   }
   try {
-    (0, import_node_child_process9.execFileSync)("git", ["worktree", "prune"], { cwd: projectDir, stdio: "ignore", timeout: 3e4 });
+    (0, import_node_child_process11.execFileSync)("git", ["worktree", "prune"], { cwd: projectDir, stdio: "ignore", timeout: 3e4 });
   } catch {
   }
 }
@@ -16350,7 +16431,7 @@ var worktreeSeq = 0;
 async function cutWorktree(args) {
   const { projectDir, worktreesRoot, label, branchPrefix, kitDir } = args;
   const unique = `${label}-${Date.now().toString(36)}-${worktreeSeq++}`;
-  const wtDir = (0, import_node_path28.join)(worktreesRoot, unique);
+  const wtDir = (0, import_node_path30.join)(worktreesRoot, unique);
   const branch = `${branchPrefix}/${unique}`;
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -16364,16 +16445,16 @@ async function cutWorktree(args) {
     }
   }
   if (lastErr) throw new Error(`git worktree add for ${label} failed: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
-  const baseEnv = (0, import_node_path28.join)(projectDir, ".env");
-  if ((0, import_node_fs25.existsSync)(baseEnv)) (0, import_node_fs25.cpSync)(baseEnv, (0, import_node_path28.join)(wtDir, ".env"));
+  const baseEnv = (0, import_node_path30.join)(projectDir, ".env");
+  if ((0, import_node_fs27.existsSync)(baseEnv)) (0, import_node_fs27.cpSync)(baseEnv, (0, import_node_path30.join)(wtDir, ".env"));
   layDownKitAgents(wtDir, kitDir);
-  return { wtDir, consortDir: (0, import_node_path28.join)(wtDir, ARTIFACT_ROOT) };
+  return { wtDir, consortDir: (0, import_node_path30.join)(wtDir, ARTIFACT_ROOT) };
 }
 
 // consort/setup/orphan-project-sweep.ts
 init_cjs_shims();
-var import_node_fs26 = require("fs");
-var import_node_path29 = require("path");
+var import_node_fs28 = require("fs");
+var import_node_path31 = require("path");
 var DEFAULT_TEST_PROJECT_PREFIXES = ["de-live-", "dg-live-"];
 function readEnvValue(envText, key) {
   for (const line of envText.split("\n")) {
@@ -16383,17 +16464,17 @@ function readEnvValue(envText, key) {
   return void 0;
 }
 function readScaffoldProjectMeta(dir) {
-  const envPath = (0, import_node_path29.join)(dir, ".env");
-  const lakebaseDir = (0, import_node_path29.join)(dir, ".lakebase");
-  if (!(0, import_node_fs26.existsSync)(envPath) || !(0, import_node_fs26.existsSync)(lakebaseDir)) return null;
-  const envText = (0, import_node_fs26.readFileSync)(envPath, "utf8");
+  const envPath = (0, import_node_path31.join)(dir, ".env");
+  const lakebaseDir = (0, import_node_path31.join)(dir, ".lakebase");
+  if (!(0, import_node_fs28.existsSync)(envPath) || !(0, import_node_fs28.existsSync)(lakebaseDir)) return null;
+  const envText = (0, import_node_fs28.readFileSync)(envPath, "utf8");
   const projectId = readEnvValue(envText, "LAKEBASE_PROJECT_ID");
   const host = readEnvValue(envText, "DATABRICKS_HOST");
   if (!projectId || !host) return null;
-  const wsPath = (0, import_node_path29.join)(lakebaseDir, "workflow-state.json");
-  if ((0, import_node_fs26.existsSync)(wsPath)) {
+  const wsPath = (0, import_node_path31.join)(lakebaseDir, "workflow-state.json");
+  if ((0, import_node_fs28.existsSync)(wsPath)) {
     try {
-      const ws = JSON.parse((0, import_node_fs26.readFileSync)(wsPath, "utf8"));
+      const ws = JSON.parse((0, import_node_fs28.readFileSync)(wsPath, "utf8"));
       if (typeof ws.project_id === "string" && ws.project_id && ws.project_id !== projectId) return null;
     } catch {
     }
@@ -16401,12 +16482,12 @@ function readScaffoldProjectMeta(dir) {
   return { projectId, host };
 }
 function findOrphanProjects(parentDir, prefixes = DEFAULT_TEST_PROJECT_PREFIXES) {
-  if (!(0, import_node_fs26.existsSync)(parentDir)) return [];
+  if (!(0, import_node_fs28.existsSync)(parentDir)) return [];
   const out = [];
-  for (const name of (0, import_node_fs26.readdirSync)(parentDir)) {
+  for (const name of (0, import_node_fs28.readdirSync)(parentDir)) {
     if (!prefixes.some((p) => name.startsWith(p))) continue;
-    const dir = (0, import_node_path29.join)(parentDir, name);
-    if (!(0, import_node_fs26.statSync)(dir).isDirectory()) continue;
+    const dir = (0, import_node_path31.join)(parentDir, name);
+    if (!(0, import_node_fs28.statSync)(dir).isDirectory()) continue;
     const meta = readScaffoldProjectMeta(dir);
     if (meta) out.push({ dir, ...meta });
   }
@@ -16427,7 +16508,7 @@ async function sweepOrphanProjects(args) {
     }
     if (deleted) {
       try {
-        (0, import_node_fs26.rmSync)(o.dir, { recursive: true, force: true });
+        (0, import_node_fs28.rmSync)(o.dir, { recursive: true, force: true });
         dirRemoved = true;
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
@@ -16503,6 +16584,14 @@ function nextBuildAction(story, b) {
       story
     };
   }
+  if (b.greenUnfixableAc) {
+    return {
+      kind: "raise-to-hil",
+      source: "green-unfixable",
+      reason: `The GREEN-verify failure for ${b.greenUnfixableAc} was assessed as a genuine regression that is NOT driver-fixable (no fix directive \u2013 it needs a human or a design change). Escalating directly with the diagnosis instead of burning bounded Driver re-attempts that cannot fix it (issue #200). Diagnosis: ${b.greenUnfixableDiagnosis ?? "see the green-failure record"}`,
+      story
+    };
+  }
   if (!b.testsWritten) return { kind: "invoke-role", role: "navigator", story };
   if (!b.codeWritten) return { kind: "invoke-role", role: "driver", story };
   if (!b.awaitingAcceptance) return { kind: "await-acceptance", story };
@@ -16533,7 +16622,19 @@ function nextTransition(state) {
     if (!d.deployed) return { kind: "deploy" };
     if (d.verifyAssessEligible) return { kind: "deploy-verify-heal", role: "navigator", mode: "assess-deploy" };
     if (d.verifyRefactorPending) return { kind: "deploy-verify-heal", role: "driver", mode: "refactor-deploy" };
-    if (!d.gateApproved) return { kind: "approve-deploy-gate" };
+    if (!d.gateApproved) {
+      if (d.verifyPassed === false) {
+        if (d.reverifyAttempted) {
+          return {
+            kind: "raise-to-hil",
+            source: "deploy-verify-failed",
+            reason: `The feature deploy-verify still fails after a re-deploy + re-verify (deploy-evidence.json records verify.passed=false). This needs a human, not another approve: inspect the evidence's verify output, fix the cause, then re-run \`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale deploy server first: \`lsof -tiTCP:8000 | xargs kill\`) and approve the deploy gate.`
+          };
+        }
+        return { kind: "deploy-verify-reverify" };
+      }
+      return { kind: "approve-deploy-gate" };
+    }
     return { kind: "deploy-complete" };
   }
   if (state.phase === "promote") {
@@ -16883,21 +16984,21 @@ function featureOf(state) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
 var fs17 = __toESM(require("fs"), 1);
-var import_node_path36 = require("path");
+var import_node_path38 = require("path");
 
 // consort/orchestrator/drive/executor-dispatch.ts
 init_cjs_shims();
 var fs16 = __toESM(require("fs"), 1);
-var import_node_path31 = require("path");
+var import_node_path33 = require("path");
 
 // consort/orchestrator/agents/replay-recorder-wrapper.ts
 init_cjs_shims();
 
 // consort/logging/turn-recorder.ts
 init_cjs_shims();
-var import_node_crypto5 = require("crypto");
-var import_node_fs27 = require("fs");
-var import_node_path30 = require("path");
+var import_node_crypto6 = require("crypto");
+var import_node_fs29 = require("fs");
+var import_node_path32 = require("path");
 var PROJECT_ROOT_TOKEN = "<PROJECT_ROOT>";
 function relativizeProjectPaths(text, projectDir) {
   if (!text || !projectDir) return text;
@@ -16911,36 +17012,36 @@ function isRecorderOwned(relUnderConsort) {
   return p === ".recorder-state.json" || p === "correspondence.jsonl" || p === "routing-decisions.jsonl" || p === "turns" || p.startsWith("turns/");
 }
 function recordCorrespondence(recordDir, entry) {
-  (0, import_node_fs27.mkdirSync)(recordDir, { recursive: true });
-  (0, import_node_fs27.appendFileSync)((0, import_node_path30.join)(recordDir, "correspondence.jsonl"), JSON.stringify(entry) + "\n");
+  (0, import_node_fs29.mkdirSync)(recordDir, { recursive: true });
+  (0, import_node_fs29.appendFileSync)((0, import_node_path32.join)(recordDir, "correspondence.jsonl"), JSON.stringify(entry) + "\n");
 }
 function recordReplaySet(args) {
   const { turnDir, projectDir, consortDir, inputs, prompt, guidelines, levers } = args;
-  const setDir = (0, import_node_path30.join)(turnDir, "replay-set");
-  (0, import_node_fs27.mkdirSync)(setDir, { recursive: true });
+  const setDir = (0, import_node_path32.join)(turnDir, "replay-set");
+  (0, import_node_fs29.mkdirSync)(setDir, { recursive: true });
   const keep = codeTreeFilter(projectDir);
-  const preDir = (0, import_node_path30.join)(setDir, "pre-project");
+  const preDir = (0, import_node_path32.join)(setDir, "pre-project");
   for (const abs of walk(projectDir, keep)) {
-    const rel = (0, import_node_path30.relative)(projectDir, abs);
-    const dst = (0, import_node_path30.join)(preDir, rel);
-    (0, import_node_fs27.mkdirSync)((0, import_node_path30.dirname)(dst), { recursive: true });
-    (0, import_node_fs27.cpSync)(abs, dst);
+    const rel = (0, import_node_path32.relative)(projectDir, abs);
+    const dst = (0, import_node_path32.join)(preDir, rel);
+    (0, import_node_fs29.mkdirSync)((0, import_node_path32.dirname)(dst), { recursive: true });
+    (0, import_node_fs29.cpSync)(abs, dst);
   }
-  const preConsortDir = (0, import_node_path30.join)(setDir, "pre-consort");
+  const preConsortDir = (0, import_node_path32.join)(setDir, "pre-consort");
   for (const abs of walk(consortDir, preConsortKeep)) {
-    const rel = (0, import_node_path30.relative)(consortDir, abs);
-    const dst = (0, import_node_path30.join)(preConsortDir, rel);
-    (0, import_node_fs27.mkdirSync)((0, import_node_path30.dirname)(dst), { recursive: true });
-    (0, import_node_fs27.cpSync)(abs, dst);
+    const rel = (0, import_node_path32.relative)(consortDir, abs);
+    const dst = (0, import_node_path32.join)(preConsortDir, rel);
+    (0, import_node_fs29.mkdirSync)((0, import_node_path32.dirname)(dst), { recursive: true });
+    (0, import_node_fs29.cpSync)(abs, dst);
   }
-  const inDir = (0, import_node_path30.join)(setDir, "inputs");
-  (0, import_node_fs27.mkdirSync)(inDir, { recursive: true });
+  const inDir = (0, import_node_path32.join)(setDir, "inputs");
+  (0, import_node_fs29.mkdirSync)(inDir, { recursive: true });
   for (const [id, content] of Object.entries(inputs)) {
-    (0, import_node_fs27.writeFileSync)((0, import_node_path30.join)(inDir, id.replace(/[/\\]/g, "_")), content);
+    (0, import_node_fs29.writeFileSync)((0, import_node_path32.join)(inDir, id.replace(/[/\\]/g, "_")), content);
   }
-  (0, import_node_fs27.writeFileSync)((0, import_node_path30.join)(setDir, "prompt.txt"), relativizeProjectPaths(prompt, projectDir));
-  (0, import_node_fs27.writeFileSync)((0, import_node_path30.join)(setDir, "guidelines.json"), JSON.stringify(guidelines ?? [], null, 2) + "\n");
-  (0, import_node_fs27.writeFileSync)((0, import_node_path30.join)(setDir, "levers.json"), JSON.stringify(levers ?? {}, null, 2) + "\n");
+  (0, import_node_fs29.writeFileSync)((0, import_node_path32.join)(setDir, "prompt.txt"), relativizeProjectPaths(prompt, projectDir));
+  (0, import_node_fs29.writeFileSync)((0, import_node_path32.join)(setDir, "guidelines.json"), JSON.stringify(guidelines ?? [], null, 2) + "\n");
+  (0, import_node_fs29.writeFileSync)((0, import_node_path32.join)(setDir, "levers.json"), JSON.stringify(levers ?? {}, null, 2) + "\n");
 }
 function expectedTurnFiles(action, opts = {}) {
   if (opts.liveIndex) {
@@ -16959,7 +17060,7 @@ function expectedTurnFiles(action, opts = {}) {
   ];
 }
 function assertTurnComplete(turnDir, action, opts = {}) {
-  const missing = expectedTurnFiles(action, opts).filter((rel) => !(0, import_node_fs27.existsSync)((0, import_node_path30.join)(turnDir, rel)));
+  const missing = expectedTurnFiles(action, opts).filter((rel) => !(0, import_node_fs29.existsSync)((0, import_node_path32.join)(turnDir, rel)));
   if (missing.length > 0) {
     throw new Error(
       `RECORD AUDIT FAILED \u2013 turn ${turnDir} (${labelForAction(action)}) is missing required recorded file(s): ${missing.join(", ")}. The capture is aborting so the corpus is not silently incomplete. Every ${action.kind === "invoke-role" ? "agent" : ""} turn must record its full set (see expectedTurnFiles). Fix the recorder path that dropped it, then re-capture.`
@@ -16985,7 +17086,7 @@ function labelForAction(action) {
   return kind;
 }
 function sha1(abs) {
-  return (0, import_node_crypto5.createHash)("sha1").update((0, import_node_fs27.readFileSync)(abs)).digest("hex");
+  return (0, import_node_crypto6.createHash)("sha1").update((0, import_node_fs29.readFileSync)(abs)).digest("hex");
 }
 function renderTranscriptMd(t, label) {
   const lines = [];
@@ -17008,14 +17109,14 @@ function preConsortKeep(abs) {
   return true;
 }
 function walk(dir, keep) {
-  if (!(0, import_node_fs27.existsSync)(dir)) return [];
+  if (!(0, import_node_fs29.existsSync)(dir)) return [];
   const out = [];
-  for (const entry of (0, import_node_fs27.readdirSync)(dir)) {
-    const abs = (0, import_node_path30.join)(dir, entry);
+  for (const entry of (0, import_node_fs29.readdirSync)(dir)) {
+    const abs = (0, import_node_path32.join)(dir, entry);
     if (keep && !keep(abs)) continue;
     let st;
     try {
-      st = (0, import_node_fs27.statSync)(abs);
+      st = (0, import_node_fs29.statSync)(abs);
     } catch {
       continue;
     }
@@ -17027,15 +17128,15 @@ function walk(dir, keep) {
 function scan(projectDir, consortDir) {
   const map2 = /* @__PURE__ */ new Map();
   for (const abs of walk(consortDir)) {
-    const rel = (0, import_node_path30.relative)(projectDir, abs);
-    const relConsort = (0, import_node_path30.relative)(consortDir, abs);
+    const rel = (0, import_node_path32.relative)(projectDir, abs);
+    const relConsort = (0, import_node_path32.relative)(consortDir, abs);
     if (NON_ARTIFACT_CONSORT.has(relConsort)) continue;
     if (isRecorderOwned(relConsort)) continue;
     map2.set(rel, { abs, rel, underConsort: true, sha: sha1(abs) });
   }
   const keep = codeTreeFilter(projectDir);
   for (const abs of walk(projectDir, keep)) {
-    const rel = (0, import_node_path30.relative)(projectDir, abs);
+    const rel = (0, import_node_path32.relative)(projectDir, abs);
     if (map2.has(rel)) continue;
     map2.set(rel, { abs, rel, underConsort: false, sha: sha1(abs) });
   }
@@ -17044,28 +17145,28 @@ function scan(projectDir, consortDir) {
 function writeRecorderState(recordDir, cur) {
   const files = {};
   for (const [rel, f] of cur) files[rel] = f.sha;
-  (0, import_node_fs27.mkdirSync)(recordDir, { recursive: true });
-  (0, import_node_fs27.writeFileSync)((0, import_node_path30.join)(recordDir, ".recorder-state.json"), JSON.stringify({ files }, null, 2) + "\n");
+  (0, import_node_fs29.mkdirSync)(recordDir, { recursive: true });
+  (0, import_node_fs29.writeFileSync)((0, import_node_path32.join)(recordDir, ".recorder-state.json"), JSON.stringify({ files }, null, 2) + "\n");
 }
 function seedRecorderBaseline(args) {
-  if ((0, import_node_fs27.existsSync)((0, import_node_path30.join)(args.recordDir, ".recorder-state.json"))) return false;
+  if ((0, import_node_fs29.existsSync)((0, import_node_path32.join)(args.recordDir, ".recorder-state.json"))) return false;
   writeRecorderState(args.recordDir, scan(args.projectDir, args.consortDir));
   return true;
 }
 function readState(recordDir) {
-  const f = (0, import_node_path30.join)(recordDir, ".recorder-state.json");
-  if (!(0, import_node_fs27.existsSync)(f)) return { files: {} };
+  const f = (0, import_node_path32.join)(recordDir, ".recorder-state.json");
+  if (!(0, import_node_fs29.existsSync)(f)) return { files: {} };
   try {
-    return JSON.parse((0, import_node_fs27.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_node_fs29.readFileSync)(f, "utf8"));
   } catch {
     return { files: {} };
   }
 }
 function readIndex(recordDir) {
-  const f = (0, import_node_path30.join)(recordDir, "turns", "index.json");
-  if (!(0, import_node_fs27.existsSync)(f)) return [];
+  const f = (0, import_node_path32.join)(recordDir, "turns", "index.json");
+  if (!(0, import_node_fs29.existsSync)(f)) return [];
   try {
-    const data = JSON.parse((0, import_node_fs27.readFileSync)(f, "utf8"));
+    const data = JSON.parse((0, import_node_fs29.readFileSync)(f, "utf8"));
     return Array.isArray(data.turns) ? data.turns : [];
   } catch {
     return [];
@@ -17075,7 +17176,7 @@ function pad(n) {
   return String(n).padStart(4, "0");
 }
 function turnDirFor(recordDir, action) {
-  return (0, import_node_path30.join)(recordDir, "turns", `${pad(readIndex(recordDir).length)}-${labelForAction(action)}`);
+  return (0, import_node_path32.join)(recordDir, "turns", `${pad(readIndex(recordDir).length)}-${labelForAction(action)}`);
 }
 function recordTurn(args) {
   const { recordDir, projectDir, consortDir, action, step, transcript } = args;
@@ -17096,27 +17197,27 @@ function recordTurn(args) {
   const ordinal = readIndex(recordDir).length;
   const label = labelForAction(action);
   const dirName = `${pad(ordinal)}-${label}`;
-  const turnDir = (0, import_node_path30.join)(recordDir, "turns", dirName);
-  (0, import_node_fs27.mkdirSync)(turnDir, { recursive: true });
+  const turnDir = (0, import_node_path32.join)(recordDir, "turns", dirName);
+  (0, import_node_fs29.mkdirSync)(turnDir, { recursive: true });
   if (snapshotContent) {
-    (0, import_node_fs27.mkdirSync)((0, import_node_path30.join)(turnDir, "files"), { recursive: true });
-    const artifactsDir = (0, import_node_path30.join)(recordDir, "recorded-artifacts");
+    (0, import_node_fs29.mkdirSync)((0, import_node_path32.join)(turnDir, "files"), { recursive: true });
+    const artifactsDir = (0, import_node_path32.join)(recordDir, "recorded-artifacts");
     for (const rel of produced) {
       const f = cur.get(rel);
-      const dst = (0, import_node_path30.join)(turnDir, "files", rel);
-      (0, import_node_fs27.mkdirSync)((0, import_node_path30.dirname)(dst), { recursive: true });
-      (0, import_node_fs27.cpSync)(f.abs, dst);
+      const dst = (0, import_node_path32.join)(turnDir, "files", rel);
+      (0, import_node_fs29.mkdirSync)((0, import_node_path32.dirname)(dst), { recursive: true });
+      (0, import_node_fs29.cpSync)(f.abs, dst);
       if (f.underConsort) {
-        const mirror = (0, import_node_path30.join)(artifactsDir, (0, import_node_path30.relative)(consortDir, f.abs));
-        (0, import_node_fs27.mkdirSync)((0, import_node_path30.dirname)(mirror), { recursive: true });
-        (0, import_node_fs27.cpSync)(f.abs, mirror);
+        const mirror = (0, import_node_path32.join)(artifactsDir, (0, import_node_path32.relative)(consortDir, f.abs));
+        (0, import_node_fs29.mkdirSync)((0, import_node_path32.dirname)(mirror), { recursive: true });
+        (0, import_node_fs29.cpSync)(f.abs, mirror);
       }
     }
     for (const rel of deleted) {
-      const abs = (0, import_node_path30.join)(projectDir, rel);
+      const abs = (0, import_node_path32.join)(projectDir, rel);
       if (abs.startsWith(consortDir)) {
-        const mirror = (0, import_node_path30.join)(artifactsDir, (0, import_node_path30.relative)(consortDir, abs));
-        if ((0, import_node_fs27.existsSync)(mirror)) (0, import_node_fs27.rmSync)(mirror, { force: true });
+        const mirror = (0, import_node_path32.join)(artifactsDir, (0, import_node_path32.relative)(consortDir, abs));
+        if ((0, import_node_fs29.existsSync)(mirror)) (0, import_node_fs29.rmSync)(mirror, { force: true });
       }
     }
   }
@@ -17129,7 +17230,7 @@ function recordTurn(args) {
       finalText: rel(transcript.finalText),
       tools: transcript.tools.map(rel)
     };
-    (0, import_node_fs27.writeFileSync)((0, import_node_path30.join)(turnDir, "transcript.md"), renderTranscriptMd(portable, label));
+    (0, import_node_fs29.writeFileSync)((0, import_node_path32.join)(turnDir, "transcript.md"), renderTranscriptMd(portable, label));
     transcriptSummary = {
       role: transcript.role,
       model: transcript.model,
@@ -17155,7 +17256,7 @@ function recordTurn(args) {
     ...snapshotContent ? {} : { snapshotted: false },
     ...transcriptSummary ? { transcript: transcriptSummary } : {}
   };
-  (0, import_node_fs27.writeFileSync)((0, import_node_path30.join)(turnDir, "turn.json"), JSON.stringify(manifest, null, 2) + "\n");
+  (0, import_node_fs29.writeFileSync)((0, import_node_path32.join)(turnDir, "turn.json"), JSON.stringify(manifest, null, 2) + "\n");
   const index = readIndex(recordDir);
   const entry = {
     ordinal,
@@ -17172,11 +17273,11 @@ function recordTurn(args) {
     ...transcript ? { hasTranscript: true } : {}
   };
   index.push(entry);
-  (0, import_node_fs27.mkdirSync)((0, import_node_path30.join)(recordDir, "turns"), { recursive: true });
-  (0, import_node_fs27.writeFileSync)((0, import_node_path30.join)(recordDir, "turns", "index.json"), JSON.stringify({ turns: index }, null, 2) + "\n");
+  (0, import_node_fs29.mkdirSync)((0, import_node_path32.join)(recordDir, "turns"), { recursive: true });
+  (0, import_node_fs29.writeFileSync)((0, import_node_path32.join)(recordDir, "turns", "index.json"), JSON.stringify({ turns: index }, null, 2) + "\n");
   writeRecorderState(recordDir, cur);
   try {
-    if ((0, import_node_fs27.existsSync)((0, import_node_path30.join)(recordDir, "correspondence.jsonl"))) {
+    if ((0, import_node_fs29.existsSync)((0, import_node_path32.join)(recordDir, "correspondence.jsonl"))) {
       recordCorrespondence(recordDir, {
         seq: -1,
         // progress entries are keyed by ordinal (their FK), not by the HIL seq counter
@@ -17386,7 +17487,7 @@ function outputPathsForAction(action, consortDir, featureId, projectDir) {
   if (action.kind !== "invoke-role") return {};
   const f = featureId;
   const story = "story" in action && typeof action.story === "string" ? action.story : void 0;
-  const rel = (abs) => (0, import_node_path31.relative)(consortDir, abs);
+  const rel = (abs) => (0, import_node_path33.relative)(consortDir, abs);
   const META = { "agent-log": "agent-log.jsonl" };
   if ("mode" in action) {
     if (action.role === "spec-author" && action.mode === "breakdown") {
@@ -17429,7 +17530,7 @@ function outputPathsForAction(action, consortDir, featureId, projectDir) {
     return {};
   }
   if (action.role === "navigator" && story && "buildMode" in action && action.buildMode === "assess-deploy") {
-    return { scope: rel((0, import_node_path31.join)(storyResolved(consortDir, f, story), "deploy-verify-scope.json")) };
+    return { scope: rel((0, import_node_path33.join)(storyResolved(consortDir, f, story), "deploy-verify-scope.json")) };
   }
   return {};
 }
@@ -17493,15 +17594,15 @@ async function performTurnViaExecutor(action, state, routerDeps, cfg, deps) {
   const inputPath = (source) => {
     if (source.startsWith("cycle:") || source.startsWith("ac:")) {
       const rel = expandRel(source.slice(source.indexOf(":") + 1));
-      if (!story || !ac) return (0, import_node_path31.join)(cfg.consortDir, rel);
-      return (0, import_node_path31.join)(cycleDir(cfg.consortDir, f, story, ac), rel);
+      if (!story || !ac) return (0, import_node_path33.join)(cfg.consortDir, rel);
+      return (0, import_node_path33.join)(cycleDir(cfg.consortDir, f, story, ac), rel);
     }
     if (source.startsWith("story:")) {
       const rel = expandRel(source.slice("story:".length));
-      if (!story) return (0, import_node_path31.join)(cfg.consortDir, rel);
-      return (0, import_node_path31.join)(storyResolved(cfg.consortDir, f, story), rel);
+      if (!story) return (0, import_node_path33.join)(cfg.consortDir, rel);
+      return (0, import_node_path33.join)(storyResolved(cfg.consortDir, f, story), rel);
     }
-    return (0, import_node_path31.join)(cfg.consortDir, expandRel(source.replace(/^feature:/, "")));
+    return (0, import_node_path33.join)(cfg.consortDir, expandRel(source.replace(/^feature:/, "")));
   };
   const executorDeps = {
     // Uncontained: the agent reads the tree itself, but Step still gates on the presence of
@@ -17588,8 +17689,8 @@ async function performTurnViaExecutor(action, state, routerDeps, cfg, deps) {
 
 // consort/orchestrator/steps/assert-route-satisfiable.ts
 init_cjs_shims();
-var import_node_fs28 = require("fs");
-var import_node_path32 = require("path");
+var import_node_fs30 = require("fs");
+var import_node_path34 = require("path");
 var RouteContractError = class extends Error {
   constructor(action, event, expectedPath) {
     super(
@@ -17612,17 +17713,17 @@ function eventArtifactPath(event, action, ctx) {
   const f = ctx.featureId;
   switch (scope) {
     case "feature":
-      return (0, import_node_path32.join)(featuresDir(ctx.consortDir), f, spec.filename);
+      return (0, import_node_path34.join)(featuresDir(ctx.consortDir), f, spec.filename);
     case "story":
-      if (!story) return (0, import_node_path32.join)(ctx.consortDir, spec.filename);
-      return (0, import_node_path32.join)(cyclesRootDir(ctx.consortDir), f, story, spec.filename);
+      if (!story) return (0, import_node_path34.join)(ctx.consortDir, spec.filename);
+      return (0, import_node_path34.join)(cyclesRootDir(ctx.consortDir), f, story, spec.filename);
     case "ac":
     case "cycle":
-      if (!story || !ac) return (0, import_node_path32.join)(ctx.consortDir, spec.filename);
-      return (0, import_node_path32.join)(cycleDir(ctx.consortDir, f, story, ac), spec.filename);
+      if (!story || !ac) return (0, import_node_path34.join)(ctx.consortDir, spec.filename);
+      return (0, import_node_path34.join)(cycleDir(ctx.consortDir, f, story, ac), spec.filename);
   }
 }
-function assertRouteSatisfiable(action, step, ctx, exists = import_node_fs28.existsSync) {
+function assertRouteSatisfiable(action, step, ctx, exists = import_node_fs30.existsSync) {
   for (const event of step.requiresEvents(action)) {
     const p = eventArtifactPath(event, action, ctx);
     if (!exists(p)) throw new RouteContractError(action, event, p);
@@ -17636,8 +17737,8 @@ var import_path14 = require("path");
 
 // consort/gates/gate-conformance-guard.ts
 init_cjs_shims();
-var import_node_fs29 = require("fs");
-var import_node_path33 = require("path");
+var import_node_fs31 = require("fs");
+var import_node_path35 = require("path");
 
 // consort/gates/registered-breakdown.ts
 init_cjs_shims();
@@ -17665,25 +17766,25 @@ function writePipeline(consortDir, pipeline) {
 
 // consort/session/response-formatter.ts
 init_cjs_shims();
-var import_node_fs31 = require("fs");
-var import_node_path35 = require("path");
+var import_node_fs33 = require("fs");
+var import_node_path37 = require("path");
 
 // consort/architecture/e2e-route-adherence.ts
 init_cjs_shims();
-var import_node_fs30 = require("fs");
-var import_node_path34 = require("path");
-var CLIENT_SRC = (0, import_node_path34.join)("client", "src");
-var E2E_DIR = (0, import_node_path34.join)("client", "tests", "e2e");
+var import_node_fs32 = require("fs");
+var import_node_path36 = require("path");
+var CLIENT_SRC = (0, import_node_path36.join)("client", "src");
+var E2E_DIR = (0, import_node_path36.join)("client", "tests", "e2e");
 
 // consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs31.existsSync)(file)) {
+  if (!(0, import_node_fs33.existsSync)(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = (0, import_node_fs31.readFileSync)(file, "utf8");
+    content = (0, import_node_fs33.readFileSync)(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -17898,7 +17999,7 @@ function roleTaskBody(action, featureId, uiTrack, consortDir, build, omit) {
       case "estimate-committed":
         return `Estimate the sprint's COMMITTED feature(s) with a t-shirt size (XS/S/M/L/XL). Read each committed feature's request at ${root}/features/<F>/feature-request.md, then ADD one entry per committed feature to ${root}/planning/estimates.json keyed by its REAL feature id (e.g. "F1-stock-visibility", not a "FP" candidate id), each {"feature_id":"<F>","size":"<XS|S|M|L|XL>","rationale":"<why>"}. KEEP every existing estimate already in the file (merge, do not overwrite the candidate sizes). This is the size sync-backlog stamps into the per-sprint backlog, so the committed backlog shows real sizing.`;
       case "intake": {
-        const seedIntakeDir = (0, import_node_path36.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
+        const seedIntakeDir = (0, import_node_path38.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
         const groundingClause = fs17.existsSync(seedIntakeDir) ? `Ground the shape in the canon above and the StockFlow worked example at ${seedIntakeDir} (READ the files there to learn the format + level of detail; never copy it verbatim).` : `Ground the shape in the canon above (the StockFlow worked example under the kit's examples/first-project/stockflow-seed/intake/ is unavailable here \u2013 rely on the canon).`;
         return `Author the project intake for the Product Owner, DRAFTING each artifact FRESH from the human's answers at ${root}/intake/answers.md (the interview responses; if absent or thin, draft only what the stated intent supports \u2013 never invent). WRITE:
   - ${root}/product-overview.md \u2013 who it's for, its purpose, how it grows, what to see after each sprint (H1 + body, no implementation detail).
@@ -17973,11 +18074,11 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
 `;
         return advisory + `ASSESS a failed honest-GREEN verify for AC ${action.ac} in story ${s}. The Driver made the current test pass, but the full-suite verify against the running app FAILED, some OTHER test(s) now fail.
 ` + scanDirective + `   ./scripts/lk consort-cycle flag-superseded --feature ${featureId} --story ${s} --ac ${action.ac} --reason "<new AC + what changed>" --test <path_or_nodeid> [--test ...] --tdd-dir ${consortDir}
-   The flag-superseded command writes ${(0, import_node_path36.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
+   The flag-superseded command writes ${(0, import_node_path38.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
 (b) If instead the failure is a GENUINE REGRESSION (the AC does NOT intend to change that behavior; the Driver's code is wrong), record your ROOT-CAUSE diagnosis so it travels to the Driver / the human instead of being lost. When the Driver can fix it, ALSO give a concrete repair directive (this routes a bounded Driver repair turn):
    ./scripts/lk consort-cycle assess-regression --feature ${featureId} --story ${s} --ac ${action.ac} --diagnosis "<the WHY: which behavior broke + the root cause>" [--fix "<what the Driver should change>"] --tdd-dir ${consortDir}
    Include --fix ONLY when the fix is clear + within the Driver's reach (e.g. a wrong default, a missing filter, an off-by-one); OMIT --fix when it needs a human / a design or spec change (the orchestration then escalates carrying your diagnosis).
-CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path36.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
+CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path38.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
 Flag ONLY tests the new AC truly supersedes; never flag a test just to make a red go away. For a regression, always record a diagnosis (+ fix when driver-fixable) \u2013 never nothing.`;
       }
       if (action.buildMode === "assess-deploy") {
@@ -18057,6 +18158,7 @@ var CANON_NOTES_BIN = "consort-canon-notes";
 var SCM_PREPARE_PR_BIN = "lakebase-scm-prepare-pr";
 var SCM_WAIT_CI_BIN = "lakebase-scm-wait-ci";
 var SCM_MERGE_BIN = "lakebase-scm-merge";
+var MIGRATION_HISTORY_CLEAN_BIN = "consort-migration-history-clean";
 var EXPERIMENT_SLUG = "exp1";
 var experimentBranchName = (storyId) => (0, import_util3.sanitizeBranchName)(`experiment/${storyId}-${EXPERIMENT_SLUG}`);
 function designArtifactExpectation(action, consortDir, featureId) {
@@ -18211,6 +18313,27 @@ function commandsFromManifest(action, cfg) {
   cmds.push(...after);
   if (f && !isPlanningMode(action)) cmds.push({ kind: "cli", bin: LOG_BIN, args: ["--reconcile", ...tdd] });
   return cmds;
+}
+function deployGateCmds(f, cfg, deployTarget) {
+  return [
+    { kind: "cli", bin: DEPLOY_BIN, args: ["--target", deployTarget, "--project-dir", cfg.projectDir, "--stop"] },
+    {
+      kind: "cli",
+      bin: DEPLOY_BIN,
+      args: [
+        "--target",
+        deployTarget,
+        "--feature",
+        f,
+        ...cfg.featureBranch ? ["--lakebase-branch", cfg.featureBranch] : [],
+        "--project-dir",
+        cfg.projectDir,
+        "--tdd-dir",
+        cfg.consortDir,
+        "--gate"
+      ]
+    }
+  ];
 }
 function commandsForAction(action, cfg) {
   const f = cfg.featureId;
@@ -18401,25 +18524,12 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
         { kind: "set-phase", phase: "deploy" }
       ];
     case "deploy":
-      return [
-        { kind: "cli", bin: DEPLOY_BIN, args: ["--target", deployTarget, "--project-dir", cfg.projectDir, "--stop"] },
-        {
-          kind: "cli",
-          bin: DEPLOY_BIN,
-          args: [
-            "--target",
-            deployTarget,
-            "--feature",
-            f,
-            ...cfg.featureBranch ? ["--lakebase-branch", cfg.featureBranch] : [],
-            "--project-dir",
-            cfg.projectDir,
-            "--tdd-dir",
-            cfg.consortDir,
-            "--gate"
-          ]
-        }
-      ];
+      return deployGateCmds(f, cfg, deployTarget);
+    case "deploy-verify-reverify":
+      const markerFile = featureDeployReverifyMarkerJson(cfg.consortDir, f);
+      fs17.mkdirSync((0, import_node_path38.dirname)(markerFile), { recursive: true });
+      fs17.writeFileSync(markerFile, JSON.stringify({ routed_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
+      return deployGateCmds(f, cfg, deployTarget);
     case "approve-deploy-gate":
       return [
         { kind: "cli", bin: HUMAN_PROXY_BIN, args: ["--feature", f, "--gate", "deploy", "--approver", approver, "--tdd-dir", cfg.consortDir] }
@@ -18427,7 +18537,10 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
     case "deploy-complete":
       return [{ kind: "set-phase", phase: "promote" }];
     case "prepare-pr":
-      return [{ kind: "cli", bin: SCM_PREPARE_PR_BIN, args: ["--project-dir", cfg.projectDir, "--force"] }];
+      return [
+        { kind: "cli", bin: MIGRATION_HISTORY_CLEAN_BIN, args: ["--project-dir", cfg.projectDir] },
+        { kind: "cli", bin: SCM_PREPARE_PR_BIN, args: ["--project-dir", cfg.projectDir, "--force"] }
+      ];
     case "wait-ci":
       return [{ kind: "cli", bin: SCM_WAIT_CI_BIN, args: ["--project-dir", cfg.projectDir] }];
     case "approve-promote-gate": {
@@ -18586,7 +18699,7 @@ function buildDriveEffects(cfg) {
     onHandback(handoff, detail) {
       const file = handbackFile(cfg.consortDir, cfg.featureId, handoff.responder, handoff.story);
       try {
-        fs17.mkdirSync((0, import_node_path36.dirname)(file), { recursive: true });
+        fs17.mkdirSync((0, import_node_path38.dirname)(file), { recursive: true });
         fs17.writeFileSync(file, `${detail}
 `, "utf8");
       } catch {
@@ -18659,8 +18772,8 @@ function assertGt(actual, floor, message) {
 function assertEq(actual, expected, message) {
   assert(actual === expected, `${message} (expected ${String(expected)}, got ${String(actual)})`);
 }
-var SETUP_DIR = (0, import_node_path37.join)(KIT, "tests/integration/live/driver-green-setup");
-var RUN_CONFIG_PATH = (0, import_node_path37.join)(SETUP_DIR, "driver-green.run.json");
+var SETUP_DIR = (0, import_node_path39.join)(KIT, "tests/integration/live/driver-green-setup");
+var RUN_CONFIG_PATH = (0, import_node_path39.join)(SETUP_DIR, "driver-green.run.json");
 function corpusRunConfig() {
   const rc = readRunConfig(SETUP_DIR);
   if (!rc) throw new Error(`driver-green bundle is missing its recorded run-config.json under ${SETUP_DIR}`);
@@ -18671,18 +18784,18 @@ function bundleFromDir(dir, feature, story, ac) {
     feature,
     story,
     ac,
-    preRedCodeDir: (0, import_node_path37.join)(dir, "code-assets"),
-    recordedArtifactsFeatureDir: (0, import_node_path37.join)(dir, "design"),
-    conventionsJson: (0, import_node_path37.join)(dir, "design", "architecture", "conventions.json"),
-    designDir: (0, import_node_path37.join)(dir, "design-assets")
+    preRedCodeDir: (0, import_node_path39.join)(dir, "code-assets"),
+    recordedArtifactsFeatureDir: (0, import_node_path39.join)(dir, "design"),
+    conventionsJson: (0, import_node_path39.join)(dir, "design", "architecture", "conventions.json"),
+    designDir: (0, import_node_path39.join)(dir, "design-assets")
   };
 }
-var CORPUS_DIR = process.env.LAKEBASE_SFTDD_CORPUS_DIR ? process.env.LAKEBASE_SFTDD_CORPUS_DIR.startsWith("/") ? process.env.LAKEBASE_SFTDD_CORPUS_DIR : (0, import_node_path37.join)(KIT, process.env.LAKEBASE_SFTDD_CORPUS_DIR) : (0, import_node_path37.join)(KIT, "examples/replay/corpora/stockflow-full");
-var CORPUS_TURNS = (0, import_node_path37.join)(CORPUS_DIR, "turns");
-var CORPUS_RA = (0, import_node_path37.join)(CORPUS_DIR, "recorded-artifacts");
+var CORPUS_DIR = process.env.LAKEBASE_SFTDD_CORPUS_DIR ? process.env.LAKEBASE_SFTDD_CORPUS_DIR.startsWith("/") ? process.env.LAKEBASE_SFTDD_CORPUS_DIR : (0, import_node_path39.join)(KIT, process.env.LAKEBASE_SFTDD_CORPUS_DIR) : (0, import_node_path39.join)(KIT, "examples/replay/corpora/stockflow-full");
+var CORPUS_TURNS = (0, import_node_path39.join)(CORPUS_DIR, "turns");
+var CORPUS_RA = (0, import_node_path39.join)(CORPUS_DIR, "recorded-artifacts");
 var BUILD_FEATURE_TEMPLATE = "F6-split-tracking-code";
 function replayBundleFromTurn(turnLabel, ac) {
-  const rs = readReplaySet((0, import_node_path37.join)(CORPUS_TURNS, turnLabel));
+  const rs = readReplaySet((0, import_node_path39.join)(CORPUS_TURNS, turnLabel));
   const feature = String(rs.action.feature ?? deriveFeatureForStory(rs.story ?? ""));
   const story = rs.story ?? "";
   return {
@@ -18690,9 +18803,9 @@ function replayBundleFromTurn(turnLabel, ac) {
     story,
     ac,
     preRedCodeDir: rs.preProjectDir,
-    recordedArtifactsFeatureDir: (0, import_node_path37.join)(CORPUS_RA, "features", feature),
-    conventionsJson: (0, import_node_path37.join)(CORPUS_RA, "architecture", "conventions.json"),
-    designDir: (0, import_node_path37.join)(CORPUS_RA, "design"),
+    recordedArtifactsFeatureDir: (0, import_node_path39.join)(CORPUS_RA, "features", feature),
+    conventionsJson: (0, import_node_path39.join)(CORPUS_RA, "architecture", "conventions.json"),
+    designDir: (0, import_node_path39.join)(CORPUS_RA, "design"),
     replay: rs
   };
 }
@@ -18710,8 +18823,8 @@ function replayBundleForTurn(driverTurn) {
   }
 }
 function deriveFeatureForStory(story) {
-  for (const f of (0, import_node_fs32.readdirSync)((0, import_node_path37.join)(CORPUS_RA, "features"), { withFileTypes: true })) {
-    if (f.isDirectory() && (0, import_node_fs32.existsSync)((0, import_node_path37.join)(CORPUS_RA, "features", f.name, "stories", story))) return f.name;
+  for (const f of (0, import_node_fs34.readdirSync)((0, import_node_path39.join)(CORPUS_RA, "features"), { withFileTypes: true })) {
+    if (f.isDirectory() && (0, import_node_fs34.existsSync)((0, import_node_path39.join)(CORPUS_RA, "features", f.name, "stories", story))) return f.name;
   }
   throw new Error(`no corpus feature owns story "${story}" under ${CORPUS_RA}/features`);
 }
@@ -18722,15 +18835,15 @@ var DRIVER_GREEN_BUNDLE = bundleFromDir(
   "AC1-split-fields-shown"
 );
 var DRIVER_GREEN_BUNDLE_S2 = bundleFromDir(
-  (0, import_node_path37.join)(KIT, "tests/integration/live/driver-green-setup-s2"),
+  (0, import_node_path39.join)(KIT, "tests/integration/live/driver-green-setup-s2"),
   "F6-split-tracking-code",
   "S2-drop-combined-code",
   "AC1-column-dropped"
 );
 function hasSourceFile(dir) {
-  if (!(0, import_node_fs32.existsSync)(dir)) return false;
-  for (const e of (0, import_node_fs32.readdirSync)(dir, { withFileTypes: true })) {
-    const abs = (0, import_node_path37.join)(dir, e.name);
+  if (!(0, import_node_fs34.existsSync)(dir)) return false;
+  for (const e of (0, import_node_fs34.readdirSync)(dir, { withFileTypes: true })) {
+    const abs = (0, import_node_path39.join)(dir, e.name);
     if (e.isDirectory()) {
       if (hasSourceFile(abs)) return true;
     } else if (/\.(py|ts|tsx)$/.test(e.name)) {
@@ -18740,36 +18853,36 @@ function hasSourceFile(dir) {
   return false;
 }
 function layReplayPreconditions(projectDir, consortDir, spec) {
-  const artifactRel = (0, import_node_path37.relative)(projectDir, consortDir);
-  const featureRel = (0, import_node_path37.join)(artifactRel, "features", spec.feature);
-  const storyRel = (0, import_node_path37.join)(featureRel, "stories", spec.story);
-  overlayBundle(projectDir, { trees: [{ from: spec.designDir, to: (0, import_node_path37.join)(artifactRel, "design") }] });
-  const raStoryDir = (0, import_node_path37.join)(spec.recordedArtifactsFeatureDir, "stories", spec.story);
-  const acFiles = (0, import_node_fs32.readdirSync)((0, import_node_path37.join)(raStoryDir, "acs")).filter((f) => f.endsWith(".json"));
+  const artifactRel = (0, import_node_path39.relative)(projectDir, consortDir);
+  const featureRel = (0, import_node_path39.join)(artifactRel, "features", spec.feature);
+  const storyRel = (0, import_node_path39.join)(featureRel, "stories", spec.story);
+  overlayBundle(projectDir, { trees: [{ from: spec.designDir, to: (0, import_node_path39.join)(artifactRel, "design") }] });
+  const raStoryDir = (0, import_node_path39.join)(spec.recordedArtifactsFeatureDir, "stories", spec.story);
+  const acFiles = (0, import_node_fs34.readdirSync)((0, import_node_path39.join)(raStoryDir, "acs")).filter((f) => f.endsWith(".json"));
   overlayBundle(projectDir, {
     trees: [{ from: spec.preProjectDir, to: "." }],
     files: [
-      { from: (0, import_node_path37.join)(spec.recordedArtifactsFeatureDir, "architecture.json"), to: (0, import_node_path37.join)(featureRel, "architecture.json") },
-      { from: (0, import_node_path37.join)(spec.recordedArtifactsFeatureDir, "db-design.json"), to: (0, import_node_path37.join)(featureRel, "db-design.json") },
-      { from: spec.conventionsJson, to: (0, import_node_path37.join)(artifactRel, "architecture", "conventions.json") },
-      { from: (0, import_node_path37.join)(raStoryDir, "story.json"), to: (0, import_node_path37.join)(storyRel, "story.json") },
-      { from: (0, import_node_path37.join)(raStoryDir, "test-list-per-story.json"), to: (0, import_node_path37.join)(storyRel, "test-list-per-story.json") },
-      ...acFiles.map((f) => ({ from: (0, import_node_path37.join)(raStoryDir, "acs", f), to: (0, import_node_path37.join)(storyRel, "acs", f) }))
+      { from: (0, import_node_path39.join)(spec.recordedArtifactsFeatureDir, "architecture.json"), to: (0, import_node_path39.join)(featureRel, "architecture.json") },
+      { from: (0, import_node_path39.join)(spec.recordedArtifactsFeatureDir, "db-design.json"), to: (0, import_node_path39.join)(featureRel, "db-design.json") },
+      { from: spec.conventionsJson, to: (0, import_node_path39.join)(artifactRel, "architecture", "conventions.json") },
+      { from: (0, import_node_path39.join)(raStoryDir, "story.json"), to: (0, import_node_path39.join)(storyRel, "story.json") },
+      { from: (0, import_node_path39.join)(raStoryDir, "test-list-per-story.json"), to: (0, import_node_path39.join)(storyRel, "test-list-per-story.json") },
+      ...acFiles.map((f) => ({ from: (0, import_node_path39.join)(raStoryDir, "acs", f), to: (0, import_node_path39.join)(storyRel, "acs", f) }))
     ]
   });
   for (const [src, dst] of [
-    [(0, import_node_path37.join)(spec.recordedArtifactsFeatureDir, "architecture.md"), (0, import_node_path37.join)(featureRel, "architecture.md")],
-    [(0, import_node_path37.join)(spec.recordedArtifactsFeatureDir, "db-design.md"), (0, import_node_path37.join)(featureRel, "db-design.md")],
-    [(0, import_node_path37.join)(CORPUS_RA, "nfrs.md"), (0, import_node_path37.join)(artifactRel, "nfrs.md")]
+    [(0, import_node_path39.join)(spec.recordedArtifactsFeatureDir, "architecture.md"), (0, import_node_path39.join)(featureRel, "architecture.md")],
+    [(0, import_node_path39.join)(spec.recordedArtifactsFeatureDir, "db-design.md"), (0, import_node_path39.join)(featureRel, "db-design.md")],
+    [(0, import_node_path39.join)(CORPUS_RA, "nfrs.md"), (0, import_node_path39.join)(artifactRel, "nfrs.md")]
   ]) {
-    if ((0, import_node_fs32.existsSync)(src)) overlayBundle(projectDir, { files: [{ from: src, to: dst }] });
+    if ((0, import_node_fs34.existsSync)(src)) overlayBundle(projectDir, { files: [{ from: src, to: dst }] });
   }
 }
 function generateLeanReplayManifest(chainManifestDir, feature, story, ac) {
-  const files = (0, import_node_fs32.readdirSync)(chainManifestDir).filter((f) => f.endsWith(".json"));
+  const files = (0, import_node_fs34.readdirSync)(chainManifestDir).filter((f) => f.endsWith(".json"));
   let liveRaw;
   for (const f of files) {
-    const raw = (0, import_node_fs32.readFileSync)((0, import_node_path37.join)(chainManifestDir, f), "utf8");
+    const raw = (0, import_node_fs34.readFileSync)((0, import_node_path39.join)(chainManifestDir, f), "utf8");
     const m = JSON.parse(raw);
     if (m.agent?.kind === "claude") {
       let out = raw;
@@ -18793,8 +18906,8 @@ function generateLeanReplayManifest(chainManifestDir, feature, story, ac) {
   }
   if (Array.isArray(mf.outputs)) mf.outputs = mf.outputs.filter((o) => o.id !== "agent-log");
   liveRaw = JSON.stringify(mf, null, 2);
-  const dir = (0, import_node_fs32.mkdtempSync)((0, import_node_path37.join)((0, import_node_os3.tmpdir)(), "replay-manifest-"));
-  (0, import_node_fs32.writeFileSync)((0, import_node_path37.join)(dir, "live.json"), liveRaw);
+  const dir = (0, import_node_fs34.mkdtempSync)((0, import_node_path39.join)((0, import_node_os3.tmpdir)(), "replay-manifest-"));
+  (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(dir, "live.json"), liveRaw);
   return dir;
 }
 async function runLeanReplayTurn(bundle, agentFor, manifestDir) {
@@ -18810,7 +18923,7 @@ async function runLeanReplayTurn(bundle, agentFor, manifestDir) {
     // recorded prompt. Cloud-only routing (pipeline/branch) is NOT needed: a lean single-turn replay
     // starts directly at the recorded action and runs just that turn (its next action has no lean manifest).
     seedWorkspace: (ws) => {
-      layReplayPreconditions(ws, (0, import_node_path37.join)(ws, ARTIFACT_ROOT), {
+      layReplayPreconditions(ws, (0, import_node_path39.join)(ws, ARTIFACT_ROOT), {
         feature: bundle.feature,
         story: bundle.story,
         preProjectDir: bundle.preRedCodeDir,
@@ -18818,19 +18931,19 @@ async function runLeanReplayTurn(bundle, agentFor, manifestDir) {
         conventionsJson: bundle.conventionsJson,
         designDir: bundle.designDir
       });
-      const recCycleDir = (0, import_node_path37.join)(bundle.replay.turnDir, "files", ARTIFACT_ROOT, "cycles", bundle.feature, bundle.story, bundle.ac);
-      const gf = (0, import_node_path37.join)(recCycleDir, "green-failure.json");
-      if ((0, import_node_fs32.existsSync)(gf)) {
-        const dstDir = (0, import_node_path37.join)(ws, ARTIFACT_ROOT, "cycles", bundle.feature, bundle.story, bundle.ac);
-        (0, import_node_fs32.mkdirSync)(dstDir, { recursive: true });
-        (0, import_node_fs32.writeFileSync)((0, import_node_path37.join)(dstDir, "green-failure.json"), (0, import_node_fs32.readFileSync)(gf, "utf8"));
+      const recCycleDir = (0, import_node_path39.join)(bundle.replay.turnDir, "files", ARTIFACT_ROOT, "cycles", bundle.feature, bundle.story, bundle.ac);
+      const gf = (0, import_node_path39.join)(recCycleDir, "green-failure.json");
+      if ((0, import_node_fs34.existsSync)(gf)) {
+        const dstDir = (0, import_node_path39.join)(ws, ARTIFACT_ROOT, "cycles", bundle.feature, bundle.story, bundle.ac);
+        (0, import_node_fs34.mkdirSync)(dstDir, { recursive: true });
+        (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(dstDir, "green-failure.json"), (0, import_node_fs34.readFileSync)(gf, "utf8"));
       }
-      const lkSrc = (0, import_node_path37.join)(KIT, "examples/replay/lk");
-      if ((0, import_node_fs32.existsSync)(lkSrc)) {
-        const lkDst = (0, import_node_path37.join)(ws, "scripts", "lk");
-        (0, import_node_fs32.mkdirSync)((0, import_node_path37.join)(ws, "scripts"), { recursive: true });
-        (0, import_node_fs32.writeFileSync)(lkDst, (0, import_node_fs32.readFileSync)(lkSrc, "utf8"));
-        (0, import_node_fs32.chmodSync)(lkDst, 493);
+      const lkSrc = (0, import_node_path39.join)(KIT, "examples/replay/lk");
+      if ((0, import_node_fs34.existsSync)(lkSrc)) {
+        const lkDst = (0, import_node_path39.join)(ws, "scripts", "lk");
+        (0, import_node_fs34.mkdirSync)((0, import_node_path39.join)(ws, "scripts"), { recursive: true });
+        (0, import_node_fs34.writeFileSync)(lkDst, (0, import_node_fs34.readFileSync)(lkSrc, "utf8"));
+        (0, import_node_fs34.chmodSync)(lkDst, 493);
       }
     },
     recordedPromptFor: (ws) => rehydrate(rs.promptRaw, ws),
@@ -18843,9 +18956,9 @@ async function runLeanReplayTurn(bundle, agentFor, manifestDir) {
 }
 function layBundle(projectDir, consortDir, driverTurn = "green", bundle = DRIVER_GREEN_BUNDLE) {
   const b = bundle;
-  const artifactRel = (0, import_node_path37.relative)(projectDir, consortDir);
-  const featureRel = (0, import_node_path37.join)(artifactRel, "features", b.feature);
-  const storyRel = (0, import_node_path37.join)(featureRel, "stories", b.story);
+  const artifactRel = (0, import_node_path39.relative)(projectDir, consortDir);
+  const featureRel = (0, import_node_path39.join)(artifactRel, "features", b.feature);
+  const storyRel = (0, import_node_path39.join)(featureRel, "stories", b.story);
   if (b.replay) {
     layReplayPreconditions(projectDir, consortDir, {
       feature: b.feature,
@@ -18855,9 +18968,9 @@ function layBundle(projectDir, consortDir, driverTurn = "green", bundle = DRIVER
       conventionsJson: b.conventionsJson,
       designDir: b.designDir
     });
-    const preConsortDir = b.replay.turnDir ? (0, import_node_path37.join)(b.replay.turnDir, "replay-set", "pre-consort") : "";
-    if ((0, import_node_fs32.existsSync)(preConsortDir)) {
-      (0, import_node_fs32.cpSync)(preConsortDir, consortDir, { recursive: true });
+    const preConsortDir = b.replay.turnDir ? (0, import_node_path39.join)(b.replay.turnDir, "replay-set", "pre-consort") : "";
+    if ((0, import_node_fs34.existsSync)(preConsortDir)) {
+      (0, import_node_fs34.cpSync)(preConsortDir, consortDir, { recursive: true });
       console.log(`[layBundle] laid recorded pre-turn .consort verbatim from ${preConsortDir}`);
     } else if (driverTurn === "repair" || driverTurn === "refactor") {
       throw new Error(
@@ -18869,20 +18982,20 @@ function layBundle(projectDir, consortDir, driverTurn = "green", bundle = DRIVER
   if (driverTurn !== "green") {
     throw new Error(`non-replay ${driverTurn} bundles are retired \u2013 use a replay bundle whose replay-set carries pre-consort/`);
   }
-  overlayBundle(projectDir, { trees: [{ from: b.designDir, to: (0, import_node_path37.join)(artifactRel, "design") }] });
+  overlayBundle(projectDir, { trees: [{ from: b.designDir, to: (0, import_node_path39.join)(artifactRel, "design") }] });
   overlayBundle(projectDir, {
     trees: [{ from: b.preRedCodeDir, to: "." }],
     files: [
-      { from: (0, import_node_path37.join)(b.recordedArtifactsFeatureDir, "architecture.json"), to: (0, import_node_path37.join)(featureRel, "architecture.json") },
-      { from: (0, import_node_path37.join)(b.recordedArtifactsFeatureDir, "db-design.json"), to: (0, import_node_path37.join)(featureRel, "db-design.json") },
-      { from: (0, import_node_path37.join)(b.recordedArtifactsFeatureDir, "stories", b.story, "acs", `${b.ac}.json`), to: (0, import_node_path37.join)(storyRel, "acs", `${b.ac}.json`) },
-      { from: b.conventionsJson, to: (0, import_node_path37.join)(artifactRel, "architecture", "conventions.json") }
+      { from: (0, import_node_path39.join)(b.recordedArtifactsFeatureDir, "architecture.json"), to: (0, import_node_path39.join)(featureRel, "architecture.json") },
+      { from: (0, import_node_path39.join)(b.recordedArtifactsFeatureDir, "db-design.json"), to: (0, import_node_path39.join)(featureRel, "db-design.json") },
+      { from: (0, import_node_path39.join)(b.recordedArtifactsFeatureDir, "stories", b.story, "acs", `${b.ac}.json`), to: (0, import_node_path39.join)(storyRel, "acs", `${b.ac}.json`) },
+      { from: b.conventionsJson, to: (0, import_node_path39.join)(artifactRel, "architecture", "conventions.json") }
     ]
   });
-  const master = JSON.parse((0, import_node_fs32.readFileSync)((0, import_node_path37.join)(b.recordedArtifactsFeatureDir, "test-list.json"), "utf8"));
+  const master = JSON.parse((0, import_node_fs34.readFileSync)((0, import_node_path39.join)(b.recordedArtifactsFeatureDir, "test-list.json"), "utf8"));
   const items = master.items.filter((i) => i.ac_id === b.ac);
   assertGt(items.length, 0, "bundle: S3 has test-list items");
-  (0, import_node_fs32.writeFileSync)((0, import_node_path37.join)(projectDir, storyRel, "test-list-per-story.json"), JSON.stringify({ feature_id: b.feature, story_id: b.story, items }, null, 2) + "\n");
+  (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(projectDir, storyRel, "test-list-per-story.json"), JSON.stringify({ feature_id: b.feature, story_id: b.story, items }, null, 2) + "\n");
 }
 function resolveDriverGreenRunConfig() {
   const host = resolveTestEnv().host ?? "";
@@ -18917,7 +19030,7 @@ async function scaffoldDriverGreenProject() {
   const handle = setup.handle;
   const projectDir = handle.projectDir;
   layDownKitAgents(projectDir, KIT);
-  const worktreesRoot = (0, import_node_fs32.mkdtempSync)((0, import_node_path37.join)((0, import_node_os3.tmpdir)(), "dg-worktrees-"));
+  const worktreesRoot = (0, import_node_fs34.mkdtempSync)((0, import_node_path39.join)((0, import_node_os3.tmpdir)(), "dg-worktrees-"));
   process.env.LAKEBASE_SFTDD_USE_MANIFEST_STEPS = "1";
   resolveKitSingleSource(KIT);
   assertKitSingleSource(projectDir, KIT);
@@ -18942,7 +19055,7 @@ async function teardownDriverGreenProject(project) {
     await confirmLakebaseProjectDeleted(project.lakebaseProjectId, project.host);
     delete process.env.LAKEBASE_SFTDD_USE_MANIFEST_STEPS;
     clearKitSingleSource();
-    (0, import_node_fs32.rmSync)(project.worktreesRoot, { recursive: true, force: true });
+    (0, import_node_fs34.rmSync)(project.worktreesRoot, { recursive: true, force: true });
     await sweepDriverGreenOrphans();
   }
 }
@@ -18991,8 +19104,8 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
   const projectDir = wtDir;
   try {
     layBundle(projectDir, consortDir, driverTurn, b);
-    (0, import_node_child_process10.execFileSync)("git", ["add", "-A"], { cwd: projectDir, stdio: "pipe" });
-    (0, import_node_child_process10.execFileSync)("git", ["commit", "-m", `seed: pre-turn F6/S3 snapshot for driver ${driverTurn} (live)`, "--no-verify"], { cwd: projectDir, stdio: "pipe" });
+    (0, import_node_child_process12.execFileSync)("git", ["add", "-A"], { cwd: projectDir, stdio: "pipe" });
+    (0, import_node_child_process12.execFileSync)("git", ["commit", "-m", `seed: pre-turn F6/S3 snapshot for driver ${driverTurn} (live)`, "--no-verify"], { cwd: projectDir, stdio: "pipe" });
     await cutExperiment({
       instance: lakebaseProjectId,
       consortDir,
@@ -19005,18 +19118,18 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
       resetStaleBranch: true
     });
     if (driverTurn !== "green") {
-      const cutBranchId = (0, import_node_fs32.readFileSync)((0, import_node_path37.join)(consortDir, "experiments", b.feature, b.story, experimentSlug, "branch.txt"), "utf8").trim();
-      const storyCyclesDir = (0, import_node_path37.join)(consortDir, "cycles", b.feature, b.story);
-      for (const acDir of (0, import_node_fs32.readdirSync)(storyCyclesDir)) {
-        const acPath = (0, import_node_path37.join)(storyCyclesDir, acDir);
-        if (!(0, import_node_fs32.statSync)(acPath).isDirectory()) continue;
-        for (const f of (0, import_node_fs32.readdirSync)(acPath)) {
+      const cutBranchId = (0, import_node_fs34.readFileSync)((0, import_node_path39.join)(consortDir, "experiments", b.feature, b.story, experimentSlug, "branch.txt"), "utf8").trim();
+      const storyCyclesDir = (0, import_node_path39.join)(consortDir, "cycles", b.feature, b.story);
+      for (const acDir of (0, import_node_fs34.readdirSync)(storyCyclesDir)) {
+        const acPath = (0, import_node_path39.join)(storyCyclesDir, acDir);
+        if (!(0, import_node_fs34.statSync)(acPath).isDirectory()) continue;
+        for (const f of (0, import_node_fs34.readdirSync)(acPath)) {
           if (!/^cycle-.*\.json$/.test(f)) continue;
-          const p = (0, import_node_path37.join)(acPath, f);
-          const c = JSON.parse((0, import_node_fs32.readFileSync)(p, "utf8"));
+          const p = (0, import_node_path39.join)(acPath, f);
+          const c = JSON.parse((0, import_node_fs34.readFileSync)(p, "utf8"));
           if (c.experiment_slug !== void 0) c.experiment_slug = experimentSlug;
           if (c.branch_id !== void 0) c.branch_id = cutBranchId;
-          (0, import_node_fs32.writeFileSync)(p, JSON.stringify(c, null, 2) + "\n");
+          (0, import_node_fs34.writeFileSync)(p, JSON.stringify(c, null, 2) + "\n");
         }
       }
     }
@@ -19033,7 +19146,7 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
       build_queue: [b.story],
       build_active: b.story
     });
-    (0, import_node_fs32.writeFileSync)((0, import_node_path37.join)(consortDir, "workflow-state.json"), JSON.stringify({ phase: "implementation", phase_feature_id: b.feature }));
+    (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(consortDir, "workflow-state.json"), JSON.stringify({ phase: "implementation", phase_feature_id: b.feature }));
     if (driverTurn === "green") {
       beginNextPendingBatch({ consortDir, featureId: b.feature, story: b.story }, { cap: Number.MAX_SAFE_INTEGER });
       assertGt(storyTestProgress(consortDir, b.feature, b.story).openRed.length, 0, "setup: an open RED cycle exists");
@@ -19120,7 +19233,7 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
     const driverTx = peekLastAgentTranscript(projectDir);
     const driverUsage = peekLastAgentUsage(projectDir);
     const driverToolCalls = driverTx?.tools.length;
-    const productCodeExists = hasSourceFile((0, import_node_path37.join)(projectDir, "app"));
+    const productCodeExists = hasSourceFile((0, import_node_path39.join)(projectDir, "app"));
     const storyProgress = storyTestProgress(consortDir, b.feature, b.story);
     const allGreen = storyProgress.allGreen;
     assert(productCodeExists, "driver wrote product code under app/");
@@ -19136,15 +19249,15 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
       honestGreen: { passed: allGreen }
     });
     const producedArtifactsRaw = {
-      ...snapshotTree((0, import_node_path37.join)(projectDir, "app"), projectDir),
-      ...snapshotTree((0, import_node_path37.join)(projectDir, "tests"), projectDir),
+      ...snapshotTree((0, import_node_path39.join)(projectDir, "app"), projectDir),
+      ...snapshotTree((0, import_node_path39.join)(projectDir, "tests"), projectDir),
       // CLIENT surface: on a UI story (uiTrack on – e.g. the S3 read-UI repair), the repair work lands
       // under client/, so the judge MUST see it – without this the client story was scored blind to its
       // own code (the confounder that made the driver-repair ladder plateau). Scope to client/src +
       // client/tests ONLY: snapshotTree does not filter, and the whole client/ tree includes
       // node_modules/.vite/dist (thousands of files) which would swamp the produced artifacts + judge.
-      ...cfg.uiTrack ? snapshotTree((0, import_node_path37.join)(projectDir, "client", "src"), projectDir) : {},
-      ...cfg.uiTrack ? snapshotTree((0, import_node_path37.join)(projectDir, "client", "tests"), projectDir) : {}
+      ...cfg.uiTrack ? snapshotTree((0, import_node_path39.join)(projectDir, "client", "src"), projectDir) : {},
+      ...cfg.uiTrack ? snapshotTree((0, import_node_path39.join)(projectDir, "client", "tests"), projectDir) : {}
     };
     const producedArtifacts = Object.fromEntries(
       Object.entries(producedArtifactsRaw).filter(([p]) => !p.includes("__pycache__") && !p.endsWith(".pyc"))
@@ -19152,9 +19265,9 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
     const isDriverTurn = (a) => a.kind === "invoke-role" && a.role === "driver";
     const isNavigatorEval = (a) => a.kind === "invoke-role" && a.role === "navigator" && typeof a.buildMode === "string" && ["assess", "review", "assess-refactor", "reflect"].includes(String(a.buildMode));
     if (driverTurn === "refactor") {
-      const storyCyc = (0, import_node_path37.join)(consortDir, "cycles", b.feature, b.story);
-      (0, import_node_fs32.rmSync)((0, import_node_path37.join)(storyCyc, "review.json"), { force: true });
-      (0, import_node_fs32.rmSync)((0, import_node_path37.join)(storyCyc, "review-verdict.json"), { force: true });
+      const storyCyc = (0, import_node_path39.join)(consortDir, "cycles", b.feature, b.story);
+      (0, import_node_fs34.rmSync)((0, import_node_path39.join)(storyCyc, "review.json"), { force: true });
+      (0, import_node_fs34.rmSync)((0, import_node_path39.join)(storyCyc, "review-verdict.json"), { force: true });
     }
     const evalSettings = resolveConsortSettings({ projectDir });
     const evalCfg = {
@@ -19175,9 +19288,9 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
     await runDriver(buildDriveEffects(evalCfg), { stopWhen: stopAfterEval, maxSteps: 3 });
     const markerDirAbs = cycleDir(consortDir, b.feature, b.story, b.ac);
     const nextStepMarker = snapshotTree(markerDirAbs, markerDirAbs);
-    const storyCycleDir = (0, import_node_path37.join)(consortDir, "cycles", b.feature, b.story);
-    const rv = (0, import_node_path37.join)(storyCycleDir, "review-verdict.json");
-    if ((0, import_node_fs32.existsSync)(rv)) nextStepMarker["review-verdict.json"] = (0, import_node_fs32.readFileSync)(rv, "utf8");
+    const storyCycleDir = (0, import_node_path39.join)(consortDir, "cycles", b.feature, b.story);
+    const rv = (0, import_node_path39.join)(storyCycleDir, "review-verdict.json");
+    if ((0, import_node_fs34.existsSync)(rv)) nextStepMarker["review-verdict.json"] = (0, import_node_fs34.readFileSync)(rv, "utf8");
     const evalTx = peekLastAgentTranscript(projectDir);
     if (driverTx) {
       producedArtifacts["transcripts/driver-prompt.txt"] = driverTx.prompt;
@@ -19310,36 +19423,36 @@ function loadExperimentConfig(path11) {
 
 // consort/evaluation/semantic-gate.ts
 init_cjs_shims();
-var import_node_child_process11 = require("child_process");
-var import_node_fs33 = require("fs");
-var import_node_path38 = require("path");
+var import_node_child_process13 = require("child_process");
+var import_node_fs35 = require("fs");
+var import_node_path40 = require("path");
 var SEMANTIC_THRESHOLD = 0.85;
 var FUNCTIONAL_THRESHOLD = 0.75;
 function parseNavigatorAssessMarker(markerDir) {
-  const sup = ["superseded.json", "superseded-tests.json"].map((n) => (0, import_node_path38.join)(markerDir, n)).find((p) => (0, import_node_fs33.existsSync)(p));
-  const reg = (0, import_node_path38.join)(markerDir, "regression-assessment.json");
+  const sup = ["superseded.json", "superseded-tests.json"].map((n) => (0, import_node_path40.join)(markerDir, n)).find((p) => (0, import_node_fs35.existsSync)(p));
+  const reg = (0, import_node_path40.join)(markerDir, "regression-assessment.json");
   if (sup) {
     try {
-      const j = JSON.parse((0, import_node_fs33.readFileSync)(sup, "utf8"));
+      const j = JSON.parse((0, import_node_fs35.readFileSync)(sup, "utf8"));
       const raw = Array.isArray(j.tests) ? j.tests : Array.isArray(j.supersededTests) ? j.supersededTests : [];
       const tests = raw.map(String);
       return { score: 1, classification: "superseded-shift", nextStep: "permissive-refactor-superseded", supersededTests: tests };
     } catch {
     }
   }
-  if ((0, import_node_fs33.existsSync)(reg)) {
+  if ((0, import_node_fs35.existsSync)(reg)) {
     try {
-      const j = JSON.parse((0, import_node_fs33.readFileSync)(reg, "utf8"));
+      const j = JSON.parse((0, import_node_fs35.readFileSync)(reg, "utf8"));
       const diagnosis = typeof j.diagnosis === "string" ? j.diagnosis : void 0;
       const fixDirective = (typeof j.fixDirective === "string" && j.fixDirective ? j.fixDirective : void 0) ?? (typeof j.fix === "string" && j.fix ? j.fix : void 0);
       return fixDirective ? { score: 1, classification: "regression", nextStep: "driver-repair-with-directive", ...diagnosis ? { diagnosis } : {}, fixDirective } : { score: 1, classification: "insufficient", nextStep: "escalate", ...diagnosis ? { diagnosis } : {} };
     } catch {
     }
   }
-  const gf = (0, import_node_path38.join)(markerDir, "green-failure.json");
-  if ((0, import_node_fs33.existsSync)(gf)) {
+  const gf = (0, import_node_path40.join)(markerDir, "green-failure.json");
+  if ((0, import_node_fs35.existsSync)(gf)) {
     try {
-      const g = JSON.parse((0, import_node_fs33.readFileSync)(gf, "utf8"));
+      const g = JSON.parse((0, import_node_fs35.readFileSync)(gf, "utf8"));
       const summary = typeof g.summary === "string" ? g.summary : "";
       if (g.assessed === true || /fail/i.test(summary)) {
         return { score: 0, classification: "insufficient", nextStep: "escalate" };
@@ -19512,7 +19625,7 @@ function makeOpusJudge(opts) {
   const model = opts.model ?? "opus";
   return ({ step, reference, candidate, functional }) => new Promise((resolve4) => {
     const prompt = functional ? buildFunctionalJudgePrompt(functional, reference, candidate) : buildJudgePrompt(step, reference, candidate);
-    (0, import_node_child_process11.execFile)(
+    (0, import_node_child_process13.execFile)(
       "claude",
       ["-p", prompt, "--model", model, "--permission-mode", "acceptEdits", "--strict-mcp-config", "--output-format", "json"],
       { cwd: opts.cwd, maxBuffer: 32 * 1024 * 1024, timeout: 5 * 6e4 },
@@ -19534,7 +19647,7 @@ function makeOpusJudge(opts) {
 }
 function spawnOpusJudge(cwd, prompt, parse, onFail) {
   return new Promise((resolve4) => {
-    (0, import_node_child_process11.execFile)(
+    (0, import_node_child_process13.execFile)(
       "claude",
       ["-p", prompt, "--model", "opus", "--permission-mode", "acceptEdits", "--strict-mcp-config", "--output-format", "json"],
       { cwd, maxBuffer: 32 * 1024 * 1024, timeout: 5 * 6e4 },
@@ -19831,7 +19944,7 @@ function buildReplayTurnJudge(turnLabel, feature, story, ac, discriminator) {
   if (discriminator === "red") {
     const judge = makeOpusJudge({ cwd });
     const RED_EXTS = [".py", ".ts", ".tsx", ".feature"];
-    const recMap = snapshotTree((0, import_node_path39.join)(CORPUS_TURNS, turnLabel, "files"), (0, import_node_path39.join)(CORPUS_TURNS, turnLabel, "files"));
+    const recMap = snapshotTree((0, import_node_path41.join)(CORPUS_TURNS, turnLabel, "files"), (0, import_node_path41.join)(CORPUS_TURNS, turnLabel, "files"));
     const reference = concatTreeFiles(recMap, "tests/", RED_EXTS) + "\n" + concatTreeFiles(recMap, "client/tests/", RED_EXTS);
     if (!reference.trim()) {
       throw new Error(`buildReplayTurnJudge(red): recorded turn ${turnLabel} has no test tree under files/tests|client/tests \u2013 cannot judge.`);
@@ -19851,13 +19964,13 @@ function buildReplayTurnJudge(turnLabel, feature, story, ac, discriminator) {
   const deltaJudge = makeSupersessionDeltaJudge({ cwd });
   const verdictJudge = makeVerdictAlignmentJudge({ cwd });
   const regressionJudge = makeRegressionFidelityJudge({ cwd });
-  const recSrc = (0, import_node_path39.join)(CORPUS_TURNS, turnLabel, "files", ARTIFACT_ROOT, "cycles", feature, story, ac);
+  const recSrc = (0, import_node_path41.join)(CORPUS_TURNS, turnLabel, "files", ARTIFACT_ROOT, "cycles", feature, story, ac);
   const MARKER_FILES = ["regression-assessment.json", "superseded-tests.json"];
   const failureSummary = (() => {
-    const p = (0, import_node_path39.join)(recSrc, "green-failure.json");
-    if (!(0, import_node_fs34.existsSync)(p)) return void 0;
+    const p = (0, import_node_path41.join)(recSrc, "green-failure.json");
+    if (!(0, import_node_fs36.existsSync)(p)) return void 0;
     try {
-      const g = JSON.parse((0, import_node_fs34.readFileSync)(p, "utf8"));
+      const g = JSON.parse((0, import_node_fs36.readFileSync)(p, "utf8"));
       return typeof g.summary === "string" ? g.summary : void 0;
     } catch {
       return void 0;
@@ -19865,17 +19978,17 @@ function buildReplayTurnJudge(turnLabel, feature, story, ac, discriminator) {
   })();
   return {
     judgeCandidate: async ({ producedArtifacts }) => {
-      const recDir = (0, import_node_fs34.mkdtempSync)((0, import_node_path39.join)((0, import_node_os4.tmpdir)(), "rec-assess-"));
-      const candDir = (0, import_node_fs34.mkdtempSync)((0, import_node_path39.join)((0, import_node_os4.tmpdir)(), "cand-assess-"));
+      const recDir = (0, import_node_fs36.mkdtempSync)((0, import_node_path41.join)((0, import_node_os4.tmpdir)(), "rec-assess-"));
+      const candDir = (0, import_node_fs36.mkdtempSync)((0, import_node_path41.join)((0, import_node_os4.tmpdir)(), "cand-assess-"));
       try {
         for (const f of MARKER_FILES) {
-          const p = (0, import_node_path39.join)(recSrc, f);
-          if ((0, import_node_fs34.existsSync)(p)) (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(recDir, f), (0, import_node_fs34.readFileSync)(p, "utf8"));
+          const p = (0, import_node_path41.join)(recSrc, f);
+          if ((0, import_node_fs36.existsSync)(p)) (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(recDir, f), (0, import_node_fs36.readFileSync)(p, "utf8"));
         }
-        const cyclePrefix = (0, import_node_path39.join)(ARTIFACT_ROOT, "cycles", feature, story, ac) + "/";
+        const cyclePrefix = (0, import_node_path41.join)(ARTIFACT_ROOT, "cycles", feature, story, ac) + "/";
         for (const [k, v] of Object.entries(producedArtifacts)) {
           const base = k.startsWith(cyclePrefix) ? k.slice(cyclePrefix.length) : void 0;
-          if (base && MARKER_FILES.includes(base)) (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(candDir, base), v);
+          if (base && MARKER_FILES.includes(base)) (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(candDir, base), v);
         }
         const outcome = await evaluateNextStepDetermination({
           evaluatorKind: "assess",
@@ -19890,24 +20003,24 @@ function buildReplayTurnJudge(turnLabel, feature, story, ac, discriminator) {
         const classification = outcome.verdict === "pass-with-honors" ? "pass-with-honors" : outcome.candidateClass;
         return { passed, classification, nextStep: outcome.verdict, reason: outcome.reason };
       } finally {
-        (0, import_node_fs34.rmSync)(recDir, { recursive: true, force: true });
-        (0, import_node_fs34.rmSync)(candDir, { recursive: true, force: true });
+        (0, import_node_fs36.rmSync)(recDir, { recursive: true, force: true });
+        (0, import_node_fs36.rmSync)(candDir, { recursive: true, force: true });
       }
     }
   };
 }
 function readRecordedNextReview(turnLabel, feature, story) {
   const ord = Number(turnLabel.split("-")[0]);
-  const next = (0, import_node_fs34.readdirSync)(CORPUS_TURNS).filter((d) => Number(d.split("-")[0]) === ord + 1).sort()[0];
+  const next = (0, import_node_fs36.readdirSync)(CORPUS_TURNS).filter((d) => Number(d.split("-")[0]) === ord + 1).sort()[0];
   if (!next) throw new Error(`readRecordedNextReview: no turn after ${turnLabel} (ordinal ${ord + 1}) in ${CORPUS_TURNS}`);
-  const rv = (0, import_node_path39.join)(CORPUS_TURNS, next, "files", ARTIFACT_ROOT, "cycles", feature, story, "review-verdict.json");
-  if (!(0, import_node_fs34.existsSync)(rv)) throw new Error(`readRecordedNextReview: turn-after ${next} has no story-level review-verdict at ${rv} (the repair's recorded next step is not a review)`);
-  return parseVerdictFile((0, import_node_fs34.readFileSync)(rv, "utf8"));
+  const rv = (0, import_node_path41.join)(CORPUS_TURNS, next, "files", ARTIFACT_ROOT, "cycles", feature, story, "review-verdict.json");
+  if (!(0, import_node_fs36.existsSync)(rv)) throw new Error(`readRecordedNextReview: turn-after ${next} has no story-level review-verdict at ${rv} (the repair's recorded next step is not a review)`);
+  return parseVerdictFile((0, import_node_fs36.readFileSync)(rv, "utf8"));
 }
 function readRecordedRefactorDirective(feature, story) {
-  const rv = (0, import_node_path39.join)(CORPUS_RA, "cycles", feature, story, "review-verdict.json");
-  if (!(0, import_node_fs34.existsSync)(rv)) throw new Error(`readRecordedRefactorDirective: no story-level review-verdict at ${rv} (the refactor's recorded directive)`);
-  return parseVerdictFile((0, import_node_fs34.readFileSync)(rv, "utf8"));
+  const rv = (0, import_node_path41.join)(CORPUS_RA, "cycles", feature, story, "review-verdict.json");
+  if (!(0, import_node_fs36.existsSync)(rv)) throw new Error(`readRecordedRefactorDirective: no story-level review-verdict at ${rv} (the refactor's recorded directive)`);
+  return parseVerdictFile((0, import_node_fs36.readFileSync)(rv, "utf8"));
 }
 function buildReviewResolutionJudge(recordedReviewDirective) {
   const cwd = process.cwd();
@@ -19951,8 +20064,8 @@ async function sweepDriverGreen(handle, runRoot, opts = {}) {
   }
   const spec = DRIVER_TURN_SPECS[handle];
   if (!spec) throw new Error(`optimize-role: unknown driver handle "${handle}" (known: ${Object.keys(DRIVER_TURN_SPECS).join(", ")})`);
-  const runDir = (0, import_node_path39.join)(runRoot, handle);
-  (0, import_node_fs34.mkdirSync)(runDir, { recursive: true });
+  const runDir = (0, import_node_path41.join)(runRoot, handle);
+  (0, import_node_fs36.mkdirSync)(runDir, { recursive: true });
   const experiment = opts.experiment ? loadExperimentConfig(opts.experiment) : void 0;
   if (experiment && experiment.driverTurn !== spec.driverTurn) {
     throw new Error(`experiment "${experiment.name}" driverTurn=${experiment.driverTurn} does not match handle ${handle} (driverTurn=${spec.driverTurn})`);
@@ -20002,20 +20115,20 @@ async function sweepDriverGreen(handle, runRoot, opts = {}) {
     await sweepDriverGreenOrphans();
   }
   const report = reportRoleSweep(trials, spec.recordedBaselineMs);
-  (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(runDir, "report.txt"), formatRoleSweepReport(report) + "\n");
+  (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(runDir, "report.txt"), formatRoleSweepReport(report) + "\n");
   const summary = buildChainSummary(handle, "sonnet", trials, report);
-  (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(runDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+  (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(runDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
   console.log(`
 [${handle}]
 ` + formatRoleSweepReport(report));
   return { summary };
 }
 function readCampReference(relFromCorpusRoot, what) {
-  const p = (0, import_node_path39.join)(process.cwd(), BUILD_CORPUS_REL, relFromCorpusRoot);
-  if (!(0, import_node_fs34.existsSync)(p)) {
+  const p = (0, import_node_path41.join)(process.cwd(), BUILD_CORPUS_REL, relFromCorpusRoot);
+  if (!(0, import_node_fs36.existsSync)(p)) {
     throw new Error(`optimize-role: MISSING recorded reference for ${what} at ${p} \u2013 the LLM judge is mandatory and cannot run without it. Extract it from the corpus into the camp first.`);
   }
-  return (0, import_node_fs34.readFileSync)(p, "utf8");
+  return (0, import_node_fs36.readFileSync)(p, "utf8");
 }
 var DRIVER_GREEN_CODE_PIN_REL = "recorded-build/features/F6-split-tracking-code/stories/S1-split-columns-migration/turns/003-driver/code/app";
 var NEXT_STEP_MARKER_PREFIX = "navigator-eval/";
@@ -20023,8 +20136,8 @@ function concatTreeFiles(producedArtifacts, prefix, exts) {
   return Object.entries(producedArtifacts).filter(([k]) => k.startsWith(prefix) && exts.some((e) => k.endsWith(e))).sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v).join("\n");
 }
 function readCampAppDir(relFromCorpusRoot, what) {
-  const dir = (0, import_node_path39.join)(process.cwd(), BUILD_CORPUS_REL, relFromCorpusRoot);
-  if (!(0, import_node_fs34.existsSync)(dir)) {
+  const dir = (0, import_node_path41.join)(process.cwd(), BUILD_CORPUS_REL, relFromCorpusRoot);
+  if (!(0, import_node_fs36.existsSync)(dir)) {
     throw new Error(`optimize-role: MISSING recorded reference for ${what} at ${dir} \u2013 the LLM judge is mandatory and cannot run without it. Extract it from the corpus into the camp first.`);
   }
   const tree = snapshotTree(dir, dir);
@@ -20065,18 +20178,18 @@ function buildChainJudge(chain, handle, isBuildChain) {
   }
   if (b.assertKind === "assess") {
     const recordedVerdict2 = parseNavigatorAssessMarker(
-      (0, import_node_path39.join)(cwd, BUILD_CORPUS_REL, "recorded-build/features/F6-split-tracking-code/stories/S1-split-columns-migration/turns/004-navigator-assess-AC1-batch-serial-columns-added/tdd/cycles/F6-split-tracking-code/S1-split-columns-migration/AC1-batch-serial-columns-added")
+      (0, import_node_path41.join)(cwd, BUILD_CORPUS_REL, "recorded-build/features/F6-split-tracking-code/stories/S1-split-columns-migration/turns/004-navigator-assess-AC1-batch-serial-columns-added/tdd/cycles/F6-split-tracking-code/S1-split-columns-migration/AC1-batch-serial-columns-added")
     );
     const deltaJudge = makeSupersessionDeltaJudge({ cwd });
     return {
       judgeCandidate: async ({ candidateId, producedArtifacts }) => {
-        const markerDir = (0, import_node_fs34.mkdtempSync)((0, import_node_path39.join)((0, import_node_os4.tmpdir)(), `assess-marker-${candidateId}-`));
+        const markerDir = (0, import_node_fs36.mkdtempSync)((0, import_node_path41.join)((0, import_node_os4.tmpdir)(), `assess-marker-${candidateId}-`));
         try {
           let wroteMarker = false;
           for (const name of ["superseded-tests.json", "regression-assessment.json"]) {
             const key = Object.keys(producedArtifacts).find((k) => k.endsWith(name));
             if (key !== void 0) {
-              (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(markerDir, name), producedArtifacts[key]);
+              (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(markerDir, name), producedArtifacts[key]);
               wroteMarker = true;
             }
           }
@@ -20084,7 +20197,7 @@ function buildChainJudge(chain, handle, isBuildChain) {
           const outcome = await evaluateNavigatorAssessAlignment({ recordedVerdict: recordedVerdict2, navigatorMarkerDir: markerDir, deltaJudge });
           return { passed: outcome.passed, classification: outcome.classificationMatch ? recordedVerdict2.classification : "insufficient", reason: outcome.reason };
         } finally {
-          (0, import_node_fs34.rmSync)(markerDir, { recursive: true, force: true });
+          (0, import_node_fs36.rmSync)(markerDir, { recursive: true, force: true });
         }
       }
     };
@@ -20110,27 +20223,27 @@ function buildDriverNextStepJudge(handle) {
   const deltaJudge = makeSupersessionDeltaJudge({ cwd });
   const verdictJudge = makeVerdictAlignmentJudge({ cwd });
   const regressionJudge = makeRegressionFidelityJudge({ cwd });
-  const recordedRefDir = (0, import_node_path39.join)(cwd, BUILD_CORPUS_REL, spec.refRel);
-  if (!(0, import_node_fs34.existsSync)(recordedRefDir)) {
+  const recordedRefDir = (0, import_node_path41.join)(cwd, BUILD_CORPUS_REL, spec.refRel);
+  if (!(0, import_node_fs36.existsSync)(recordedRefDir)) {
     throw new Error(`optimize-role: MISSING contained next-step reference for ${handle} at ${recordedRefDir} \u2013 the LLM judge is mandatory and cannot run without it.`);
   }
   const driverFailureSummary = (() => {
-    const p = (0, import_node_path39.join)(recordedRefDir, "green-failure.json");
-    if (!(0, import_node_fs34.existsSync)(p)) return void 0;
+    const p = (0, import_node_path41.join)(recordedRefDir, "green-failure.json");
+    if (!(0, import_node_fs36.existsSync)(p)) return void 0;
     try {
-      const g = JSON.parse((0, import_node_fs34.readFileSync)(p, "utf8"));
+      const g = JSON.parse((0, import_node_fs36.readFileSync)(p, "utf8"));
       return typeof g.summary === "string" ? g.summary : void 0;
     } catch {
       return void 0;
     }
   })();
-  const recordedReviewDirective = spec.evaluatorKind === "review" ? parseVerdictFile(readCampReference((0, import_node_path39.join)(spec.refRel, "review-verdict.json"), `${handle} recorded review directive`)) : void 0;
+  const recordedReviewDirective = spec.evaluatorKind === "review" ? parseVerdictFile(readCampReference((0, import_node_path41.join)(spec.refRel, "review-verdict.json"), `${handle} recorded review directive`)) : void 0;
   return {
     judgeCandidate: async ({ candidateId, producedArtifacts }) => {
-      const markerDir = (0, import_node_fs34.mkdtempSync)((0, import_node_path39.join)((0, import_node_os4.tmpdir)(), `nextstep-${candidateId}-`));
+      const markerDir = (0, import_node_fs36.mkdtempSync)((0, import_node_path41.join)((0, import_node_os4.tmpdir)(), `nextstep-${candidateId}-`));
       try {
         for (const [k, v] of Object.entries(producedArtifacts)) {
-          if (k.startsWith(NEXT_STEP_MARKER_PREFIX)) (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(markerDir, k.slice(NEXT_STEP_MARKER_PREFIX.length)), v);
+          if (k.startsWith(NEXT_STEP_MARKER_PREFIX)) (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(markerDir, k.slice(NEXT_STEP_MARKER_PREFIX.length)), v);
         }
         const outcome = await evaluateNextStepDetermination({
           evaluatorKind: spec.evaluatorKind,
@@ -20147,7 +20260,7 @@ function buildDriverNextStepJudge(handle) {
         const classification = outcome.verdict === "pass-with-honors" ? "pass-with-honors" : outcome.candidateClass;
         return { passed, classification, nextStep: outcome.verdict, reason: outcome.reason };
       } finally {
-        (0, import_node_fs34.rmSync)(markerDir, { recursive: true, force: true });
+        (0, import_node_fs36.rmSync)(markerDir, { recursive: true, force: true });
       }
     }
   };
@@ -20165,8 +20278,8 @@ async function sweepOneChain(handle, runRoot, opts = {}) {
   }
   const experimentBundle = experiment ? replayBundleFromTurn(experiment.turn, experiment.ac) : void 0;
   const candidates = experiment ? experiment.roleCandidates : handle === "test-strategist" ? testStrategistCandidates(enabledAnalysts({ projectDir: "", uiTrack: true }).map((a) => a.kind)) : roleCandidates(baseModel);
-  const runDir = (0, import_node_path39.join)(runRoot, handle);
-  (0, import_node_fs34.mkdirSync)(runDir, { recursive: true });
+  const runDir = (0, import_node_path41.join)(runRoot, handle);
+  (0, import_node_fs36.mkdirSync)(runDir, { recursive: true });
   const quality = experiment && experimentBundle ? buildReplayTurnJudge(experiment.turn, experimentBundle.feature, experimentBundle.story, experimentBundle.ac, experiment.discriminator ?? "assess") : buildChainJudge(chain, handle, isBuildChain);
   console.log(
     `[optimize-role] ${handle}: ${isBuildChain ? "BUILD" : "DESIGN"} chain, baseline model=${baseModel}, ${candidates.length} candidates, concurrency=${opts.concurrency ?? 1}. quality judge: MANDATORY (per-chain discriminator). run dir: ${runDir}`
@@ -20184,7 +20297,7 @@ async function sweepOneChain(handle, runRoot, opts = {}) {
       driverTurn: "green",
       pfx: "",
       // The per-chain manifest subdir (e.g. navigator-assess-chain) – the lean turn's manifests.
-      manifestDir: (0, import_node_path39.join)(process.cwd(), BUILD_MANIFESTS_REL, chain.dir)
+      manifestDir: (0, import_node_path41.join)(process.cwd(), BUILD_MANIFESTS_REL, chain.dir)
     })
   ) : isBuildChain ? async (c, agentFor, _id, levers) => runBuildRoleChainLive(c, {
     agentFor
@@ -20211,10 +20324,10 @@ async function sweepOneChain(handle, runRoot, opts = {}) {
     }
   });
   const report = reportRoleSweep(trials);
-  (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(runDir, "report.txt"), formatRoleSweepReport(report) + "\n");
+  (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(runDir, "report.txt"), formatRoleSweepReport(report) + "\n");
   const summary = buildChainSummary(handle, baseModel, trials, report);
   const prior = opts.baselineDir ? readPriorSummary(opts.baselineDir, handle) : void 0;
-  (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(runDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+  (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(runDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
   console.log(`
 [${handle}]
 ` + formatRoleSweepReport(report));
@@ -20240,10 +20353,10 @@ function buildChainSummary(handle, baseModel, trials, report) {
   };
 }
 function readPriorSummary(baselineDir, handle) {
-  const p = (0, import_node_path39.join)(baselineDir, handle, "summary.json");
-  if (!(0, import_node_fs34.existsSync)(p)) return void 0;
+  const p = (0, import_node_path41.join)(baselineDir, handle, "summary.json");
+  if (!(0, import_node_fs36.existsSync)(p)) return void 0;
   try {
-    return JSON.parse((0, import_node_fs34.readFileSync)(p, "utf8"));
+    return JSON.parse((0, import_node_fs36.readFileSync)(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -20255,11 +20368,11 @@ function formatBaselineDelta(handle, prior, now) {
   return `[compare] ${handle}: ${winnerChange}${drift} \u2013 prior run ${prior.capturedAt}`;
 }
 async function runOptimizeRole(args) {
-  const resultsHome = (0, import_node_path39.join)(process.cwd(), "examples/replay/optimize-results");
-  const runsDir = (0, import_node_path39.join)(resultsHome, "runs");
+  const resultsHome = (0, import_node_path41.join)(process.cwd(), "examples/replay/optimize-results");
+  const runsDir = (0, import_node_path41.join)(resultsHome, "runs");
   const baselineDir = latestRunDir(runsDir);
-  const runRoot = args.telemetryDir ?? (0, import_node_path39.join)(runsDir, runStamp());
-  (0, import_node_fs34.mkdirSync)(runRoot, { recursive: true });
+  const runRoot = args.telemetryDir ?? (0, import_node_path41.join)(runsDir, runStamp());
+  (0, import_node_fs36.mkdirSync)(runRoot, { recursive: true });
   console.log(`[optimize-role] sweeping ${args.chains.length} chain(s): ${args.chains.join(", ")} \u2013 run root ${runRoot}${baselineDir ? ` (baseline: ${baselineDir})` : " (no prior run \u2013 this is the baseline)"}`);
   const reports = {};
   for (const handle of args.chains) {
@@ -20297,7 +20410,7 @@ ${w ? `${h}: winner ${w}` : `${h}: no winner`}`);
     }
   }
   if (rollup) {
-    (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(runRoot, "rollup.txt"), rollup + "\n");
+    (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(runRoot, "rollup.txt"), rollup + "\n");
     console.log(`
 === ROLL-UP ===
 ${rollup}
@@ -20310,27 +20423,27 @@ function runStamp() {
   return (/* @__PURE__ */ new Date()).toISOString().replace(/[-:T]/g, "").replace(/\..*$/, "");
 }
 function latestRunDir(runsDir) {
-  if (!(0, import_node_fs34.existsSync)(runsDir)) return void 0;
-  const dirs = (0, import_node_fs34.readdirSync)(runsDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
+  if (!(0, import_node_fs36.existsSync)(runsDir)) return void 0;
+  const dirs = (0, import_node_fs36.readdirSync)(runsDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
   const newest = dirs[dirs.length - 1];
-  return newest ? (0, import_node_path39.join)(runsDir, newest) : void 0;
+  return newest ? (0, import_node_path41.join)(runsDir, newest) : void 0;
 }
 function readReference(chain, _role) {
   if (chain.referenceFile) {
-    const camp = (0, import_node_path39.join)(process.cwd(), BUILD_CORPUS_REL, chain.referenceFile);
-    if ((0, import_node_fs34.existsSync)(camp)) return (0, import_node_fs34.readFileSync)(camp, "utf8");
+    const camp = (0, import_node_path41.join)(process.cwd(), BUILD_CORPUS_REL, chain.referenceFile);
+    if ((0, import_node_fs36.existsSync)(camp)) return (0, import_node_fs36.readFileSync)(camp, "utf8");
   }
-  const p = (0, import_node_path39.join)(process.cwd(), INTAKE_REL, chain.referenceFile ?? chain.outputFile);
-  return (0, import_node_fs34.existsSync)(p) ? (0, import_node_fs34.readFileSync)(p, "utf8") : void 0;
+  const p = (0, import_node_path41.join)(process.cwd(), INTAKE_REL, chain.referenceFile ?? chain.outputFile);
+  return (0, import_node_fs36.existsSync)(p) ? (0, import_node_fs36.readFileSync)(p, "utf8") : void 0;
 }
 function persistTrial(runDir, chain, baseModel, trial) {
-  const dir = (0, import_node_path39.join)(runDir, trial.candidateId);
-  (0, import_node_fs34.mkdirSync)(dir, { recursive: true });
-  if (trial.telemetry) (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(dir, "telemetry.json"), JSON.stringify(trial.telemetry, null, 2) + "\n");
+  const dir = (0, import_node_path41.join)(runDir, trial.candidateId);
+  (0, import_node_fs36.mkdirSync)(dir, { recursive: true });
+  if (trial.telemetry) (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(dir, "telemetry.json"), JSON.stringify(trial.telemetry, null, 2) + "\n");
   for (const [rel, contents] of Object.entries(trial.producedArtifacts ?? {})) {
-    const dest = (0, import_node_path39.join)(dir, "artifacts", rel);
-    (0, import_node_fs34.mkdirSync)((0, import_node_path39.dirname)(dest), { recursive: true });
-    (0, import_node_fs34.writeFileSync)(dest, contents);
+    const dest = (0, import_node_path41.join)(dir, "artifacts", rel);
+    (0, import_node_fs36.mkdirSync)((0, import_node_path41.dirname)(dest), { recursive: true });
+    (0, import_node_fs36.writeFileSync)(dest, contents);
   }
   const navigatorEvalFiles = Object.keys(trial.producedArtifacts ?? {}).filter((k) => k.startsWith("navigator-eval/")).map((k) => k.slice("navigator-eval/".length));
   const replay = {
@@ -20345,17 +20458,17 @@ function persistTrial(runDir, chain, baseModel, trial) {
     ...navigatorEvalFiles.length ? { navigatorEval: { dir: "artifacts/navigator-eval", files: navigatorEvalFiles } } : {},
     ...trial.disqualified ? { disqualified: true, reason: trial.reason } : {}
   };
-  (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(dir, "replay.json"), JSON.stringify(replay, null, 2) + "\n");
+  (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(dir, "replay.json"), JSON.stringify(replay, null, 2) + "\n");
 }
 function loadPreservedArtifacts(candidateDir) {
-  const root = (0, import_node_path39.join)(candidateDir, "artifacts");
-  if (!(0, import_node_fs34.existsSync)(root)) return {};
+  const root = (0, import_node_path41.join)(candidateDir, "artifacts");
+  if (!(0, import_node_fs36.existsSync)(root)) return {};
   const out = {};
   const walk2 = (dir) => {
-    for (const e of (0, import_node_fs34.readdirSync)(dir, { withFileTypes: true })) {
-      const abs = (0, import_node_path39.join)(dir, e.name);
+    for (const e of (0, import_node_fs36.readdirSync)(dir, { withFileTypes: true })) {
+      const abs = (0, import_node_path41.join)(dir, e.name);
       if (e.isDirectory()) walk2(abs);
-      else if (e.isFile()) out[(0, import_node_path39.relative)(root, abs)] = (0, import_node_fs34.readFileSync)(abs, "utf8");
+      else if (e.isFile()) out[(0, import_node_path41.relative)(root, abs)] = (0, import_node_fs36.readFileSync)(abs, "utf8");
     }
   };
   walk2(root);
@@ -20375,13 +20488,13 @@ function classifyReproduce(stored, fresh, tol = 0.1) {
   return delta <= tol ? `REPRODUCED (\u0394score=${delta.toFixed(2)})` : `DIVERGED (stored=${stored.storedScore} fresh=${fresh.score}, \u0394=${delta.toFixed(2)})`;
 }
 async function runRejudge(runRoot, experimentPath) {
-  if (!(0, import_node_fs34.existsSync)(runRoot)) throw new Error(`optimize-role --rejudge: run dir not found: ${runRoot}`);
+  if (!(0, import_node_fs36.existsSync)(runRoot)) throw new Error(`optimize-role --rejudge: run dir not found: ${runRoot}`);
   console.log(`[rejudge] re-judging preserved outputs under ${runRoot}${experimentPath ? ` [experiment: ${experimentPath}]` : ""}`);
   const experiment = experimentPath ? loadExperimentConfig(experimentPath) : void 0;
   const experimentBundle = experiment ? replayBundleFromTurn(experiment.turn, experiment.ac) : void 0;
-  const chainDirs = (0, import_node_fs34.readdirSync)(runRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+  const chainDirs = (0, import_node_fs36.readdirSync)(runRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
   for (const handle of chainDirs) {
-    const chainDir = (0, import_node_path39.join)(runRoot, handle);
+    const chainDir = (0, import_node_path41.join)(runRoot, handle);
     const isDriver = handle in DRIVER_TURN_SPECS;
     const isBuildChain = handle in BUILD_ROLE_CHAINS;
     const chain = isDriver ? void 0 : isBuildChain ? BUILD_ROLE_CHAINS[handle] : ROLE_CHAINS[handle];
@@ -20401,28 +20514,28 @@ async function runRejudge(runRoot, experimentPath) {
       continue;
     }
     const outputFile = isDriver ? "app" : chain.outputFile;
-    const candDirs = (0, import_node_fs34.readdirSync)(chainDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    const candDirs = (0, import_node_fs36.readdirSync)(chainDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
     for (const candidateId of candDirs) {
-      const candDir = (0, import_node_path39.join)(chainDir, candidateId);
+      const candDir = (0, import_node_path41.join)(chainDir, candidateId);
       const producedArtifacts = loadPreservedArtifacts(candDir);
       if (Object.keys(producedArtifacts).length === 0) {
         console.log(`[rejudge] ${handle}/${candidateId}: NO preserved artifacts \u2013 cannot re-judge (output not preserved)`);
-        (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(candDir, "rejudge.json"), JSON.stringify({ handle, candidateId, rejudgeable: false, reason: "no preserved artifacts" }, null, 2) + "\n");
+        (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(candDir, "rejudge.json"), JSON.stringify({ handle, candidateId, rejudgeable: false, reason: "no preserved artifacts" }, null, 2) + "\n");
         continue;
       }
-      const stored = (0, import_node_fs34.existsSync)((0, import_node_path39.join)(candDir, "telemetry.json")) ? JSON.parse((0, import_node_fs34.readFileSync)((0, import_node_path39.join)(candDir, "telemetry.json"), "utf8")) : void 0;
+      const stored = (0, import_node_fs36.existsSync)((0, import_node_path41.join)(candDir, "telemetry.json")) ? JSON.parse((0, import_node_fs36.readFileSync)((0, import_node_path41.join)(candDir, "telemetry.json"), "utf8")) : void 0;
       const primary = producedArtifacts[outputFile];
       let verdict;
       try {
         verdict = await quality.judgeCandidate({ candidateId, primary, producedArtifacts });
       } catch (e) {
         console.log(`[rejudge] ${handle}/${candidateId}: judge threw: ${e instanceof Error ? e.message : String(e)}`);
-        (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(candDir, "rejudge.json"), JSON.stringify({ handle, candidateId, rejudgeable: true, error: e instanceof Error ? e.message : String(e) }, null, 2) + "\n");
+        (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(candDir, "rejudge.json"), JSON.stringify({ handle, candidateId, rejudgeable: true, error: e instanceof Error ? e.message : String(e) }, null, 2) + "\n");
         continue;
       }
       if (!verdict.passed && isMissingJudgeTarget(verdict.reason)) {
         console.log(`[rejudge] ${handle}/${candidateId}: NOT rejudgeable \u2013 judge target not preserved (${verdict.reason})`);
-        (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(candDir, "rejudge.json"), JSON.stringify({ handle, candidateId, rejudgeable: false, reason: `judge target not preserved: ${verdict.reason}` }, null, 2) + "\n");
+        (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(candDir, "rejudge.json"), JSON.stringify({ handle, candidateId, rejudgeable: false, reason: `judge target not preserved: ${verdict.reason}` }, null, 2) + "\n");
         continue;
       }
       const storedClass = stored?.classification;
@@ -20430,7 +20543,7 @@ async function runRejudge(runRoot, experimentPath) {
       const reproduce = classifyReproduce({ storedClass, storedScore }, { classification: verdict.classification, score: verdict.score });
       const hasStoredVerdict = storedClass !== void 0 || storedScore !== void 0;
       const report = { handle, candidateId, rejudgeable: true, fresh: { passed: verdict.passed, score: verdict.score, classification: verdict.classification, reason: verdict.reason }, stored: hasStoredVerdict ? { score: storedScore, classification: storedClass } : null, reproduce };
-      (0, import_node_fs34.writeFileSync)((0, import_node_path39.join)(candDir, "rejudge.json"), JSON.stringify(report, null, 2) + "\n");
+      (0, import_node_fs36.writeFileSync)((0, import_node_path41.join)(candDir, "rejudge.json"), JSON.stringify(report, null, 2) + "\n");
       console.log(`[rejudge] ${handle}/${candidateId}: fresh=${verdict.passed ? "PASS" : "FAIL"}${verdict.classification ? ` (${verdict.classification})` : ""}${verdict.score !== void 0 ? ` score=${verdict.score.toFixed(2)}` : ""} \u2013 ${reproduce}`);
     }
   }

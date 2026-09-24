@@ -3683,49 +3683,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse(serialize(base, options), options);
-        relative3 = parse(serialize(relative3, options), options);
+        relative4 = parse(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3733,7 +3733,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -6660,10 +6660,10 @@ var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
-var import_node_child_process2 = require("child_process");
-var import_node_crypto = require("crypto");
-var import_node_fs5 = require("fs");
-var import_node_path7 = require("path");
+var import_node_child_process4 = require("child_process");
+var import_node_crypto2 = require("crypto");
+var import_node_fs7 = require("fs");
+var import_node_path9 = require("path");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -6941,7 +6941,18 @@ var import_node_path2 = require("path");
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs2 = __toESM(require("fs"), 1);
+var import_node_child_process2 = require("child_process");
+var import_node_crypto = require("crypto");
 var import_node_path3 = require("path");
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
@@ -6964,6 +6975,17 @@ var path = __toESM(require("path"), 1);
 init_cjs_shims();
 var import_node_fs3 = require("fs");
 var import_node_path5 = require("path");
+
+// consort/architecture/migration-history-clean.ts
+init_cjs_shims();
+var import_node_child_process3 = require("child_process");
+var import_node_fs4 = require("fs");
+var import_node_path6 = require("path");
+
+// consort/architecture/test-smell-clean.ts
+init_cjs_shims();
+var import_node_fs5 = require("fs");
+var import_node_path7 = require("path");
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
@@ -7058,8 +7080,8 @@ async function classifyDeployVerifyFailure(failingNodeIds, runIsolated) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs4 = require("fs");
-var import_node_path6 = require("path");
+var import_node_fs6 = require("fs");
+var import_node_path8 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
@@ -7103,7 +7125,7 @@ function ephemeralVerifyBranchName(experimentBranch, nonce) {
 // consort/deploy/deploy.ts
 function readProjectInstance(projectDir) {
   try {
-    const m = (0, import_node_fs5.readFileSync)((0, import_node_path7.join)(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
+    const m = (0, import_node_fs7.readFileSync)((0, import_node_path9.join)(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
     return m ? m[1].replace(/^["']|["']$/g, "").trim() : void 0;
   } catch {
     return void 0;
@@ -7112,7 +7134,7 @@ function readProjectInstance(projectDir) {
 function readAppDatabaseName(projectDir) {
   let env;
   try {
-    env = (0, import_node_fs5.readFileSync)((0, import_node_path7.join)(projectDir, ".env"), "utf8");
+    env = (0, import_node_fs7.readFileSync)((0, import_node_path9.join)(projectDir, ".env"), "utf8");
   } catch {
     return void 0;
   }
@@ -7134,7 +7156,7 @@ async function runVerifyMaybeEphemeral(runVerify, cmd, projectDir, env, lakebase
   if (!instance || !lakebaseBranch) {
     return normalizeVerifyRun(runVerify(cmd, projectDir, env));
   }
-  const nonce = `${String(now().getTime()).slice(-7)}-${(0, import_node_crypto.randomBytes)(3).toString("hex")}`;
+  const nonce = `${String(now().getTime()).slice(-7)}-${(0, import_node_crypto2.randomBytes)(3).toString("hex")}`;
   const childName = ephemeralVerifyBranchName(lakebaseBranch, nonce);
   const database = readAppDatabaseName(projectDir);
   return withEphemeralVerifyBranch(
@@ -7255,7 +7277,7 @@ function logReleaseEngineerDeployOutcome(ctx, result) {
   }
 }
 function pidFile(projectDir, target) {
-  return (0, import_node_path7.join)(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
+  return (0, import_node_path9.join)(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
 }
 function normalizeVerifyRun(raw) {
   return typeof raw === "boolean" ? { passed: raw, output: "" } : { passed: raw.passed, output: raw.output ?? "" };
@@ -7266,7 +7288,7 @@ function verifyTimeoutMs() {
 function defaultRunVerify(cmd, cwd, env) {
   const timeout = verifyTimeoutMs();
   try {
-    const out = (0, import_node_child_process2.execSync)(cmd, { cwd, stdio: "pipe", env: env ?? process.env, timeout, killSignal: "SIGTERM" });
+    const out = (0, import_node_child_process4.execSync)(cmd, { cwd, stdio: "pipe", env: env ?? process.env, timeout, killSignal: "SIGTERM" });
     return { passed: true, output: out?.toString() ?? "" };
   } catch (err) {
     const e = err;
@@ -7284,14 +7306,14 @@ ${tail}
 function writeDeployEvidence(consortDir, evidence) {
   const fdir = findFeatureDir(consortDir, evidence.feature_id);
   if (!fdir) return void 0;
-  const dir = evidence.story_id ? (0, import_node_path7.join)(fdir, "stories", evidence.story_id) : fdir;
-  (0, import_node_fs5.mkdirSync)(dir, { recursive: true });
-  const file = (0, import_node_path7.join)(dir, "deploy-evidence.json");
-  (0, import_node_fs5.writeFileSync)(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
+  const dir = evidence.story_id ? (0, import_node_path9.join)(fdir, "stories", evidence.story_id) : fdir;
+  (0, import_node_fs7.mkdirSync)(dir, { recursive: true });
+  const file = (0, import_node_path9.join)(dir, "deploy-evidence.json");
+  (0, import_node_fs7.writeFileSync)(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
   return file;
 }
 function defaultStart(cmd, cwd, env) {
-  const child = (0, import_node_child_process2.spawn)("sh", ["-c", cmd], { cwd, detached: true, stdio: "ignore", env: env ?? process.env });
+  const child = (0, import_node_child_process4.spawn)("sh", ["-c", cmd], { cwd, detached: true, stdio: "ignore", env: env ?? process.env });
   child.unref();
   return child.pid ?? -1;
 }
@@ -7418,8 +7440,8 @@ async function deployToTarget(args) {
   }
   const pid = start(cfg.run, args.projectDir, env);
   const pf = pidFile(args.projectDir, args.targetName);
-  (0, import_node_fs5.mkdirSync)((0, import_node_path7.dirname)(pf), { recursive: true });
-  (0, import_node_fs5.writeFileSync)(pf, String(pid));
+  (0, import_node_fs7.mkdirSync)((0, import_node_path9.dirname)(pf), { recursive: true });
+  (0, import_node_fs7.writeFileSync)(pf, String(pid));
   const servingOk = args.servingOk ?? args.reachable ?? probeServingOk;
   const readyProbe = args.rejectForeignPort ? servingOk : reachable;
   const poll = await (0, import_util2.pollUntil)({
@@ -7536,8 +7558,8 @@ async function deployToTarget(args) {
 }
 function stopLocal(projectDir, targetName) {
   const pf = pidFile(projectDir, targetName);
-  if (!(0, import_node_fs5.existsSync)(pf)) return { stopped: false };
-  const pid = Number((0, import_node_fs5.readFileSync)(pf, "utf8").trim());
+  if (!(0, import_node_fs7.existsSync)(pf)) return { stopped: false };
+  const pid = Number((0, import_node_fs7.readFileSync)(pf, "utf8").trim());
   if (Number.isFinite(pid) && pid > 0) {
     try {
       process.kill(-pid);
@@ -7548,7 +7570,7 @@ function stopLocal(projectDir, targetName) {
       }
     }
   }
-  (0, import_node_fs5.rmSync)(pf, { force: true });
+  (0, import_node_fs7.rmSync)(pf, { force: true });
   return { stopped: true };
 }
 

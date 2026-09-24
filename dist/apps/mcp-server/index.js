@@ -3680,49 +3680,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse(serialize(base, options), options);
-        relative3 = parse(serialize(relative3, options), options);
+        relative4 = parse(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3730,7 +3730,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -6704,6 +6704,7 @@ var featureRequestMd = (tdd, f) => join(featureResolved(tdd, f), "feature-reques
 var featureTestListJson = (tdd, f) => join(featureResolved(tdd, f), "test-list.json");
 var pipelineJson = (tdd, f) => join(featureResolved(tdd, f), "pipeline.json");
 var featureDeployEvidenceJson = (tdd, f) => join(featureResolved(tdd, f), "deploy-evidence.json");
+var featureDeployReverifyMarkerJson = (tdd, f) => join(featureResolved(tdd, f), "deploy-reverify.json");
 var storiesDir = (tdd, f) => join(featureResolved(tdd, f), "stories");
 var storyDir = (tdd, f, s) => join(storiesDir(tdd, f), s);
 function findStoryDir(tdd, f, s) {
@@ -7013,8 +7014,8 @@ import {
 
 // consort/orchestrator/status/feature-status.ts
 init_esm_shims();
-import { existsSync as existsSync28, readFileSync as readFileSync30, readdirSync as readdirSync19, statSync as statSync11 } from "fs";
-import { dirname as dirname15, join as join25 } from "path";
+import { existsSync as existsSync30, readFileSync as readFileSync31, readdirSync as readdirSync20, statSync as statSync12 } from "fs";
+import { dirname as dirname16, join as join27 } from "path";
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_esm_shims();
@@ -7243,7 +7244,18 @@ import { join as join17 } from "path";
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs9 from "fs";
-import { join as join18 } from "path";
+import { execFileSync as execFileSync2 } from "child_process";
+import { createHash } from "crypto";
+import { dirname as dirname12, join as join18 } from "path";
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
@@ -7266,6 +7278,17 @@ import * as path8 from "path";
 init_esm_shims();
 import { existsSync as existsSync21, readFileSync as readFileSync22, readdirSync as readdirSync14, statSync as statSync7 } from "fs";
 import { join as join21, relative as relative2, extname as extname2 } from "path";
+
+// consort/architecture/migration-history-clean.ts
+init_esm_shims();
+import { execFileSync as execFileSync3 } from "child_process";
+import { existsSync as existsSync22 } from "fs";
+import { join as join22 } from "path";
+
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync23, readFileSync as readFileSync23, readdirSync as readdirSync15, statSync as statSync8 } from "fs";
+import { join as join23, relative as relative3, extname as extname3 } from "path";
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
@@ -7291,13 +7314,13 @@ function driverPhaseForTdd(tddPhase) {
 
 // consort/pipeline/design-fingerprint.ts
 init_esm_shims();
-import { createHash } from "crypto";
-import { readFileSync as readFileSync23 } from "fs";
+import { createHash as createHash2 } from "crypto";
+import { readFileSync as readFileSync24 } from "fs";
 
 // consort/gates/gates.ts
 init_esm_shims();
-import { existsSync as existsSync22, readFileSync as readFileSync24, renameSync, unlinkSync, writeFileSync as writeFileSync17 } from "fs";
-import { join as join22 } from "path";
+import { existsSync as existsSync24, readFileSync as readFileSync25, renameSync, unlinkSync, writeFileSync as writeFileSync17 } from "fs";
+import { join as join24 } from "path";
 var GATES_SCHEMA_VERSION = 1;
 var GATE_NAMES = ["spec", "plan", "test_list", "promote", "deploy"];
 var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
@@ -7317,10 +7340,10 @@ function defaultGatesState(featureId) {
 function readGates(featureId, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = gatesFilePath(consortDir, featureId);
-  if (!existsSync22(file)) {
+  if (!existsSync24(file)) {
     return defaultGatesState(featureId);
   }
-  const raw = readFileSync24(file, "utf8");
+  const raw = readFileSync25(file, "utf8");
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -7331,7 +7354,7 @@ function readGates(featureId, opts = {}) {
   return validateGatesState(parsed, file);
 }
 function gatesFilePath(consortDir, featureId) {
-  return join22(requireFeatureDir(consortDir, featureId), "gates.json");
+  return join24(requireFeatureDir(consortDir, featureId), "gates.json");
 }
 function validateGatesState(parsed, file) {
   if (typeof parsed !== "object" || parsed === null) {
@@ -7434,6 +7457,8 @@ function readDriveContext(consortDir, featureId, projectDir) {
   const backlogCommitted = requestsAuthored;
   const deployed = fs12.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
+  const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
+  const reverifyAttempted = fs12.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   const verifyAssessEligible = deployVerifyNeedsAssess(consortDir, featureId);
   const verifyRefactorPending = deployVerifyRefactorPending(consortDir, featureId);
   const proj = projectDir ?? path9.dirname(consortDir);
@@ -7461,9 +7486,17 @@ function readDriveContext(consortDir, featureId, projectDir) {
     breakdownDone,
     loop,
     planning: { intakeReady, intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated: hasEstimates(consortDir), backlogCommitted, requestsAuthored },
-    deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending },
+    deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending, verifyPassed, reverifyAttempted },
     promote
   };
+}
+function readDeployVerifyPassed(consortDir, featureId) {
+  try {
+    const ev = JSON.parse(fs12.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
+    return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : void 0;
+  } catch {
+    return void 0;
+  }
 }
 function readGateApproved(featureId, consortDir, gate) {
   try {
@@ -7475,7 +7508,7 @@ function readGateApproved(featureId, consortDir, gate) {
 
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync25, readFileSync as readFileSync27, writeFileSync as writeFileSync19, mkdirSync as mkdirSync18 } from "fs";
+import { appendFileSync, existsSync as existsSync27, readFileSync as readFileSync28, writeFileSync as writeFileSync19, mkdirSync as mkdirSync18 } from "fs";
 
 // consort/gates/registered-breakdown.ts
 init_esm_shims();
@@ -7486,18 +7519,18 @@ init_esm_shims();
 // consort/gates/design-spec-gate.ts
 function readPlan(consortDir, featureId, storyId) {
   const planPath = storyPlanJson(consortDir, featureId, storyId);
-  if (!existsSync25(planPath)) return null;
-  return JSON.parse(readFileSync27(planPath, "utf8"));
+  if (!existsSync27(planPath)) return null;
+  return JSON.parse(readFileSync28(planPath, "utf8"));
 }
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync27, readFileSync as readFileSync29, writeFileSync as writeFileSync20, mkdirSync as mkdirSync19, readdirSync as readdirSync18, statSync as statSync10, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync29, readFileSync as readFileSync30, writeFileSync as writeFileSync20, mkdirSync as mkdirSync19, readdirSync as readdirSync19, statSync as statSync11, rmSync as rmSync6 } from "fs";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync26, readFileSync as readFileSync28, readdirSync as readdirSync17, statSync as statSync9 } from "fs";
-import { join as join24, dirname as dirname14 } from "path";
+import { existsSync as existsSync28, readFileSync as readFileSync29, readdirSync as readdirSync18, statSync as statSync10 } from "fs";
+import { join as join26, dirname as dirname15 } from "path";
 
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
@@ -7514,24 +7547,24 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!existsSync27(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync29(p, "utf8"));
+  if (!existsSync29(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync30(p, "utf8"));
 }
 
 // consort/orchestrator/status/feature-status.ts
 var MAX_RECENT_LOG_ENTRIES = 5;
 function readJsonIfExists(path10) {
-  if (!existsSync28(path10)) return null;
-  return JSON.parse(readFileSync30(path10, "utf8"));
+  if (!existsSync30(path10)) return null;
+  return JSON.parse(readFileSync31(path10, "utf8"));
 }
 function listFeatureStories(consortDir, featureId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
-  if (!existsSync28(storiesDir2)) return [];
-  return readdirSync19(storiesDir2).filter((d) => statSync11(join25(storiesDir2, d)).isDirectory()).sort();
+  if (!existsSync30(storiesDir2)) return [];
+  return readdirSync20(storiesDir2).filter((d) => statSync12(join27(storiesDir2, d)).isDirectory()).sort();
 }
 function timelineCycleCount(experimentDir2) {
   const timeline = readJsonIfExists(
-    join25(experimentDir2, "timeline.json")
+    join27(experimentDir2, "timeline.json")
   );
   return timeline?.entries?.length ?? 0;
 }
@@ -7558,9 +7591,9 @@ function summarizeTestList(consortDir, featureId) {
   }
 }
 function readSelectionLogRecent(consortDir, limit) {
-  const path10 = join25(consortDir, "selection-log.md");
-  if (!existsSync28(path10)) return [];
-  const text = readFileSync30(path10, "utf8");
+  const path10 = join27(consortDir, "selection-log.md");
+  if (!existsSync30(path10)) return [];
+  const text = readFileSync31(path10, "utf8");
   const entries = [];
   const headingRe = /^##\s+(\S+T\S+?)\s+–\s+(.+?)$/gm;
   let match;
@@ -7587,7 +7620,7 @@ function readGatesSummary(consortDir, featureId) {
   }
 }
 function readWorkflowState2(consortDir) {
-  const state = readJsonIfExists(join25(consortDir, "workflow-state.json"));
+  const state = readJsonIfExists(join27(consortDir, "workflow-state.json"));
   if (!state) return { phase: null, pointer: null };
   return {
     phase: state.phase ?? null,
@@ -7634,7 +7667,7 @@ function readProgression(consortDir, featureId, projectDir) {
     return null;
   }
 }
-function getFeatureStatus(consortDir, featureId, projectDir = dirname15(consortDir)) {
+function getFeatureStatus(consortDir, featureId, projectDir = dirname16(consortDir)) {
   const plans = [];
   for (const storyId of listFeatureStories(consortDir, featureId)) {
     const p = readPlan(consortDir, featureId, storyId);

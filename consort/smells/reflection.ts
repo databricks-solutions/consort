@@ -147,7 +147,9 @@ export function recordReflectionGate(consortDir: string, feature: string, story:
   // ~90 min opus). An UNRECORDED severity (a verdict from an older kit) counts as
   // blocking, so a pre-severity verdict can never silently pass.
   const blocking = verdict.findings.filter((f) => (f.severity ?? "blocking") === "blocking");
-  if (blocking.length === 0) {
+  // Defensive: a FAILED verdict with NO findings at all is unknown, not advisory –
+  // it must still block (attributed to the spec author), never silently pass.
+  if (verdict.findings.length > 0 && blocking.length === 0) {
     // Advisory-only: pass the gate + self-clear any lingering open smells, exactly
     // like a passing verdict (the named defect is gone from the blocking set).
     for (const smell of REFLECT_SMELLS) {

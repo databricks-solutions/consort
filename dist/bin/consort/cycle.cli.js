@@ -3680,49 +3680,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse2(serialize(base, options), options);
-        relative3 = parse2(serialize(relative3, options), options);
+        relative4 = parse2(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3730,7 +3730,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -6761,7 +6761,7 @@ function readAcLayer(tdd, f, acId) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync16, readFileSync as readFileSync17, readdirSync as readdirSync11, statSync as statSync8, writeFileSync as writeFileSync11, mkdirSync as mkdirSync11, rmSync as rmSync5, copyFileSync } from "fs";
+import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync12, statSync as statSync9, writeFileSync as writeFileSync11, mkdirSync as mkdirSync11, rmSync as rmSync5, copyFileSync } from "fs";
 
 // consort/config/consort-env.ts
 init_esm_shims();
@@ -6793,7 +6793,7 @@ function warnLegacyEnv(legacyName, suffix) {
 }
 
 // consort/pipeline/cycle-record.ts
-import { join as join16, dirname as dirname6, basename } from "path";
+import { join as join18, dirname as dirname7, basename } from "path";
 
 // consort/test-list/test-list.ts
 init_esm_shims();
@@ -7388,7 +7388,7 @@ function writeSmellsLog(consortDir, hits) {
   const existing = existsSync7(file) ? JSON.parse(readFileSync7(file, "utf8")) : { detected: [] };
   const ts = (/* @__PURE__ */ new Date()).toISOString();
   const newEntries = hits.map((h) => ({ ...h, detected_at: ts }));
-  const merged = { detected: [...existing.detected, ...newEntries] };
+  const merged = { ...existing, detected: [...existing.detected, ...newEntries] };
   writeFileSync5(file, JSON.stringify(merged, null, 2) + "\n");
   return merged;
 }
@@ -8001,7 +8001,9 @@ function checkUxClean(args) {
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs4 from "fs";
-import { join as join12 } from "path";
+import { execFileSync as execFileSync2 } from "child_process";
+import { createHash } from "crypto";
+import { dirname as dirname5, join as join12 } from "path";
 function supersededTestsJson(tdd, feature, story, ac) {
   return join12(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
@@ -8048,18 +8050,51 @@ var MAX_REGRESSION_FIX_ATTEMPTS = 3;
 function greenFailureJson(tdd, feature, story, ac) {
   return join12(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+function computeTreeState(projectDir) {
+  try {
+    const headSha = execFileSync2("git", ["rev-parse", "HEAD"], { cwd: projectDir, encoding: "utf8" }).trim();
+    const porcelain = execFileSync2("git", ["status", "--porcelain"], { cwd: projectDir, encoding: "utf8" });
+    const codeLines = porcelain.split("\n").filter((l) => l.trim().length > 0).filter((l) => !TREE_STATE_EXCLUDE_PREFIXES.some((pfx) => l.slice(3).startsWith(pfx)));
+    const dirtySha = createHash("sha1").update(codeLines.join("\n")).digest("hex");
+    return { headSha, dirtySha };
+  } catch {
+    return void 0;
+  }
+}
 function readGreenFailure(tdd, feature, story, ac) {
   const file = greenFailureJson(tdd, feature, story, ac);
   if (!fs4.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs4.readFileSync(file, "utf8"));
+    const value = JSON.parse(fs4.readFileSync(file, "utf8"));
+    if (value.treeState) {
+      const cur = computeTreeState(dirname5(tdd));
+      if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
+        fs4.rmSync(file, { force: true });
+        return void 0;
+      }
+    }
+    return value;
   } catch {
     return void 0;
   }
 }
 function writeGreenFailure(tdd, feature, story, ac, value) {
+  let stamped = value;
+  if (stamped.treeState === void 0) {
+    const ts = computeTreeState(dirname5(tdd));
+    if (ts) stamped = { ...stamped, treeState: ts };
+  }
   fs4.mkdirSync(cycleDir(tdd, feature, story, ac), { recursive: true });
-  fs4.writeFileSync(greenFailureJson(tdd, feature, story, ac), JSON.stringify(value, null, 2) + "\n");
+  fs4.writeFileSync(greenFailureJson(tdd, feature, story, ac), JSON.stringify(stamped, null, 2) + "\n");
 }
 function clearGreenFailure(tdd, feature, story, ac) {
   fs4.rmSync(greenFailureJson(tdd, feature, story, ac), { force: true });
@@ -8397,6 +8432,222 @@ ${list}`;
   return { clean: false, violations, remediation };
 }
 
+// consort/architecture/migration-history-clean.ts
+init_esm_shims();
+import { execFileSync as execFileSync3 } from "child_process";
+import { existsSync as existsSync16 } from "fs";
+import { join as join16 } from "path";
+var DEFAULT_MIGRATION_DIRS3 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+var PARENT_CANDIDATES = [
+  "origin/staging",
+  "staging",
+  "origin/develop",
+  "origin/dev",
+  "develop",
+  "dev",
+  "origin/main",
+  "origin/master",
+  "main",
+  "master"
+];
+function git(args, cwd) {
+  return execFileSync3("git", args, { cwd, encoding: "utf8" }).trim();
+}
+function gitOk(args, cwd) {
+  try {
+    execFileSync3("git", args, { cwd, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+function resolveParentRef(projectDir, explicit) {
+  if (explicit) return gitOk(["rev-parse", "--verify", "--quiet", explicit], projectDir) ? explicit : void 0;
+  return PARENT_CANDIDATES.find((ref) => gitOk(["rev-parse", "--verify", "--quiet", ref], projectDir));
+}
+function checkShippedMigrationImmutable(args) {
+  const { projectDir } = args;
+  if (!existsSync16(join16(projectDir, ".git"))) {
+    return { clean: true, violations: [], skippedReason: "not a git repo" };
+  }
+  const parentRef = resolveParentRef(projectDir, args.parentRef);
+  if (!parentRef) {
+    return { clean: true, violations: [], skippedReason: "no parent-tier ref resolves" };
+  }
+  let base;
+  try {
+    base = git(["merge-base", "HEAD", parentRef], projectDir);
+  } catch {
+    return { clean: true, violations: [], skippedReason: `no common ancestor with ${parentRef}` };
+  }
+  if (!base) {
+    return { clean: true, violations: [], skippedReason: `no common ancestor with ${parentRef}` };
+  }
+  const migrationDirs = (args.migrationDirs ?? DEFAULT_MIGRATION_DIRS3).filter((d) => existsSync16(join16(projectDir, d)));
+  if (migrationDirs.length === 0) {
+    return { clean: true, violations: [], skippedReason: "no migration dirs present" };
+  }
+  const out = git(["diff", "--name-status", `${base}..HEAD`, "--", ...migrationDirs], projectDir);
+  const violations = [];
+  for (const line of out.split("\n")) {
+    if (!line) continue;
+    const [rawStatus, ...paths] = line.split("	");
+    const status = rawStatus[0];
+    if (status === "A") continue;
+    if (status === "M" || status === "D" || status === "R" || status === "T") {
+      violations.push({ status, file: paths[0] });
+    }
+  }
+  if (violations.length === 0) return { clean: true, violations: [] };
+  const list = violations.map((v) => `  ${v.status}  ${v.file}`).join("\n");
+  const reverts = violations.filter((v) => v.status === "M" || v.status === "T").map((v) => `  git checkout ${base.slice(0, 12)} -- ${v.file}`).join("\n");
+  const remediation = `SHIPPED-MIGRATION-IMMUTABILITY: the migration(s) below shipped with a MERGED feature and were mutated on this branch. A shipped migration is an immutable historical artifact: replaying the mutated history on any branch where the original already ran corrupts the schema (DuplicateObject / divergent schema). The only legal write here is ADDING a new migration for the current feature.
+Violations (vs fork point ${base.slice(0, 12)} with ${parentRef}):
+${list}
+` + (reverts ? `Revert each mutation (restore the shipped content, then re-apply your change as a NEW migration):
+${reverts}
+` : "") + (violations.some((v) => v.status === "D" || v.status === "R") ? `Restore deleted/renamed files from the fork point (git checkout ${base.slice(0, 12)} -- <path>).
+` : "") + `If a failing test REQUIRED this edit, the test's premise contradicts the shipped schema \u2013 do NOT bend history to green it. Revert, then flag the test as suspect (consort-cycle flag-superseded) or escalate to the human; never edit, delete, or rename a shipped migration.`;
+  return { clean: false, violations, remediation };
+}
+
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync17, readFileSync as readFileSync17, readdirSync as readdirSync11, statSync as statSync8 } from "fs";
+import { join as join17, relative as relative3, extname as extname3 } from "path";
+var DEFAULT_TEST_DIRS2 = ["tests", "client/tests"];
+var DEFAULT_MIGRATION_DIRS4 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+var EXCLUDE_DIR3 = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist)(\/|$)/;
+var TEST_FILE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs)$|\.py$/;
+function walk3(dir, keep, out = []) {
+  let entries;
+  try {
+    entries = readdirSync11(dir);
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const abs = join17(dir, e);
+    let st;
+    try {
+      st = statSync8(abs);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (!EXCLUDE_DIR3.test(abs)) walk3(abs, keep, out);
+    } else if (st.isFile() && keep(abs)) {
+      out.push(abs);
+    }
+  }
+  return out;
+}
+function collectKnownTables(projectDir, migrationDirs) {
+  const tables = /* @__PURE__ */ new Set();
+  const patterns = [
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?(\w+)/gi,
+    // SQL
+    /ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/gi,
+    // SQL
+    /op\.create_table\(\s*["'](\w+)["']/gi,
+    // Alembic
+    /createTable\(\s*["'](\w+)["']/gi
+    // Knex
+  ];
+  for (const md of migrationDirs) {
+    const abs = join17(projectDir, md);
+    if (!existsSync17(abs)) continue;
+    for (const file of walk3(abs, (p) => [".py", ".sql", ".js", ".ts"].includes(extname3(p)))) {
+      let body;
+      try {
+        body = readFileSync17(file, "utf8");
+      } catch {
+        continue;
+      }
+      for (const re of patterns) {
+        for (const m of body.matchAll(re)) tables.add(m[1].toLowerCase());
+      }
+    }
+  }
+  return tables;
+}
+var SMELL_FIX = {
+  "loose-locator": "scope the locator to a UNIQUE KEY (a row by its sku/id, e.g. getByRole('row', { name: sku })) and match exactly ({ exact: true } or a word-boundary/anchored regex) \u2013 a bare short literal or broad alternation substring-matches other cells and random-UUID digits, a flaky strict-mode collision that only shows at full-suite verify",
+  "vi-mock-tdz": "vi.mock factories hoist ABOVE top-level consts (TDZ ReferenceError, the suite then reports 0 tests) \u2013 build shared fixture data INSIDE the factory, or wrap it in vi.hoisted(() => {...})",
+  "framenavigated-reload-detector": "framenavigated fires for History-API (React Router) navigation too \u2013 assert the navigation STATE (page.url() / rendered content), never the event",
+  "delete-teardown": "a DELETE-based teardown breaks on append-only triggers and ON DELETE RESTRICT FKs, and can wipe a sibling story's seed \u2013 rely on per-run uuid keys for isolation (no cleanup); only delete rows the test itself created, scoped by those keys",
+  "broad-integrity-except": "`except IntegrityError` catches the UMBRELLA (unique + check + FK violations) and masks the real failure \u2013 a wrong table/column name then reads as the expected conflict. Catch the specific subclass (UniqueViolation / CheckViolation) or assert on the error message",
+  "schema-unsatisfiable-ref": "the test references a table NO migration creates, so it is unsatisfiable (UndefinedTable on every run) \u2013 fix the table name (see the known tables below) or add the migration; never paper it over with a broad except"
+};
+function checkTestSmells(args) {
+  const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS2;
+  const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS4);
+  const violations = [];
+  const push = (smell, file, line, text, extra) => violations.push({ smell, file, line, text: text.trim().slice(0, 200), detail: SMELL_FIX[smell] + (extra ? ` (${extra})` : "") });
+  for (const td of testDirs) {
+    const abs = join17(args.projectDir, td);
+    if (!existsSync17(abs)) continue;
+    for (const file of walk3(abs, (p) => TEST_FILE.test(p))) {
+      let lines;
+      try {
+        lines = readFileSync17(file, "utf8").split("\n");
+      } catch {
+        continue;
+      }
+      const rel = relative3(args.projectDir, file);
+      const body = lines.join("\n");
+      const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
+      const isPy = file.endsWith(".py");
+      if (isJs && body.includes("vi.mock(") && !body.includes("vi.hoisted")) {
+        const constBefore = body.match(/^const\s+(\w+)\s*=[\s\S]{0,400}?vi\.mock\(/m);
+        if (constBefore && new RegExp(`\\b${constBefore[1]}\\b`).test(body.slice(body.indexOf("vi.mock(")))) {
+          const idx = lines.findIndex((l) => l.includes("vi.mock("));
+          push("vi-mock-tdz", rel, idx + 1, lines[idx] ?? "vi.mock(", `const '${constBefore[1]}' is referenced by the factory`);
+        }
+      }
+      let teardownDepth = 0;
+      lines.forEach((text, i) => {
+        const line = i + 1;
+        if (/^\s*(afterEach|afterAll|teardown|tearDown|def\s+tear\w*|def\s+cleanup)\b/.test(text)) teardownDepth = 1;
+        else if (/^\s*(it|test|describe|beforeEach|beforeAll|def\s+\w+)\b/.test(text)) teardownDepth = 0;
+        if (isJs) {
+          const bare = text.match(/getBy(Text|Role)\(\s*["'`]([^"'`]{1,12})["'`]\s*\)/);
+          if (bare && (/^\d[\d.,%$]*$/.test(bare[2]) || bare[2].length <= 3)) {
+            push("loose-locator", rel, line, text, `bare ${bare[1]}("${bare[2]}") with no exact/scoping`);
+          }
+          const broadRe = text.match(/getBy(Text|Role)\(\s*\/([^/]*\|[^/]*)\/[a-z]*\s*\)/);
+          if (broadRe && /not found|error|404|invalid|success|delete|update/i.test(broadRe[2]) && !/\^|\$|\\b/.test(broadRe[2])) {
+            push("loose-locator", rel, line, text, `unanchored alternation /${broadRe[2]}/ substring-matches UUID digits + unrelated cells`);
+          }
+          if (/\.on\(\s*["']framenavigated["']/.test(text)) {
+            push("framenavigated-reload-detector", rel, line, text);
+          }
+        }
+        if (teardownDepth > 0 && /DELETE\s+FROM|deleteMany\(|\.delete\(\s*\{|TRUNCATE/i.test(text)) {
+          push("delete-teardown", rel, line, text);
+        }
+        if (isPy && /^\s*except\s*(IntegrityError|Exception)\b/.test(text)) {
+          push("broad-integrity-except", rel, line, text);
+        }
+        if (knownTables.size > 0) {
+          for (const m of text.matchAll(/\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+["'`]?(\w+)["'`]?/g)) {
+            const ref = m[1].toLowerCase();
+            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !knownTables.has(ref)) {
+              push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
+            }
+          }
+        }
+      });
+    }
+  }
+  if (violations.length === 0) return { clean: true, violations: [] };
+  const list = violations.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}
+      fix: ${v.detail}`).join("\n");
+  const remediation = `TEST-AUTHORING-SMELL: the test file(s) below carry authoring defects from the issue #199 catalog. The APP code is not the defect \u2013 do NOT route a Driver code repair; the test's AUTHOR fixes these in the test (a flaky strict-mode collision / TDZ / unsatisfiable table ref cannot be greened by changing the app):
+${list}`;
+  return { clean: false, violations, remediation };
+}
+
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -8424,7 +8675,7 @@ async function commitExperimentCode(projectDir, message) {
 }
 async function commitCycleWork(consortDir, message) {
   try {
-    await commitExperimentCode(dirname6(consortDir), message);
+    await commitExperimentCode(dirname7(consortDir), message);
   } catch (e) {
     if (e instanceof ProtectedBranchCommitError) throw e;
   }
@@ -8437,10 +8688,10 @@ function logCycleEvent2(consortDir, event) {
 }
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync16(file)) {
+  if (!existsSync18(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse(readFileSync17(file, "utf8"));
+  const data = JSON.parse(readFileSync18(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyExperiment(consortDir, featureId, story) {
@@ -8449,20 +8700,20 @@ function storyExperiment(consortDir, featureId, story) {
   return { slug: e?.experiment_slug, branch: e?.branch_id };
 }
 function storyCycles(consortDir, featureId, story) {
-  const base = join16(cyclesRootDir(consortDir), featureId, story);
-  if (!existsSync16(base)) return [];
+  const base = join18(cyclesRootDir(consortDir), featureId, story);
+  if (!existsSync18(base)) return [];
   const out = [];
-  for (const acDir of readdirSync11(base)) {
-    const dir = join16(base, acDir);
+  for (const acDir of readdirSync12(base)) {
+    const dir = join18(base, acDir);
     try {
-      if (!statSync8(dir).isDirectory()) continue;
+      if (!statSync9(dir).isDirectory()) continue;
     } catch {
       continue;
     }
-    for (const f of readdirSync11(dir)) {
+    for (const f of readdirSync12(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(readFileSync17(join16(dir, f), "utf8")));
+        out.push(JSON.parse(readFileSync18(join18(dir, f), "utf8")));
       } catch {
       }
     }
@@ -8543,6 +8794,10 @@ function isAuthExpiredSummary(summary) {
     summary
   );
 }
+function isProvisioningFaultSummary(summary) {
+  if (!summary) return false;
+  return /UndefinedTable|relation "[^"]+" does not exist|no such table|42P01|ECONNREFUSED/i.test(summary);
+}
 var defaultGreenVerifier = async ({ projectDir, branchId, cycleLayer }) => {
   const r = await ensureDeployedAndVerify({ projectDir, lakebaseBranch: branchId, cycleLayer });
   return { passed: r.passed, summary: r.summary, ...r.failureOutput ? { failureOutput: r.failureOutput } : {} };
@@ -8568,12 +8823,43 @@ async function greenOpenCycle(args) {
     branch_id: open.branch_id
   };
   const verify = args.verify ?? defaultGreenVerifier;
-  let result = await verify({ projectDir: dirname6(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+  let result = await verify({ projectDir: dirname7(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+  if (!result.passed && !consortEnv("REPLAY_BUILD_DIR") && isProvisioningFaultSummary(result.summary)) {
+    const retry = await verify({ projectDir: dirname7(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+    if (retry.passed) {
+      result = retry;
+    } else if (isProvisioningFaultSummary(retry.summary)) {
+      const escalation = writeEscalation(consortDir, {
+        source: "db-provisioning",
+        reason: `The verify of ${open.test_id} (${open.ac_id}) in ${featureId}/${story} fails with a DB-provisioning fault (the E2E app is serving an unmigrated or unreachable database: UndefinedTable / relation does not exist / connection refused), and a fresh-boot re-verify failed the same way. This is an INFRASTRUCTURE fault, NOT an app-code regression \u2013 do NOT repair app code. Remediate the provisioning: migrate the branch the app serves (\`uv run alembic upgrade head\` against the served branch's DSN), kill any stale server on the E2E ports (\`lsof -ti tcp:8000,5173 | xargs kill\`), then re-run the verify. (verify: ${retry.summary})`,
+        feature_id: featureId,
+        story_id: story,
+        ac_id: open.ac_id
+      });
+      return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, escalated: true, escalation, summary: retry.summary };
+    } else {
+      result = retry;
+    }
+  }
   if (result.passed && !consortEnv("REPLAY_BUILD_DIR")) {
     try {
-      const mig = checkMigrationAppClean({ projectDir: dirname6(consortDir) });
+      const mig = checkMigrationAppClean({ projectDir: dirname7(consortDir) });
       if (!mig.clean && mig.remediation) result = { passed: false, summary: mig.remediation };
     } catch {
+    }
+    if (result.passed) {
+      try {
+        const hist = checkShippedMigrationImmutable({ projectDir: dirname7(consortDir) });
+        if (!hist.clean && hist.remediation) result = { passed: false, summary: hist.remediation };
+      } catch {
+      }
+    }
+    if (result.passed) {
+      try {
+        const smells = checkTestSmells({ projectDir: dirname7(consortDir) });
+        if (!smells.clean && smells.remediation) result = { passed: false, summary: smells.remediation };
+      } catch {
+      }
     }
   }
   logCycleEvent2(consortDir, {
@@ -8608,9 +8894,9 @@ async function greenOpenCycle(args) {
       let contractRefs;
       let supersededTestRefs;
       try {
-        const contract = checkContractClean({ projectDir: dirname6(consortDir) });
+        const contract = checkContractClean({ projectDir: dirname7(consortDir) });
         if (!contract.clean && contract.remediation) contractRefs = contract.remediation;
-        const superseded = supersededTestCandidates({ projectDir: dirname6(consortDir) });
+        const superseded = supersededTestCandidates({ projectDir: dirname7(consortDir) });
         if (superseded.advisory) supersededTestRefs = superseded.advisory;
       } catch {
       }
@@ -8662,9 +8948,9 @@ async function greenOpenCycle(args) {
 }
 function readReview(consortDir, featureId, story, acId) {
   const f = acReviewJson(consortDir, featureId, story, acId);
-  if (!existsSync16(f)) return {};
+  if (!existsSync18(f)) return {};
   try {
-    return JSON.parse(readFileSync17(f, "utf8"));
+    return JSON.parse(readFileSync18(f, "utf8"));
   } catch {
     return {};
   }
@@ -8716,13 +9002,13 @@ function installBrandAsset(projectDir, consortDir, appIcon) {
   try {
     const base = basename(appIcon.install_to);
     const src = [
-      join16(designAssetsDir(consortDir), base),
-      join16(projectDir, appIcon.source),
-      join16(consortDir, appIcon.source)
-    ].find((p) => existsSync16(p));
+      join18(designAssetsDir(consortDir), base),
+      join18(projectDir, appIcon.source),
+      join18(consortDir, appIcon.source)
+    ].find((p) => existsSync18(p));
     if (!src) return false;
-    const dest = join16(projectDir, appIcon.install_to);
-    mkdirSync11(dirname6(dest), { recursive: true });
+    const dest = join18(projectDir, appIcon.install_to);
+    mkdirSync11(dirname7(dest), { recursive: true });
     copyFileSync(src, dest);
     return true;
   } catch {
@@ -8735,16 +9021,16 @@ function flagUxAdherenceIfDirty(consortDir, story) {
     let appIcon;
     try {
       const gp = designGuideJson(consortDir);
-      if (existsSync16(gp)) {
-        const guide = JSON.parse(readFileSync17(gp, "utf8"));
+      if (existsSync18(gp)) {
+        const guide = JSON.parse(readFileSync18(gp, "utf8"));
         const classes = Object.values(guide.components ?? {}).map((c) => typeof c?.class === "string" ? c.class : void 0).filter((c) => !!c);
         if (classes.length) designClasses = classes;
         if (guide.app_icon?.source && guide.app_icon?.install_to) appIcon = guide.app_icon;
       }
     } catch {
     }
-    if (appIcon) installBrandAsset(dirname6(consortDir), consortDir, appIcon);
-    const ux = checkUxClean({ projectDir: dirname6(consortDir), designClasses, appIcon });
+    if (appIcon) installBrandAsset(dirname7(consortDir), consortDir, appIcon);
+    const ux = checkUxClean({ projectDir: dirname7(consortDir), designClasses, appIcon });
     if (!ux.clean && !hasOpenSmell(consortDir, "ux-adherence", story)) {
       writeSmellsLog(consortDir, [{ smell: "ux-adherence", cycle_ids: [], detail: summarizeUxViolations(ux), story_id: story }]);
     }
@@ -8754,9 +9040,9 @@ function flagUxAdherenceIfDirty(consortDir, story) {
 function reviewAc(consortDir, featureId, story, acId) {
   let verdict = {};
   const vf = acReviewVerdictJson(consortDir, featureId, story, acId);
-  if (existsSync16(vf)) {
+  if (existsSync18(vf)) {
     try {
-      verdict = JSON.parse(readFileSync17(vf, "utf8"));
+      verdict = JSON.parse(readFileSync18(vf, "utf8"));
     } catch {
       verdict = {};
     }
@@ -8764,7 +9050,7 @@ function reviewAc(consortDir, featureId, story, acId) {
   const refactorRequested = verdict.refactor === true;
   const file = acReviewJson(consortDir, featureId, story, acId);
   const prior = readReview(consortDir, featureId, story, acId);
-  mkdirSync11(dirname6(file), { recursive: true });
+  mkdirSync11(dirname7(file), { recursive: true });
   writeFileSync11(
     file,
     JSON.stringify(
@@ -8791,7 +9077,7 @@ function reviewAc(consortDir, featureId, story, acId) {
 async function refactorAc(consortDir, featureId, story, acId, opts) {
   const exp = storyExperiment(consortDir, featureId, story);
   const verify = opts?.verify ?? defaultGreenVerifier;
-  const result = await verify({ projectDir: dirname6(consortDir), consortDir, featureId, story, branchId: exp.branch });
+  const result = await verify({ projectDir: dirname7(consortDir), consortDir, featureId, story, branchId: exp.branch });
   if (!result.passed) {
     const escalation = writeEscalation(consortDir, {
       source: "driver-refactor",
@@ -8804,7 +9090,7 @@ async function refactorAc(consortDir, featureId, story, acId, opts) {
   }
   const file = acReviewJson(consortDir, featureId, story, acId);
   const prior = readReview(consortDir, featureId, story, acId);
-  mkdirSync11(dirname6(file), { recursive: true });
+  mkdirSync11(dirname7(file), { recursive: true });
   writeFileSync11(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
   for (const d of readSmellsLog(consortDir).detected) {
     if (!d.resolution && isBuildRefactorRoutableSmell(d.smell) && (d.story_id === void 0 || d.story_id === story)) {
@@ -8824,9 +9110,9 @@ async function refactorAc(consortDir, featureId, story, acId, opts) {
 }
 function readStoryReview(consortDir, featureId, story) {
   const f = storyReviewJson(consortDir, featureId, story);
-  if (!existsSync16(f)) return {};
+  if (!existsSync18(f)) return {};
   try {
-    return JSON.parse(readFileSync17(f, "utf8"));
+    return JSON.parse(readFileSync18(f, "utf8"));
   } catch {
     return {};
   }
@@ -8834,9 +9120,9 @@ function readStoryReview(consortDir, featureId, story) {
 function reviewStory(consortDir, featureId, story) {
   let verdict = {};
   const vf = storyReviewVerdictJson(consortDir, featureId, story);
-  if (existsSync16(vf)) {
+  if (existsSync18(vf)) {
     try {
-      verdict = JSON.parse(readFileSync17(vf, "utf8"));
+      verdict = JSON.parse(readFileSync18(vf, "utf8"));
     } catch {
       verdict = {};
     }
@@ -8844,7 +9130,7 @@ function reviewStory(consortDir, featureId, story) {
   const refactorRequested = verdict.refactor === true;
   const file = storyReviewJson(consortDir, featureId, story);
   const prior = readStoryReview(consortDir, featureId, story);
-  mkdirSync11(dirname6(file), { recursive: true });
+  mkdirSync11(dirname7(file), { recursive: true });
   writeFileSync11(
     file,
     JSON.stringify(
@@ -8871,13 +9157,13 @@ function reviewStory(consortDir, featureId, story) {
 async function refactorStory(consortDir, featureId, story, opts) {
   const exp = storyExperiment(consortDir, featureId, story);
   const verify = opts?.verify ?? defaultGreenVerifier;
-  const result = await verify({ projectDir: dirname6(consortDir), consortDir, featureId, story, branchId: exp.branch });
+  const result = await verify({ projectDir: dirname7(consortDir), consortDir, featureId, story, branchId: exp.branch });
   if (!result.passed) {
     const rf = readRefactorVerifyAssessMarker(consortDir, featureId, story);
     if (!rf?.assessed) {
       let supersededAdvisory;
       try {
-        const superseded = supersededTestCandidates({ projectDir: dirname6(consortDir) });
+        const superseded = supersededTestCandidates({ projectDir: dirname7(consortDir) });
         if (superseded.advisory) supersededAdvisory = superseded.advisory;
       } catch {
       }
@@ -8898,7 +9184,7 @@ async function refactorStory(consortDir, featureId, story, opts) {
   clearRefactorVerifyAssessMarker(consortDir, featureId, story);
   const file = storyReviewJson(consortDir, featureId, story);
   const prior = readStoryReview(consortDir, featureId, story);
-  mkdirSync11(dirname6(file), { recursive: true });
+  mkdirSync11(dirname7(file), { recursive: true });
   writeFileSync11(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
   for (const d of readSmellsLog(consortDir).detected) {
     if (!d.resolution && isBuildRefactorRoutableSmell(d.smell) && (d.story_id === void 0 || d.story_id === story)) {
@@ -8919,16 +9205,16 @@ async function refactorStory(consortDir, featureId, story, opts) {
 
 // consort/smells/reflection.ts
 init_esm_shims();
-import { existsSync as existsSync17, readFileSync as readFileSync18, writeFileSync as writeFileSync12, mkdirSync as mkdirSync12, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync19, readFileSync as readFileSync19, writeFileSync as writeFileSync12, mkdirSync as mkdirSync12, rmSync as rmSync6 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
-  if (!existsSync17(p)) return void 0;
+  if (!existsSync19(p)) return void 0;
   try {
-    return JSON.parse(readFileSync18(p, "utf8"));
+    return JSON.parse(readFileSync19(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -8944,10 +9230,17 @@ function recordReflectionGate(consortDir, feature, story) {
     }
     return [];
   }
-  const owners = new Set(verdict.findings.map((f) => f.owner));
+  const blocking = verdict.findings.filter((f) => (f.severity ?? "blocking") === "blocking");
+  if (verdict.findings.length > 0 && blocking.length === 0) {
+    for (const smell of REFLECT_SMELLS) {
+      resolveOpenSmells(consortDir, smell, { story_id: story, kind: "cleared", note: "only advisory findings remain (issue #201)" });
+    }
+    return [];
+  }
+  const owners = new Set(blocking.map((f) => f.owner));
   if (owners.size === 0) owners.add("spec-author");
   const hits = [...owners].map((owner) => {
-    const detail = verdict.findings.filter((f) => f.owner === owner).map((f) => f.detail).join("; ");
+    const detail = blocking.filter((f) => f.owner === owner).map((f) => f.detail).join("; ");
     return {
       smell: SMELL_FOR_OWNER[owner],
       cycle_ids: [],

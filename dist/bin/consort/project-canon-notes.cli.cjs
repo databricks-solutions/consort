@@ -6942,7 +6942,7 @@ function writeSmellsLog(consortDir2, hits) {
   const existing = (0, import_fs3.existsSync)(file) ? JSON.parse((0, import_fs3.readFileSync)(file, "utf8")) : { detected: [] };
   const ts = (/* @__PURE__ */ new Date()).toISOString();
   const newEntries = hits.map((h) => ({ ...h, detected_at: ts }));
-  const merged = { detected: [...existing.detected, ...newEntries] };
+  const merged = { ...existing, detected: [...existing.detected, ...newEntries] };
   (0, import_fs3.writeFileSync)(file, JSON.stringify(merged, null, 2) + "\n");
   return merged;
 }

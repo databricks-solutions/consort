@@ -1,4 +1,4 @@
-import { D as DriveState, W as WorkflowAction } from '../../workflow-vocabulary-6_0e61c0.cjs';
+import { D as DriveState, W as WorkflowAction } from '../../workflow-vocabulary-BcVQ-ETk.cjs';
 import { T as TurnKey } from '../../step-key-QKMQdPvM.cjs';
 
 interface TurnUsage {
@@ -248,6 +248,9 @@ interface ParsedArgs {
     gates?: string;
     noSizing?: boolean;
     help?: boolean;
+    /** Halt the running drive + its whole process tree (reads the pid the drive
+     *  recorded for ITSELF in .consort/drive.pid; issue #204.3). */
+    stop?: boolean;
 }
 /** A deterministic CLI effect (a kit SCM bin – wait-ci / merge / prepare-pr / deploy ,
  *  or any command the drive spawns) exited non-zero. Carries the bin + exit code so the

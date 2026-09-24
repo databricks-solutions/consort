@@ -3680,49 +3680,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse2(serialize(base, options), options);
-        relative3 = parse2(serialize(relative3, options), options);
+        relative4 = parse2(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3730,7 +3730,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -7783,8 +7783,8 @@ function healAndReportStoryNarrative(consortDir, featureId) {
 
 // consort/orchestrator/status/revise.ts
 init_esm_shims();
-import { existsSync as existsSync19, readFileSync as readFileSync21, writeFileSync as writeFileSync12, mkdirSync as mkdirSync11, readdirSync as readdirSync13, rmSync as rmSync8 } from "fs";
-import { join as join21, dirname as dirname11 } from "path";
+import { existsSync as existsSync21, readFileSync as readFileSync22, writeFileSync as writeFileSync12, mkdirSync as mkdirSync11, readdirSync as readdirSync14, rmSync as rmSync8 } from "fs";
+import { join as join23, dirname as dirname12 } from "path";
 
 // consort/smells/smells.ts
 init_esm_shims();
@@ -8018,6 +8018,19 @@ var REFLECT_SMELL_NAMES = /* @__PURE__ */ new Set([
 function isReflectSmell(name) {
   return REFLECT_SMELL_NAMES.has(name);
 }
+function bumpReflectReviseCount(consortDir, story_id) {
+  const file = join11(consortDir, "smells.json");
+  if (!existsSync8(file)) return;
+  const log = JSON.parse(readFileSync9(file, "utf8"));
+  log.reflect_revise_count = log.reflect_revise_count ?? {};
+  if (log.reflect_revise_count[story_id] === void 0) {
+    log.reflect_revise_count[story_id] = log.detected.filter(
+      (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
+    ).length;
+  }
+  log.reflect_revise_count[story_id] += 1;
+  writeFileSync4(file, JSON.stringify(log, null, 2) + "\n");
+}
 function storyTestListFingerprint(consortDir, featureId, story_id) {
   const f = storyTestListJson(consortDir, featureId, story_id);
   if (!existsSync8(f)) return "";
@@ -8059,8 +8072,8 @@ var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync18, readFileSync as readFileSync20, readdirSync as readdirSync12, statSync as statSync8, writeFileSync as writeFileSync11, mkdirSync as mkdirSync10, rmSync as rmSync7, copyFileSync } from "fs";
-import { join as join20, dirname as dirname10, basename as basename3 } from "path";
+import { existsSync as existsSync20, readFileSync as readFileSync21, readdirSync as readdirSync13, statSync as statSync9, writeFileSync as writeFileSync11, mkdirSync as mkdirSync10, rmSync as rmSync7, copyFileSync } from "fs";
+import { join as join22, dirname as dirname11, basename as basename3 } from "path";
 
 // consort/deploy/deploy.ts
 init_esm_shims();
@@ -8131,7 +8144,18 @@ import { join as join15 } from "path";
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs4 from "fs";
-import { join as join16 } from "path";
+import { execFileSync as execFileSync2 } from "child_process";
+import { createHash as createHash3 } from "crypto";
+import { dirname as dirname9, join as join16 } from "path";
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
@@ -8155,21 +8179,32 @@ init_esm_shims();
 import { existsSync as existsSync17, readFileSync as readFileSync19, readdirSync as readdirSync11, statSync as statSync7 } from "fs";
 import { join as join19, relative as relative2, extname as extname2 } from "path";
 
+// consort/architecture/migration-history-clean.ts
+init_esm_shims();
+import { execFileSync as execFileSync3 } from "child_process";
+import { existsSync as existsSync18 } from "fs";
+import { join as join20 } from "path";
+
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync19, readFileSync as readFileSync20, readdirSync as readdirSync12, statSync as statSync8 } from "fs";
+import { join as join21, relative as relative3, extname as extname3 } from "path";
+
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 function resetStoryBuildState(consortDir, featureId, story) {
-  const cyclesDir = join20(cyclesRootDir(consortDir), featureId, story);
+  const cyclesDir = join22(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
-  if (existsSync18(cyclesDir)) {
+  if (existsSync20(cyclesDir)) {
     rmSync7(cyclesDir, { recursive: true, force: true });
     cyclesCleared = true;
   }
   let testItemsReset = 0;
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (existsSync18(tlPath)) {
+  if (existsSync20(tlPath)) {
     try {
-      const tl = JSON.parse(readFileSync20(tlPath, "utf8"));
+      const tl = JSON.parse(readFileSync21(tlPath, "utf8"));
       for (const item of tl.items ?? []) {
         if (item.status && item.status !== "pending") {
           item.status = "pending";
@@ -8189,9 +8224,9 @@ function staleStoryArtifactsForRevise(consortDir, featureId, story, gate) {
   clearReflectVerdict(consortDir, featureId, story);
   const acIds = new Set(storyAcIds(consortDir, featureId, story));
   const master = featureTestListJson(consortDir, featureId);
-  if (existsSync19(master)) {
+  if (existsSync21(master)) {
     try {
-      const data = JSON.parse(readFileSync21(master, "utf8"));
+      const data = JSON.parse(readFileSync22(master, "utf8"));
       if (Array.isArray(data.items)) {
         data.items = data.items.filter((it) => !it.ac_id || !acIds.has(it.ac_id));
         writeFileSync12(master, JSON.stringify(data, null, 2) + "\n");
@@ -8200,7 +8235,7 @@ function staleStoryArtifactsForRevise(consortDir, featureId, story, gate) {
     }
   }
   const perStory = storyTestListJson(consortDir, featureId, story);
-  if (existsSync19(perStory)) rmSync8(perStory, { force: true });
+  if (existsSync21(perStory)) rmSync8(perStory, { force: true });
   if (gate === "spec") {
     clearStoryAcs(consortDir, featureId, story);
   } else if (gate === "architecture") {
@@ -8209,9 +8244,9 @@ function staleStoryArtifactsForRevise(consortDir, featureId, story, gate) {
 }
 function clearStoryAcs(consortDir, featureId, story) {
   const dir = acsDir(consortDir, featureId, story);
-  if (!existsSync19(dir)) return;
-  for (const f of readdirSync13(dir)) {
-    if (f.endsWith(".json") || f.endsWith(".md")) rmSync8(join21(dir, f), { force: true });
+  if (!existsSync21(dir)) return;
+  for (const f of readdirSync14(dir)) {
+    if (f.endsWith(".json") || f.endsWith(".md")) rmSync8(join23(dir, f), { force: true });
   }
 }
 function hasOpenReflectSpecDefect(consortDir, story) {
@@ -8227,12 +8262,12 @@ function hasOpenReflectSpecDefect(consortDir, story) {
 }
 function clearArchitecturalNotes(consortDir, featureId, story) {
   const dir = acsDir(consortDir, featureId, story);
-  if (!existsSync19(dir)) return;
-  for (const f of readdirSync13(dir)) {
+  if (!existsSync21(dir)) return;
+  for (const f of readdirSync14(dir)) {
     if (!f.endsWith(".json")) continue;
-    const p = join21(dir, f);
+    const p = join23(dir, f);
     try {
-      const ac = JSON.parse(readFileSync21(p, "utf8"));
+      const ac = JSON.parse(readFileSync22(p, "utf8"));
       if ("architectural_notes" in ac) {
         delete ac.architectural_notes;
         writeFileSync12(p, JSON.stringify(ac, null, 2) + "\n");
@@ -8274,7 +8309,7 @@ function applyReviseSelfHeal(args) {
   staleStoryArtifactsForRevise(consortDir, args.featureId, args.story, args.gate);
   try {
     const hb = handbackFile(consortDir, args.featureId, args.routedTo, args.story);
-    mkdirSync11(dirname11(hb), { recursive: true });
+    mkdirSync11(dirname12(hb), { recursive: true });
     writeFileSync12(hb, composeReviseBrief({ smell: args.smell, gate: args.gate, reason: args.reason }));
   } catch {
   }
@@ -8288,13 +8323,14 @@ function applyReviseSelfHeal(args) {
       if (role === args.routedTo) continue;
       try {
         const hb = handbackFile(consortDir, args.featureId, role, args.story);
-        mkdirSync11(dirname11(hb), { recursive: true });
+        mkdirSync11(dirname12(hb), { recursive: true });
         const gate = role === "architect-reviewer" ? "architecture" : role === "spec-author" ? "spec" : "test_list";
         writeFileSync12(hb, composeReviseBrief({ smell: args.smell, gate, reason: args.reason }));
       } catch {
       }
     }
   }
+  if (reflect) bumpReflectReviseCount(consortDir, args.story);
   const resolvedSmell = reflect ? resolveOpenReflectSmellsForStory(
     consortDir,
     args.story,

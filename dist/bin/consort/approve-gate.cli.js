@@ -8434,6 +8434,28 @@ function fitnessClauseCoverageReason(consortDir, featureId, testListJson) {
   const r = checkFitnessClauseCoverage(testListJson, arch);
   return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
 }
+function acReferenceReason(consortDir, featureId, testListJson) {
+  const storiesDir2 = join12(featureResolved(consortDir, featureId), "stories");
+  if (!existsSync13(storiesDir2)) return null;
+  const known = /* @__PURE__ */ new Set();
+  for (const story of readdirSync7(storiesDir2)) {
+    const acsDir2 = join12(storiesDir2, story, "acs");
+    if (!existsSync13(acsDir2)) continue;
+    for (const f of readdirSync7(acsDir2)) {
+      if (f.endsWith(".json")) known.add(f.replace(/\.json$/, ""));
+    }
+  }
+  if (known.size === 0) return null;
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch {
+    return null;
+  }
+  const dangling = (tl.items ?? []).filter((i) => typeof i.ac_id === "string" && !known.has(i.ac_id));
+  if (dangling.length === 0) return null;
+  return `test-list ac_id references failed: ${dangling.map((i) => `${i.id ?? "?"} -> '${i.ac_id}'`).join("; ")} do not resolve to any AC file under stories/*/acs/ (issue #199's mistagging class: an item attached to a non-existent AC anchors nothing, and the story it was meant to cover ships uncovered). Re-point each at the correct existing AC id.`;
+}
 function e2eCoverageReason(consortDir, featureId, testListJson) {
   const storiesDir2 = join12(featureDir2(consortDir, featureId), "stories");
   if (!existsSync13(storiesDir2)) return null;
@@ -8657,6 +8679,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       const conf = withConformance(inputs);
       if ("reason" in conf) return conf;
       if (tlJson !== void 0) {
+        const acRefReason = acReferenceReason(consortDir, featureId, tlJson);
+        if (acRefReason !== null) return { reason: acRefReason };
         const fitnessReason = fitnessCoverageReason(consortDir, featureId, tlJson);
         if (fitnessReason !== null) return { reason: fitnessReason };
         const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
@@ -8691,7 +8715,9 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         return { reason: "deploy-evidence records reachable=false (app not reachable on the target)" };
       }
       if (parsed.verify?.passed !== true) {
-        return { reason: "deploy-evidence records verify.passed=false (feature-verify did not pass against the running app)" };
+        return {
+          reason: `deploy-evidence records verify.passed=false (feature-verify did not pass against the running app). An approve cannot clear stale failed evidence (issue #198): fix the cause, then re-run the deploy \`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale deploy server first: \`lsof -tiTCP:8000 | xargs kill\`) to rewrite the evidence, and approve then.`
+        };
       }
       return withConformance({ "deploy-evidence.json": evidence });
     }

@@ -3680,49 +3680,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse(serialize(base, options), options);
-        relative3 = parse(serialize(relative3, options), options);
+        relative4 = parse(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3730,7 +3730,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -7302,8 +7302,8 @@ import { mergePaired } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync15, readFileSync as readFileSync16, readdirSync as readdirSync11, statSync as statSync8, writeFileSync as writeFileSync9, mkdirSync as mkdirSync10, rmSync as rmSync6, copyFileSync } from "fs";
-import { join as join17, dirname as dirname9, basename } from "path";
+import { existsSync as existsSync17, readFileSync as readFileSync17, readdirSync as readdirSync12, statSync as statSync9, writeFileSync as writeFileSync9, mkdirSync as mkdirSync10, rmSync as rmSync6, copyFileSync } from "fs";
+import { join as join19, dirname as dirname10, basename } from "path";
 
 // consort/deploy/deploy.ts
 init_esm_shims();
@@ -7350,7 +7350,18 @@ import { join as join12 } from "path";
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs4 from "fs";
-import { join as join13 } from "path";
+import { execFileSync as execFileSync2 } from "child_process";
+import { createHash } from "crypto";
+import { dirname as dirname8, join as join13 } from "path";
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
@@ -7373,6 +7384,17 @@ import * as path3 from "path";
 init_esm_shims();
 import { existsSync as existsSync14, readFileSync as readFileSync15, readdirSync as readdirSync10, statSync as statSync7 } from "fs";
 import { join as join16, relative as relative2, extname as extname2 } from "path";
+
+// consort/architecture/migration-history-clean.ts
+init_esm_shims();
+import { execFileSync as execFileSync3 } from "child_process";
+import { existsSync as existsSync15 } from "fs";
+import { join as join17 } from "path";
+
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync16, readFileSync as readFileSync16, readdirSync as readdirSync11, statSync as statSync8 } from "fs";
+import { join as join18, relative as relative3, extname as extname3 } from "path";
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
@@ -7404,17 +7426,17 @@ async function commitDriveStateForAccept(projectDir, message) {
   return commitAllIfChanged({ cwd: projectDir, message, untrackedAllow: [] });
 }
 function resetStoryBuildState(consortDir, featureId, story) {
-  const cyclesDir = join17(cyclesRootDir(consortDir), featureId, story);
+  const cyclesDir = join19(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
-  if (existsSync15(cyclesDir)) {
+  if (existsSync17(cyclesDir)) {
     rmSync6(cyclesDir, { recursive: true, force: true });
     cyclesCleared = true;
   }
   let testItemsReset = 0;
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (existsSync15(tlPath)) {
+  if (existsSync17(tlPath)) {
     try {
-      const tl = JSON.parse(readFileSync16(tlPath, "utf8"));
+      const tl = JSON.parse(readFileSync17(tlPath, "utf8"));
       for (const item of tl.items ?? []) {
         if (item.status && item.status !== "pending") {
           item.status = "pending";
@@ -7471,8 +7493,8 @@ async function mergeAndAcceptStory(args, ops = realExperimentOps) {
 
 // consort/pipeline/design-fingerprint.ts
 init_esm_shims();
-import { createHash } from "crypto";
-import { readFileSync as readFileSync17 } from "fs";
+import { createHash as createHash2 } from "crypto";
+import { readFileSync as readFileSync18 } from "fs";
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -7491,11 +7513,11 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = readFileSync17(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = readFileSync18(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
-    return createHash("sha256").update(canonical).digest("hex").slice(0, 16);
+    return createHash2("sha256").update(canonical).digest("hex").slice(0, 16);
   } catch {
     return void 0;
   }
