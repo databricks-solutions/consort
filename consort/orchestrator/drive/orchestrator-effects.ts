@@ -1182,6 +1182,7 @@ const SCM_PREPARE_PR_BIN = "lakebase-scm-prepare-pr";
 const SCM_WAIT_CI_BIN = "lakebase-scm-wait-ci";
 const SCM_MERGE_BIN = "lakebase-scm-merge";
 const MIGRATION_HISTORY_CLEAN_BIN = "consort-migration-history-clean";
+const UX_CLEAN_BIN = "consort-ux-clean";
 
 // A story runs ONE experiment by default (N=1); these derive its slug + branch
 // name. `cut` and `accept` (merge) BOTH compute them from here, so the branch
@@ -1797,6 +1798,12 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
       // let an interactive human run only the state half and strand the code.
       // collapseMigrationHeads still runs at the later feature->tier merge.
       return [
+        // The ux-adherence acceptance gate (fail-closed): a design-guide-declared
+        // brand icon, or an unreachable/bare feature page, must be APPLIED before a
+        // story is accepted – the "accepted" waive path must not ship the scaffold
+        // placeholder while the guide declares a brand (the stockflow S1 gap: the
+        // smell resolved "accepted" and the placeholder favicon shipped).
+        { kind: "cli", bin: UX_CLEAN_BIN, args: ["--project-dir", cfg.projectDir] },
         {
           kind: "cli",
           bin: PIPELINE_BIN,

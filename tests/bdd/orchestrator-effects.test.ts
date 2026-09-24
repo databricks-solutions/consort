@@ -658,8 +658,12 @@ describe("commandsForAction: state transitions -> kit CLIs", () => {
     // code. `pipeline accept` now does the git-merge itself (resolving slug/branches
     // from the experiment record); the orchestrator supplies instance + project-dir.
     const cmds = commandsForAction({ kind: "accept", story: "S1" }, cfg({ instance: "inst-x" }));
-    expect(cmds).toHaveLength(1);
-    const c = cmds[0] as { bin: string; args: string[] };
+    // The ux-adherence acceptance gate runs FIRST (fail-closed): a dirty UX (an
+    // unapplied design-guide brand icon, an unreachable/bare page) blocks acceptance;
+    // the pipeline accept performs the merge only once the gate is clean.
+    expect(cmds).toHaveLength(2);
+    expect(cmds[0]).toMatchObject({ kind: "cli", bin: "consort-ux-clean" });
+    const c = cmds[1] as { bin: string; args: string[] };
     expect(c.bin).toBe("consort-pipeline");
     expect(c.args[0]).toBe("accept");
     expect(c.args).toContain("--story");
@@ -755,10 +759,11 @@ describe("buildDriveEffects", () => {
     const { runner, calls } = recordingRunner();
     const eff = buildDriveEffects(cfg({ runner, consortDir }));
     await eff.perform({ kind: "accept", story: "S1" });
-    // accept is now ONE command: pipeline accept (which performs the merge + records).
-    expect(calls).toHaveLength(1);
-    expect((calls[0] as { bin: string }).bin).toBe("consort-pipeline");
-    expect((calls[0] as { args: string[] }).args[0]).toBe("accept");
+    // The ux-adherence gate runs first, then pipeline accept performs the merge.
+    expect(calls).toHaveLength(2);
+    expect((calls[0] as { bin: string }).bin).toBe("consort-ux-clean");
+    expect((calls[1] as { bin: string }).bin).toBe("consort-pipeline");
+    expect((calls[1] as { args: string[] }).args[0]).toBe("accept");
   });
 
   it("readState rebuilds a DriveState from pipeline.json + workflow-state", async () => {

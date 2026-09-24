@@ -19,7 +19,8 @@
 // card, btn, ...); when omitted, ANY className counts as a design signal (the
 // conservative default – only truly class-less + var-less pages are flagged).
 
-import { checkUxClean, summarizeUxViolations, UX_CLEAN_REMEDIATION } from "../../consort/architecture/design-adherence.js";
+import { checkUxClean, summarizeUxViolations, readAppIconFromGuide, UX_CLEAN_REMEDIATION } from "../../consort/architecture/design-adherence.js";
+import { join } from "node:path";
 
 interface Parsed {
   projectDir: string;
@@ -53,10 +54,17 @@ function help(): never {
 }
 
 const p = parse(process.argv.slice(2));
+// Resolve the design guide's declared brand app_icon so the icon contract runs in
+// the CLI too (it previously ran ONLY from the review-cycle scan, which passes the
+// icon explicitly) – a declared-but-unapplied brand icon must fail THIS gate, at
+// acceptance, not only surface as an advisory smell.
+const appIcon = readAppIconFromGuide(join(p.projectDir, ".consort"));
+
 const result = checkUxClean({
   projectDir: p.projectDir,
   ...(p.clientSrc ? { clientSrcDir: p.clientSrc } : {}),
   ...(p.designClasses.length ? { designClasses: p.designClasses } : {}),
+  ...(appIcon ? { appIcon } : {}),
 });
 
 if (p.json) {
