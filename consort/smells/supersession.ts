@@ -190,6 +190,14 @@ export interface GreenFailure {
    *  test tree for them. Advisory, present only when a dropped symbol is referenced
    *  by a prior test. */
   supersededTestRefs?: string;
+  /** DETERMINISTIC test-authoring-smell advisory recorded at the FIRST GREEN-failure
+   *  when checkTestSmells localized a known smell (broad-integrity-except, delete-
+   *  teardown, loose-locator, ...) with its exact per-occurrence fix. These smells are
+   *  SURGICALLY driver-fixable IN PLACE (narrow the catch, drop the pointless teardown,
+   *  scope the locator) – they are NOT spec-defects, so the assess must record a
+   *  driver fixDirective (path (b)), never a design-lane reopen (the F1 conftest / F6
+   *  test_contract_migration churn). Advisory, present only when a smell was found. */
+  testSmellRefs?: string;
   /** True once the Driver has consumed its repair attempt FOR THE CURRENT assess
    *  round (bounds one assess to one repair; cleared by a re-arm between rounds). */
   repairAttempted?: boolean;

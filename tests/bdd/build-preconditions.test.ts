@@ -96,6 +96,24 @@ describe("green-failure-advisory preparer (byte-identical to the assess prompt's
     expect(failIdx).toBeLessThan(contractIdx);
     expect(contractIdx).toBeLessThan(supIdx);
   });
+
+  it("projects a test-smell advisory that routes a surgical driver fix, NOT a reopen", () => {
+    writeGreenFailure(tdd, F, S, AC, {
+      assessed: false,
+      summary: "TEST-AUTHORING-SMELL",
+      testSmellRefs: "  [broad-integrity-except] tests/architecture/test_contract_migration.py:288  except Exception:\n      fix: narrow to the specific error",
+    });
+    const adv = buildGreenFailureAdvisory(tdd, F, S, AC);
+    expect(adv).toContain("test_contract_migration.py:288");
+    expect(adv).toMatch(/assess-regression --fix/);
+    expect(adv).toMatch(/NOT a spec-defect/);
+    expect(adv).toMatch(/do NOT recommend consort-reopen-story/);
+  });
+
+  it("omits the test-smell advisory when no smell was localized", () => {
+    writeGreenFailure(tdd, F, S, AC, { assessed: false, summary: "x" });
+    expect(buildGreenFailureAdvisory(tdd, F, S, AC)).not.toMatch(/assess-regression --fix/);
+  });
 });
 
 describe("context-pack preparer", () => {

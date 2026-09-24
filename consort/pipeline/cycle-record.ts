@@ -573,6 +573,10 @@ export async function greenOpenCycle(
   // orchestration then routes to raise-to-hil rather than advancing.
   const verify = args.verify ?? defaultGreenVerifier;
   let result = await verify({ projectDir: dirname(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+  // A deterministic test-authoring smell converts a green verify to a fail (below);
+  // captured here so the green-failure enrichment records it as a surgical driver
+  // fixDirective (path (b)), never a spec-defect reopen (the churn-killer).
+  let testSmellRemediation: string | undefined;
   // DB-PROVISIONING short-circuit (issue #197): a verify that failed because the
   // E2E app served an UNMIGRATED/unreachable database is an infra fault, not a
   // regression. The harness never reuses a server anymore (CI=1 + free ports in
@@ -645,7 +649,13 @@ export async function greenOpenCycle(
     if (result.passed) {
       try {
         const smells = checkTestSmells({ projectDir: dirname(consortDir) });
-        if (!smells.clean && smells.remediation) result = { passed: false, summary: smells.remediation };
+        if (!smells.clean && smells.remediation) {
+          result = { passed: false, summary: smells.remediation };
+          // Carry the per-occurrence fixes into the green-failure enrichment below
+          // so the assess records a SURGICAL driver fixDirective (narrow the catch,
+          // drop the pointless teardown), never a design-lane reopen (the churn).
+          testSmellRemediation = smells.remediation;
+        }
       } catch {
         /* advisory scan: a gate error must never fail the cycle */
       }
@@ -727,6 +737,7 @@ export async function greenOpenCycle(
         ...(result.failureOutput ? { failureOutput: result.failureOutput } : {}),
         ...(contractRefs ? { contractRefs } : {}),
         ...(supersededTestRefs ? { supersededTestRefs } : {}),
+        ...(testSmellRemediation ? { testSmellRefs: testSmellRemediation } : {}),
       });
       return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, needsAssess: true, summary: result.summary };
     }

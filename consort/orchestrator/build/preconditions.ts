@@ -78,7 +78,20 @@ export function buildGreenFailureAdvisory(consortDir: string, featureId: string,
   // reference the dropped symbol, so the Navigator flags EXACTLY these as superseded
   // (path (a)) instead of searching the test tree.
   const supersededAdvisory = gfAssess?.supersededTestRefs ? `${gfAssess.supersededTestRefs}\n\n` : "";
-  return failureAdvisory + contractAdvisory + supersededAdvisory;
+  // DETERMINISTIC test-authoring-smell advisory: checkTestSmells localized a known
+  // smell (broad-integrity-except, delete-teardown, loose-locator, ...) with its
+  // exact per-occurrence fix. These are SURGICALLY driver-fixable IN PLACE, so the
+  // assess must record a driver fixDirective (path (b)) that applies the fix to the
+  // TEST file – NOT a spec-defect reopen (the F1/F6 blanket-except teardown churn).
+  const testSmellAdvisory = gfAssess?.testSmellRefs
+    ? `DETERMINISTIC test-authoring smell(s) localized below with the EXACT fix per occurrence. This is` +
+      ` NOT a spec-defect and NOT a reason to reopen the story from the test-strategist – the fix is a` +
+      ` SURGICAL, in-place edit to the TEST file (e.g. narrow a blanket \`except Exception\` to the specific` +
+      ` error, or drop a pointless best-effort teardown), and the app is correct. Record it as a driver-fixable` +
+      ` repair via assess-regression --fix (path (b)) whose fix directive is EXACTLY the per-smell fix below;` +
+      ` do NOT recommend consort-reopen-story:\n${gfAssess.testSmellRefs}\n\n`
+    : "";
+  return failureAdvisory + contractAdvisory + supersededAdvisory + testSmellAdvisory;
 }
 
 /**
