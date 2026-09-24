@@ -205,6 +205,30 @@ describe("supersededTestCandidates (pre-localize prior tests for the Navigator, 
     write(dir, "tests/test_x.py", "assert row.inventory_code\n");
     expect(supersededTestCandidates({ projectDir: dir }).candidates).toEqual([]);
   });
+
+  it("pre-localizes a CLIENT e2e spec asserting the dropped column in KEBAB and CAMEL casing (the sku-detail gap)", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0003_drop.py", DROP_INVENTORY_CODE);
+    // kebab-case test id + camelCase field — the casings the backend-only, exact-snake
+    // scan MISSED, forcing the Navigator to catch the client supersession by hand.
+    write(dir, "client/tests/e2e/sku-detail.spec.ts",
+      `test("T23", async ({ page }) => {\n  await expect(page.getByTestId("inventory-code")).toHaveText(row.inventoryCode);\n});\n`);
+
+    const r = supersededTestCandidates({ projectDir: dir });
+    const blob = r.candidates.map((c) => `${c.file}:${c.line} [${c.symbol}]`).join("\n");
+    expect(blob).toMatch(/client\/tests\/e2e\/sku-detail\.spec\.ts:\d+/);
+    // Reported under the ORIGINAL dropped symbol, not the variant, so the advisory is coherent.
+    expect(r.candidates.every((c) => c.symbol === "inventory_code")).toBe(true);
+    expect(r.advisory).toMatch(/SUPERSEDED-TEST CANDIDATES/);
+  });
+
+  it("does NOT flag a client spec that only references the SURVIVING split fields", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0003_drop.py", DROP_INVENTORY_CODE);
+    write(dir, "client/tests/e2e/sku-detail.spec.ts",
+      `test("T", async ({ page }) => {\n  await expect(page.getByTestId("batch-number")).toBeVisible();\n  await expect(page.getByTestId("serial-number")).toBeVisible();\n});\n`);
+    expect(supersededTestCandidates({ projectDir: dir }).candidates).toEqual([]);
+  });
 });
 
 // The greenOpenCycle wiring: a FIRST verify failure runs the deterministic gate

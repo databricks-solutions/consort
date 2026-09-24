@@ -63,6 +63,7 @@ export interface ContractCleanResult {
 const DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 const DEFAULT_CODE_DIRS = ["app", "src", "lib", "templates"];
 const DEFAULT_TEST_DIRS = ["tests", "test"];
+const CLIENT_TEST_DIRS = ["client/tests"];
 const CODE_EXTS = new Set([".py", ".ts", ".tsx", ".js", ".jsx", ".html", ".jinja", ".jinja2", ".sql"]);
 // Never scan these for residual refs (the migration legitimately names the dropped
 // symbol; tests are refactored via supersession, not this gate; junk dirs).
@@ -255,13 +256,62 @@ export interface SupersededTestCandidatesResult {
  * (path (a)) and the Driver permissively refactors them alongside the code fix.
  * Deterministic, advisory. Empty when nothing was dropped or no test references it.
  */
+/** A dropped snake_case DB column surfaces on the CLIENT under other casings – the
+ *  kebab-case test id (`data-testid="inventory-code"`) and the camelCase field
+ *  (`row.inventoryCode`) – which a plain `\binventory_code\b` scan never matches.
+ *  Return the snake form plus those variants so a client test asserting the dropped
+ *  column in ANY casing is pre-localized (the F6/S2 sku-detail.spec.ts gap the
+ *  backend-only, exact-snake scan missed). A single-word symbol has no variants. */
+function clientCaseVariants(symbol: string): string[] {
+  const parts = symbol.split("_").filter(Boolean);
+  if (parts.length < 2) return [symbol];
+  const kebab = parts.join("-");
+  const camel = parts[0] + parts.slice(1).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join("");
+  return [...new Set([symbol, kebab, camel])];
+}
+
+/** Scan the CLIENT test dirs for prior tests asserting a dropped symbol in ANY
+ *  casing (snake / kebab / camel). Separate from the backend scan so exact-snake
+ *  matching stays precise there (a Python test never uses kebab/camel column names),
+ *  while a client e2e/Vitest spec – which does – is still pre-localized. Reports the
+ *  ORIGINAL dropped symbol so the advisory stays coherent. */
+function scanClientSupersededRefs(projectDir: string, dropped: string[]): ContractViolation[] {
+  const matchers = dropped.flatMap((s) => clientCaseVariants(s).map((v) => ({ symbol: s, re: symbolRefRegex(v) })));
+  const hits: ContractViolation[] = [];
+  for (const cd of CLIENT_TEST_DIRS) {
+    const abs = join(projectDir, cd);
+    if (!existsSync(abs)) continue;
+    for (const file of walk(abs, (p) => CODE_EXTS.has(extname(p)), [], EXCLUDE_DIR_JUNK)) {
+      let lines: string[];
+      try {
+        lines = readFileSync(file, "utf8").split("\n");
+      } catch {
+        continue;
+      }
+      lines.forEach((text, i) => {
+        for (const { symbol, re } of matchers) {
+          if (re.test(text)) {
+            hits.push({ file: relative(projectDir, file), line: i + 1, symbol, text: text.trim().slice(0, 200) });
+          }
+        }
+      });
+    }
+  }
+  return hits;
+}
+
 export function supersededTestCandidates(args: ContractCleanArgs): SupersededTestCandidatesResult {
   const { projectDir } = args;
   const dropped = netDroppedSymbols(projectDir, args.migrationDirs);
   if (dropped.length === 0) return { droppedSymbols: [], candidates: [] };
   // Descend INTO the test dirs (the default EXCLUDE_DIR skips tests?/ for the
   // production scan; here they are exactly what we want), still skipping vendor junk.
-  const candidates = scanSymbolRefs(projectDir, args.testDirs ?? DEFAULT_TEST_DIRS, dropped, EXCLUDE_DIR_JUNK);
+  // Backend tests: exact snake_case (precise). Client tests: ALSO the kebab/camel
+  // casings the column surfaces as on the frontend (the sku-detail e2e gap).
+  const candidates = [
+    ...scanSymbolRefs(projectDir, args.testDirs ?? DEFAULT_TEST_DIRS, dropped, EXCLUDE_DIR_JUNK),
+    ...scanClientSupersededRefs(projectDir, dropped),
+  ];
   if (candidates.length === 0) return { droppedSymbols: dropped, candidates: [] };
   const syms = [...new Set(candidates.map((c) => c.symbol))].join(", ");
   const list = candidates.map((c) => `  ${c.file}:${c.line}  [${c.symbol}]  ${c.text}`).join("\n");
