@@ -19,6 +19,7 @@ import {
   checkFitnessClauseCoverage,
   checkPlatformNfrDefended,
   checkE2ECoverage,
+  checkJsdomBrowserAssertion,
   checkPersistenceCoverage,
   checkInvariantCoverageDistinct,
   invariantRealizingStory,
@@ -1077,6 +1078,49 @@ describe("checkE2ECoverage: an E2E-layer AC needs a REAL e2e test, not a mocked 
 
   it("reports invalid test-list JSON rather than throwing", () => {
     expect(checkE2ECoverage("{not json", ["AC1"]).ok).toBe(false);
+  });
+});
+
+describe("checkJsdomBrowserAssertion: a real-browser assertion in the jsdom harness is born-vacuous", () => {
+  const tl = (items: Array<{ id?: string; description: string; scenario_file?: string }>): string =>
+    JSON.stringify({ items });
+
+  it("HARD-BLOCKS a 'no full-page reload' assertion in a jsdom component test (the T19 defect)", () => {
+    const list = tl([
+      { id: "T19", description: "no full-page reload occurs during any transition", scenario_file: "client/tests/pages/App.routing.test.tsx" },
+    ]);
+    const r = checkJsdomBrowserAssertion(list);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations[0]).toContain("T19");
+      expect(r.violations[0]).toContain("client/tests/e2e/");
+    }
+  });
+
+  it("does NOT flag the SAME assertion when it lives in a Playwright e2e spec", () => {
+    const list = tl([
+      { id: "T19", description: "no full-page reload occurs during any transition", scenario_file: "client/tests/e2e/nfr-spa-routing.spec.ts" },
+    ]);
+    expect(checkJsdomBrowserAssertion(list).ok).toBe(true);
+  });
+
+  it("does NOT flag a legitimate jsdom component assertion (renders content, no browser-nav property)", () => {
+    const list = tl([
+      { id: "T4", description: "the SKU cell renders the filed quantity for the seeded row", scenario_file: "client/tests/pages/HomePage.test.tsx" },
+    ]);
+    expect(checkJsdomBrowserAssertion(list).ok).toBe(true);
+  });
+
+  it("flags page.url() / window.location assertions in a component test too", () => {
+    const list = tl([
+      { id: "T7", description: "asserts page.url() changes after clicking the nav link", scenario_file: "client/tests/pages/Nav.test.tsx" },
+    ]);
+    expect(checkJsdomBrowserAssertion(list).ok).toBe(false);
+  });
+
+  it("is vacuously ok with no items, and reports invalid JSON rather than throwing", () => {
+    expect(checkJsdomBrowserAssertion(tl([])).ok).toBe(true);
+    expect(checkJsdomBrowserAssertion("{not json").ok).toBe(false);
   });
 });
 

@@ -33,6 +33,7 @@ import {
   checkMigrationPreservationClass,
   checkFitnessSingularCoverage,
   checkClientKindLayerCoherence,
+  checkJsdomBrowserAssertion,
 } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { acsForStory } from "../test-list/test-list.js";
 import { featureResolved, architectureJson, dbDesignJson, nfrsMd, featureNfrsMd } from "../../consort/config/consort-paths.js";
@@ -495,6 +496,18 @@ export function acReferenceReason(consortDir: string, featureId: string, testLis
 }
 
 /**
+ * jsdom-vacuous-browser-assertion test_list-gate condition: a real-browser navigation
+ * property (full-page reload / hard navigation / page.url) authored in the jsdom/Vitest
+ * component harness is born-vacuous — it can't turn RED on a broken app. Deterministic
+ * form of the reflect's mechanism-conflict catch (stockflow-3-100 T19), flagged at
+ * authoring instead of a revise lap later. Null when clean / no test-list.
+ */
+function jsdomBrowserAssertionReason(testListJson: string): string | null {
+  const r = checkJsdomBrowserAssertion(testListJson);
+  return r.ok ? null : `jsdom-vacuous-browser-assertion: ${r.violations.join("; ")}`;
+}
+
+/**
  * E2E-coverage test_list-gate condition: every AC tagged `layer:"E2E"` (a client<->server
  * contract – the client rendering a REAL server response) MUST have a real Playwright e2e in the
  * test-list (scenario_file under an `e2e/` path), never only a mocked component test whose
@@ -912,6 +925,11 @@ export function resolveArtifactInputs(
         // sent {detail:{...}}, so nothing rendered against the live API).
         const e2eReason = e2eCoverageReason(consortDir, featureId, tlJson);
         if (e2eReason !== null) return { reason: e2eReason };
+        // jsdom-vacuous-browser-assertion: a real-browser navigation/reload property
+        // authored in the jsdom component harness (client/tests/**/*.test.tsx) is
+        // born-vacuous — route it to a Playwright e2e spec (the stockflow-3-100 T19 class).
+        const jsdomReason = jsdomBrowserAssertionReason(tlJson);
+        if (jsdomReason !== null) return { reason: jsdomReason };
       }
       return conf;
     }

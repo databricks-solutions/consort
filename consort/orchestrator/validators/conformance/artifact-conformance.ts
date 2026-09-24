@@ -636,6 +636,48 @@ export function checkE2ECoverage(testListJson: string, e2eAcIds: string[]): Conf
 }
 
 /**
+ * A REAL-BROWSER navigation assertion must not live in the jsdom/Vitest COMPONENT
+ * harness, where it is born-vacuous. A test item whose `scenario_file` is a component
+ * test (`…/*.test.ts(x)`, NOT an `e2e/*.spec.ts`) but whose `description` asserts a
+ * property that only a real browser exhibits — a full-page reload / hard navigation /
+ * `page.url()` / `window.location` — cannot turn RED on a broken app: jsdom never
+ * reloads or navigates for real, so the assertion trivially passes regardless of the
+ * implementation (the stockflow-3-100 T19 defect: "no full-page reload occurs during
+ * any transition" placed in `client/tests/pages/App.routing.test.tsx`). Such an item
+ * belongs in a Playwright e2e spec. Deterministic from the test-list alone; the reflect
+ * gate caught it as an LLM backstop — this flags it one step earlier, at authoring.
+ */
+export function checkJsdomBrowserAssertion(testListJson: string): ConformanceResult {
+  let tl: { items?: Array<{ id?: string; description?: string; scenario_file?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  // A jsdom/Vitest component test: a `.test.ts(x)` scenario_file NOT under an e2e/ path
+  // (Playwright specs are `.spec.ts` under e2e/ and run in a real browser).
+  const isJsdomComponentTest = (sf?: string): boolean =>
+    typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
+  // Properties only a REAL browser exhibits (vacuous in jsdom). `reload` is the
+  // strongest single signal — a component test asserting about reloads is confused by
+  // definition. Kept tight (no bare "navigation", which matches a nav-menu render).
+  const browserOnly =
+    /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
+  const violations: string[] = [];
+  for (const it of tl.items ?? []) {
+    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}…") ` +
+          `but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never ` +
+          `occur — so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec ` +
+          `(scenario_file under client/tests/e2e/…spec.ts) and assert navigation state via page.url() / rendered content in a real browser`,
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+
+/**
  * Persistence coverage (robust DB testing, not an ORM re-test): a service-backed
  * feature's architecture MUST declare its `persistence_invariants[]` (the DB-level
  * guarantees the SCHEMA enforces – a unique key, an FK/cascade, a NOT NULL/CHECK, a
