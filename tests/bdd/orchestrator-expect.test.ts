@@ -23,7 +23,7 @@ function baseState(over: Partial<DriveState> = {}): DriveState {
       "S2-submit-create-bug": {
         gateApproved: false,
         gateSurfaced: false,
-        design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: false, testListReady: false, reflectionPassed: false, reflectionVerdictWritten: false },
+        design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
         build: {
           experimentCut: false,
           testsWritten: false,
@@ -91,7 +91,7 @@ describe("expectationFor: each role handoff declares its non-null return contrac
 
   it("spec-author / architect-reviewer per-story contracts map to their DriveState advance", () => {
     const noAcs = baseState();
-    noAcs.stories["S2-submit-create-bug"].design = { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, reflectionPassed: false, reflectionVerdictWritten: false };
+    noAcs.stories["S2-submit-create-bug"].design = { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false };
     const spec = expectationFor({ kind: "invoke-role", role: "spec-author", story: "S2-submit-create-bug" } as WorkflowAction)!;
     expect(spec.satisfiedBy(noAcs)).toBe(false);
     expect(spec.satisfiedBy(baseState())).toBe(true); // hasAcs true in base
@@ -236,7 +236,7 @@ describe("ExpectationLedger.processCallback: caller-identity intake (multi-threa
     s.stories["S1"] = {
       gateApproved: false,
       gateSurfaced: false,
-      design: { hasAcs: over.s1HasAcs ?? false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, reflectionPassed: false, reflectionVerdictWritten: false },
+      design: { hasAcs: over.s1HasAcs ?? false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
       build: { experimentCut: false, testsWritten: false, codeWritten: false, awaitingAcceptance: false, deployVerified: false, accepted: false },
     };
     s.stories["S2-submit-create-bug"].design.testListReady = over.s2ListReady ?? false;

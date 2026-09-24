@@ -25,7 +25,7 @@ function gated(): DesignDriveState["stories"][string] {
   return {
     gateApproved: true,
     gateSurfaced: false,
-    design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, reflectionPassed: true, reflectionVerdictWritten: true },
+    design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true },
   };
 }
 /** A blank story: nothing designed yet. */
@@ -33,7 +33,7 @@ function fresh(): DesignDriveState["stories"][string] {
   return {
     gateApproved: false,
     gateSurfaced: false,
-    design: { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, reflectionPassed: false, reflectionVerdictWritten: false },
+    design: { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
   };
 }
 
@@ -75,7 +75,7 @@ describe("nextDesignAction (per-story design lane state machine)", () => {
 
   it("surfaces the gate once a story's design is complete, then approves it", () => {
     const s = { S1: fresh(), S2: fresh(), S3: fresh() };
-    s.S1.design = { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, reflectionPassed: true, reflectionVerdictWritten: true };
+    s.S1.design = { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true };
     // fully designed, not surfaced -> surface
     expect(nextDesignAction(state({ stories: s }))).toEqual({ kind: "surface-gate", story: "S1" });
     // surfaced, not approved -> approve
@@ -96,7 +96,7 @@ describe("nextDesignAction (per-story design lane state machine)", () => {
 
   it("never drafts a later story while an earlier one is still in design", () => {
     // Even if S2 somehow has ACs, the first non-approved story (S1) is driven.
-    const s = { S1: fresh(), S2: { ...fresh(), design: { hasAcs: true, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, reflectionPassed: false, reflectionVerdictWritten: false } }, S3: fresh() };
+    const s = { S1: fresh(), S2: { ...fresh(), design: { hasAcs: true, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false } }, S3: fresh() };
     expect(nextDesignAction(state({ stories: s }))).toMatchObject({ story: "S1", role: "spec-author" });
   });
 
@@ -112,21 +112,21 @@ describe("nextDesignAction (per-story design lane state machine)", () => {
 function gatedUnbuilt(): StoryView {
   return {
     gateApproved: true, gateSurfaced: true,
-    design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, reflectionPassed: true, reflectionVerdictWritten: true },
+    design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true },
     build: { experimentCut: false, testsWritten: false, codeWritten: false, awaitingAcceptance: false, deployVerified: false, accepted: false },
   };
 }
 function freshStory(): StoryView {
   return {
     gateApproved: false, gateSurfaced: false,
-    design: { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, reflectionPassed: false, reflectionVerdictWritten: false },
+    design: { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
     build: { experimentCut: false, testsWritten: false, codeWritten: false, awaitingAcceptance: false, deployVerified: false, accepted: false },
   };
 }
 function builtAccepted(): StoryView {
   return {
     gateApproved: true, gateSurfaced: true,
-    design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, reflectionPassed: true, reflectionVerdictWritten: true },
+    design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true },
     build: { experimentCut: true, testsWritten: true, codeWritten: true, awaitingAcceptance: true, deployVerified: true, accepted: true },
   };
 }

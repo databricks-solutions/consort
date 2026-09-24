@@ -37,6 +37,7 @@ import {
 } from "../../consort/smells/supersession.js";
 import { writeEscalation } from "../../consort/gates/escalation.js";
 import { recordReflectionGate } from "../../consort/smells/reflection.js";
+import { recordTestListGate } from "../../consort/smells/testlist-conformance.js";
 import {
   readDeployVerifyAssessMarker,
   readDeployVerifyScope,
@@ -256,6 +257,21 @@ async function main(): Promise<number> {
         hits.length === 0
           ? `cycle: reflect gate passed for ${a.story} (no design defect)\n`
           : `cycle: reflect gate flagged ${hits.length} design defect(s) for ${a.story}: ${hits.map((h) => h.smell).join(", ")}\n`,
+      );
+      return 0;
+    }
+    case "testlist-gate": {
+      // Deterministic pre-reflect gate: run the structural test_list conformance
+      // checks (client-kind↔layer, e2e coverage, jsdom-vacuous assertion) and, on a
+      // violation, flag the reflect-testlist-defect smell (no LLM turn) so the
+      // existing revise-route/escalation machinery bounds + routes it. A conformant
+      // test-list self-clears any lingering smell.
+      if (!a.story) return usage("testlist-gate: --story is required.");
+      const hits = recordTestListGate(consortDir, a.feature, a.story);
+      process.stdout.write(
+        hits.length === 0
+          ? `cycle: test-list gate passed for ${a.story} (structurally conformant)\n`
+          : `cycle: test-list gate flagged ${hits.length} structural defect(s) for ${a.story}: ${hits.map((h) => h.smell).join(", ")}\n`,
       );
       return 0;
     }

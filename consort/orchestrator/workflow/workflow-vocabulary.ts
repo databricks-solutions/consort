@@ -28,6 +28,13 @@ export interface StoryDesign {
   dbaDesigned: boolean;
   /** The Test Strategist has produced this story's ordered test list. */
   testListReady: boolean;
+  /** The test-list passes the DETERMINISTIC structural conformance checks
+   *  (client-kind↔layer, e2e coverage, jsdom-vacuous browser assertion) — run in
+   *  the probe over the assembled test-list + AC layers. Gates the lane BEFORE the
+   *  LLM reflect so a structural defect (incl. one a revise reintroduces) is caught
+   *  deterministically without an LLM lap. Vacuously true when no test-list yet, so
+   *  it never pre-empts before testListReady. */
+  testListConforms: boolean;
   /** The pre-build reflection critic (Navigator, reflect mode) has PASSED this
    *  story's spec + test-list. A missing/failed verdict is not passed: the lane
    *  runs (or re-runs) the critic, and a failed verdict drives the spec-level
@@ -73,6 +80,12 @@ export type DriveAction =
   // spec slice + test-list before the human spec gate. A design-lane use of the
   // build reviewer role; buildMode "reflect" distinguishes it from its build turns.
   | { kind: "invoke-role"; role: "navigator"; story: string; buildMode: "reflect" }
+  // Deterministic pre-reflect test_list gate: the structural conformance checks
+  // failed on the (re)authored test-list. Flags the reflect-testlist-defect smell
+  // with the deterministic violation as detail (no LLM turn); the existing
+  // escalation/revise-route machinery bounds + routes it. Positioned BEFORE the
+  // reflect so a structural defect never costs an LLM reflect lap.
+  | { kind: "flag-testlist-nonconformance"; story: string }
   // Deterministically project this story's per-AC architectural_notes from the
   // project canon (no architect turn): the common case when the story maps cleanly.
   | { kind: "project-architect-notes"; story: string }
@@ -474,6 +487,7 @@ export function actionLane(action: WorkflowAction): ActionLane {
     case "approve-plan-gate":
     case "planning-complete":
       return "planning";
+    case "flag-testlist-nonconformance":
     case "project-architect-notes":
     case "surface-gate":
     case "approve-gate":

@@ -25,7 +25,7 @@ function freshStory(): StoryView {
   return {
     gateApproved: false,
     gateSurfaced: false,
-    design: { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, reflectionPassed: false, reflectionVerdictWritten: false },
+    design: { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
     build: {
       experimentCut: false,
       testsWritten: false,
@@ -307,7 +307,7 @@ describe("runDriver: Tier-2 phase bounds (driverBoundOptions)", () => {
     state.storyOrder = ["S1", "S2"];
     for (const id of ["S1", "S2"]) {
       const v = freshStory();
-      v.design = { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, reflectionPassed: true, reflectionVerdictWritten: true };
+      v.design = { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true };
       v.gateApproved = true;
       v.gateSurfaced = true;
       state.stories[id] = v;

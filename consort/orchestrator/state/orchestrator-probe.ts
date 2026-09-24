@@ -40,6 +40,7 @@ import { readWorkflowState, SCM_STATES } from "@databricks-solutions/lakebase-sc
 import { firstPendingEscalation } from "../../gates/escalation.js";
 import { specLevelSmell, priorReviseCount, isBuildRefactorRoutableSmell, isReflectSmell, priorReflectReviseCount, REFLECT_REVISE_CAP, storyTestListFingerprint, lastReflectReviseFingerprint } from "../../smells/smells.js";
 import { reflectionPassed, reflectionVerdictWritten } from "../../smells/reflection.js";
+import { testListConforms as testListConformsFor } from "../../smells/testlist-conformance.js";
 import { readCanon, architectNovelty } from "../../architecture/architecture-canon.js";
 import {
   cyclesRootDir,
@@ -329,6 +330,15 @@ export function diskArtifactProbe(
       } catch {
         return false;
       }
+    },
+
+    testListConforms(story) {
+      // The DETERMINISTIC pre-reflect gate: run the structural conformance checks
+      // (client-kind↔layer, e2e coverage, jsdom-vacuous assertion) over the story's
+      // test-list. Vacuously true when no test-list yet (never pre-empts before
+      // testListReady). A false here routes flag-testlist-nonconformance BEFORE the
+      // LLM reflect, so a structural defect never costs an LLM lap.
+      return testListConformsFor(consortDir, featureId, story);
     },
 
     designFingerprint(story) {

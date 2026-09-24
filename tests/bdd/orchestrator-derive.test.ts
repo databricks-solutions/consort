@@ -22,6 +22,10 @@ function fakeProbe(facts: Record<string, Partial<Record<keyof StoryArtifactProbe
     architectProjectable: (s) => get(s, "architectProjectable"),
     dbaDesigned: (s) => get(s, "dbaDesigned"),
     testListReady: (s) => get(s, "testListReady"),
+    // Defaults TRUE (vacuous structural conformance) unless a fact explicitly sets
+    // it false, so existing fixtures keep the pre-gate flow; a new test opts in with
+    // { testListConforms: false } to exercise the deterministic pre-reflect gate.
+    testListConforms: (s) => facts[s]?.testListConforms !== false,
     reflectionPassed: (s) => get(s, "reflectionPassed"),
     reflectionVerdictWritten: (s) => get(s, "reflectionVerdictWritten"),
     testsWritten: (s) => get(s, "testsWritten"),
@@ -141,6 +145,18 @@ describe("deriveDriveState + nextTransition: realistic on-disk situations", () =
     );
     // reflectionPassed is absent (false) -> the reflect turn runs, NOT surface-gate.
     expect(nextTransition(state)).toEqual({ kind: "invoke-role", role: "navigator", story: "S1", buildMode: "reflect" });
+  });
+
+  it("design lane: a ready test-list that FAILS structural conformance flags deterministically BEFORE the reflect turn", () => {
+    const p = pipeline({ S1: { status: "designing" } });
+    const state = deriveDriveState(
+      p,
+      // testListReady:true but testListConforms:false -> the deterministic pre-reflect
+      // gate pre-empts the LLM reflect (no navigator turn for a structural defect).
+      fakeProbe({ S1: { hasAcs: true, architectAnnotated: true, dbaDesigned: true, testListReady: true, testListConforms: false } }),
+      FEATURE,
+    );
+    expect(nextTransition(state)).toEqual({ kind: "flag-testlist-nonconformance", story: "S1" });
   });
 
   it("design lane: once reflection PASSES, the story advances to the spec gate", () => {

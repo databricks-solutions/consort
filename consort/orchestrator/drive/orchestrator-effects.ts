@@ -878,7 +878,11 @@ function roleTaskBody(
           `(${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture ` +
           `(${root}/features/${featureId}/architecture.md/.json) + NFRs.` +
           contextRubric(consortDir, featureId, s, "") +
-          ` Look ONLY for design-time defects that would waste a build cycle: (1) ACs that contradict ` +
+          ` Look ONLY for design-time defects that would waste a build cycle. The DETERMINISTIC ` +
+          `pre-reflect gate has ALREADY verified the structural classes — client-kind↔AC-layer ` +
+          `coherence, E2E-layer coverage by a real Playwright spec, and that no real-browser ` +
+          `navigation/reload assertion sits in the jsdom component harness — so do NOT spend a finding ` +
+          `re-flagging those; focus on the SEMANTIC defects: (1) ACs that contradict ` +
           `each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with ` +
           `no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose ` +
           `declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable ` +
@@ -1708,6 +1712,12 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
         { kind: "cli", bin: CANON_NOTES_BIN, args: ["--story", action.story, ...tdd] },
         { kind: "cli", bin: LOG_BIN, args: ["--reconcile", ...tdd] },
       ];
+
+    case "flag-testlist-nonconformance":
+      // Deterministic pre-reflect gate (no LLM turn): flag the reflect-testlist-defect
+      // smell from the structural conformance checks; the existing escalation →
+      // revise-route machinery bounds + routes it, exactly as it does the reflect gate.
+      return [{ kind: "cli", bin: CYCLE_BIN, args: ["testlist-gate", "--story", action.story, ...tdd] }];
 
     case "surface-gate":
       return [{ kind: "cli", bin: PIPELINE_BIN, args: ["surface", "--story", action.story, ...tdd] }];

@@ -45,6 +45,10 @@ export interface StoryArtifactProbe {
   dbaDesigned(story: string): boolean;
   /** The Test Strategist produced this story's test list (test-list.json). */
   testListReady(story: string): boolean;
+  /** The test-list passes the DETERMINISTIC structural conformance checks
+   *  (client-kind↔layer, e2e coverage, jsdom-vacuous assertion). Vacuously true
+   *  with no test-list. Gates the lane before the LLM reflect. */
+  testListConforms(story: string): boolean;
   /** The pre-build reflection critic PASSED this story's spec + test-list
    *  (reflect-verdict.json passed:true). A missing/failed verdict is false. */
   reflectionPassed(story: string): boolean;
@@ -206,6 +210,7 @@ function storyView(
       architectProjectable: probe.architectProjectable(id),
       dbaDesigned: probe.dbaDesigned(id),
       testListReady: probe.testListReady(id),
+      testListConforms: probe.testListConforms(id),
       reflectionPassed: probe.reflectionPassed(id),
       reflectionVerdictWritten: probe.reflectionVerdictWritten(id),
     },

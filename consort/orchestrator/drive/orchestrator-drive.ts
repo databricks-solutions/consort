@@ -74,6 +74,7 @@ export function nextDesignAction(state: DesignDriveState): DriveAction {
       architectProjectable: false,
       dbaDesigned: false,
       testListReady: false,
+      testListConforms: true,
       reflectionPassed: false,
       reflectionVerdictWritten: false,
     };
@@ -93,6 +94,12 @@ export function nextDesignAction(state: DesignDriveState): DriveAction {
     // realize), so a trivial feature skips straight to the test strategist.
     if (!design.dbaDesigned) return { kind: "invoke-role", role: "dba", story };
     if (!design.testListReady) return { kind: "invoke-role", role: "test-strategist", story };
+    // Deterministic pre-reflect gate: the cheap structural conformance checks
+    // (client-kind↔layer, e2e coverage, jsdom-vacuous assertion) gate the revise
+    // loop BEFORE the LLM reflect, so a structural defect the test-strategist
+    // (re)authored is flagged deterministically — no LLM lap. Flagging routes the
+    // bounded revise via the existing smell/escalation machinery.
+    if (!design.testListConforms) return { kind: "flag-testlist-nonconformance", story };
     // Pre-build reflection: the Navigator critiques the (now complete) spec +
     // test-list BEFORE the human spec gate + the build. On findings it flags a
     // spec-level smell that the escalation machinery routes back to the owning
