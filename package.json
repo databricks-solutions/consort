@@ -207,7 +207,7 @@
     "simulate-run": "tsx tools/telemetry-collector/simulate-run.ts"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-scm-utils": "0.2.41",
+    "@databricks-solutions/lakebase-scm-utils": "0.2.42",
     "@databricks/appkit": "^0.38.1",
     "@databricks/lakebase": "^0.4.0",
     "adm-zip": "^0.5.16",
