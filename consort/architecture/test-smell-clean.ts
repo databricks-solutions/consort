@@ -34,7 +34,10 @@ export type TestSmellName =
   | "framenavigated-reload-detector"
   | "delete-teardown"
   | "broad-integrity-except"
-  | "schema-unsatisfiable-ref";
+  | "schema-unsatisfiable-ref"
+  | "whole-table-aggregate"
+  | "migration-marker-presence"
+  | "reversible-invariant-round-trip";
 
 export interface TestSmellViolation {
   smell: TestSmellName;
@@ -124,7 +127,72 @@ const SMELL_FIX: Record<TestSmellName, string> = {
     "a bare `except IntegrityError`/`except Exception` swallow catches the UMBRELLA (unique + check + FK violations) with no discrimination and masks the real failure – a wrong table/column name then reads as the expected conflict. Catch the specific subclass (UniqueViolation / CheckViolation / NotNullViolation), or discriminate explicitly: assert on the exception's message or isinstance against the subclass (a broad catch WITH a discriminating assert is fine and is not flagged)",
   "schema-unsatisfiable-ref":
     "the test references a table NO migration creates, so it is unsatisfiable (UndefinedTable on every run) – fix the table name (see the known tables below) or add the migration; never paper it over with a broad except",
+  "whole-table-aggregate":
+    "an ABSOLUTE whole-table COUNT/SUM with no seed-scope and no delta passes on the isolated branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total",
+  "migration-marker-presence":
+    "a downgrade/upgrade test without @pytest.mark.migration runs on the SHARED verify DB and drops/alters its live schema for every other test. Add @pytest.mark.migration so the verify harness routes it to its OWN ephemeral branch (single-step downgrade -1 + upgrade head, never downgrade base)",
+  "reversible-invariant-round-trip":
+    "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility – and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade → seed/migrate → upgrade → assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
 };
+
+/** A migration_reversible persistence invariant (architecture.json) must be
+ *  covered by a test whose description performs a downgrade+upgrade round-trip; a
+ *  forward-only apply does not exercise reversibility (and on an already-migrated
+ *  shared branch a forward-only seed-then-migrate is unsatisfiable). Deterministic
+ *  from the invariant's declared type vs the covering item's description. */
+function checkReversibleInvariantRoundTrip(projectDir: string): TestSmellViolation[] {
+  const featuresDir = join(projectDir, ".consort", "features");
+  const out: TestSmellViolation[] = [];
+  if (!existsSync(featuresDir)) return out;
+  for (const feature of readdirSync(featuresDir)) {
+    const archPath = join(featuresDir, feature, "architecture.json");
+    if (!existsSync(archPath)) continue;
+    let arch: { persistence_invariants?: Array<{ id?: string; type?: string }> };
+    try {
+      arch = JSON.parse(readFileSync(archPath, "utf8"));
+    } catch {
+      continue;
+    }
+    const reversible = (arch.persistence_invariants ?? []).filter(
+      (pi): pi is { id: string; type: string } =>
+        typeof pi?.id === "string" && typeof pi?.type === "string" && /reversib/i.test(pi.type),
+    );
+    if (reversible.length === 0) continue;
+    const itemSources = [join(featuresDir, feature, "test-list.json")];
+    const storiesDir = join(featuresDir, feature, "stories");
+    if (existsSync(storiesDir)) {
+      for (const s of readdirSync(storiesDir)) {
+        const p = join(storiesDir, s, "test-list-per-story.json");
+        if (existsSync(p)) itemSources.push(p);
+      }
+    }
+    const items: Array<{ id?: string; invariant_id?: string; description?: string }> = [];
+    for (const src of itemSources) {
+      try {
+        const tl = JSON.parse(readFileSync(src, "utf8")) as { items?: Array<{ id?: string; invariant_id?: string; description?: string }> };
+        items.push(...(tl.items ?? []));
+      } catch {
+        /* skip a malformed list */
+      }
+    }
+    for (const pi of reversible) {
+      const covering = items.filter((it) => it.invariant_id === pi.id);
+      const hasRoundTrip = covering.some((it) =>
+        /downgrade[\s\S]{0,80}upgrade|upgrade[\s\S]{0,80}downgrade|round.?trip/i.test(it.description ?? ""),
+      );
+      if (!hasRoundTrip) {
+        out.push({
+          smell: "reversible-invariant-round-trip",
+          file: join(".consort", "features", feature),
+          line: 1,
+          text: `invariant ${pi.id} (migration_reversible) covered only by forward-only test(s)`,
+          detail: SMELL_FIX["reversible-invariant-round-trip"],
+        });
+      }
+    }
+  }
+  return out;
+}
 
 /** Scan the project's test files for the authoring-smell catalog. */
 export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
@@ -213,6 +281,19 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
           }
         }
 
+        // whole-table-aggregate: an ABSOLUTE whole-table COUNT/SUM with no seed-scope
+        // (uuid/unique-key/WHERE filter) and no delta (before/after subtraction). An
+        // absolute whole-table total passes on an isolated branch and fails once other
+        // stories' rows share the DB (the F6/S1 aggregate-isolation class).
+        if (/COUNT\s*\(\s*\*\)|SELECT\s+COUNT/i.test(text)) {
+          const region = lines.slice(Math.max(0, i - 40), i + 14).join("\n");
+          const absoluteCount = /==\s*\d+|assert(?:Equals|Equal|That)?\s*\(?\s*\d+\s*\)|toBe\(\s*\d+|equals the (seeded|expected|recorded) count/i.test(region);
+          const scopedOrDelta = /uuid|randomUUID|unique|WHERE|where|filter|delta|count_before|probe_before|before_seed|subtract|minus/i.test(region);
+          if (absoluteCount && !scopedOrDelta) {
+            push("whole-table-aggregate", rel, line, text, "absolute whole-table count with no seed-scope and no delta");
+          }
+        }
+
         // schema-unsatisfiable-ref: a raw-SQL table ref no migration creates.
         if (knownTables.size > 0) {
           for (const m of text.matchAll(/\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+["'`]?(\w+)["'`]?/g)) {
@@ -223,8 +304,24 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
           }
         }
       });
+
+      // migration-marker-presence (file level, Python): a schema-MUTATING migration
+      // test (downgrade and/or upgrade) without @pytest.mark.migration – without the
+      // isolation tag it runs on the SHARED verify DB and drops/alters its live
+      // schema for every other test in the suite (the F6/S1 T14 class). The marker
+      // routes it to its own ephemeral branch.
+      if (isPy && /command\.downgrade|alembic\s+downgrade|\.downgrade\(|downgrade\s+-1|run_downgrade/i.test(body) && !/pytest\.mark\.migration|mark\.migration/.test(body)) {
+        push("migration-marker-presence", rel, 1, "(file)", "a downgrade test without @pytest.mark.migration (drops schema on the shared verify DB)");
+      }
     }
   }
+
+  // reversible-invariant-round-trip (project artifacts): a migration_reversible
+  // persistence invariant must be covered by a test whose description performs a
+  // downgrade+upgrade round-trip; a forward-only apply does not exercise
+  // reversibility (the F6/S1 T9 class: a reversible PI tagged to a forward-only,
+  // unsatisfiable-on-a-migrated-branch test).
+  violations.push(...checkReversibleInvariantRoundTrip(args.projectDir));
 
   if (violations.length === 0) return { clean: true, violations: [] };
   const list = violations.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}\n      fix: ${v.detail}`).join("\n");

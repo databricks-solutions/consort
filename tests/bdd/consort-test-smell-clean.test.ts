@@ -146,6 +146,79 @@ describe("checkTestSmells", () => {
   });
 });
 
+describe("checkTestSmells: the three migration/aggregate detectors", () => {
+  it("whole-table-aggregate: flags an ABSOLUTE whole-table count with no scope/delta, not a scoped or delta one", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
+    write(dir, "tests/test_counts.py",
+      `def test_no_rows_dropped():\n    cur.execute("SELECT COUNT(*) FROM stock_records")\n    count = cur.fetchone()[0]\n    assert count == 3\n`);
+    const bad = checkTestSmells({ projectDir: dir });
+    expect(bad.clean).toBe(false);
+    expect(bad.violations[0].smell).toBe("whole-table-aggregate");
+
+    const dir2 = mkProject();
+    write(dir2, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
+    write(dir2, "tests/test_counts.py",
+      `import uuid\n\ndef test_own_rows():\n    key = str(uuid.uuid4())\n    cur.execute("SELECT COUNT(*) FROM stock_records WHERE inventory_code = %s", (key,))\n    assert cur.fetchone()[0] == 2\n`);
+    expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(true);
+
+    const dir3 = mkProject();
+    write(dir3, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
+    write(dir3, "tests/test_counts.py",
+      `def test_delta():\n    count_before = cur.execute("SELECT COUNT(*) FROM stock_records").fetchone()[0]\n    seed(2)\n    count_after = cur.execute("SELECT COUNT(*) FROM stock_records").fetchone()[0]\n    assert count_after - count_before == 2\n`);
+    expect(checkTestSmells({ projectDir: dir3 }).clean).toBe(true);
+  });
+
+  it("migration-marker-presence: flags a downgrade without @pytest.mark.migration, not a marked or forward-only test", () => {
+    const dir = mkProject();
+    write(dir, "tests/test_reversible.py",
+      `def test_reversible():\n    command.downgrade(Config(ini), "-1")\n    command.upgrade(Config(ini), "head")\n`);
+    const bad = checkTestSmells({ projectDir: dir });
+    expect(bad.clean).toBe(false);
+    expect(bad.violations[0].smell).toBe("migration-marker-presence");
+
+    const dir2 = mkProject();
+    write(dir2, "tests/test_reversible.py",
+      `import pytest\n\n@pytest.mark.migration\ndef test_reversible():\n    command.downgrade(Config(ini), "-1")\n`);
+    expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(true);
+
+    // A forward-only restore (upgrade head, no downgrade) is idempotent – NOT the smell.
+    const dir3 = mkProject();
+    write(dir3, "tests/conftest.py",
+      `def restore():\n    command.upgrade(Config(ini), "head")\n`);
+    expect(checkTestSmells({ projectDir: dir3 }).clean).toBe(true);
+  });
+
+  it("reversible-invariant-round-trip: flags a forward-only test covering a migration_reversible invariant, not a round-trip", () => {
+    const dir = mkProject();
+    write(dir, ".consort/features/F1/architecture.json", JSON.stringify({
+      persistence_invariants: [{ id: "PI1-expand-migration-reversible", type: "migration_reversible", table: "stock_records" }],
+    }));
+    write(dir, ".consort/features/F1/test-list.json", JSON.stringify({ items: [
+      { id: "T9", invariant_id: "PI1-expand-migration-reversible", description: "seed rows, run alembic upgrade head, assert columns present" },
+    ] }));
+    const bad = checkTestSmells({ projectDir: dir });
+    expect(bad.clean).toBe(false);
+    expect(bad.violations[0].smell).toBe("reversible-invariant-round-trip");
+
+    const dir2 = mkProject();
+    write(dir2, ".consort/features/F1/architecture.json", JSON.stringify({
+      persistence_invariants: [{ id: "PI1-expand-migration-reversible", type: "migration_reversible", table: "stock_records" }],
+    }));
+    write(dir2, ".consort/features/F1/test-list.json", JSON.stringify({ items: [
+      { id: "T14", invariant_id: "PI1-expand-migration-reversible", description: "downgrade -1 then upgrade head, assert schema recreated" },
+    ] }));
+    expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(true);
+
+    const dir3 = mkProject();
+    write(dir3, ".consort/features/F1/architecture.json", JSON.stringify({
+      persistence_invariants: [{ id: "PI2-not-null", type: "not_null", table: "stock_records" }],
+    }));
+    write(dir3, ".consort/features/F1/test-list.json", JSON.stringify({ items: [] }));
+    expect(checkTestSmells({ projectDir: dir3 }).clean).toBe(true);
+  });
+});
+
 // greenOpenCycle wiring: the gate runs even when the honest verify PASSES – a
 // flaky/unsatisfiable test can green locally while the app is correct, so the smell
 // must route a test-author fix BEFORE anything ships (issue #199).
