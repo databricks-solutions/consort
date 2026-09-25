@@ -17,6 +17,7 @@ import {
   checkLayeringDeclared,
   checkFitnessCoverage,
   checkFitnessClauseCoverage,
+  checkNfrClauseScope,
   checkPlatformNfrDefended,
   checkE2ECoverage,
   checkJsdomBrowserAssertion,
@@ -1153,6 +1154,44 @@ describe("checkFitnessClauseCoverage: per-clause coverage for the ATOMIC fitness
     }
   });
 
+  it("object-clause: credited by a test whose ac_id realizes it; a bare nfr_id mis-tag does NOT count", () => {
+    const arch = JSON.stringify({
+      feature_id: "F1-x", service_backed: true,
+      nfrs: [{ id: "NFR2", brief: "b", fitness_functions: [
+        { clause: "no negative", realized_by: ["AC1-file"] },
+        { clause: "timestamp immutable", realized_by: ["AC3-upsert"] },
+      ] }],
+    });
+    // A test tagged nfr_id=NFR2 but anchored to an UNRELATED AC (the T14 mis-tag) does
+    // NOT credit either clause; realizing-AC tests are present for both, so it passes.
+    const ok = tl([
+      { id: "T1", ac_id: "AC1-file", kind: "fitness", nfr_id: "NFR2" },
+      { id: "T2", ac_id: "AC3-upsert", kind: "fitness", nfr_id: "NFR2" },
+      { id: "T14", ac_id: "AC-unrelated", kind: "fitness", nfr_id: "NFR2" },
+    ]);
+    expect(checkFitnessClauseCoverage(ok, arch).ok).toBe(true);
+    // Drop the realizing test for clause 2; the mis-tag (T14) must NOT cover it.
+    const bad = tl([
+      { id: "T1", ac_id: "AC1-file", kind: "fitness", nfr_id: "NFR2" },
+      { id: "T3", ac_id: "AC3-upsert", kind: "behavior" }, // realizing AC present (demanded) but no nfr_id-tagged fitness
+      { id: "T14", ac_id: "AC-unrelated", kind: "fitness", nfr_id: "NFR2" },
+    ]);
+    expect(checkFitnessClauseCoverage(bad, arch).ok).toBe(false);
+  });
+
+  it("object-clause: NOT demanded when its realizing AC is absent from this test-list (the pick-in-S1 defer)", () => {
+    const arch = JSON.stringify({
+      feature_id: "F1-x", service_backed: true,
+      nfrs: [{ id: "NFR2", brief: "b", fitness_functions: [
+        { clause: "no negative", realized_by: ["AC1-file"] },
+        { clause: "no pick overcommit", realized_by: ["AC-pick"] },
+      ] }],
+    });
+    // S1's test-list has AC1-file but NOT AC-pick — clause 2 is not demanded here.
+    const s1 = tl([{ id: "T1", ac_id: "AC1-file", kind: "fitness", nfr_id: "NFR2" }]);
+    expect(checkFitnessClauseCoverage(s1, arch).ok).toBe(true);
+  });
+
   it("is a NO-OP (back-compatible) for an NFR using the singular fitness_function", () => {
     const arch = JSON.stringify({
       feature_id: "F1-x",
@@ -1185,6 +1224,32 @@ describe("checkFitnessClauseCoverage: per-clause coverage for the ATOMIC fitness
     expect(checkFitnessClauseCoverage(JSON.stringify({ items: [] }), arch).ok).toBe(true);
     // A product NFR with the same array still requires per-clause coverage (regression).
     expect(checkFitnessClauseCoverage(JSON.stringify({ items: [] }), archAtomic(["a", "b"])).ok).toBe(false);
+  });
+});
+
+describe("checkNfrClauseScope: an object-clause whose realized_by AC is in no story is mis-scoped", () => {
+  const arch = (clauses: unknown[]) =>
+    JSON.stringify({ feature_id: "F1-x", service_backed: true, nfrs: [{ id: "NFR2", brief: "b", fitness_functions: clauses }] });
+
+  it("flags a clause whose realized_by AC exists in no story (pick-overcommit with no pick AC)", () => {
+    const r = checkNfrClauseScope(
+      arch([{ clause: "no pick overcommit", realized_by: ["AC-pick"] }]),
+      ["AC1-file", "AC3-upsert"], // the feature's ACs — no pick AC
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations[0]).toMatch(/AC-pick|no story/);
+  });
+
+  it("passes when the realized_by AC exists in some story", () => {
+    expect(checkNfrClauseScope(arch([{ clause: "no negative", realized_by: ["AC1-file"] }]), ["AC1-file"]).ok).toBe(true);
+  });
+
+  it("ignores bare-string clauses (no anchor to scope-check)", () => {
+    expect(checkNfrClauseScope(arch(["no negative", "returns JSON"]), []).ok).toBe(true);
+  });
+
+  it("tolerates invalid architecture JSON", () => {
+    expect(checkNfrClauseScope("{not json", ["AC1"]).ok).toBe(true);
   });
 });
 

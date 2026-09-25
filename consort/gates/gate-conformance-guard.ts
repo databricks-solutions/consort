@@ -22,6 +22,7 @@ import {
   projectBriefRefs,
   checkFitnessCoverage,
   checkFitnessClauseCoverage,
+  checkNfrClauseScope,
   checkE2ECoverage,
   checkPersistenceCoverage,
   checkInvariantCoverageDistinct,
@@ -386,6 +387,30 @@ function fitnessClauseCoverageReason(consortDir: string, featureId: string, test
   if (arch === undefined) return null;
   const r = checkFitnessClauseCoverage(testListJson, arch);
   return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
+}
+
+/**
+ * NFR-clause scope test_list-gate condition: an object-form fitness clause whose
+ * `realized_by` AC exists in NO story of the feature is mis-scoped (the operation it
+ * governs is introduced by no AC — the pick-overcommit-with-no-pick-AC recurrence).
+ * DEFER-guarded: returns null until EVERY story has authored ACs (a realizing AC may
+ * still be coming in an undesigned story), so it never false-flags mid-breakdown.
+ */
+function nfrClauseScopeReason(consortDir: string, featureId: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  const storiesDir = join(featureDir(consortDir, featureId), "stories");
+  if (!existsSync(storiesDir)) return null;
+  const knownAcIds: string[] = [];
+  for (const s of readdirSync(storiesDir)) {
+    const ad = join(storiesDir, s, "acs");
+    if (!existsSync(ad)) return null; // a story not yet designed — defer the orphan check
+    const files = readdirSync(ad).filter((f) => f.endsWith(".json"));
+    if (files.length === 0) return null; // defer
+    for (const f of files) knownAcIds.push(f.replace(/\.json$/, ""));
+  }
+  const r = checkNfrClauseScope(arch, knownAcIds);
+  return r.ok ? null : `NFR clause scope failed: ${r.violations.join("; ")}`;
 }
 
 /**
@@ -892,6 +917,11 @@ export function resolveArtifactInputs(
         // one-uncovered-clause-per-lap.
         const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
         if (clauseReason !== null) return { reason: clauseReason };
+        // NFR-clause scope: an object-form clause whose realized_by AC exists in no
+        // story is mis-scoped (pick-overcommit with no pick AC). Defer-guarded until
+        // every story is designed, so it never false-flags a not-yet-designed story.
+        const scopeReason = nfrClauseScopeReason(consortDir, featureId);
+        if (scopeReason !== null) return { reason: scopeReason };
         // Singular-form fitness coverage (the hole the array-form clause gate
         // leaves): a legacy singular `fitness_function` NFR needs >=1 nfr_id-tagged
         // item, else the shortfall escapes deterministically to the LLM reflect
