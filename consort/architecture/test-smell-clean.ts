@@ -319,9 +319,17 @@ function checkReversibleInvariantRoundTrip(projectDir: string): TestSmellViolati
     }
     for (const pi of reversible) {
       const covering = items.filter((it) => it.invariant_id === pi.id);
-      const hasRoundTrip = covering.some((it) =>
-        /downgrade[\s\S]{0,80}upgrade|upgrade[\s\S]{0,80}downgrade|round.?trip/i.test(it.description ?? ""),
-      );
+      // A migration_reversible test round-trips iff its description names BOTH
+      // directions (downgrade AND upgrade), in ANY order/distance, or says "round-trip".
+      // The prior proximity window (downgrade[\s\S]{0,80}upgrade) FALSE-NEGATIVED a
+      // genuine round-trip whenever a descriptive clause pushed the two verbs >80 chars
+      // apart (e.g. "a single-step downgrade … removes the par_level column …; a
+      // subsequent upgrade re-adds …"), flagging it "forward-only" and bouncing a
+      // correct test to the HIL. Naming both directions IS the round-trip signal.
+      const hasRoundTrip = covering.some((it) => {
+        const d = it.description ?? "";
+        return (/\bround.?trip\b/i.test(d)) || (/\bdowngrade\b/i.test(d) && /\bupgrade\b/i.test(d));
+      });
       if (!hasRoundTrip) {
         out.push({
           smell: "reversible-invariant-round-trip",
