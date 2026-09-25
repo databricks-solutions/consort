@@ -7208,10 +7208,13 @@ var SMELL_FOR_OWNER = {
 };
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
-// consort/architecture/architecture-canon.ts
+// consort/smells/testlist-conformance.ts
 init_cjs_shims();
 
 // consort/orchestrator/validators/conformance/artifact-conformance.ts
+init_cjs_shims();
+
+// consort/architecture/architecture-canon.ts
 init_cjs_shims();
 
 // consort/orchestrator/state/orchestrator-probe.ts

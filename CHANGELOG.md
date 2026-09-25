@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.101] - 2026-09-25
+
+Design-lane gate/detector fixes that move defect-catching earlier (deterministic, before the LLM reflect) and remove two false-positive HILs — cutting the reflect/revise/experiment-recut churn observed on the live stockflow runs.
+
+### Added
+- **Deterministic pre-reflect test_list gate.** The LLM reflect ran before the deterministic spec/test_list conformance, and on a revise only the reflect re-checked the re-authored test-list — so a structural defect a revise reintroduced (client test on a non-E2E AC, E2E AC with no real Playwright spec, real-browser assertion in the jsdom harness) cost an LLM reflect lap. `nextDesignAction` now gates on a pure `testListConforms` signal (runs the structural checks) between `testListReady` and the reflect: a non-conformant test-list flags the `reflect-testlist-defect` smell deterministically (`cycle testlist-gate`), routed by the existing bounded revise machinery with NO LLM turn; the reflect prompt is narrowed to semantics.
+- **`jsdom-vacuous-browser-assertion` detector.** A test-list item whose `scenario_file` is the jsdom/Vitest component harness but whose description asserts a real-browser navigation property (full-page reload / `page.url` / hard navigation) is born-vacuous — flagged at authoring, routed to a Playwright e2e spec.
+- **NFR-clause→AC scoping.** `fitness_functions` clauses may be `{ clause, realized_by:[AC ids] }`: the rubric threads an object-clause NFR only into a story holding a realizing AC, `checkFitnessClauseCoverage` credits/demands per-clause by realizing `ac_id` (a bare `nfr_id` mis-tag no longer counts), and new `checkNfrClauseScope` (defer-guarded) flags a clause whose realizing AC exists in no story. Kills the "clause governs an operation this story doesn't introduce" recurrence (a pick-overcommit clause in a file-stock story) and the mis-tag coverage defeat. Back-compat: bare-string clauses unchanged.
+
+### Fixed
+- **`reversible-invariant-round-trip` false positive.** The round-trip credit used an 80-char proximity window (`downgrade[\s\S]{0,80}upgrade`), so a genuine round-trip whose description put a clause between the two verbs was mis-flagged "forward-only" and bounced a correct test to the HIL. Credit is now distance/order-independent (the description names both directions, or "round-trip").
+
 ## [0.3.100] - 2026-09-24
 
 Design-lane + build-lane hardening that cuts the reflect/repair/reopen churn seen in the field, all deterministic and fail-closed.

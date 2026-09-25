@@ -166,6 +166,7 @@ var GATE_KINDS = [
   "merge",
   "raise-to-hil",
   "revise-route",
+  "flag-testlist-nonconformance",
   "done"
 ];
 var RESOURCE_KEY_SET = new Set(RESOURCE_ATTR_KEYS);

@@ -9807,6 +9807,7 @@ function actionLane(action) {
     case "approve-plan-gate":
     case "planning-complete":
       return "planning";
+    case "flag-testlist-nonconformance":
     case "project-architect-notes":
     case "surface-gate":
     case "approve-gate":
@@ -9860,6 +9861,7 @@ function nextDesignAction(state) {
       architectProjectable: false,
       dbaDesigned: false,
       testListReady: false,
+      testListConforms: true,
       reflectionPassed: false,
       reflectionVerdictWritten: false
     };
@@ -9870,6 +9872,7 @@ function nextDesignAction(state) {
     }
     if (!design.dbaDesigned) return { kind: "invoke-role", role: "dba", story };
     if (!design.testListReady) return { kind: "invoke-role", role: "test-strategist", story };
+    if (!design.testListConforms) return { kind: "flag-testlist-nonconformance", story };
     if (!design.reflectionPassed) return { kind: "invoke-role", role: "navigator", story, buildMode: "reflect" };
     if (!v?.gateSurfaced) return { kind: "surface-gate", story };
     return { kind: "approve-gate", story };
@@ -10527,6 +10530,25 @@ function checkE2ECoverage(testListJson, e2eAcIds) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
+function checkJsdomBrowserAssertion(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
+  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
 function checkPersistenceCoverage(testListJson, architectureJson2) {
   let arch;
   try {
@@ -10555,6 +10577,9 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
   }
   return { ok: true };
 }
+function clauseRealizedBy(c) {
+  return typeof c === "object" && c !== null && Array.isArray(c.realized_by) ? c.realized_by.filter((a) => typeof a === "string" && a.length > 0) : [];
+}
 function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   let arch;
   try {
@@ -10562,7 +10587,10 @@ function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   } catch {
     return { ok: true };
   }
-  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform").map((n) => ({ id: n.id, clauses: n.fitness_functions.filter((c) => typeof c === "string" && c.trim().length > 0).length })).filter((n) => n.clauses > 0);
+  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform").map((n) => ({
+    id: n.id,
+    clauses: n.fitness_functions.filter((c) => typeof c === "string" ? c.trim().length > 0 : typeof c?.clause === "string")
+  })).filter((n) => n.clauses.length > 0);
   if (atomic.length === 0) return { ok: true };
   let tl;
   try {
@@ -10570,20 +10598,56 @@ function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   } catch (err) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
-  const countById = /* @__PURE__ */ new Map();
-  for (const it of tl.items ?? []) {
-    if (typeof it.nfr_id === "string" && it.nfr_id.length > 0) countById.set(it.nfr_id, (countById.get(it.nfr_id) ?? 0) + 1);
+  const items = tl.items ?? [];
+  const allAcIds = new Set(items.map((it) => it.ac_id).filter((a) => typeof a === "string"));
+  const violations = [];
+  for (const nfr of atomic) {
+    const nfrItems = items.filter((it) => it.nfr_id === nfr.id);
+    const acClauses = nfr.clauses.filter((c) => clauseRealizedBy(c).length > 0);
+    const anchoredAcs = new Set(acClauses.flatMap((c) => clauseRealizedBy(c)));
+    for (const c of acClauses) {
+      const rb = clauseRealizedBy(c);
+      const demanded = rb.some((a) => allAcIds.has(a));
+      if (!demanded) continue;
+      const covered = nfrItems.some((it) => typeof it.ac_id === "string" && rb.includes(it.ac_id));
+      if (!covered) {
+        violations.push(
+          `NFR ${nfr.id} clause "${typeof c === "object" && c.clause || ""}" is realized by AC(s) ${rb.join(", ")} present in this test-list but no fitness item tagged nfr_id:"${nfr.id}" anchors to a realizing AC \u2014 author one for it (a bare nfr_id tag on an unrelated AC does not count)`
+        );
+      }
+    }
+    const genericNeed = nfr.clauses.length - acClauses.length;
+    const genericHave = nfrItems.filter((it) => !(typeof it.ac_id === "string" && anchoredAcs.has(it.ac_id))).length;
+    if (genericHave < genericNeed) {
+      violations.push(
+        `NFR ${nfr.id} declares ${genericNeed} atomic fitness clause(s) (fitness_functions) but only ${genericHave} test-list item(s) reference it via nfr_id (author one fitness test per clause, each tagged nfr_id:"${nfr.id}"; do not pack multiple clauses into one test)`
+      );
+    }
   }
-  const short = atomic.map((n) => ({ id: n.id, need: n.clauses, have: countById.get(n.id) ?? 0 })).filter((n) => n.have < n.need);
-  if (short.length > 0) {
-    return {
-      ok: false,
-      violations: short.map(
-        (n) => `NFR ${n.id} declares ${n.need} atomic fitness clause(s) (fitness_functions) but only ${n.have} test-list item(s) reference it via nfr_id (author one fitness test per clause, each tagged nfr_id:"${n.id}"; do not pack multiple clauses into one test)`
-      )
-    };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkNfrClauseScope(architectureJson2, knownAcIds) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
   }
-  return { ok: true };
+  const known = new Set(knownAcIds);
+  const violations = [];
+  for (const nfr of arch.nfrs ?? []) {
+    if (!nfr || typeof nfr.id !== "string" || !Array.isArray(nfr.fitness_functions)) continue;
+    for (const c of nfr.fitness_functions) {
+      const rb = clauseRealizedBy(c);
+      if (rb.length === 0) continue;
+      if (!rb.some((a) => known.has(a))) {
+        violations.push(
+          `NFR ${nfr.id} clause "${typeof c === "object" && c.clause || ""}" names realized_by AC(s) ${rb.join(", ")}, none of which exist in any story of this feature \u2014 the operation it governs is introduced by no AC. Add the realizing AC, or defer the clause to the story that introduces the operation (do not scope it to a story that lacks it)`
+        );
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 var PLATFORM_NFR_GATES = /* @__PURE__ */ new Set(["consort-layering-clean", "config-in-env"]);
 function checkPlatformNfrDefended(architectureJson2, knownGates = PLATFORM_NFR_GATES) {
@@ -12450,6 +12514,7 @@ function storyView(id, e, probe, loop) {
       architectProjectable: probe.architectProjectable(id),
       dbaDesigned: probe.dbaDesigned(id),
       testListReady: probe.testListReady(id),
+      testListConforms: probe.testListConforms(id),
       reflectionPassed: probe.reflectionPassed(id),
       reflectionVerdictWritten: probe.reflectionVerdictWritten(id)
     },
@@ -13621,17 +13686,58 @@ function reflectionVerdictWritten(consortDir, feature, story) {
 }
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
-// consort/architecture/architecture-canon.ts
+// consort/smells/testlist-conformance.ts
 init_cjs_shims();
 var import_fs15 = require("fs");
+function storyAcLayers(consortDir, featureId, story) {
+  const acLayerById = {};
+  const dir = acsDir(consortDir, featureId, story);
+  if ((0, import_fs15.existsSync)(dir)) {
+    for (const f of (0, import_fs15.readdirSync)(dir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse((0, import_fs15.readFileSync)(`${dir}/${f}`, "utf8")).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+      }
+    }
+  }
+  return acLayerById;
+}
+function testlistConformanceReason(consortDir, featureId, story) {
+  const tlPath = storyTestListJson(consortDir, featureId, story);
+  if (!(0, import_fs15.existsSync)(tlPath)) return null;
+  let testListJson;
+  try {
+    testListJson = (0, import_fs15.readFileSync)(tlPath, "utf8");
+  } catch {
+    return null;
+  }
+  const acLayerById = storyAcLayers(consortDir, featureId, story);
+  const violations = [];
+  for (const r of [
+    checkClientKindLayerCoherence(testListJson, acLayerById),
+    checkJsdomBrowserAssertion(testListJson)
+  ]) {
+    if (!r.ok) violations.push(...r.violations);
+  }
+  return violations.length === 0 ? null : violations.join("; ");
+}
+function testListConforms(consortDir, featureId, story) {
+  return testlistConformanceReason(consortDir, featureId, story) === null;
+}
+
+// consort/architecture/architecture-canon.ts
+init_cjs_shims();
+var import_fs16 = require("fs");
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
 function readCanon(consortDir) {
   const f = architectureCanonJson(consortDir);
-  if (!(0, import_fs15.existsSync)(f)) return void 0;
+  if (!(0, import_fs16.existsSync)(f)) return void 0;
   try {
-    return JSON.parse((0, import_fs15.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs16.readFileSync)(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -13813,6 +13919,9 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
         return false;
       }
     },
+    testListConforms(story) {
+      return testListConforms(consortDir, featureId, story);
+    },
     designFingerprint(story) {
       return storyDesignFingerprint(consortDir, featureId, story);
     },
@@ -13986,7 +14095,7 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_fs18 = require("fs");
+var import_fs19 = require("fs");
 
 // consort/gates/gate-conformance-guard.ts
 init_cjs_shims();
@@ -13995,15 +14104,15 @@ var import_node_path22 = require("path");
 
 // consort/architecture/architecture-conventions.ts
 init_cjs_shims();
-var import_fs16 = require("fs");
+var import_fs17 = require("fs");
 function normModule(m) {
   return m.replace(/\/+$/, "");
 }
 function readConventions(consortDir) {
   const f = architectureConventionsJson(consortDir);
-  if (!(0, import_fs16.existsSync)(f)) return void 0;
+  if (!(0, import_fs17.existsSync)(f)) return void 0;
   try {
-    return JSON.parse((0, import_fs16.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs17.readFileSync)(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -14045,7 +14154,7 @@ function assertArchitectureConforms(conventions, architectureJsonContent) {
 
 // consort/gates/registered-breakdown.ts
 init_cjs_shims();
-var import_fs17 = require("fs");
+var import_fs18 = require("fs");
 var import_path14 = require("path");
 var registrationPath = (consortDir) => (0, import_path14.join)(consortDir, "registration.json");
 function storySlug(id) {
@@ -14085,9 +14194,9 @@ function checkRegisteredBreakdown(registration, derived) {
 }
 function readRegistration(consortDir, featureId) {
   const p = registrationPath(consortDir);
-  if (!(0, import_fs17.existsSync)(p)) return null;
+  if (!(0, import_fs18.existsSync)(p)) return null;
   try {
-    const reg = JSON.parse((0, import_fs17.readFileSync)(p, "utf8"));
+    const reg = JSON.parse((0, import_fs18.readFileSync)(p, "utf8"));
     if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
     return reg;
   } catch {
@@ -14096,10 +14205,10 @@ function readRegistration(consortDir, featureId) {
 }
 function readDerivedBreakdown(consortDir, featureId) {
   const sdir = storiesDir(consortDir, featureId);
-  if (!(0, import_fs17.existsSync)(sdir)) return [];
-  return (0, import_fs17.readdirSync)(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+  if (!(0, import_fs18.existsSync)(sdir)) return [];
+  return (0, import_fs18.readdirSync)(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
     const adir = acsDir(consortDir, featureId, e.name);
-    const acs = (0, import_fs17.existsSync)(adir) ? (0, import_fs17.readdirSync)(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    const acs = (0, import_fs18.existsSync)(adir) ? (0, import_fs18.readdirSync)(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
     return { id: e.name, acs };
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -14281,6 +14390,22 @@ function fitnessClauseCoverageReason(consortDir, featureId, testListJson) {
   const r = checkFitnessClauseCoverage(testListJson, arch);
   return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
 }
+function nfrClauseScopeReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const storiesDir2 = (0, import_node_path22.join)(featureDir2(consortDir, featureId), "stories");
+  if (!(0, import_node_fs20.existsSync)(storiesDir2)) return null;
+  const knownAcIds = [];
+  for (const s of (0, import_node_fs20.readdirSync)(storiesDir2)) {
+    const ad = (0, import_node_path22.join)(storiesDir2, s, "acs");
+    if (!(0, import_node_fs20.existsSync)(ad)) return null;
+    const files = (0, import_node_fs20.readdirSync)(ad).filter((f) => f.endsWith(".json"));
+    if (files.length === 0) return null;
+    for (const f of files) knownAcIds.push(f.replace(/\.json$/, ""));
+  }
+  const r = checkNfrClauseScope(arch, knownAcIds);
+  return r.ok ? null : `NFR clause scope failed: ${r.violations.join("; ")}`;
+}
 function fitnessSingularCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
@@ -14342,6 +14467,10 @@ function acReferenceReason(consortDir, featureId, testListJson) {
   const dangling = (tl.items ?? []).filter((i) => typeof i.ac_id === "string" && !known.has(i.ac_id));
   if (dangling.length === 0) return null;
   return `test-list ac_id references failed: ${dangling.map((i) => `${i.id ?? "?"} -> '${i.ac_id}'`).join("; ")} do not resolve to any AC file under stories/*/acs/ (issue #199's mistagging class: an item attached to a non-existent AC anchors nothing, and the story it was meant to cover ships uncovered). Re-point each at the correct existing AC id.`;
+}
+function jsdomBrowserAssertionReason(testListJson) {
+  const r = checkJsdomBrowserAssertion(testListJson);
+  return r.ok ? null : `jsdom-vacuous-browser-assertion: ${r.violations.join("; ")}`;
 }
 function e2eCoverageReason(consortDir, featureId, testListJson) {
   const storiesDir2 = (0, import_node_path22.join)(featureDir2(consortDir, featureId), "stories");
@@ -14574,6 +14703,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (fitnessReason !== null) return { reason: fitnessReason };
         const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
         if (clauseReason !== null) return { reason: clauseReason };
+        const scopeReason = nfrClauseScopeReason(consortDir, featureId);
+        if (scopeReason !== null) return { reason: scopeReason };
         const singularReason = fitnessSingularCoverageReason(consortDir, featureId, tlJson);
         if (singularReason !== null) return { reason: singularReason };
         const kindLayerReason = clientKindLayerReason(consortDir, featureId, tlJson);
@@ -14584,6 +14715,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (distinctReason !== null) return { reason: distinctReason };
         const e2eReason = e2eCoverageReason(consortDir, featureId, tlJson);
         if (e2eReason !== null) return { reason: e2eReason };
+        const jsdomReason = jsdomBrowserAssertionReason(tlJson);
+        if (jsdomReason !== null) return { reason: jsdomReason };
       }
       return conf;
     }
@@ -14629,8 +14762,8 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!(0, import_fs18.existsSync)(p)) return initPipeline(featureId);
-  return JSON.parse((0, import_fs18.readFileSync)(p, "utf8"));
+  if (!(0, import_fs19.existsSync)(p)) return initPipeline(featureId);
+  return JSON.parse((0, import_fs19.readFileSync)(p, "utf8"));
 }
 
 // consort/session/response-formatter.ts
@@ -15036,7 +15169,7 @@ function formatRoleResponse(args) {
 
 // consort/orchestrator/status/feature-status.ts
 init_cjs_shims();
-var import_fs19 = require("fs");
+var import_fs20 = require("fs");
 var import_path15 = require("path");
 
 // consort/gates/design-spec-gate.ts
@@ -15069,9 +15202,9 @@ function deriveFeaturePhase(stories) {
 }
 function featureRequestTitle(featureDirPath, id) {
   const p = (0, import_path15.join)(featureDirPath, "feature-request.md");
-  if (!(0, import_fs19.existsSync)(p)) return id;
+  if (!(0, import_fs20.existsSync)(p)) return id;
   try {
-    const h1 = (0, import_fs19.readFileSync)(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
+    const h1 = (0, import_fs20.readFileSync)(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
     return h1 ? h1.replace(/^#\s+/, "").trim() : id;
   } catch {
     return id;
@@ -15079,11 +15212,11 @@ function featureRequestTitle(featureDirPath, id) {
 }
 function deliveredFeatures(consortDir) {
   const root = featuresDir(consortDir);
-  if (!(0, import_fs19.existsSync)(root)) return [];
+  if (!(0, import_fs20.existsSync)(root)) return [];
   const out = [];
-  const ids = (0, import_fs19.readdirSync)(root).filter((d) => {
+  const ids = (0, import_fs20.readdirSync)(root).filter((d) => {
     try {
-      return (0, import_fs19.statSync)((0, import_path15.join)(root, d)).isDirectory();
+      return (0, import_fs20.statSync)((0, import_path15.join)(root, d)).isDirectory();
     } catch {
       return false;
     }
@@ -15115,9 +15248,16 @@ function contextRubric(consortDir, featureId, story, ac) {
   if (layers.size) parts.push(`layer${layers.size > 1 ? "s" : ""}=${[...layers].join(", ")}`);
   try {
     const arch = JSON.parse(fs16.readFileSync(architectureJson(consortDir, featureId), "utf8"));
-    const nfrs = (arch.nfrs ?? []).filter(
-      (n) => n && typeof n.id === "string" && n.tier !== "platform" && (n.applies_to === story || n.applies_to === featureId)
-    );
+    const acIdSet = new Set(acIds);
+    const nfrs = (arch.nfrs ?? []).filter((n) => {
+      if (!n || typeof n.id !== "string" || n.tier === "platform") return false;
+      if (n.applies_to !== story && n.applies_to !== featureId) return false;
+      const anchored = Array.isArray(n.fitness_functions) ? n.fitness_functions.filter(
+        (c) => c && typeof c === "object" && Array.isArray(c.realized_by) && c.realized_by.length > 0
+      ) : [];
+      if (anchored.length === 0) return true;
+      return anchored.some((c) => c.realized_by.some((a) => acIdSet.has(a)));
+    });
     if (nfrs.length) {
       parts.push(`required NFRs, ${nfrs.map((n) => `${n.id}${n.brief ? ` (${n.brief})` : ""}`).join("; ")}`);
     }
@@ -15552,7 +15692,7 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
     }
     case "navigator":
       if (action.buildMode === "reflect") {
-        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json) + NFRs.` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell). Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist","detail":"<the defect>"}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to spec-author (an AC/spec defect) or test-strategist (a test-list/coverage defect). Write ONLY that file; the orchestrator routes any fix deterministically.`;
+        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json) + NFRs.` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle. The DETERMINISTIC pre-reflect gate has ALREADY verified the structural classes \u2014 client-kind\u2194AC-layer coherence, E2E-layer coverage by a real Playwright spec, and that no real-browser navigation/reload assertion sits in the jsdom component harness \u2014 so do NOT spend a finding re-flagging those; focus on the SEMANTIC defects: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell). Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist","detail":"<the defect>"}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to spec-author (an AC/spec defect) or test-strategist (a test-list/coverage defect). Write ONLY that file; the orchestrator routes any fix deterministically.`;
       }
       if (action.buildMode === "assess") {
         const gfAssess = action.ac ? readGreenFailure(consortDir, featureId, s, action.ac) : void 0;
@@ -15899,6 +16039,8 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
         { kind: "cli", bin: CANON_NOTES_BIN, args: ["--story", action.story, ...tdd] },
         { kind: "cli", bin: LOG_BIN, args: ["--reconcile", ...tdd] }
       ];
+    case "flag-testlist-nonconformance":
+      return [{ kind: "cli", bin: CYCLE_BIN, args: ["testlist-gate", "--story", action.story, ...tdd] }];
     case "surface-gate":
       return [{ kind: "cli", bin: PIPELINE_BIN, args: ["surface", "--story", action.story, ...tdd] }];
     case "approve-gate":

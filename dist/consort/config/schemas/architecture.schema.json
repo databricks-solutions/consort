@@ -107,8 +107,25 @@
           },
           "fitness_functions": {
             "type": "array",
-            "items": { "type": "string", "minLength": 1 },
-            "description": "The ATOMIC per-clause form of `fitness_function`: ONE independently-testable obligation per entry. Use this INSTEAD of packing multiple checks into one `fitness_function` prose string (the compound form the reflect gate has to decompose, which it does inconsistently across laps and surfaces ONE-uncovered-clause-per-lap - the piecemeal reflect thrash). Each entry is defended by its OWN test; the Test Strategist authors one `fitness` test per entry, tagging each with this NFR's `id` via the test-list item's `nfr_id`, and the reflect gate checks coverage PER ENTRY deterministically (no prose decomposition). When present, `checkFitnessClauseCoverage` hard-blocks the test_list gate unless every entry is covered by a test referencing this NFR's `id`. Requires this NFR to set `id`. Mutually exclusive with `fitness_function` (set one or the other, never both)."
+            "items": {
+              "oneOf": [
+                { "type": "string", "minLength": 1 },
+                {
+                  "type": "object",
+                  "required": ["clause"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "clause": { "type": "string", "minLength": 1, "description": "The one independently-testable obligation (the prose the string form carried)." },
+                    "realized_by": {
+                      "type": "array",
+                      "items": { "type": "string", "minLength": 1 },
+                      "description": "The AC id(s) that INTRODUCE the operation this clause governs. The clause only obligates coverage in a story that HOLDS one of these ACs (build-context threads it there, checkFitnessClauseCoverage credits it by a test whose ac_id is in this list), and checkNfrClauseScope flags the clause when NO story's ACs realize it (a clause mis-scoped to a story that never introduces its operation — e.g. a pick-overcommit clause with no pick AC). Omit for a clause any relevant story realizes (falls back to nfr_id crediting)."
+                    }
+                  }
+                }
+              ]
+            },
+            "description": "The ATOMIC per-clause form of `fitness_function`: ONE independently-testable obligation per entry. Use this INSTEAD of packing multiple checks into one `fitness_function` prose string (the compound form the reflect gate has to decompose, which it does inconsistently across laps and surfaces ONE-uncovered-clause-per-lap - the piecemeal reflect thrash). Each entry is EITHER a bare string (the clause prose; credited by any test referencing this NFR's `id` via `nfr_id`) OR an object `{clause, realized_by?}` where `realized_by` names the AC id(s) that introduce the operation the clause governs — so the clause only obligates the story that HOLDS a realizing AC (never mis-scoped to a story that lacks the operation), and coverage is credited PER-CLAUSE by a test whose `ac_id` realizes it (not a bare `nfr_id` match, which a mis-tag could satisfy). The Test Strategist authors one `fitness` test per entry, tagging each with this NFR's `id`; `checkFitnessClauseCoverage` hard-blocks the test_list gate unless every entry is covered, and `checkNfrClauseScope` flags an object-clause whose `realized_by` AC exists in no story. Requires this NFR to set `id`. Mutually exclusive with `fitness_function` (set one or the other, never both)."
           },
           "notes": { "type": "string" },
           "applies_to": {

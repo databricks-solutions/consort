@@ -7150,6 +7150,25 @@ function checkE2ECoverage(testListJson, e2eAcIds) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
+function checkJsdomBrowserAssertion(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
+  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
 function checkPersistenceCoverage(testListJson, architectureJson2) {
   let arch;
   try {
@@ -7178,6 +7197,9 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
   }
   return { ok: true };
 }
+function clauseRealizedBy(c) {
+  return typeof c === "object" && c !== null && Array.isArray(c.realized_by) ? c.realized_by.filter((a) => typeof a === "string" && a.length > 0) : [];
+}
 function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   let arch;
   try {
@@ -7185,7 +7207,10 @@ function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   } catch {
     return { ok: true };
   }
-  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform").map((n) => ({ id: n.id, clauses: n.fitness_functions.filter((c) => typeof c === "string" && c.trim().length > 0).length })).filter((n) => n.clauses > 0);
+  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform").map((n) => ({
+    id: n.id,
+    clauses: n.fitness_functions.filter((c) => typeof c === "string" ? c.trim().length > 0 : typeof c?.clause === "string")
+  })).filter((n) => n.clauses.length > 0);
   if (atomic.length === 0) return { ok: true };
   let tl;
   try {
@@ -7193,20 +7218,56 @@ function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   } catch (err) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
-  const countById = /* @__PURE__ */ new Map();
-  for (const it of tl.items ?? []) {
-    if (typeof it.nfr_id === "string" && it.nfr_id.length > 0) countById.set(it.nfr_id, (countById.get(it.nfr_id) ?? 0) + 1);
+  const items = tl.items ?? [];
+  const allAcIds = new Set(items.map((it) => it.ac_id).filter((a) => typeof a === "string"));
+  const violations = [];
+  for (const nfr of atomic) {
+    const nfrItems = items.filter((it) => it.nfr_id === nfr.id);
+    const acClauses = nfr.clauses.filter((c) => clauseRealizedBy(c).length > 0);
+    const anchoredAcs = new Set(acClauses.flatMap((c) => clauseRealizedBy(c)));
+    for (const c of acClauses) {
+      const rb = clauseRealizedBy(c);
+      const demanded = rb.some((a) => allAcIds.has(a));
+      if (!demanded) continue;
+      const covered = nfrItems.some((it) => typeof it.ac_id === "string" && rb.includes(it.ac_id));
+      if (!covered) {
+        violations.push(
+          `NFR ${nfr.id} clause "${typeof c === "object" && c.clause || ""}" is realized by AC(s) ${rb.join(", ")} present in this test-list but no fitness item tagged nfr_id:"${nfr.id}" anchors to a realizing AC \u2014 author one for it (a bare nfr_id tag on an unrelated AC does not count)`
+        );
+      }
+    }
+    const genericNeed = nfr.clauses.length - acClauses.length;
+    const genericHave = nfrItems.filter((it) => !(typeof it.ac_id === "string" && anchoredAcs.has(it.ac_id))).length;
+    if (genericHave < genericNeed) {
+      violations.push(
+        `NFR ${nfr.id} declares ${genericNeed} atomic fitness clause(s) (fitness_functions) but only ${genericHave} test-list item(s) reference it via nfr_id (author one fitness test per clause, each tagged nfr_id:"${nfr.id}"; do not pack multiple clauses into one test)`
+      );
+    }
   }
-  const short = atomic.map((n) => ({ id: n.id, need: n.clauses, have: countById.get(n.id) ?? 0 })).filter((n) => n.have < n.need);
-  if (short.length > 0) {
-    return {
-      ok: false,
-      violations: short.map(
-        (n) => `NFR ${n.id} declares ${n.need} atomic fitness clause(s) (fitness_functions) but only ${n.have} test-list item(s) reference it via nfr_id (author one fitness test per clause, each tagged nfr_id:"${n.id}"; do not pack multiple clauses into one test)`
-      )
-    };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkNfrClauseScope(architectureJson2, knownAcIds) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
   }
-  return { ok: true };
+  const known = new Set(knownAcIds);
+  const violations = [];
+  for (const nfr of arch.nfrs ?? []) {
+    if (!nfr || typeof nfr.id !== "string" || !Array.isArray(nfr.fitness_functions)) continue;
+    for (const c of nfr.fitness_functions) {
+      const rb = clauseRealizedBy(c);
+      if (rb.length === 0) continue;
+      if (!rb.some((a) => known.has(a))) {
+        violations.push(
+          `NFR ${nfr.id} clause "${typeof c === "object" && c.clause || ""}" names realized_by AC(s) ${rb.join(", ")}, none of which exist in any story of this feature \u2014 the operation it governs is introduced by no AC. Add the realizing AC, or defer the clause to the story that introduces the operation (do not scope it to a story that lacks it)`
+        );
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 var PLATFORM_NFR_GATES = /* @__PURE__ */ new Set(["consort-layering-clean", "config-in-env"]);
 function checkPlatformNfrDefended(architectureJson2, knownGates = PLATFORM_NFR_GATES) {
@@ -8525,6 +8586,22 @@ function fitnessClauseCoverageReason(consortDir, featureId, testListJson) {
   const r = checkFitnessClauseCoverage(testListJson, arch);
   return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
 }
+function nfrClauseScopeReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const storiesDir2 = (0, import_node_path3.join)(featureDir2(consortDir, featureId), "stories");
+  if (!(0, import_node_fs3.existsSync)(storiesDir2)) return null;
+  const knownAcIds = [];
+  for (const s of (0, import_node_fs3.readdirSync)(storiesDir2)) {
+    const ad = (0, import_node_path3.join)(storiesDir2, s, "acs");
+    if (!(0, import_node_fs3.existsSync)(ad)) return null;
+    const files = (0, import_node_fs3.readdirSync)(ad).filter((f) => f.endsWith(".json"));
+    if (files.length === 0) return null;
+    for (const f of files) knownAcIds.push(f.replace(/\.json$/, ""));
+  }
+  const r = checkNfrClauseScope(arch, knownAcIds);
+  return r.ok ? null : `NFR clause scope failed: ${r.violations.join("; ")}`;
+}
 function fitnessSingularCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
@@ -8586,6 +8663,10 @@ function acReferenceReason(consortDir, featureId, testListJson) {
   const dangling = (tl.items ?? []).filter((i) => typeof i.ac_id === "string" && !known.has(i.ac_id));
   if (dangling.length === 0) return null;
   return `test-list ac_id references failed: ${dangling.map((i) => `${i.id ?? "?"} -> '${i.ac_id}'`).join("; ")} do not resolve to any AC file under stories/*/acs/ (issue #199's mistagging class: an item attached to a non-existent AC anchors nothing, and the story it was meant to cover ships uncovered). Re-point each at the correct existing AC id.`;
+}
+function jsdomBrowserAssertionReason(testListJson) {
+  const r = checkJsdomBrowserAssertion(testListJson);
+  return r.ok ? null : `jsdom-vacuous-browser-assertion: ${r.violations.join("; ")}`;
 }
 function e2eCoverageReason(consortDir, featureId, testListJson) {
   const storiesDir2 = (0, import_node_path3.join)(featureDir2(consortDir, featureId), "stories");
@@ -8818,6 +8899,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (fitnessReason !== null) return { reason: fitnessReason };
         const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
         if (clauseReason !== null) return { reason: clauseReason };
+        const scopeReason = nfrClauseScopeReason(consortDir, featureId);
+        if (scopeReason !== null) return { reason: scopeReason };
         const singularReason = fitnessSingularCoverageReason(consortDir, featureId, tlJson);
         if (singularReason !== null) return { reason: singularReason };
         const kindLayerReason = clientKindLayerReason(consortDir, featureId, tlJson);
@@ -8828,6 +8911,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (distinctReason !== null) return { reason: distinctReason };
         const e2eReason = e2eCoverageReason(consortDir, featureId, tlJson);
         if (e2eReason !== null) return { reason: e2eReason };
+        const jsdomReason = jsdomBrowserAssertionReason(tlJson);
+        if (jsdomReason !== null) return { reason: jsdomReason };
       }
       return conf;
     }

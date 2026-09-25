@@ -8760,9 +8760,10 @@ function checkReversibleInvariantRoundTrip(projectDir) {
     }
     for (const pi of reversible) {
       const covering = items.filter((it) => it.invariant_id === pi.id);
-      const hasRoundTrip = covering.some(
-        (it) => /downgrade[\s\S]{0,80}upgrade|upgrade[\s\S]{0,80}downgrade|round.?trip/i.test(it.description ?? "")
-      );
+      const hasRoundTrip = covering.some((it) => {
+        const d = it.description ?? "";
+        return /\bround.?trip\b/i.test(d) || /\bdowngrade\b/i.test(d) && /\bupgrade\b/i.test(d);
+      });
       if (!hasRoundTrip) {
         out.push({
           smell: "reversible-invariant-round-trip",
@@ -9508,6 +9509,108 @@ function recordReflectionGate(consortDir, feature, story) {
   return hits;
 }
 
+// consort/smells/testlist-conformance.ts
+init_cjs_shims();
+var import_fs9 = require("fs");
+
+// consort/orchestrator/validators/conformance/artifact-conformance.ts
+init_cjs_shims();
+function checkJsdomBrowserAssertion(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
+  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkClientKindLayerCoherence(testListJson, acLayerById) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    const layer = acLayerById[it.ac_id];
+    if (layer !== void 0 && layer !== "E2E") {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+
+// consort/smells/testlist-conformance.ts
+var TESTLIST_SMELL = "reflect-testlist-defect";
+function storyAcLayers(consortDir, featureId, story) {
+  const acLayerById = {};
+  const dir = acsDir(consortDir, featureId, story);
+  if ((0, import_fs9.existsSync)(dir)) {
+    for (const f of (0, import_fs9.readdirSync)(dir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse((0, import_fs9.readFileSync)(`${dir}/${f}`, "utf8")).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+      }
+    }
+  }
+  return acLayerById;
+}
+function testlistConformanceReason(consortDir, featureId, story) {
+  const tlPath = storyTestListJson(consortDir, featureId, story);
+  if (!(0, import_fs9.existsSync)(tlPath)) return null;
+  let testListJson;
+  try {
+    testListJson = (0, import_fs9.readFileSync)(tlPath, "utf8");
+  } catch {
+    return null;
+  }
+  const acLayerById = storyAcLayers(consortDir, featureId, story);
+  const violations = [];
+  for (const r of [
+    checkClientKindLayerCoherence(testListJson, acLayerById),
+    checkJsdomBrowserAssertion(testListJson)
+  ]) {
+    if (!r.ok) violations.push(...r.violations);
+  }
+  return violations.length === 0 ? null : violations.join("; ");
+}
+function recordTestListGate(consortDir, featureId, story) {
+  const reason = testlistConformanceReason(consortDir, featureId, story);
+  if (reason === null) {
+    resolveOpenSmells(consortDir, TESTLIST_SMELL, {
+      story_id: story,
+      kind: "cleared",
+      note: "test-list now conforms to the deterministic structural checks"
+    });
+    return [];
+  }
+  const hit = {
+    smell: TESTLIST_SMELL,
+    cycle_ids: [],
+    detail: `test-list conformance: ${reason}`,
+    story_id: story
+  };
+  if (hasOpenSmell(consortDir, TESTLIST_SMELL, story)) return [];
+  writeSmellsLog(consortDir, [hit]);
+  return [hit];
+}
+
 // bin/consort/cycle.cli.ts
 function parse(argv) {
   const out = { cmd: argv[0] };
@@ -9680,6 +9783,16 @@ async function main() {
       process.stdout.write(
         hits.length === 0 ? `cycle: reflect gate passed for ${a.story} (no design defect)
 ` : `cycle: reflect gate flagged ${hits.length} design defect(s) for ${a.story}: ${hits.map((h) => h.smell).join(", ")}
+`
+      );
+      return 0;
+    }
+    case "testlist-gate": {
+      if (!a.story) return usage("testlist-gate: --story is required.");
+      const hits = recordTestListGate(consortDir, a.feature, a.story);
+      process.stdout.write(
+        hits.length === 0 ? `cycle: test-list gate passed for ${a.story} (structurally conformant)
+` : `cycle: test-list gate flagged ${hits.length} structural defect(s) for ${a.story}: ${hits.map((h) => h.smell).join(", ")}
 `
       );
       return 0;

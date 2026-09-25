@@ -7818,6 +7818,7 @@ function nextDesignAction(state) {
       architectProjectable: false,
       dbaDesigned: false,
       testListReady: false,
+      testListConforms: true,
       reflectionPassed: false,
       reflectionVerdictWritten: false
     };
@@ -7828,6 +7829,7 @@ function nextDesignAction(state) {
     }
     if (!design.dbaDesigned) return { kind: "invoke-role", role: "dba", story };
     if (!design.testListReady) return { kind: "invoke-role", role: "test-strategist", story };
+    if (!design.testListConforms) return { kind: "flag-testlist-nonconformance", story };
     if (!design.reflectionPassed) return { kind: "invoke-role", role: "navigator", story, buildMode: "reflect" };
     if (!v?.gateSurfaced) return { kind: "surface-gate", story };
     return { kind: "approve-gate", story };
@@ -8156,6 +8158,25 @@ function checkTestListMd(content) {
   }
   return violations;
 }
+function checkJsdomBrowserAssertion(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
+  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
 function checkDbDesign(dbDesignJson2, architectureJson2) {
   let arch;
   try {
@@ -8199,6 +8220,25 @@ function canonicalArtifactName(path13) {
   const base = basename(path13);
   if (basename(dirname3(path13)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
+}
+function checkClientKindLayerCoherence(testListJson, acLayerById) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    const layer = acLayerById[it.ac_id];
+    if (layer !== void 0 && layer !== "E2E") {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
@@ -8650,6 +8690,7 @@ function storyView(id, e, probe, loop) {
       architectProjectable: probe.architectProjectable(id),
       dbaDesigned: probe.dbaDesigned(id),
       testListReady: probe.testListReady(id),
+      testListConforms: probe.testListConforms(id),
       reflectionPassed: probe.reflectionPassed(id),
       reflectionVerdictWritten: probe.reflectionVerdictWritten(id)
     },
@@ -9602,17 +9643,58 @@ function reflectionVerdictWritten(consortDir, feature, story) {
 }
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
+// consort/smells/testlist-conformance.ts
+init_esm_shims();
+import { existsSync as existsSync38, readFileSync as readFileSync35, readdirSync as readdirSync22 } from "fs";
+function storyAcLayers(consortDir, featureId, story) {
+  const acLayerById = {};
+  const dir = acsDir(consortDir, featureId, story);
+  if (existsSync38(dir)) {
+    for (const f of readdirSync22(dir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse(readFileSync35(`${dir}/${f}`, "utf8")).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+      }
+    }
+  }
+  return acLayerById;
+}
+function testlistConformanceReason(consortDir, featureId, story) {
+  const tlPath = storyTestListJson(consortDir, featureId, story);
+  if (!existsSync38(tlPath)) return null;
+  let testListJson;
+  try {
+    testListJson = readFileSync35(tlPath, "utf8");
+  } catch {
+    return null;
+  }
+  const acLayerById = storyAcLayers(consortDir, featureId, story);
+  const violations = [];
+  for (const r of [
+    checkClientKindLayerCoherence(testListJson, acLayerById),
+    checkJsdomBrowserAssertion(testListJson)
+  ]) {
+    if (!r.ok) violations.push(...r.violations);
+  }
+  return violations.length === 0 ? null : violations.join("; ");
+}
+function testListConforms(consortDir, featureId, story) {
+  return testlistConformanceReason(consortDir, featureId, story) === null;
+}
+
 // consort/architecture/architecture-canon.ts
 init_esm_shims();
-import { existsSync as existsSync38, readFileSync as readFileSync35, writeFileSync as writeFileSync23, mkdirSync as mkdirSync23, readdirSync as readdirSync22 } from "fs";
+import { existsSync as existsSync39, readFileSync as readFileSync36, writeFileSync as writeFileSync23, mkdirSync as mkdirSync23, readdirSync as readdirSync23 } from "fs";
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
 function readCanon(consortDir) {
   const f = architectureCanonJson(consortDir);
-  if (!existsSync38(f)) return void 0;
+  if (!existsSync39(f)) return void 0;
   try {
-    return JSON.parse(readFileSync35(f, "utf8"));
+    return JSON.parse(readFileSync36(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -9794,6 +9876,9 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
         return false;
       }
     },
+    testListConforms(story) {
+      return testListConforms(consortDir, featureId, story);
+    },
     designFingerprint(story) {
       return storyDesignFingerprint(consortDir, featureId, story);
     },
@@ -9967,11 +10052,11 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync41, readFileSync as readFileSync38, writeFileSync as writeFileSync24, mkdirSync as mkdirSync24, readdirSync as readdirSync25, statSync as statSync16, rmSync as rmSync10 } from "fs";
+import { existsSync as existsSync42, readFileSync as readFileSync39, writeFileSync as writeFileSync24, mkdirSync as mkdirSync24, readdirSync as readdirSync26, statSync as statSync16, rmSync as rmSync10 } from "fs";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync40, readFileSync as readFileSync37, readdirSync as readdirSync24, statSync as statSync15 } from "fs";
+import { existsSync as existsSync41, readFileSync as readFileSync38, readdirSync as readdirSync25, statSync as statSync15 } from "fs";
 import { join as join39, dirname as dirname21 } from "path";
 
 // consort/architecture/architecture-conventions.ts
@@ -9992,18 +10077,18 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!existsSync41(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync38(p, "utf8"));
+  if (!existsSync42(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync39(p, "utf8"));
 }
 
 // consort/session/response-formatter.ts
 init_esm_shims();
-import { existsSync as existsSync43, readFileSync as readFileSync40, readdirSync as readdirSync27 } from "fs";
+import { existsSync as existsSync44, readFileSync as readFileSync41, readdirSync as readdirSync28 } from "fs";
 import { dirname as dirname22 } from "path";
 
 // consort/architecture/e2e-route-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync42, readFileSync as readFileSync39, readdirSync as readdirSync26, statSync as statSync17 } from "fs";
+import { existsSync as existsSync43, readFileSync as readFileSync40, readdirSync as readdirSync27, statSync as statSync17 } from "fs";
 import { join as join40, relative as relative7 } from "path";
 var CLIENT_SRC = join40("client", "src");
 var E2E_DIR = join40("client", "tests", "e2e");
@@ -10011,12 +10096,12 @@ var E2E_DIR = join40("client", "tests", "e2e");
 // consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync43(file)) {
+  if (!existsSync44(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = readFileSync40(file, "utf8");
+    content = readFileSync41(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -10125,7 +10210,7 @@ init_esm_shims();
 
 // consort/gates/sprint-gates.ts
 init_esm_shims();
-import { existsSync as existsSync45, mkdirSync as mkdirSync26, readFileSync as readFileSync43, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync26 } from "fs";
+import { existsSync as existsSync46, mkdirSync as mkdirSync26, readFileSync as readFileSync44, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync26 } from "fs";
 
 // consort/gates/gate-hash.ts
 init_esm_shims();
@@ -10145,10 +10230,10 @@ function sprintGatesFile(consortDir, sprint) {
 function readSprintGates(sprint, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = sprintGatesFile(consortDir, sprint);
-  if (!existsSync45(file)) return defaultSprintGatesState(sprint);
+  if (!existsSync46(file)) return defaultSprintGatesState(sprint);
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync43(file, "utf8"));
+    parsed = JSON.parse(readFileSync44(file, "utf8"));
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);

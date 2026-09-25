@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { W as WorkflowAction } from '../../workflow-vocabulary-BcVQ-ETk.js';
+import { W as WorkflowAction } from '../../workflow-vocabulary-CODQuMHI.js';
 
 /** Compose the interactive pause message for the planning `author-requests` step.
  *  NOTHING has been approved/committed, so this must never read as "complete".

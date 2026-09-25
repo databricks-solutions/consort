@@ -9798,6 +9798,7 @@ function actionLane(action) {
     case "approve-plan-gate":
     case "planning-complete":
       return "planning";
+    case "flag-testlist-nonconformance":
     case "project-architect-notes":
     case "surface-gate":
     case "approve-gate":
@@ -9851,6 +9852,7 @@ function nextDesignAction(state) {
       architectProjectable: false,
       dbaDesigned: false,
       testListReady: false,
+      testListConforms: true,
       reflectionPassed: false,
       reflectionVerdictWritten: false
     };
@@ -9861,6 +9863,7 @@ function nextDesignAction(state) {
     }
     if (!design.dbaDesigned) return { kind: "invoke-role", role: "dba", story };
     if (!design.testListReady) return { kind: "invoke-role", role: "test-strategist", story };
+    if (!design.testListConforms) return { kind: "flag-testlist-nonconformance", story };
     if (!design.reflectionPassed) return { kind: "invoke-role", role: "navigator", story, buildMode: "reflect" };
     if (!v?.gateSurfaced) return { kind: "surface-gate", story };
     return { kind: "approve-gate", story };
@@ -10518,6 +10521,25 @@ function checkE2ECoverage(testListJson, e2eAcIds) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
+function checkJsdomBrowserAssertion(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
+  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
 function checkPersistenceCoverage(testListJson, architectureJson2) {
   let arch;
   try {
@@ -10546,6 +10568,9 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
   }
   return { ok: true };
 }
+function clauseRealizedBy(c) {
+  return typeof c === "object" && c !== null && Array.isArray(c.realized_by) ? c.realized_by.filter((a) => typeof a === "string" && a.length > 0) : [];
+}
 function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   let arch;
   try {
@@ -10553,7 +10578,10 @@ function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   } catch {
     return { ok: true };
   }
-  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform").map((n) => ({ id: n.id, clauses: n.fitness_functions.filter((c) => typeof c === "string" && c.trim().length > 0).length })).filter((n) => n.clauses > 0);
+  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform").map((n) => ({
+    id: n.id,
+    clauses: n.fitness_functions.filter((c) => typeof c === "string" ? c.trim().length > 0 : typeof c?.clause === "string")
+  })).filter((n) => n.clauses.length > 0);
   if (atomic.length === 0) return { ok: true };
   let tl;
   try {
@@ -10561,20 +10589,56 @@ function checkFitnessClauseCoverage(testListJson, architectureJson2) {
   } catch (err) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
-  const countById = /* @__PURE__ */ new Map();
-  for (const it of tl.items ?? []) {
-    if (typeof it.nfr_id === "string" && it.nfr_id.length > 0) countById.set(it.nfr_id, (countById.get(it.nfr_id) ?? 0) + 1);
+  const items = tl.items ?? [];
+  const allAcIds = new Set(items.map((it) => it.ac_id).filter((a) => typeof a === "string"));
+  const violations = [];
+  for (const nfr of atomic) {
+    const nfrItems = items.filter((it) => it.nfr_id === nfr.id);
+    const acClauses = nfr.clauses.filter((c) => clauseRealizedBy(c).length > 0);
+    const anchoredAcs = new Set(acClauses.flatMap((c) => clauseRealizedBy(c)));
+    for (const c of acClauses) {
+      const rb = clauseRealizedBy(c);
+      const demanded = rb.some((a) => allAcIds.has(a));
+      if (!demanded) continue;
+      const covered = nfrItems.some((it) => typeof it.ac_id === "string" && rb.includes(it.ac_id));
+      if (!covered) {
+        violations.push(
+          `NFR ${nfr.id} clause "${typeof c === "object" && c.clause || ""}" is realized by AC(s) ${rb.join(", ")} present in this test-list but no fitness item tagged nfr_id:"${nfr.id}" anchors to a realizing AC \u2014 author one for it (a bare nfr_id tag on an unrelated AC does not count)`
+        );
+      }
+    }
+    const genericNeed = nfr.clauses.length - acClauses.length;
+    const genericHave = nfrItems.filter((it) => !(typeof it.ac_id === "string" && anchoredAcs.has(it.ac_id))).length;
+    if (genericHave < genericNeed) {
+      violations.push(
+        `NFR ${nfr.id} declares ${genericNeed} atomic fitness clause(s) (fitness_functions) but only ${genericHave} test-list item(s) reference it via nfr_id (author one fitness test per clause, each tagged nfr_id:"${nfr.id}"; do not pack multiple clauses into one test)`
+      );
+    }
   }
-  const short = atomic.map((n) => ({ id: n.id, need: n.clauses, have: countById.get(n.id) ?? 0 })).filter((n) => n.have < n.need);
-  if (short.length > 0) {
-    return {
-      ok: false,
-      violations: short.map(
-        (n) => `NFR ${n.id} declares ${n.need} atomic fitness clause(s) (fitness_functions) but only ${n.have} test-list item(s) reference it via nfr_id (author one fitness test per clause, each tagged nfr_id:"${n.id}"; do not pack multiple clauses into one test)`
-      )
-    };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkNfrClauseScope(architectureJson2, knownAcIds) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
   }
-  return { ok: true };
+  const known = new Set(knownAcIds);
+  const violations = [];
+  for (const nfr of arch.nfrs ?? []) {
+    if (!nfr || typeof nfr.id !== "string" || !Array.isArray(nfr.fitness_functions)) continue;
+    for (const c of nfr.fitness_functions) {
+      const rb = clauseRealizedBy(c);
+      if (rb.length === 0) continue;
+      if (!rb.some((a) => known.has(a))) {
+        violations.push(
+          `NFR ${nfr.id} clause "${typeof c === "object" && c.clause || ""}" names realized_by AC(s) ${rb.join(", ")}, none of which exist in any story of this feature \u2014 the operation it governs is introduced by no AC. Add the realizing AC, or defer the clause to the story that introduces the operation (do not scope it to a story that lacks it)`
+        );
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 var PLATFORM_NFR_GATES = /* @__PURE__ */ new Set(["consort-layering-clean", "config-in-env"]);
 function checkPlatformNfrDefended(architectureJson2, knownGates = PLATFORM_NFR_GATES) {
@@ -12451,6 +12515,7 @@ function storyView(id, e, probe, loop) {
       architectProjectable: probe.architectProjectable(id),
       dbaDesigned: probe.dbaDesigned(id),
       testListReady: probe.testListReady(id),
+      testListConforms: probe.testListConforms(id),
       reflectionPassed: probe.reflectionPassed(id),
       reflectionVerdictWritten: probe.reflectionVerdictWritten(id)
     },
@@ -13622,17 +13687,58 @@ function reflectionVerdictWritten(consortDir, feature, story) {
 }
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
+// consort/smells/testlist-conformance.ts
+init_esm_shims();
+import { existsSync as existsSync45, readFileSync as readFileSync40, readdirSync as readdirSync28 } from "fs";
+function storyAcLayers(consortDir, featureId, story) {
+  const acLayerById = {};
+  const dir = acsDir(consortDir, featureId, story);
+  if (existsSync45(dir)) {
+    for (const f of readdirSync28(dir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse(readFileSync40(`${dir}/${f}`, "utf8")).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+      }
+    }
+  }
+  return acLayerById;
+}
+function testlistConformanceReason(consortDir, featureId, story) {
+  const tlPath = storyTestListJson(consortDir, featureId, story);
+  if (!existsSync45(tlPath)) return null;
+  let testListJson;
+  try {
+    testListJson = readFileSync40(tlPath, "utf8");
+  } catch {
+    return null;
+  }
+  const acLayerById = storyAcLayers(consortDir, featureId, story);
+  const violations = [];
+  for (const r of [
+    checkClientKindLayerCoherence(testListJson, acLayerById),
+    checkJsdomBrowserAssertion(testListJson)
+  ]) {
+    if (!r.ok) violations.push(...r.violations);
+  }
+  return violations.length === 0 ? null : violations.join("; ");
+}
+function testListConforms(consortDir, featureId, story) {
+  return testlistConformanceReason(consortDir, featureId, story) === null;
+}
+
 // consort/architecture/architecture-canon.ts
 init_esm_shims();
-import { existsSync as existsSync45, readFileSync as readFileSync40, writeFileSync as writeFileSync25, mkdirSync as mkdirSync28, readdirSync as readdirSync28 } from "fs";
+import { existsSync as existsSync46, readFileSync as readFileSync41, writeFileSync as writeFileSync25, mkdirSync as mkdirSync28, readdirSync as readdirSync29 } from "fs";
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
 function readCanon(consortDir) {
   const f = architectureCanonJson(consortDir);
-  if (!existsSync45(f)) return void 0;
+  if (!existsSync46(f)) return void 0;
   try {
-    return JSON.parse(readFileSync40(f, "utf8"));
+    return JSON.parse(readFileSync41(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -13814,6 +13920,9 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
         return false;
       }
     },
+    testListConforms(story) {
+      return testListConforms(consortDir, featureId, story);
+    },
     designFingerprint(story) {
       return storyDesignFingerprint(consortDir, featureId, story);
     },
@@ -13987,24 +14096,24 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync50, readFileSync as readFileSync45, writeFileSync as writeFileSync27, mkdirSync as mkdirSync30, readdirSync as readdirSync32, statSync as statSync21, rmSync as rmSync11 } from "fs";
+import { existsSync as existsSync51, readFileSync as readFileSync46, writeFileSync as writeFileSync27, mkdirSync as mkdirSync30, readdirSync as readdirSync33, statSync as statSync21, rmSync as rmSync11 } from "fs";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync49, readFileSync as readFileSync44, readdirSync as readdirSync31, statSync as statSync20 } from "fs";
+import { existsSync as existsSync50, readFileSync as readFileSync45, readdirSync as readdirSync32, statSync as statSync20 } from "fs";
 import { join as join46, dirname as dirname24 } from "path";
 
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
-import { existsSync as existsSync47, readFileSync as readFileSync42, writeFileSync as writeFileSync26, mkdirSync as mkdirSync29 } from "fs";
+import { existsSync as existsSync48, readFileSync as readFileSync43, writeFileSync as writeFileSync26, mkdirSync as mkdirSync29 } from "fs";
 function normModule(m) {
   return m.replace(/\/+$/, "");
 }
 function readConventions(consortDir) {
   const f = architectureConventionsJson(consortDir);
-  if (!existsSync47(f)) return void 0;
+  if (!existsSync48(f)) return void 0;
   try {
-    return JSON.parse(readFileSync42(f, "utf8"));
+    return JSON.parse(readFileSync43(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -14046,7 +14155,7 @@ function assertArchitectureConforms(conventions, architectureJsonContent) {
 
 // consort/gates/registered-breakdown.ts
 init_esm_shims();
-import { existsSync as existsSync48, readFileSync as readFileSync43, readdirSync as readdirSync30 } from "fs";
+import { existsSync as existsSync49, readFileSync as readFileSync44, readdirSync as readdirSync31 } from "fs";
 import { join as join45 } from "path";
 var registrationPath = (consortDir) => join45(consortDir, "registration.json");
 function storySlug(id) {
@@ -14086,9 +14195,9 @@ function checkRegisteredBreakdown(registration, derived) {
 }
 function readRegistration(consortDir, featureId) {
   const p = registrationPath(consortDir);
-  if (!existsSync48(p)) return null;
+  if (!existsSync49(p)) return null;
   try {
-    const reg = JSON.parse(readFileSync43(p, "utf8"));
+    const reg = JSON.parse(readFileSync44(p, "utf8"));
     if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
     return reg;
   } catch {
@@ -14097,10 +14206,10 @@ function readRegistration(consortDir, featureId) {
 }
 function readDerivedBreakdown(consortDir, featureId) {
   const sdir = storiesDir(consortDir, featureId);
-  if (!existsSync48(sdir)) return [];
-  return readdirSync30(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+  if (!existsSync49(sdir)) return [];
+  return readdirSync31(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
     const adir = acsDir(consortDir, featureId, e.name);
-    const acs = existsSync48(adir) ? readdirSync30(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    const acs = existsSync49(adir) ? readdirSync31(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
     return { id: e.name, acs };
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -14119,15 +14228,15 @@ function conformanceReason(inputs) {
 }
 function storyAcProblems(fdir, story) {
   const acsDir2 = join46(fdir, "stories", story, "acs");
-  if (!existsSync49(acsDir2)) return [];
+  if (!existsSync50(acsDir2)) return [];
   const problems = [];
   const acs = [];
-  for (const f of readdirSync31(acsDir2)) {
+  for (const f of readdirSync32(acsDir2)) {
     if (!f.endsWith(".json")) continue;
     const p = join46(acsDir2, f);
     let content;
     try {
-      content = readFileSync44(p, "utf8");
+      content = readFileSync45(p, "utf8");
     } catch {
       continue;
     }
@@ -14141,19 +14250,19 @@ function storyAcProblems(fdir, story) {
 }
 function acsConformanceReason(fdir) {
   const stories = join46(fdir, "stories");
-  if (!existsSync49(stories)) return null;
-  const problems = readdirSync31(stories).flatMap((s) => storyAcProblems(fdir, s));
+  if (!existsSync50(stories)) return null;
+  const problems = readdirSync32(stories).flatMap((s) => storyAcProblems(fdir, s));
   return problems.length === 0 ? null : `AC conformance failed: ${problems.join("; ")}`;
 }
 function collectStoryJsons(fdir) {
   const stories = join46(fdir, "stories");
-  if (!existsSync49(stories)) return [];
+  if (!existsSync50(stories)) return [];
   const out = [];
-  for (const s of readdirSync31(stories)) {
+  for (const s of readdirSync32(stories)) {
     const p = join46(stories, s, "story.json");
-    if (!existsSync49(p)) continue;
+    if (!existsSync50(p)) continue;
     try {
-      out.push({ name: s, content: readFileSync44(p, "utf8") });
+      out.push({ name: s, content: readFileSync45(p, "utf8") });
     } catch {
       continue;
     }
@@ -14166,18 +14275,18 @@ function storyIndependenceReason(fdir) {
 }
 function storyRequiresE2eReason(fdir, story) {
   const sj = join46(fdir, "stories", story, "story.json");
-  if (!existsSync49(sj)) return null;
+  if (!existsSync50(sj)) return null;
   try {
-    if (JSON.parse(readFileSync44(sj, "utf8")).requires_e2e !== true) return null;
+    if (JSON.parse(readFileSync45(sj, "utf8")).requires_e2e !== true) return null;
   } catch {
     return null;
   }
   const ad = join46(fdir, "stories", story, "acs");
-  if (existsSync49(ad)) {
-    for (const f of readdirSync31(ad)) {
+  if (existsSync50(ad)) {
+    for (const f of readdirSync32(ad)) {
       if (!f.endsWith(".json")) continue;
       try {
-        if (JSON.parse(readFileSync44(join46(ad, f), "utf8")).layer === "E2E") return null;
+        if (JSON.parse(readFileSync45(join46(ad, f), "utf8")).layer === "E2E") return null;
       } catch {
       }
     }
@@ -14187,9 +14296,9 @@ function storyRequiresE2eReason(fdir, story) {
 function requiresE2eReason(consortDir, featureId) {
   const fdir = featureDir2(consortDir, featureId);
   const storiesDir2 = join46(fdir, "stories");
-  if (!existsSync49(storiesDir2)) return null;
-  for (const s of readdirSync31(storiesDir2)) {
-    if (!existsSync49(join46(storiesDir2, s, "acs"))) continue;
+  if (!existsSync50(storiesDir2)) return null;
+  for (const s of readdirSync32(storiesDir2)) {
+    if (!existsSync50(join46(storiesDir2, s, "acs"))) continue;
     const r = storyRequiresE2eReason(fdir, s);
     if (r !== null) return r;
   }
@@ -14199,10 +14308,10 @@ function architectureConventionsReason(consortDir, featureId) {
   const conventions = readConventions(consortDir);
   if (!conventions) return null;
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync49(archFile)) return null;
+  if (!existsSync50(archFile)) return null;
   let content;
   try {
-    content = readFileSync44(archFile, "utf8");
+    content = readFileSync45(archFile, "utf8");
   } catch {
     return null;
   }
@@ -14211,9 +14320,9 @@ function architectureConventionsReason(consortDir, featureId) {
 }
 function readArchitecture(consortDir, featureId) {
   const f = architectureJson(consortDir, featureId);
-  if (!existsSync49(f)) return void 0;
+  if (!existsSync50(f)) return void 0;
   try {
-    return readFileSync44(f, "utf8");
+    return readFileSync45(f, "utf8");
   } catch {
     return void 0;
   }
@@ -14228,9 +14337,9 @@ function dbDesignReason(consortDir, featureId) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
   const dbFile = dbDesignJson(consortDir, featureId);
-  const db = existsSync49(dbFile) ? (() => {
+  const db = existsSync50(dbFile) ? (() => {
     try {
-      return readFileSync44(dbFile, "utf8");
+      return readFileSync45(dbFile, "utf8");
     } catch {
       return void 0;
     }
@@ -14243,11 +14352,11 @@ function nfrCoverageReason(consortDir, featureId) {
   if (arch === void 0) return null;
   const featureNfrs = featureNfrsMd(consortDir, featureId);
   const projectNfrs = nfrsMd(consortDir);
-  const nfrsFile = existsSync49(featureNfrs) ? featureNfrs : existsSync49(projectNfrs) ? projectNfrs : void 0;
+  const nfrsFile = existsSync50(featureNfrs) ? featureNfrs : existsSync50(projectNfrs) ? projectNfrs : void 0;
   if (nfrsFile === void 0) return null;
   let nfrsContent;
   try {
-    nfrsContent = readFileSync44(nfrsFile, "utf8");
+    nfrsContent = readFileSync45(nfrsFile, "utf8");
   } catch {
     return null;
   }
@@ -14282,6 +14391,22 @@ function fitnessClauseCoverageReason(consortDir, featureId, testListJson) {
   const r = checkFitnessClauseCoverage(testListJson, arch);
   return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
 }
+function nfrClauseScopeReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const storiesDir2 = join46(featureDir2(consortDir, featureId), "stories");
+  if (!existsSync50(storiesDir2)) return null;
+  const knownAcIds = [];
+  for (const s of readdirSync32(storiesDir2)) {
+    const ad = join46(storiesDir2, s, "acs");
+    if (!existsSync50(ad)) return null;
+    const files = readdirSync32(ad).filter((f) => f.endsWith(".json"));
+    if (files.length === 0) return null;
+    for (const f of files) knownAcIds.push(f.replace(/\.json$/, ""));
+  }
+  const r = checkNfrClauseScope(arch, knownAcIds);
+  return r.ok ? null : `NFR clause scope failed: ${r.violations.join("; ")}`;
+}
 function fitnessSingularCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
@@ -14291,15 +14416,15 @@ function fitnessSingularCoverageReason(consortDir, featureId, testListJson) {
 function clientKindLayerReason(consortDir, featureId, testListJson) {
   const fdir = featureDir2(consortDir, featureId);
   const storiesDir2 = join46(fdir, "stories");
-  if (!existsSync49(storiesDir2)) return null;
+  if (!existsSync50(storiesDir2)) return null;
   const acLayerById = {};
-  for (const story of readdirSync31(storiesDir2)) {
+  for (const story of readdirSync32(storiesDir2)) {
     const acsDir2 = join46(storiesDir2, story, "acs");
-    if (!existsSync49(acsDir2)) continue;
-    for (const f of readdirSync31(acsDir2)) {
+    if (!existsSync50(acsDir2)) continue;
+    for (const f of readdirSync32(acsDir2)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse(readFileSync44(join46(acsDir2, f), "utf8")).layer;
+        const layer = JSON.parse(readFileSync45(join46(acsDir2, f), "utf8")).layer;
         if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
       } catch {
       }
@@ -14312,9 +14437,9 @@ function migrationPreservationClassReason(consortDir, featureId) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
   const dbFile = dbDesignJson(consortDir, featureId);
-  const db = existsSync49(dbFile) ? (() => {
+  const db = existsSync50(dbFile) ? (() => {
     try {
-      return readFileSync44(dbFile, "utf8");
+      return readFileSync45(dbFile, "utf8");
     } catch {
       return void 0;
     }
@@ -14324,12 +14449,12 @@ function migrationPreservationClassReason(consortDir, featureId) {
 }
 function acReferenceReason(consortDir, featureId, testListJson) {
   const storiesDir2 = join46(featureResolved(consortDir, featureId), "stories");
-  if (!existsSync49(storiesDir2)) return null;
+  if (!existsSync50(storiesDir2)) return null;
   const known = /* @__PURE__ */ new Set();
-  for (const story of readdirSync31(storiesDir2)) {
+  for (const story of readdirSync32(storiesDir2)) {
     const acsDir2 = join46(storiesDir2, story, "acs");
-    if (!existsSync49(acsDir2)) continue;
-    for (const f of readdirSync31(acsDir2)) {
+    if (!existsSync50(acsDir2)) continue;
+    for (const f of readdirSync32(acsDir2)) {
       if (f.endsWith(".json")) known.add(f.replace(/\.json$/, ""));
     }
   }
@@ -14344,17 +14469,21 @@ function acReferenceReason(consortDir, featureId, testListJson) {
   if (dangling.length === 0) return null;
   return `test-list ac_id references failed: ${dangling.map((i) => `${i.id ?? "?"} -> '${i.ac_id}'`).join("; ")} do not resolve to any AC file under stories/*/acs/ (issue #199's mistagging class: an item attached to a non-existent AC anchors nothing, and the story it was meant to cover ships uncovered). Re-point each at the correct existing AC id.`;
 }
+function jsdomBrowserAssertionReason(testListJson) {
+  const r = checkJsdomBrowserAssertion(testListJson);
+  return r.ok ? null : `jsdom-vacuous-browser-assertion: ${r.violations.join("; ")}`;
+}
 function e2eCoverageReason(consortDir, featureId, testListJson) {
   const storiesDir2 = join46(featureDir2(consortDir, featureId), "stories");
-  if (!existsSync49(storiesDir2)) return null;
+  if (!existsSync50(storiesDir2)) return null;
   const e2eAcIds = [];
-  for (const s of readdirSync31(storiesDir2)) {
+  for (const s of readdirSync32(storiesDir2)) {
     const ad = join46(storiesDir2, s, "acs");
-    if (!existsSync49(ad)) continue;
-    for (const f of readdirSync31(ad)) {
+    if (!existsSync50(ad)) continue;
+    for (const f of readdirSync32(ad)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const ac = JSON.parse(readFileSync44(join46(ad, f), "utf8"));
+        const ac = JSON.parse(readFileSync45(join46(ad, f), "utf8"));
         if (ac.layer === "E2E") e2eAcIds.push(ac.id ?? f.replace(/\.json$/, ""));
       } catch {
       }
@@ -14378,8 +14507,8 @@ function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
   }
   const items = master.items ?? [];
   const storiesDir2 = join46(featureDir2(consortDir, featureId), "stories");
-  if (!existsSync49(storiesDir2)) return null;
-  const perStory = readdirSync31(storiesDir2).filter((s) => {
+  if (!existsSync50(storiesDir2)) return null;
+  const perStory = readdirSync32(storiesDir2).filter((s) => {
     try {
       return statSync20(join46(storiesDir2, s)).isDirectory();
     } catch {
@@ -14393,8 +14522,8 @@ function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
   const archFile = architectureJson(consortDir, featureId);
   const dbFile = dbDesignJson(consortDir, featureId);
   const owner = invariantRealizingStory(
-    existsSync49(archFile) ? readFileSync44(archFile, "utf8") : void 0,
-    existsSync49(dbFile) ? readFileSync44(dbFile, "utf8") : void 0
+    existsSync50(archFile) ? readFileSync45(archFile, "utf8") : void 0,
+    existsSync50(dbFile) ? readFileSync45(dbFile, "utf8") : void 0
   );
   const r = checkInvariantCoverageDistinct(perStory, owner);
   return r.ok ? null : `invariant coverage not distinct across stories: ${r.violations.join("; ")}`;
@@ -14405,14 +14534,14 @@ function serviceBackedReason(consortDir, featureId) {
   const acLayers = [];
   const fdir = featureDir2(consortDir, featureId);
   const stories = join46(fdir, "stories");
-  if (existsSync49(stories)) {
-    for (const s of readdirSync31(stories)) {
+  if (existsSync50(stories)) {
+    for (const s of readdirSync32(stories)) {
       const ad = join46(stories, s, "acs");
-      if (!existsSync49(ad)) continue;
-      for (const f of readdirSync31(ad)) {
+      if (!existsSync50(ad)) continue;
+      for (const f of readdirSync32(ad)) {
         if (!f.endsWith(".json")) continue;
         try {
-          const layer = JSON.parse(readFileSync44(join46(ad, f), "utf8")).layer;
+          const layer = JSON.parse(readFileSync45(join46(ad, f), "utf8")).layer;
           if (typeof layer === "string") acLayers.push(layer);
         } catch {
         }
@@ -14434,21 +14563,21 @@ function e2eLayerPresentReason(consortDir, featureId) {
   const fdir = featureDir2(consortDir, featureId);
   let declared;
   try {
-    declared = JSON.parse(readFileSync44(join46(fdir, "feature-spec.json"), "utf8")).stories ?? [];
+    declared = JSON.parse(readFileSync45(join46(fdir, "feature-spec.json"), "utf8")).stories ?? [];
   } catch {
     return null;
   }
   if (declared.length === 0) return null;
   const storiesDir2 = join46(fdir, "stories");
-  const hasAcs = (story) => existsSync49(join46(storiesDir2, story, "acs"));
+  const hasAcs = (story) => existsSync50(join46(storiesDir2, story, "acs"));
   if (!declared.every(hasAcs)) return null;
   const acLayers = [];
   for (const s of declared) {
     const ad = join46(storiesDir2, s, "acs");
-    for (const f of readdirSync31(ad)) {
+    for (const f of readdirSync32(ad)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse(readFileSync44(join46(ad, f), "utf8")).layer;
+        const layer = JSON.parse(readFileSync45(join46(ad, f), "utf8")).layer;
         if (typeof layer === "string") acLayers.push(layer);
       } catch {
       }
@@ -14465,26 +14594,26 @@ function e2eLayerPresentReason(consortDir, featureId) {
 }
 function schemaChangeStoryRealizesReason(consortDir, featureId) {
   const dbFile = dbDesignJson(consortDir, featureId);
-  if (!existsSync49(dbFile)) return null;
+  if (!existsSync50(dbFile)) return null;
   let db;
   try {
-    db = JSON.parse(readFileSync44(dbFile, "utf8"));
+    db = JSON.parse(readFileSync45(dbFile, "utf8"));
   } catch {
     return null;
   }
   const changes = db.schema_changes ?? [];
   if (changes.length === 0) return null;
   const storiesDir2 = join46(featureDir2(consortDir, featureId), "stories");
-  if (!existsSync49(storiesDir2)) return null;
+  if (!existsSync50(storiesDir2)) return null;
   const storyLayers = /* @__PURE__ */ new Map();
-  for (const s of readdirSync31(storiesDir2)) {
+  for (const s of readdirSync32(storiesDir2)) {
     const ad = join46(storiesDir2, s, "acs");
-    if (!existsSync49(ad)) continue;
+    if (!existsSync50(ad)) continue;
     const layers = [];
-    for (const f of readdirSync31(ad)) {
+    for (const f of readdirSync32(ad)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse(readFileSync44(join46(ad, f), "utf8")).layer;
+        const layer = JSON.parse(readFileSync45(join46(ad, f), "utf8")).layer;
         if (typeof layer === "string") layers.push(layer);
       } catch {
       }
@@ -14498,7 +14627,7 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
   const readIfPresent = (name) => {
     const p = join46(fdir, name);
     try {
-      return existsSync49(p) ? readFileSync44(p, "utf8") : void 0;
+      return existsSync50(p) ? readFileSync45(p, "utf8") : void 0;
     } catch {
       return void 0;
     }
@@ -14575,6 +14704,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (fitnessReason !== null) return { reason: fitnessReason };
         const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
         if (clauseReason !== null) return { reason: clauseReason };
+        const scopeReason = nfrClauseScopeReason(consortDir, featureId);
+        if (scopeReason !== null) return { reason: scopeReason };
         const singularReason = fitnessSingularCoverageReason(consortDir, featureId, tlJson);
         if (singularReason !== null) return { reason: singularReason };
         const kindLayerReason = clientKindLayerReason(consortDir, featureId, tlJson);
@@ -14585,6 +14716,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (distinctReason !== null) return { reason: distinctReason };
         const e2eReason = e2eCoverageReason(consortDir, featureId, tlJson);
         if (e2eReason !== null) return { reason: e2eReason };
+        const jsdomReason = jsdomBrowserAssertionReason(tlJson);
+        if (jsdomReason !== null) return { reason: jsdomReason };
       }
       return conf;
     }
@@ -14630,27 +14763,27 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!existsSync50(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync45(p, "utf8"));
+  if (!existsSync51(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync46(p, "utf8"));
 }
 
 // consort/session/response-formatter.ts
 init_esm_shims();
-import { existsSync as existsSync52, readFileSync as readFileSync47, readdirSync as readdirSync34 } from "fs";
+import { existsSync as existsSync53, readFileSync as readFileSync48, readdirSync as readdirSync35 } from "fs";
 import { dirname as dirname25 } from "path";
 
 // consort/architecture/e2e-route-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync51, readFileSync as readFileSync46, readdirSync as readdirSync33, statSync as statSync22 } from "fs";
+import { existsSync as existsSync52, readFileSync as readFileSync47, readdirSync as readdirSync34, statSync as statSync22 } from "fs";
 import { join as join47, relative as relative8 } from "path";
 var CLIENT_SRC = join47("client", "src");
 var E2E_DIR = join47("client", "tests", "e2e");
 var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", "dist", ".venv", "__pycache__", ".git"]);
 function walk2(root, pred, out = []) {
-  if (!existsSync51(root)) return out;
+  if (!existsSync52(root)) return out;
   let entries;
   try {
-    entries = readdirSync33(root);
+    entries = readdirSync34(root);
   } catch {
     return out;
   }
@@ -14695,7 +14828,7 @@ function extractRouteGlobs(specSource) {
 function checkE2eRouteCollision(projectDir) {
   const srcRoot = join47(projectDir, CLIENT_SRC);
   const e2eRoot = join47(projectDir, E2E_DIR);
-  if (!existsSync51(srcRoot) || !existsSync51(e2eRoot)) return { ok: true, violations: [] };
+  if (!existsSync52(srcRoot) || !existsSync52(e2eRoot)) return { ok: true, violations: [] };
   const moduleUrls = walk2(srcRoot, (n) => /\.(ts|tsx|js|jsx)$/.test(n) && !/\.(test|spec|d)\.[tj]sx?$/.test(n)).map(
     (abs) => "http://127.0.0.1:5173/src/" + relative8(srcRoot, abs).split(/[\\/]/).join("/")
   );
@@ -14703,7 +14836,7 @@ function checkE2eRouteCollision(projectDir) {
   for (const spec of walk2(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
     let source;
     try {
-      source = readFileSync46(spec, "utf8");
+      source = readFileSync47(spec, "utf8");
     } catch {
       continue;
     }
@@ -14727,13 +14860,13 @@ function checkE2eRouteCollision(projectDir) {
 }
 function checkE2eSeedBackendDerivation(projectDir) {
   const e2eRoot = join47(projectDir, E2E_DIR);
-  if (!existsSync51(e2eRoot)) return { ok: true, violations: [] };
+  if (!existsSync52(e2eRoot)) return { ok: true, violations: [] };
   const portSwap = /\.replace\(\s*(['"`]):?5173\1\s*,\s*(['"`]):?8000\2\s*\)/;
   const violations = [];
   for (const spec of walk2(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
     let source;
     try {
-      source = readFileSync46(spec, "utf8");
+      source = readFileSync47(spec, "utf8");
     } catch {
       continue;
     }
@@ -14760,12 +14893,12 @@ function needStory(role, story, violations) {
 }
 function checkSpecAuthorBreakdown(consortDir, featureId, v) {
   const specPath = featureSpecJson(consortDir, featureId);
-  if (!existsSync52(specPath)) {
+  if (!existsSync53(specPath)) {
     v.push({ artifact: "feature-spec.json", problem: "breakdown deliverable missing (write feature-spec.json with a non-empty stories[] array of the story ids)" });
     return;
   }
   try {
-    const spec = JSON.parse(readFileSync47(specPath, "utf8"));
+    const spec = JSON.parse(readFileSync48(specPath, "utf8"));
     if (!Array.isArray(spec.stories) || spec.stories.length === 0) {
       v.push({ artifact: "feature-spec.json", problem: "stories[] is missing or empty (the breakdown must enumerate >=1 story id)" });
     }
@@ -14774,13 +14907,13 @@ function checkSpecAuthorBreakdown(consortDir, featureId, v) {
     return;
   }
   const sdir = storiesDir(consortDir, featureId);
-  if (!existsSync52(sdir)) return;
+  if (!existsSync53(sdir)) return;
   const storyJsons = [];
-  for (const s of readdirSync34(sdir)) {
+  for (const s of readdirSync35(sdir)) {
     const p = `${sdir}/${s}/story.json`;
-    if (!existsSync52(p)) continue;
+    if (!existsSync53(p)) continue;
     try {
-      storyJsons.push({ name: s, content: readFileSync47(p, "utf8") });
+      storyJsons.push({ name: s, content: readFileSync48(p, "utf8") });
     } catch {
       continue;
     }
@@ -14811,13 +14944,13 @@ function checkSpecAuthor(args, v) {
     v.push({ artifact: `stories/${story}/acs`, problem: "no acceptance criteria written (expected >=1 AC<n>.json)" });
     return;
   }
-  if (!existsSync52(dir)) return;
+  if (!existsSync53(dir)) return;
   const thenById = /* @__PURE__ */ new Map();
-  for (const f of readdirSync34(dir)) {
+  for (const f of readdirSync35(dir)) {
     if (!f.endsWith(".json")) continue;
     let content;
     try {
-      content = readFileSync47(`${dir}/${f}`, "utf8");
+      content = readFileSync48(`${dir}/${f}`, "utf8");
     } catch {
       continue;
     }
@@ -14866,10 +14999,10 @@ function checkArchitect(args, v) {
 }
 function checkNfrFitnessFunctions(consortDir, featureId, v) {
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync52(archFile)) return;
+  if (!existsSync53(archFile)) return;
   let nfrs;
   try {
-    nfrs = JSON.parse(readFileSync47(archFile, "utf8")).nfrs ?? [];
+    nfrs = JSON.parse(readFileSync48(archFile, "utf8")).nfrs ?? [];
   } catch {
     return;
   }
@@ -14885,13 +15018,13 @@ function checkNfrFitnessFunctions(consortDir, featureId, v) {
 function checkDba(args, v) {
   const { consortDir, featureId } = args;
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync52(archFile)) {
+  if (!existsSync53(archFile)) {
     v.push({ artifact: "architecture.json", problem: "architecture.json missing (the architect owns the contract the DBA realizes)" });
     return;
   }
-  const archContent = readFileSync47(archFile, "utf8");
+  const archContent = readFileSync48(archFile, "utf8");
   const dbFile = dbDesignJson(consortDir, featureId);
-  const dbContent = existsSync52(dbFile) ? readFileSync47(dbFile, "utf8") : void 0;
+  const dbContent = existsSync53(dbFile) ? readFileSync48(dbFile, "utf8") : void 0;
   if (dbContent !== void 0) {
     const conf = checkArtifactConformance("db-design.json", dbContent);
     if (!conf.ok) v.push({ artifact: "db-design.json", problem: conf.violations.join("; ") });
@@ -14903,13 +15036,13 @@ function checkTestStrategist(args, v) {
   const { consortDir, featureId, story } = args;
   if (!needStory("test-strategist", story, v)) return;
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync52(file)) {
+  if (!existsSync53(file)) {
     v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: "per-story test list not written" });
     return;
   }
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync47(file, "utf8"));
+    parsed = JSON.parse(readFileSync48(file, "utf8"));
   } catch (e) {
     v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
     return;
@@ -14950,12 +15083,12 @@ function checkTestStrategist(args, v) {
 }
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync52(file)) {
+  if (!existsSync53(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = readFileSync47(file, "utf8");
+    content = readFileSync48(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -14964,9 +15097,9 @@ function designGuideConformance(consortDir) {
 }
 function designGuideHasComponents(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync52(file)) return { ok: true };
+  if (!existsSync53(file)) return { ok: true };
   try {
-    const parsed = JSON.parse(readFileSync47(file, "utf8"));
+    const parsed = JSON.parse(readFileSync48(file, "utf8"));
     const comps = parsed.components;
     if (!comps || typeof comps !== "object" || Object.keys(comps).length === 0) {
       return {
@@ -14981,18 +15114,18 @@ function designGuideHasComponents(consortDir) {
 }
 function brandAssetDeclared(consortDir) {
   const assetsDir = designAssetsDir(consortDir);
-  if (!existsSync52(assetsDir)) return { ok: true };
+  if (!existsSync53(assetsDir)) return { ok: true };
   let staged;
   try {
-    staged = readdirSync34(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
+    staged = readdirSync35(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
   } catch {
     return { ok: true };
   }
   if (staged.length === 0) return { ok: true };
   const file = designGuideJson(consortDir);
-  if (existsSync52(file)) {
+  if (existsSync53(file)) {
     try {
-      const guide = JSON.parse(readFileSync47(file, "utf8"));
+      const guide = JSON.parse(readFileSync48(file, "utf8"));
       if (guide.app_icon?.source && guide.app_icon?.install_to) return { ok: true };
     } catch {
       return { ok: true };
@@ -15037,7 +15170,7 @@ function formatRoleResponse(args) {
 
 // consort/orchestrator/status/feature-status.ts
 init_esm_shims();
-import { existsSync as existsSync53, readFileSync as readFileSync48, readdirSync as readdirSync35, statSync as statSync23 } from "fs";
+import { existsSync as existsSync54, readFileSync as readFileSync49, readdirSync as readdirSync36, statSync as statSync23 } from "fs";
 import { dirname as dirname26, join as join48 } from "path";
 
 // consort/gates/design-spec-gate.ts
@@ -15070,9 +15203,9 @@ function deriveFeaturePhase(stories) {
 }
 function featureRequestTitle(featureDirPath, id) {
   const p = join48(featureDirPath, "feature-request.md");
-  if (!existsSync53(p)) return id;
+  if (!existsSync54(p)) return id;
   try {
-    const h1 = readFileSync48(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
+    const h1 = readFileSync49(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
     return h1 ? h1.replace(/^#\s+/, "").trim() : id;
   } catch {
     return id;
@@ -15080,9 +15213,9 @@ function featureRequestTitle(featureDirPath, id) {
 }
 function deliveredFeatures(consortDir) {
   const root = featuresDir(consortDir);
-  if (!existsSync53(root)) return [];
+  if (!existsSync54(root)) return [];
   const out = [];
-  const ids = readdirSync35(root).filter((d) => {
+  const ids = readdirSync36(root).filter((d) => {
     try {
       return statSync23(join48(root, d)).isDirectory();
     } catch {
@@ -15116,9 +15249,16 @@ function contextRubric(consortDir, featureId, story, ac) {
   if (layers.size) parts.push(`layer${layers.size > 1 ? "s" : ""}=${[...layers].join(", ")}`);
   try {
     const arch = JSON.parse(fs16.readFileSync(architectureJson(consortDir, featureId), "utf8"));
-    const nfrs = (arch.nfrs ?? []).filter(
-      (n) => n && typeof n.id === "string" && n.tier !== "platform" && (n.applies_to === story || n.applies_to === featureId)
-    );
+    const acIdSet = new Set(acIds);
+    const nfrs = (arch.nfrs ?? []).filter((n) => {
+      if (!n || typeof n.id !== "string" || n.tier === "platform") return false;
+      if (n.applies_to !== story && n.applies_to !== featureId) return false;
+      const anchored = Array.isArray(n.fitness_functions) ? n.fitness_functions.filter(
+        (c) => c && typeof c === "object" && Array.isArray(c.realized_by) && c.realized_by.length > 0
+      ) : [];
+      if (anchored.length === 0) return true;
+      return anchored.some((c) => c.realized_by.some((a) => acIdSet.has(a)));
+    });
     if (nfrs.length) {
       parts.push(`required NFRs, ${nfrs.map((n) => `${n.id}${n.brief ? ` (${n.brief})` : ""}`).join("; ")}`);
     }
@@ -15553,7 +15693,7 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
     }
     case "navigator":
       if (action.buildMode === "reflect") {
-        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json) + NFRs.` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell). Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist","detail":"<the defect>"}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to spec-author (an AC/spec defect) or test-strategist (a test-list/coverage defect). Write ONLY that file; the orchestrator routes any fix deterministically.`;
+        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json) + NFRs.` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle. The DETERMINISTIC pre-reflect gate has ALREADY verified the structural classes \u2014 client-kind\u2194AC-layer coherence, E2E-layer coverage by a real Playwright spec, and that no real-browser navigation/reload assertion sits in the jsdom component harness \u2014 so do NOT spend a finding re-flagging those; focus on the SEMANTIC defects: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell). Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist","detail":"<the defect>"}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to spec-author (an AC/spec defect) or test-strategist (a test-list/coverage defect). Write ONLY that file; the orchestrator routes any fix deterministically.`;
       }
       if (action.buildMode === "assess") {
         const gfAssess = action.ac ? readGreenFailure(consortDir, featureId, s, action.ac) : void 0;
@@ -15900,6 +16040,8 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
         { kind: "cli", bin: CANON_NOTES_BIN, args: ["--story", action.story, ...tdd] },
         { kind: "cli", bin: LOG_BIN, args: ["--reconcile", ...tdd] }
       ];
+    case "flag-testlist-nonconformance":
+      return [{ kind: "cli", bin: CYCLE_BIN, args: ["testlist-gate", "--story", action.story, ...tdd] }];
     case "surface-gate":
       return [{ kind: "cli", bin: PIPELINE_BIN, args: ["surface", "--story", action.story, ...tdd] }];
     case "approve-gate":
@@ -16224,7 +16366,7 @@ function buildDriveEffects(cfg) {
 // consort/evaluation/semantic-gate.ts
 init_esm_shims();
 import { execFile } from "child_process";
-import { existsSync as existsSync55, readFileSync as readFileSync51, readdirSync as readdirSync36, statSync as statSync24 } from "fs";
+import { existsSync as existsSync56, readFileSync as readFileSync52, readdirSync as readdirSync37, statSync as statSync24 } from "fs";
 import { join as join51 } from "path";
 function stepArtifactPath(base, step, featureId) {
   switch (step) {
@@ -16274,34 +16416,34 @@ function resolveStepReference(args) {
   if (!hasDesignReference(step)) return null;
   const corpus = CANONICAL;
   const root = join51(referenceCorpusRoot(kitRoot2), "recorded-artifacts");
-  if (!existsSync55(root)) return null;
+  if (!existsSync56(root)) return null;
   if (step === "acs") {
     const sdir = storiesDir(root, featureId);
-    if (!existsSync55(sdir)) return null;
+    if (!existsSync56(sdir)) return null;
     const paths = [];
-    const stories = storyId ? [storyId] : readdirSync36(sdir);
+    const stories = storyId ? [storyId] : readdirSync37(sdir);
     for (const story of stories) {
       const adir = acsDir(root, featureId, story);
-      if (!existsSync55(adir)) continue;
-      for (const ac of readdirSync36(adir)) if (ac.endsWith(".json")) paths.push(join51(adir, ac));
+      if (!existsSync56(adir)) continue;
+      for (const ac of readdirSync37(adir)) if (ac.endsWith(".json")) paths.push(join51(adir, ac));
     }
     return paths.length ? { corpus, paths, label: storyId ? `stories/${storyId}/acs/*.json` : "stories/*/acs/*.json (feature-aggregate)" } : null;
   }
   const p = stepArtifactPath(root, step, featureId);
-  if (!p || !existsSync55(p)) return null;
+  if (!p || !existsSync56(p)) return null;
   return { corpus, paths: [p], label: p.slice(root.length + 1) };
 }
 function readCandidateArtifact(args) {
   const { consortDir, step, featureId } = args;
-  const readIf = (p2) => existsSync55(p2) ? readFileSync51(p2, "utf8") : null;
+  const readIf = (p2) => existsSync56(p2) ? readFileSync52(p2, "utf8") : null;
   if (step === "acs") {
     const sdir = storiesDir(consortDir, featureId);
-    if (!existsSync55(sdir)) return null;
+    if (!existsSync56(sdir)) return null;
     const parts = [];
-    for (const story of readdirSync36(sdir)) {
+    for (const story of readdirSync37(sdir)) {
       const adir = acsDir(consortDir, featureId, story);
-      if (!existsSync55(adir)) continue;
-      for (const ac of readdirSync36(adir)) if (ac.endsWith(".json")) parts.push(readFileSync51(join51(adir, ac), "utf8"));
+      if (!existsSync56(adir)) continue;
+      for (const ac of readdirSync37(adir)) if (ac.endsWith(".json")) parts.push(readFileSync52(join51(adir, ac), "utf8"));
     }
     return parts.length ? parts.join("\n---\n") : null;
   }
@@ -16311,13 +16453,13 @@ function readCandidateArtifact(args) {
 async function evaluateSemanticGate(args) {
   const { kitRoot: kitRoot2, consortDir, featureId, step, judge, storyId, referencePaths } = args;
   const threshold = args.threshold ?? SEMANTIC_THRESHOLD;
-  const ref = referencePaths?.length ? { corpus: CANONICAL, paths: referencePaths.filter((p) => existsSync55(p)), label: "(reference override)" } : resolveStepReference({ kitRoot: kitRoot2, step, featureId, ...storyId ? { storyId } : {} });
+  const ref = referencePaths?.length ? { corpus: CANONICAL, paths: referencePaths.filter((p) => existsSync56(p)), label: "(reference override)" } : resolveStepReference({ kitRoot: kitRoot2, step, featureId, ...storyId ? { storyId } : {} });
   if (!ref || ref.paths.length === 0) return { passed: true, skipped: true };
   const candidate = readCandidateArtifact({ consortDir, step, featureId });
   if (candidate === null) {
     return { passed: false, reason: `semantic: candidate produced no artifact for step '${step}' to compare against ${ref.label}` };
   }
-  const reference = ref.paths.map((p) => readFileSync51(p, "utf8")).join("\n---\n");
+  const reference = ref.paths.map((p) => readFileSync52(p, "utf8")).join("\n---\n");
   const verdict = await judge({ step, reference, candidate });
   if (verdict.score >= threshold) return { passed: true, score: verdict.score };
   const missing = verdict.missing?.length ? ` missing: ${verdict.missing.join("; ")}` : "";
@@ -16407,26 +16549,26 @@ function makeOpusJudge(opts) {
 
 // consort/optimize/optimize-live.ts
 init_esm_shims();
-import { existsSync as existsSync57, mkdirSync as mkdirSync33, readFileSync as readFileSync53, rmSync as rmSync15, writeFileSync as writeFileSync30 } from "fs";
+import { existsSync as existsSync58, mkdirSync as mkdirSync33, readFileSync as readFileSync54, rmSync as rmSync15, writeFileSync as writeFileSync30 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
 import { join as join54 } from "path";
 
 // consort/optimize/optimize-agent-overlay.ts
 init_esm_shims();
-import { existsSync as existsSync56, mkdirSync as mkdirSync32, readFileSync as readFileSync52, rmSync as rmSync13, writeFileSync as writeFileSync29 } from "fs";
+import { existsSync as existsSync57, mkdirSync as mkdirSync32, readFileSync as readFileSync53, rmSync as rmSync13, writeFileSync as writeFileSync29 } from "fs";
 import { dirname as dirname29, join as join52 } from "path";
 function overlayAgent(args) {
   const { projectDir, role, markdown } = args;
   const agentPath = join52(projectDir, ".claude", "agents", `${role}.md`);
-  const hadBaseline = existsSync56(agentPath);
-  const baseline = hadBaseline ? readFileSync52(agentPath, "utf8") : void 0;
+  const hadBaseline = existsSync57(agentPath);
+  const baseline = hadBaseline ? readFileSync53(agentPath, "utf8") : void 0;
   mkdirSync32(dirname29(agentPath), { recursive: true });
   writeFileSync29(agentPath, markdown);
   return {
     restore() {
       if (hadBaseline) {
         writeFileSync29(agentPath, baseline);
-      } else if (existsSync56(agentPath)) {
+      } else if (existsSync57(agentPath)) {
         rmSync13(agentPath, { force: true });
       }
     }
@@ -16643,7 +16785,7 @@ function makeChampionWalkDeps(ctx) {
         }
       }
       const champ = join54(ctx.experimentsDir, "champion-walk.json");
-      const prior = existsSync57(champ) ? JSON.parse(readFileSync53(champ, "utf8")) : { winners: [] };
+      const prior = existsSync58(champ) ? JSON.parse(readFileSync54(champ, "utf8")) : { winners: [] };
       prior.winners.push({ handoffId: handoff.id, candidateId: candidate.id });
       mkdirSync33(ctx.experimentsDir, { recursive: true });
       writeFileSync30(champ, JSON.stringify(prior, null, 2) + "\n");

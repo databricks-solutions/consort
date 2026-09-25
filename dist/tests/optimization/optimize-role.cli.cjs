@@ -7906,6 +7906,25 @@ function checkTestListMd(content) {
   }
   return violations;
 }
+function checkJsdomBrowserAssertion(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
+  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
 function checkDbDesign(dbDesignJson2, architectureJson2) {
   let arch;
   try {
@@ -7949,6 +7968,25 @@ function canonicalArtifactName(path11) {
   const base = (0, import_path2.basename)(path11);
   if ((0, import_path2.basename)((0, import_path2.dirname)(path11)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
+}
+function checkClientKindLayerCoherence(testListJson, acLayerById) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    const layer = acLayerById[it.ac_id];
+    if (layer !== void 0 && layer !== "E2E") {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
@@ -8609,9 +8647,16 @@ function contextRubric(consortDir, featureId, story, ac) {
   if (layers.size) parts.push(`layer${layers.size > 1 ? "s" : ""}=${[...layers].join(", ")}`);
   try {
     const arch = JSON.parse(fs2.readFileSync(architectureJson(consortDir, featureId), "utf8"));
-    const nfrs = (arch.nfrs ?? []).filter(
-      (n) => n && typeof n.id === "string" && n.tier !== "platform" && (n.applies_to === story || n.applies_to === featureId)
-    );
+    const acIdSet = new Set(acIds);
+    const nfrs = (arch.nfrs ?? []).filter((n) => {
+      if (!n || typeof n.id !== "string" || n.tier === "platform") return false;
+      if (n.applies_to !== story && n.applies_to !== featureId) return false;
+      const anchored = Array.isArray(n.fitness_functions) ? n.fitness_functions.filter(
+        (c) => c && typeof c === "object" && Array.isArray(c.realized_by) && c.realized_by.length > 0
+      ) : [];
+      if (anchored.length === 0) return true;
+      return anchored.some((c) => c.realized_by.some((a) => acIdSet.has(a)));
+    });
     if (nfrs.length) {
       parts.push(`required NFRs, ${nfrs.map((n) => `${n.id}${n.brief ? ` (${n.brief})` : ""}`).join("; ")}`);
     }
@@ -11719,6 +11764,7 @@ function storyView(id, e, probe, loop) {
       architectProjectable: probe.architectProjectable(id),
       dbaDesigned: probe.dbaDesigned(id),
       testListReady: probe.testListReady(id),
+      testListConforms: probe.testListConforms(id),
       reflectionPassed: probe.reflectionPassed(id),
       reflectionVerdictWritten: probe.reflectionVerdictWritten(id)
     },
@@ -11941,17 +11987,58 @@ function reflectionVerdictWritten(consortDir, feature, story) {
 }
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
-// consort/architecture/architecture-canon.ts
+// consort/smells/testlist-conformance.ts
 init_cjs_shims();
 var import_fs14 = require("fs");
+function storyAcLayers(consortDir, featureId, story) {
+  const acLayerById = {};
+  const dir = acsDir(consortDir, featureId, story);
+  if ((0, import_fs14.existsSync)(dir)) {
+    for (const f of (0, import_fs14.readdirSync)(dir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse((0, import_fs14.readFileSync)(`${dir}/${f}`, "utf8")).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+      }
+    }
+  }
+  return acLayerById;
+}
+function testlistConformanceReason(consortDir, featureId, story) {
+  const tlPath = storyTestListJson(consortDir, featureId, story);
+  if (!(0, import_fs14.existsSync)(tlPath)) return null;
+  let testListJson;
+  try {
+    testListJson = (0, import_fs14.readFileSync)(tlPath, "utf8");
+  } catch {
+    return null;
+  }
+  const acLayerById = storyAcLayers(consortDir, featureId, story);
+  const violations = [];
+  for (const r of [
+    checkClientKindLayerCoherence(testListJson, acLayerById),
+    checkJsdomBrowserAssertion(testListJson)
+  ]) {
+    if (!r.ok) violations.push(...r.violations);
+  }
+  return violations.length === 0 ? null : violations.join("; ");
+}
+function testListConforms(consortDir, featureId, story) {
+  return testlistConformanceReason(consortDir, featureId, story) === null;
+}
+
+// consort/architecture/architecture-canon.ts
+init_cjs_shims();
+var import_fs15 = require("fs");
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
 function readCanon(consortDir) {
   const f = architectureCanonJson(consortDir);
-  if (!(0, import_fs14.existsSync)(f)) return void 0;
+  if (!(0, import_fs15.existsSync)(f)) return void 0;
   try {
-    return JSON.parse((0, import_fs14.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs15.readFileSync)(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -12132,6 +12219,9 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       } catch {
         return false;
       }
+    },
+    testListConforms(story) {
+      return testListConforms(consortDir, featureId, story);
     },
     designFingerprint(story) {
       return storyDesignFingerprint(consortDir, featureId, story);
@@ -16548,6 +16638,7 @@ function nextDesignAction(state) {
       architectProjectable: false,
       dbaDesigned: false,
       testListReady: false,
+      testListConforms: true,
       reflectionPassed: false,
       reflectionVerdictWritten: false
     };
@@ -16558,6 +16649,7 @@ function nextDesignAction(state) {
     }
     if (!design.dbaDesigned) return { kind: "invoke-role", role: "dba", story };
     if (!design.testListReady) return { kind: "invoke-role", role: "test-strategist", story };
+    if (!design.testListConforms) return { kind: "flag-testlist-nonconformance", story };
     if (!design.reflectionPassed) return { kind: "invoke-role", role: "navigator", story, buildMode: "reflect" };
     if (!v?.gateSurfaced) return { kind: "surface-gate", story };
     return { kind: "approve-gate", story };
@@ -17316,13 +17408,13 @@ function progressNarration(m, producedCount, deletedCount) {
 
 // consort/pipeline/record-build.ts
 init_cjs_shims();
-var import_fs15 = require("fs");
+var import_fs16 = require("fs");
 var import_path13 = require("path");
 function nextBuildTurnNumber(recordBuildDir, featureId, story) {
   const dir = storyTurnsDir(recordBuildDir, featureId, story);
-  if (!(0, import_fs15.existsSync)(dir)) return 1;
+  if (!(0, import_fs16.existsSync)(dir)) return 1;
   let max = 0;
-  for (const name of (0, import_fs15.readdirSync)(dir)) {
+  for (const name of (0, import_fs16.readdirSync)(dir)) {
     if (name.startsWith(".")) continue;
     const m = /^(\d+)/.exec(name);
     if (m) max = Math.max(max, parseInt(m[1], 10));
@@ -17343,16 +17435,16 @@ function recordBuildTurn(args) {
     "turns",
     turnSlug(turn, role, ac, mode)
   );
-  (0, import_fs15.mkdirSync)(turnDir, { recursive: true });
-  (0, import_fs15.cpSync)(projectDir, (0, import_path13.join)(turnDir, "code"), {
+  (0, import_fs16.mkdirSync)(turnDir, { recursive: true });
+  (0, import_fs16.cpSync)(projectDir, (0, import_path13.join)(turnDir, "code"), {
     recursive: true,
     force: true,
     filter: codeTreeFilter(projectDir)
   });
   const cyclesSrc = cyclesRootDir(consortDir);
-  if ((0, import_fs15.existsSync)(cyclesSrc)) (0, import_fs15.cpSync)(cyclesSrc, (0, import_path13.join)(turnDir, "tdd", "cycles"), { recursive: true, force: true });
+  if ((0, import_fs16.existsSync)(cyclesSrc)) (0, import_fs16.cpSync)(cyclesSrc, (0, import_path13.join)(turnDir, "tdd", "cycles"), { recursive: true, force: true });
   const expSrc = experimentsRootDir(consortDir);
-  if ((0, import_fs15.existsSync)(expSrc)) (0, import_fs15.cpSync)(expSrc, (0, import_path13.join)(turnDir, "tdd", "experiments"), { recursive: true, force: true });
+  if ((0, import_fs16.existsSync)(expSrc)) (0, import_fs16.cpSync)(expSrc, (0, import_path13.join)(turnDir, "tdd", "experiments"), { recursive: true, force: true });
   return turnDir;
 }
 
@@ -17737,7 +17829,7 @@ function assertRouteSatisfiable(action, step, ctx, exists = import_node_fs30.exi
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_fs16 = require("fs");
+var import_fs17 = require("fs");
 var import_path14 = require("path");
 
 // consort/gates/gate-conformance-guard.ts
@@ -17760,13 +17852,13 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!(0, import_fs16.existsSync)(p)) return initPipeline(featureId);
-  return JSON.parse((0, import_fs16.readFileSync)(p, "utf8"));
+  if (!(0, import_fs17.existsSync)(p)) return initPipeline(featureId);
+  return JSON.parse((0, import_fs17.readFileSync)(p, "utf8"));
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
-  (0, import_fs16.mkdirSync)((0, import_path14.dirname)(p), { recursive: true });
-  (0, import_fs16.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+  (0, import_fs17.mkdirSync)((0, import_path14.dirname)(p), { recursive: true });
+  (0, import_fs17.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
 }
 
 // consort/session/response-formatter.ts
@@ -17799,7 +17891,7 @@ function designGuideConformance(consortDir) {
 
 // consort/orchestrator/status/feature-status.ts
 init_cjs_shims();
-var import_fs17 = require("fs");
+var import_fs18 = require("fs");
 var import_path15 = require("path");
 
 // consort/gates/design-spec-gate.ts
@@ -17832,9 +17924,9 @@ function deriveFeaturePhase(stories) {
 }
 function featureRequestTitle(featureDirPath, id) {
   const p = (0, import_path15.join)(featureDirPath, "feature-request.md");
-  if (!(0, import_fs17.existsSync)(p)) return id;
+  if (!(0, import_fs18.existsSync)(p)) return id;
   try {
-    const h1 = (0, import_fs17.readFileSync)(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
+    const h1 = (0, import_fs18.readFileSync)(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
     return h1 ? h1.replace(/^#\s+/, "").trim() : id;
   } catch {
     return id;
@@ -17842,11 +17934,11 @@ function featureRequestTitle(featureDirPath, id) {
 }
 function deliveredFeatures(consortDir) {
   const root = featuresDir(consortDir);
-  if (!(0, import_fs17.existsSync)(root)) return [];
+  if (!(0, import_fs18.existsSync)(root)) return [];
   const out = [];
-  const ids = (0, import_fs17.readdirSync)(root).filter((d) => {
+  const ids = (0, import_fs18.readdirSync)(root).filter((d) => {
     try {
-      return (0, import_fs17.statSync)((0, import_path15.join)(root, d)).isDirectory();
+      return (0, import_fs18.statSync)((0, import_path15.join)(root, d)).isDirectory();
     } catch {
       return false;
     }
@@ -18067,7 +18159,7 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
     }
     case "navigator":
       if (action.buildMode === "reflect") {
-        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json) + NFRs.` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell). Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist","detail":"<the defect>"}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to spec-author (an AC/spec defect) or test-strategist (a test-list/coverage defect). Write ONLY that file; the orchestrator routes any fix deterministically.`;
+        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json) + NFRs.` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle. The DETERMINISTIC pre-reflect gate has ALREADY verified the structural classes \u2014 client-kind\u2194AC-layer coherence, E2E-layer coverage by a real Playwright spec, and that no real-browser navigation/reload assertion sits in the jsdom component harness \u2014 so do NOT spend a finding re-flagging those; focus on the SEMANTIC defects: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell). Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist","detail":"<the defect>"}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to spec-author (an AC/spec defect) or test-strategist (a test-list/coverage defect). Write ONLY that file; the orchestrator routes any fix deterministically.`;
       }
       if (action.buildMode === "assess") {
         const gfAssess = action.ac ? readGreenFailure(consortDir, featureId, s, action.ac) : void 0;
@@ -18414,6 +18506,8 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
         { kind: "cli", bin: CANON_NOTES_BIN, args: ["--story", action.story, ...tdd] },
         { kind: "cli", bin: LOG_BIN, args: ["--reconcile", ...tdd] }
       ];
+    case "flag-testlist-nonconformance":
+      return [{ kind: "cli", bin: CYCLE_BIN, args: ["testlist-gate", "--story", action.story, ...tdd] }];
     case "surface-gate":
       return [{ kind: "cli", bin: PIPELINE_BIN, args: ["surface", "--story", action.story, ...tdd] }];
     case "approve-gate":
@@ -18731,14 +18825,14 @@ function buildDriveEffects(cfg) {
 
 // consort/session/run-config.ts
 init_cjs_shims();
-var import_fs18 = require("fs");
+var import_fs19 = require("fs");
 var import_path16 = require("path");
 var RUN_CONFIG_REL = (0, import_path16.join)(ARTIFACT_ROOT, "run-config.json");
 function readRunConfig(consortDir) {
   const f = (0, import_path16.join)(consortDir, "run-config.json");
-  if (!(0, import_fs18.existsSync)(f)) return void 0;
+  if (!(0, import_fs19.existsSync)(f)) return void 0;
   try {
-    return JSON.parse((0, import_fs18.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs19.readFileSync)(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -18746,7 +18840,7 @@ function readRunConfig(consortDir) {
 
 // tests/optimization/replay-turn.ts
 init_cjs_shims();
-var import_fs19 = require("fs");
+var import_fs20 = require("fs");
 var import_path17 = require("path");
 function rehydrate(text, projectDir) {
   const root = projectDir.replace(/\/+$/, "");
@@ -18756,15 +18850,15 @@ function rehydrate(text, projectDir) {
 function readReplaySet(turnDir) {
   const setDir = (0, import_path17.join)(turnDir, "replay-set");
   const promptPath = (0, import_path17.join)(setDir, "prompt.txt");
-  if (!(0, import_fs19.existsSync)(promptPath)) throw new Error(`replay-set incomplete: no prompt.txt under ${setDir}`);
-  const turn = JSON.parse((0, import_fs19.readFileSync)((0, import_path17.join)(turnDir, "turn.json"), "utf8"));
+  if (!(0, import_fs20.existsSync)(promptPath)) throw new Error(`replay-set incomplete: no prompt.txt under ${setDir}`);
+  const turn = JSON.parse((0, import_fs20.readFileSync)((0, import_path17.join)(turnDir, "turn.json"), "utf8"));
   const leversPath = (0, import_path17.join)(setDir, "levers.json");
-  const levers = (0, import_fs19.existsSync)(leversPath) ? JSON.parse((0, import_fs19.readFileSync)(leversPath, "utf8")) : {};
+  const levers = (0, import_fs20.existsSync)(leversPath) ? JSON.parse((0, import_fs20.readFileSync)(leversPath, "utf8")) : {};
   const inDir = (0, import_path17.join)(setDir, "inputs");
   const inputs = {};
-  if ((0, import_fs19.existsSync)(inDir)) {
-    for (const e of (0, import_fs19.readdirSync)(inDir, { withFileTypes: true })) {
-      if (e.isFile()) inputs[e.name] = (0, import_fs19.readFileSync)((0, import_path17.join)(inDir, e.name), "utf8");
+  if ((0, import_fs20.existsSync)(inDir)) {
+    for (const e of (0, import_fs20.readdirSync)(inDir, { withFileTypes: true })) {
+      if (e.isFile()) inputs[e.name] = (0, import_fs20.readFileSync)((0, import_path17.join)(inDir, e.name), "utf8");
     }
   }
   return {
@@ -18773,7 +18867,7 @@ function readReplaySet(turnDir) {
     role: turn.role ?? levers.role ?? "",
     story: turn.story,
     action: turn.action ?? {},
-    promptRaw: (0, import_fs19.readFileSync)(promptPath, "utf8"),
+    promptRaw: (0, import_fs20.readFileSync)(promptPath, "utf8"),
     levers,
     inputs,
     preProjectDir: (0, import_path17.join)(setDir, "pre-project")
@@ -19357,7 +19451,7 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
 
 // tests/optimization/experiment-config.ts
 init_cjs_shims();
-var import_fs20 = require("fs");
+var import_fs21 = require("fs");
 var KNOWN_ROLES = [
   "architect-reviewer",
   "test-strategist",
@@ -19412,7 +19506,7 @@ function toLeverPatch(spec, candidateId) {
   return patch;
 }
 function loadExperimentConfig(path11) {
-  const raw = JSON.parse((0, import_fs20.readFileSync)(path11, "utf8"));
+  const raw = JSON.parse((0, import_fs21.readFileSync)(path11, "utf8"));
   if (!raw.name || typeof raw.name !== "string") throw new Error(`experiment config ${path11}: missing "name"`);
   if (!raw.turn || typeof raw.turn !== "string") throw new Error(`experiment config ${path11}: missing "turn" (the corpus turn label)`);
   const discriminator = raw.discriminator ?? discriminatorFromLabel(raw.turn);

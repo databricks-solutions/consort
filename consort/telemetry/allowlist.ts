@@ -324,6 +324,7 @@ export const GATE_KINDS = [
   "merge",
   "raise-to-hil",
   "revise-route",
+  "flag-testlist-nonconformance",
   "done",
 ] as const;
 export type GateKind = (typeof GATE_KINDS)[number];

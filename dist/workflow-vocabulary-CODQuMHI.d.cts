@@ -20,6 +20,13 @@ interface StoryDesign {
     dbaDesigned: boolean;
     /** The Test Strategist has produced this story's ordered test list. */
     testListReady: boolean;
+    /** The test-list passes the DETERMINISTIC structural conformance checks
+     *  (client-kind↔layer, e2e coverage, jsdom-vacuous browser assertion) — run in
+     *  the probe over the assembled test-list + AC layers. Gates the lane BEFORE the
+     *  LLM reflect so a structural defect (incl. one a revise reintroduces) is caught
+     *  deterministically without an LLM lap. Vacuously true when no test-list yet, so
+     *  it never pre-empts before testListReady. */
+    testListConforms: boolean;
     /** The pre-build reflection critic (Navigator, reflect mode) has PASSED this
      *  story's spec + test-list. A missing/failed verdict is not passed: the lane
      *  runs (or re-runs) the critic, and a failed verdict drives the spec-level
@@ -55,6 +62,9 @@ type DriveAction = {
     role: "navigator";
     story: string;
     buildMode: "reflect";
+} | {
+    kind: "flag-testlist-nonconformance";
+    story: string;
 } | {
     kind: "project-architect-notes";
     story: string;
