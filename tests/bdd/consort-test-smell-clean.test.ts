@@ -298,6 +298,18 @@ describe("checkTestSmells: the three migration/aggregate detectors", () => {
     }));
     write(dir3, ".consort/features/F1/test-list.json", JSON.stringify({ items: [] }));
     expect(checkTestSmells({ projectDir: dir3 }).clean).toBe(true);
+
+    // Round-trip credited when the description names BOTH directions, even when a
+    // descriptive clause pushes downgrade/upgrade >80 chars apart (the stockflow-3-100
+    // T25 false positive that the old proximity window mis-flagged as forward-only).
+    const dir4 = mkProject();
+    write(dir4, ".consort/features/F1/architecture.json", JSON.stringify({
+      persistence_invariants: [{ id: "PI5-par-level-additive-migration", type: "migration_reversible", table: "stock_records" }],
+    }));
+    write(dir4, ".consort/features/F1/test-list.json", JSON.stringify({ items: [
+      { id: "T25", invariant_id: "PI5-par-level-additive-migration", description: "A single-step downgrade on the real branch database removes the par_level column from stock_records; a subsequent upgrade re-adds the nullable par_level column, proving schema recreation" },
+    ] }));
+    expect(checkTestSmells({ projectDir: dir4 }).clean).toBe(true);
   });
 });
 
