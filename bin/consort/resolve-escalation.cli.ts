@@ -13,8 +13,7 @@
 // lists them and asks for --id or --all. Exit 0 resolved/listed, 2 needs a choice / none.
 
 import { resolveConsortDir } from "../../consort/config/consort-paths.js";
-import { readEscalations, resolveEscalations, escalationsFromSmells, type Escalation } from "../../consort/gates/escalation.js";
-import { resolveOpenSmells } from "../../consort/smells/smells.js";
+import { pendingBlockers, resolveBlockers, type Escalation } from "../../consort/gates/escalation.js";
 
 interface Args {
   projectDir: string;
@@ -56,23 +55,13 @@ const describe = (e: Escalation): string =>
   `  ${e.id}\n      source: ${e.source}  reason: ${e.reason}` +
   `${e.feature_id ? `  feature: ${e.feature_id}` : ""}${e.story_id ? `  story: ${e.story_id}` : ""}`;
 
-/** Does an escalation match the requested scope? */
-function inScope(e: Escalation, args: Args): boolean {
-  if (args.id) return e.id === args.id;
-  if (args.feature && e.feature_id !== undefined && e.feature_id !== args.feature) return false;
-  if (args.story && e.story_id !== args.story) return false;
-  return true;
-}
-
 function main(): number {
   const args = parseArgs(process.argv.slice(2));
   const consortDir = args.consortDir ?? resolveConsortDir(args.projectDir);
   // A HIL halt has TWO sources (the dual-source rule): explicit escalation FILES and
   // BLOCKING SMELLS in smells.json. "Clear the halt" must cover both – T27's blocker
   // is smell-derived, not a file. List + resolve both.
-  const fileEscalations = readEscalations(consortDir).filter((e) => !e.resolved_at);
-  const smellEscalations = escalationsFromSmells(consortDir, args.feature);
-  const pending = [...fileEscalations, ...smellEscalations];
+  const pending = pendingBlockers(consortDir, args.feature);
 
   if (args.list) {
     if (!pending.length) { process.stdout.write("consort-resolve-escalation: no pending escalations or blocking smells.\n"); return 0; }
@@ -95,28 +84,7 @@ function main(): number {
     return 2;
   }
 
-  const resolved: string[] = [];
-  // (1) File escalations – stamp resolved_at (keeps the record).
-  resolved.push(
-    ...resolveEscalations(consortDir, {
-      ...(args.id ? { id: args.id } : {}),
-      ...(args.feature ? { featureId: args.feature } : {}),
-      ...(args.story ? { story: args.story } : {}),
-      ...(args.resolution ? { resolution: args.resolution } : {}),
-    }),
-  );
-  // (2) Blocking smells – mark the smell "cleared" (does NOT count toward the revise
-  // budget), the smell-source half of the dual-source rule.
-  for (const s of smellEscalations) {
-    if (!args.all && !inScope(s, args)) continue;
-    const smellName = s.source.startsWith("smell:") ? s.source.slice("smell:".length) : s.source;
-    const n = resolveOpenSmells(consortDir, smellName, {
-      ...(s.story_id ? { story_id: s.story_id } : {}),
-      kind: "cleared",
-      ...(args.resolution ? { note: args.resolution } : {}),
-    });
-    if (n > 0) resolved.push(s.id);
-  }
+  const resolved = resolveBlockers(consortDir, args);
 
   if (!resolved.length) {
     process.stderr.write("consort-resolve-escalation: nothing matched (check --id / --feature / --story against --list).\n");

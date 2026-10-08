@@ -12,7 +12,7 @@
 
 import * as fs from "node:fs";
 import { escalationsDir, escalationFile } from "../../consort/config/consort-paths.js";
-import { readSmellsLog, writeSmellsLog, hasOpenSmell, type SmellName } from "../smells/smells.js";
+import { readSmellsLog, writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellName } from "../smells/smells.js";
 import { pendingItemKind } from "../pipeline/cycle-record.js";
 
 /** A blocking problem raised to the HIL. Identity is `id` (derived from source +
@@ -227,6 +227,59 @@ export function escalationsFromSmells(consortDir: string, featureId?: string): E
       ...(d.ac_id ? { ac_id: d.ac_id } : {}),
       raised_at: d.detected_at,
     }));
+}
+
+/** All currently-pending blockers for this project, from BOTH sources of the dual-source rule:
+ *  unresolved escalation FILES and BLOCKING SMELLS derived from smells.json. */
+export function pendingBlockers(consortDir: string, feature?: string): Escalation[] {
+  return [
+    ...readEscalations(consortDir).filter((e) => !e.resolved_at),
+    ...escalationsFromSmells(consortDir, feature),
+  ];
+}
+
+/** Match an escalation against a resolve scope (id wins; else feature/story narrow). */
+function escalationInScope(e: Escalation, scope: { id?: string; feature?: string; story?: string }): boolean {
+  if (scope.id) return e.id === scope.id;
+  if (scope.feature && e.feature_id !== undefined && e.feature_id !== scope.feature) return false;
+  if (scope.story && e.story_id !== scope.story) return false;
+  return true;
+}
+
+/** Resolve the in-scope blockers; return the ids cleared. Stamps resolved_at on matching escalation
+ *  FILES, and clears each in-scope SMELL-sourced blocker in smells.json (the store the drive
+ *  re-reads via escalationsFromSmells) by that record's OWN `source` + `story_id`. Driving the
+ *  smell-clear off the matched RECORDS — not a feature-scoped regeneration — is what lets a resolve
+ *  by `id` alone clear the backing smell WITHOUT a feature: the id is built WITH a feature, so a
+ *  feature-less regeneration yields a NON-matching id, leaves the smell unresolved, and the drive
+ *  re-raises it next tick (the thrash). smells.json stays the single owner of "resolved"; the
+ *  re-raise path consults no second source. */
+export function resolveBlockers(
+  consortDir: string,
+  scope: { id?: string; feature?: string; story?: string; resolution?: string; all?: boolean },
+): string[] {
+  const pending = pendingBlockers(consortDir, scope.feature);
+  const resolved: string[] = [];
+  // (1) File escalations – stamp resolved_at (keeps the record).
+  resolved.push(
+    ...resolveEscalations(consortDir, {
+      ...(scope.id ? { id: scope.id } : {}),
+      ...(scope.feature ? { featureId: scope.feature } : {}),
+      ...(scope.story ? { story: scope.story } : {}),
+      ...(scope.resolution ? { resolution: scope.resolution } : {}),
+    }),
+  );
+  // (2) Blocking smells – mark "cleared" in smells.json (does NOT count toward the revise budget).
+  for (const e of pending.filter((x) => scope.all || escalationInScope(x, scope))) {
+    if (!e.source.startsWith("smell:")) continue;
+    const n = resolveOpenSmells(consortDir, e.source.slice("smell:".length), {
+      ...(e.story_id ? { story_id: e.story_id } : {}),
+      kind: "cleared",
+      ...(scope.resolution ? { note: scope.resolution } : {}),
+    });
+    if (n > 0 && !resolved.includes(e.id)) resolved.push(e.id);
+  }
+  return resolved;
 }
 
 /** Mirror a role-flagged BLOCKING smell into `smells.json` so the driver's
