@@ -6646,8 +6646,8 @@ init_cjs_shims();
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_fs4 = require("fs");
-var import_path7 = require("path");
+var import_fs5 = require("fs");
+var import_path8 = require("path");
 
 // consort/config/consort-paths.ts
 init_cjs_shims();
@@ -6699,6 +6699,11 @@ function findFeatureDir(tdd, featureId) {
   if (fs.existsSync(exact)) return exact;
   const matches = fs.readdirSync(root).filter((d) => d === featureId || d.startsWith(`${featureId}-`));
   return matches.length === 1 ? (0, import_node_path.join)(root, matches[0]) : void 0;
+}
+function requireFeatureDir(tdd, featureId) {
+  const dir = findFeatureDir(tdd, featureId);
+  if (!dir) throw new Error(`feature ${featureId} not found (or ambiguous) under ${featuresDir(tdd)}`);
+  return dir;
 }
 function storyAcIds(tdd, f, s) {
   const ids = /* @__PURE__ */ new Set();
@@ -7404,6 +7409,90 @@ function logGateApproved(a) {
   }
 }
 
+// consort/gates/gates-lock.ts
+init_cjs_shims();
+var import_fs4 = require("fs");
+var import_path7 = require("path");
+var GatesLockBusyError = class extends Error {
+  constructor(featureId, heldByPid, retries) {
+    super(
+      `gates.json lock for ${featureId} is held by PID ${heldByPid ?? "unknown"} after ${retries} retries. If the holder has crashed, remove the lock file manually.`
+    );
+    this.featureId = featureId;
+    this.heldByPid = heldByPid;
+    this.retries = retries;
+    this.name = "GatesLockBusyError";
+  }
+  featureId;
+  heldByPid;
+  retries;
+};
+var HELD_LOCKS = /* @__PURE__ */ new Set();
+function withGatesLock(featureId, fn, opts = {}) {
+  const consortDir = opts.consortDir ?? resolveConsortDir();
+  const maxRetries = opts.maxRetries ?? 5;
+  const initialBackoffMs = opts.initialBackoffMs ?? 20;
+  const sleep = opts.sleep ?? defaultSleep;
+  const lockPath = gatesLockFilePath(consortDir, featureId, opts.lockBasename ?? ".gates.lock");
+  if (HELD_LOCKS.has(lockPath)) {
+    throw new Error(
+      `re-entrant lock on ${lockPath}: a holder tried to acquire it again (nested updatePipeline / withGatesLock). Mutate within the single outer critical section instead.`
+    );
+  }
+  let acquired = false;
+  let attempts = 0;
+  while (!acquired && attempts <= maxRetries) {
+    try {
+      const fd = (0, import_fs4.openSync)(lockPath, "wx");
+      (0, import_fs4.writeFileSync)(fd, String(process.pid));
+      (0, import_fs4.closeSync)(fd);
+      acquired = true;
+      HELD_LOCKS.add(lockPath);
+    } catch (err) {
+      if (!isEexist(err)) throw err;
+      attempts += 1;
+      if (attempts > maxRetries) {
+        const heldByPid = readHeldByPid(lockPath);
+        throw new GatesLockBusyError(featureId, heldByPid, maxRetries);
+      }
+      sleep(initialBackoffMs * 2 ** (attempts - 1));
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    HELD_LOCKS.delete(lockPath);
+    try {
+      (0, import_fs4.unlinkSync)(lockPath);
+    } catch {
+    }
+  }
+}
+function isEexist(err) {
+  return typeof err === "object" && err !== null && err.code === "EEXIST";
+}
+function readHeldByPid(lockPath) {
+  try {
+    const text = (0, import_fs4.readFileSync)(lockPath, "utf8");
+    const n = Number(text.trim());
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+function gatesLockFilePath(consortDir, featureId, basename4) {
+  const dir = requireFeatureDir(consortDir, featureId);
+  (0, import_fs4.mkdirSync)(dir, { recursive: true });
+  return (0, import_path7.join)(dir, basename4);
+}
+function withPipelineLock(featureId, fn, opts = {}) {
+  return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
+}
+function defaultSleep(ms) {
+  const buf = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(buf, 0, 0, ms);
+}
+
 // consort/pipeline/story-pipeline.ts
 var STORY_STATUSES = [
   "designing",
@@ -7422,13 +7511,25 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!(0, import_fs4.existsSync)(p)) return initPipeline(featureId);
-  return JSON.parse((0, import_fs4.readFileSync)(p, "utf8"));
+  if (!(0, import_fs5.existsSync)(p)) return initPipeline(featureId);
+  return JSON.parse((0, import_fs5.readFileSync)(p, "utf8"));
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
-  (0, import_fs4.mkdirSync)((0, import_path7.dirname)(p), { recursive: true });
-  (0, import_fs4.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+  (0, import_fs5.mkdirSync)((0, import_path8.dirname)(p), { recursive: true });
+  (0, import_fs5.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+}
+function updatePipeline(consortDir, featureId, mutate) {
+  return withPipelineLock(
+    featureId,
+    () => {
+      const pipeline = readPipeline(consortDir, featureId);
+      mutate(pipeline);
+      writePipeline(consortDir, pipeline);
+      return pipeline;
+    },
+    { consortDir }
+  );
 }
 function setStoryStatus(pipeline, storyId, status) {
   const existing = pipeline.stories[storyId];
@@ -7437,31 +7538,31 @@ function setStoryStatus(pipeline, storyId, status) {
 }
 function syncBreakdownToPipeline(consortDir, featureId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
-  const pipeline = readPipeline(consortDir, featureId);
   const added = [];
-  if ((0, import_fs4.existsSync)(storiesDir2)) {
-    for (const storyId of (0, import_fs4.readdirSync)(storiesDir2).sort()) {
-      let isDir = false;
-      try {
-        isDir = (0, import_fs4.statSync)((0, import_path7.join)(storiesDir2, storyId)).isDirectory();
-      } catch {
-        isDir = false;
-      }
-      if (!isDir) continue;
-      if (pipeline.stories[storyId] === void 0) {
-        setStoryStatus(pipeline, storyId, "designing");
-        added.push(storyId);
+  const pipeline = updatePipeline(consortDir, featureId, (p) => {
+    if ((0, import_fs5.existsSync)(storiesDir2)) {
+      for (const storyId of (0, import_fs5.readdirSync)(storiesDir2).sort()) {
+        let isDir = false;
+        try {
+          isDir = (0, import_fs5.statSync)((0, import_path8.join)(storiesDir2, storyId)).isDirectory();
+        } catch {
+          isDir = false;
+        }
+        if (!isDir) continue;
+        if (p.stories[storyId] === void 0) {
+          setStoryStatus(p, storyId, "designing");
+          added.push(storyId);
+        }
       }
     }
-  }
-  if (added.length > 0) writePipeline(consortDir, pipeline);
+  });
   return { added, total: Object.keys(pipeline.stories) };
 }
 function resetIncompleteBreakdown(consortDir, featureId) {
   const specPath = featureSpecJson(consortDir, featureId);
   let complete = false;
   try {
-    const spec = JSON.parse((0, import_fs4.readFileSync)(specPath, "utf8"));
+    const spec = JSON.parse((0, import_fs5.readFileSync)(specPath, "utf8"));
     complete = Array.isArray(spec.stories) && spec.stories.length > 0;
   } catch {
     complete = false;
@@ -7469,8 +7570,8 @@ function resetIncompleteBreakdown(consortDir, featureId) {
   if (complete) return { reset: false };
   let reset = false;
   for (const p of [storiesDir(consortDir, featureId), specPath, featureSpecMd(consortDir, featureId)]) {
-    if ((0, import_fs4.existsSync)(p)) {
-      (0, import_fs4.rmSync)(p, { recursive: true, force: true });
+    if ((0, import_fs5.existsSync)(p)) {
+      (0, import_fs5.rmSync)(p, { recursive: true, force: true });
       reset = true;
     }
   }
@@ -7498,14 +7599,14 @@ function completeActive(pipeline) {
 }
 function storyHasAcceptanceCriteria(consortDir, featureId, storyId) {
   const acsDir2 = acsDir(consortDir, featureId, storyId);
-  if (!(0, import_fs4.existsSync)(acsDir2)) return false;
-  return (0, import_fs4.readdirSync)(acsDir2).some((f) => f.endsWith(".json"));
+  if (!(0, import_fs5.existsSync)(acsDir2)) return false;
+  return (0, import_fs5.readdirSync)(acsDir2).some((f) => f.endsWith(".json"));
 }
 function findBatchedDraftStories(consortDir, featureId, pipeline, gatingStoryId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
-  if (!(0, import_fs4.existsSync)(storiesDir2)) return [];
+  if (!(0, import_fs5.existsSync)(storiesDir2)) return [];
   const offenders = [];
-  for (const storyId of (0, import_fs4.readdirSync)(storiesDir2)) {
+  for (const storyId of (0, import_fs5.readdirSync)(storiesDir2)) {
     if (storyId === gatingStoryId) continue;
     if (!storyHasAcceptanceCriteria(consortDir, featureId, storyId)) continue;
     const status = pipeline.stories[storyId]?.status;
@@ -7554,18 +7655,22 @@ function approveStoryGateFromDisk(consortDir, feature, story, opts) {
   if (indepReason) return { ok: false, error: indepReason };
   const e2eReason = storyRequiresE2eReason(featureDir2(consortDir, feature), story);
   if (e2eReason) return { ok: false, error: e2eReason };
+  let mutated;
   try {
-    approveStoryGate(pipeline, story, {
-      approver: opts.approver,
-      at: opts.at ?? (/* @__PURE__ */ new Date()).toISOString(),
-      spec_hash: opts.specHash
-    });
+    mutated = updatePipeline(
+      consortDir,
+      feature,
+      (p) => approveStoryGate(p, story, {
+        approver: opts.approver,
+        at: opts.at ?? (/* @__PURE__ */ new Date()).toISOString(),
+        spec_hash: opts.specHash
+      })
+    );
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
-  writePipeline(consortDir, pipeline);
   logGateApproved({ consortDir, gate: "spec", story, featureId: feature, approver: opts.approver });
-  return { ok: true, queue: pipeline.build_queue };
+  return { ok: true, queue: mutated.build_queue };
 }
 function withdrawStoryGate(pipeline, storyId, opts) {
   const story = pipeline.stories[storyId];
@@ -7689,8 +7794,8 @@ function storyDesignFingerprint(consortDir, feature, story) {
 
 // consort/intake/spec-sync.ts
 init_cjs_shims();
-var import_fs5 = require("fs");
-var import_path8 = require("path");
+var import_fs6 = require("fs");
+var import_path9 = require("path");
 var STORY_ALLOWED_KEYS = /* @__PURE__ */ new Set(["id", "asA", "iWantTo", "soThat", "acs", "feature_id", "independence", "external_ref"]);
 function parseStoryNarrative(md) {
   const grab = (label) => {
@@ -7707,15 +7812,15 @@ function parseStoryNarrative(md) {
 }
 function normalizeStoryJson(consortDir, featureId) {
   const stories = storiesDir(consortDir, featureId);
-  if (!(0, import_fs5.existsSync)(stories)) return [];
+  if (!(0, import_fs6.existsSync)(stories)) return [];
   const changed = [];
-  for (const s of (0, import_fs5.readdirSync)(stories)) {
-    const dir = (0, import_path8.join)(stories, s);
-    const file = (0, import_path8.join)(dir, "story.json");
-    if (!(0, import_fs5.existsSync)(file)) continue;
+  for (const s of (0, import_fs6.readdirSync)(stories)) {
+    const dir = (0, import_path9.join)(stories, s);
+    const file = (0, import_path9.join)(dir, "story.json");
+    if (!(0, import_fs6.existsSync)(file)) continue;
     let obj;
     try {
-      obj = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+      obj = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
     } catch {
       continue;
     }
@@ -7724,12 +7829,12 @@ function normalizeStoryJson(consortDir, featureId) {
       obj.feature_id = obj.feature;
       mutated = true;
     }
-    const mdPath = (0, import_path8.join)(dir, "story.md");
+    const mdPath = (0, import_path9.join)(dir, "story.md");
     const needsNarrative = ["asA", "iWantTo", "soThat"].some(
       (k) => typeof obj[k] !== "string" || obj[k].trim().length === 0
     );
-    if (needsNarrative && (0, import_fs5.existsSync)(mdPath)) {
-      const narrative = parseStoryNarrative((0, import_fs5.readFileSync)(mdPath, "utf8"));
+    if (needsNarrative && (0, import_fs6.existsSync)(mdPath)) {
+      const narrative = parseStoryNarrative((0, import_fs6.readFileSync)(mdPath, "utf8"));
       for (const k of ["asA", "iWantTo", "soThat"]) {
         const cur = obj[k];
         if ((typeof cur !== "string" || cur.trim().length === 0) && narrative[k]) {
@@ -7745,7 +7850,7 @@ function normalizeStoryJson(consortDir, featureId) {
       }
     }
     if (mutated) {
-      (0, import_fs5.writeFileSync)(file, JSON.stringify(obj, null, 2) + "\n");
+      (0, import_fs6.writeFileSync)(file, JSON.stringify(obj, null, 2) + "\n");
       changed.push(s);
     }
   }
@@ -7756,13 +7861,13 @@ function healAndReportStoryNarrative(consortDir, featureId) {
   const healed = normalizeStoryJson(consortDir, featureId);
   const stories = storiesDir(consortDir, featureId);
   const missing = [];
-  if ((0, import_fs5.existsSync)(stories)) {
-    for (const s of (0, import_fs5.readdirSync)(stories)) {
-      const file = (0, import_path8.join)(stories, s, "story.json");
-      if (!(0, import_fs5.existsSync)(file)) continue;
+  if ((0, import_fs6.existsSync)(stories)) {
+    for (const s of (0, import_fs6.readdirSync)(stories)) {
+      const file = (0, import_path9.join)(stories, s, "story.json");
+      if (!(0, import_fs6.existsSync)(file)) continue;
       let obj;
       try {
-        obj = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+        obj = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
       } catch {
         missing.push({ story: s, fields: ["<unparseable story.json>"] });
         continue;
@@ -7783,9 +7888,9 @@ var import_node_path11 = require("path");
 
 // consort/smells/smells.ts
 init_cjs_shims();
-var import_fs6 = require("fs");
+var import_fs7 = require("fs");
 var import_crypto = require("crypto");
-var import_path9 = require("path");
+var import_path10 = require("path");
 
 // consort/pipeline/run-cycle.ts
 init_cjs_shims();
@@ -7972,9 +8077,9 @@ PRESERVE every ${artifact} item this story ALREADY has \u2013 they passed prior 
 Re-author this story's ${artifact} to address the above. Do NOT re-emit the same overlap/redundancy; if no honest, not-already-delivered behavior remains, say so as an open question rather than fabricating one.`;
 }
 function readSmellsLog(consortDir) {
-  const file = (0, import_path9.join)(consortDir, "smells.json");
-  if (!(0, import_fs6.existsSync)(file)) return { detected: [] };
-  return JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+  const file = (0, import_path10.join)(consortDir, "smells.json");
+  if (!(0, import_fs7.existsSync)(file)) return { detected: [] };
+  return JSON.parse((0, import_fs7.readFileSync)(file, "utf8"));
 }
 function smellMatches(entry, smell, story_id) {
   if (entry.smell !== smell) return false;
@@ -7982,20 +8087,20 @@ function smellMatches(entry, smell, story_id) {
   return entry.story_id === void 0 || entry.story_id === story_id;
 }
 function markSmellResolved(consortDir, smell, opts) {
-  const file = (0, import_path9.join)(consortDir, "smells.json");
-  if (!(0, import_fs6.existsSync)(file)) return false;
-  const log = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+  const file = (0, import_path10.join)(consortDir, "smells.json");
+  if (!(0, import_fs7.existsSync)(file)) return false;
+  const log = JSON.parse((0, import_fs7.readFileSync)(file, "utf8"));
   const entry = log.detected.find((d) => !d.resolution && smellMatches(d, smell, opts.story_id));
   if (!entry) return false;
   entry.resolution = opts.note ?? `${opts.kind} by PO`;
   entry.resolution_kind = opts.kind;
-  (0, import_fs6.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  (0, import_fs7.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return true;
 }
 function resolveAllOpenSmellsForStory(consortDir, story, note) {
-  const file = (0, import_path9.join)(consortDir, "smells.json");
-  if (!(0, import_fs6.existsSync)(file)) return [];
-  const log = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+  const file = (0, import_path10.join)(consortDir, "smells.json");
+  if (!(0, import_fs7.existsSync)(file)) return [];
+  const log = JSON.parse((0, import_fs7.readFileSync)(file, "utf8"));
   const cleared = [];
   for (const d of log.detected) {
     if (d.resolution || d.story_id !== story) continue;
@@ -8003,7 +8108,7 @@ function resolveAllOpenSmellsForStory(consortDir, story, note) {
     d.resolution_kind = "cleared";
     cleared.push(d.smell);
   }
-  if (cleared.length) (0, import_fs6.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  if (cleared.length) (0, import_fs7.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return cleared;
 }
 var REFLECT_SMELL_NAMES = /* @__PURE__ */ new Set([
@@ -8014,9 +8119,9 @@ function isReflectSmell(name) {
   return REFLECT_SMELL_NAMES.has(name);
 }
 function bumpReflectReviseCount(consortDir, story_id) {
-  const file = (0, import_path9.join)(consortDir, "smells.json");
-  if (!(0, import_fs6.existsSync)(file)) return;
-  const log = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+  const file = (0, import_path10.join)(consortDir, "smells.json");
+  if (!(0, import_fs7.existsSync)(file)) return;
+  const log = JSON.parse((0, import_fs7.readFileSync)(file, "utf8"));
   log.reflect_revise_count = log.reflect_revise_count ?? {};
   if (log.reflect_revise_count[story_id] === void 0) {
     log.reflect_revise_count[story_id] = log.detected.filter(
@@ -8024,21 +8129,21 @@ function bumpReflectReviseCount(consortDir, story_id) {
     ).length;
   }
   log.reflect_revise_count[story_id] += 1;
-  (0, import_fs6.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  (0, import_fs7.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
 }
 function storyTestListFingerprint(consortDir, featureId, story_id) {
   const f = storyTestListJson(consortDir, featureId, story_id);
-  if (!(0, import_fs6.existsSync)(f)) return "";
+  if (!(0, import_fs7.existsSync)(f)) return "";
   try {
-    return (0, import_crypto.createHash)("sha1").update((0, import_fs6.readFileSync)(f)).digest("hex");
+    return (0, import_crypto.createHash)("sha1").update((0, import_fs7.readFileSync)(f)).digest("hex");
   } catch {
     return "";
   }
 }
 function resolveOpenReflectSmellsForStory(consortDir, story_id, note, artifactSha) {
-  const file = (0, import_path9.join)(consortDir, "smells.json");
-  if (!(0, import_fs6.existsSync)(file)) return 0;
-  const log = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+  const file = (0, import_path10.join)(consortDir, "smells.json");
+  if (!(0, import_fs7.existsSync)(file)) return 0;
+  const log = JSON.parse((0, import_fs7.readFileSync)(file, "utf8"));
   let n = 0;
   for (const d of log.detected) {
     if (!d.resolution && isReflectSmell(d.smell) && d.story_id === story_id) {
@@ -8048,27 +8153,27 @@ function resolveOpenReflectSmellsForStory(consortDir, story_id, note, artifactSh
       n++;
     }
   }
-  if (n) (0, import_fs6.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  if (n) (0, import_fs7.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return n;
 }
 
 // consort/smells/reflection.ts
 init_cjs_shims();
-var import_fs7 = require("fs");
+var import_fs8 = require("fs");
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"
 };
 function clearReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
-  if ((0, import_fs7.existsSync)(p)) (0, import_fs7.rmSync)(p, { force: true });
+  if ((0, import_fs8.existsSync)(p)) (0, import_fs8.rmSync)(p, { force: true });
 }
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
-var import_fs8 = require("fs");
-var import_path10 = require("path");
+var import_fs9 = require("fs");
+var import_path11 = require("path");
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
@@ -8190,24 +8295,24 @@ var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 function resetStoryBuildState(consortDir, featureId, story) {
-  const cyclesDir = (0, import_path10.join)(cyclesRootDir(consortDir), featureId, story);
+  const cyclesDir = (0, import_path11.join)(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
-  if ((0, import_fs8.existsSync)(cyclesDir)) {
-    (0, import_fs8.rmSync)(cyclesDir, { recursive: true, force: true });
+  if ((0, import_fs9.existsSync)(cyclesDir)) {
+    (0, import_fs9.rmSync)(cyclesDir, { recursive: true, force: true });
     cyclesCleared = true;
   }
   let testItemsReset = 0;
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if ((0, import_fs8.existsSync)(tlPath)) {
+  if ((0, import_fs9.existsSync)(tlPath)) {
     try {
-      const tl = JSON.parse((0, import_fs8.readFileSync)(tlPath, "utf8"));
+      const tl = JSON.parse((0, import_fs9.readFileSync)(tlPath, "utf8"));
       for (const item of tl.items ?? []) {
         if (item.status && item.status !== "pending") {
           item.status = "pending";
           testItemsReset++;
         }
       }
-      (0, import_fs8.writeFileSync)(tlPath, JSON.stringify(tl, null, 2) + "\n");
+      (0, import_fs9.writeFileSync)(tlPath, JSON.stringify(tl, null, 2) + "\n");
     } catch {
     }
   }
@@ -8298,9 +8403,7 @@ function applyReviseSelfHeal(args) {
     );
   } catch {
   }
-  const pipeline = readPipeline(consortDir, args.featureId);
-  reviseStory(pipeline, args.story, { approver, at, reason: args.reason });
-  writePipeline(consortDir, pipeline);
+  updatePipeline(consortDir, args.featureId, (p) => reviseStory(p, args.story, { approver, at, reason: args.reason }));
   resetStoryBuildState(consortDir, args.featureId, args.story);
   staleStoryArtifactsForRevise(consortDir, args.featureId, args.story, args.gate);
   try {
@@ -8370,13 +8473,15 @@ function reviseStoryWithSelfHeal(consortDir, featureId, story, opts) {
     });
     return { mode: "self-heal", story, smell: routable.smell, routedTo: routable.routedTo };
   }
-  const pipeline = readPipeline(consortDir, featureId);
-  reviseStory(pipeline, story, {
-    approver: opts.approver,
-    at: opts.at ?? (/* @__PURE__ */ new Date()).toISOString(),
-    reason: opts.reason
-  });
-  writePipeline(consortDir, pipeline);
+  updatePipeline(
+    consortDir,
+    featureId,
+    (p) => reviseStory(p, story, {
+      approver: opts.approver,
+      at: opts.at ?? (/* @__PURE__ */ new Date()).toISOString(),
+      reason: opts.reason
+    })
+  );
   resetStoryBuildState(consortDir, featureId, story);
   return { mode: "plain", story };
 }
@@ -8398,16 +8503,18 @@ function rebuildStory(consortDir, featureId, story, opts) {
     `cleared for rebuild-story by ${opts?.approver ?? "operator"}`
   );
   let experimentReset = false;
-  if (entry.experiment && entry.experiment.status !== "discarded") {
-    entry.experiment.status = "discarded";
-    entry.experiment.closed_at = at;
-    experimentReset = true;
-  }
-  setStoryStatus(pipeline, story, "building");
-  pipeline.build_active = story;
-  const idx = pipeline.build_queue.indexOf(story);
-  if (idx !== -1) pipeline.build_queue.splice(idx, 1);
-  writePipeline(consortDir, pipeline);
+  updatePipeline(consortDir, featureId, (p) => {
+    const e = p.stories[story];
+    if (e?.experiment && e.experiment.status !== "discarded") {
+      e.experiment.status = "discarded";
+      e.experiment.closed_at = at;
+      experimentReset = true;
+    }
+    setStoryStatus(p, story, "building");
+    p.build_active = story;
+    const idx = p.build_queue.indexOf(story);
+    if (idx !== -1) p.build_queue.splice(idx, 1);
+  });
   return {
     cyclesCleared: build.cyclesCleared,
     testItemsReset: build.testItemsReset,
@@ -8651,8 +8758,7 @@ async function main() {
       if (!args.status || !STORY_STATUSES.includes(args.status)) {
         return usage(`set needs a valid --status (${STORY_STATUSES.join("|")})`);
       }
-      setStoryStatus(pipeline, args.story, args.status);
-      writePipeline(consortDir, pipeline);
+      updatePipeline(consortDir, feature, (p) => setStoryStatus(p, args.story, args.status));
       process.stdout.write(`${args.story} -> ${args.status}
 `);
       return 0;
@@ -8661,8 +8767,7 @@ async function main() {
       if (!args.story) return usage("surface needs --story");
       const batched = rejectBatchedDraft(consortDir, feature, pipeline, args.story);
       if (batched !== null) return batched;
-      surfaceForGate(pipeline, args.story);
-      writePipeline(consortDir, pipeline);
+      updatePipeline(consortDir, feature, (p) => surfaceForGate(p, args.story));
       process.stdout.write(`surfaced ${args.story} for the per-story spec gate (awaiting-gate)
 `);
       return 0;
@@ -8695,33 +8800,35 @@ async function main() {
       if (!args.approver) return usage("withdraw-gate needs --approver");
       if (!args.reason) return usage("withdraw-gate needs --reason");
       const at = args.at ?? (/* @__PURE__ */ new Date()).toISOString();
-      withdrawStoryGate(pipeline, args.story, { approver: args.approver, at, reason: args.reason });
-      writePipeline(consortDir, pipeline);
+      updatePipeline(consortDir, feature, (p) => withdrawStoryGate(p, args.story, { approver: args.approver, at, reason: args.reason }));
       process.stdout.write(`withdrew gate for ${args.story} (${args.reason}); back to awaiting-gate
 `);
       return 0;
     }
     case "enqueue": {
       if (!args.story) return usage("enqueue needs --story");
-      enqueueReady(pipeline, args.story);
-      writePipeline(consortDir, pipeline);
-      process.stdout.write(`enqueued ${args.story} (queue: ${pipeline.build_queue.join(", ")})
+      const afterEnqueue = updatePipeline(consortDir, feature, (p) => enqueueReady(p, args.story));
+      process.stdout.write(`enqueued ${args.story} (queue: ${afterEnqueue.build_queue.join(", ")})
 `);
       return 0;
     }
     case "dispatch": {
-      const dispatched = dispatchNext(pipeline);
-      writePipeline(consortDir, pipeline);
+      let dispatched = null;
+      const afterDispatch = updatePipeline(consortDir, feature, (p) => {
+        dispatched = dispatchNext(p) ?? null;
+      });
       process.stdout.write(
         dispatched ? `dispatched ${dispatched} to the build lane
-` : `no dispatch: ${pipeline.build_active ? `lane busy on ${pipeline.build_active}` : "queue empty"}
+` : `no dispatch: ${afterDispatch.build_active ? `lane busy on ${afterDispatch.build_active}` : "queue empty"}
 `
       );
       return 0;
     }
     case "complete": {
-      const completed = completeActive(pipeline);
-      writePipeline(consortDir, pipeline);
+      let completed = null;
+      updatePipeline(consortDir, feature, (p) => {
+        completed = completeActive(p) ?? null;
+      });
       process.stdout.write(completed ? `completed ${completed}; lane idle
 ` : `no active story to complete
 `);
@@ -8732,29 +8839,31 @@ async function main() {
       if (!args.slug || !args.branch || !args.parent) {
         return usage("cut-experiment needs --slug, --branch, and --parent");
       }
-      cutStoryExperiment(pipeline, args.story, {
-        slug: args.slug,
-        branch: args.branch,
-        parent: args.parent,
-        lakebase_branch_uid: args.lakebaseUid,
-        parent_sha: args.parentSha,
-        n: args.n !== void 0 ? Number(args.n) : void 0,
-        at: args.at ?? (/* @__PURE__ */ new Date()).toISOString(),
-        // Stamp the design this experiment is cut to build (stale-experiment guardrail).
-        ...(() => {
-          const fp = storyDesignFingerprint(consortDir, feature, args.story);
-          return fp !== void 0 ? { design_fingerprint: fp } : {};
-        })()
-      });
-      writePipeline(consortDir, pipeline);
+      updatePipeline(
+        consortDir,
+        feature,
+        (p) => cutStoryExperiment(p, args.story, {
+          slug: args.slug,
+          branch: args.branch,
+          parent: args.parent,
+          lakebase_branch_uid: args.lakebaseUid,
+          parent_sha: args.parentSha,
+          n: args.n !== void 0 ? Number(args.n) : void 0,
+          at: args.at ?? (/* @__PURE__ */ new Date()).toISOString(),
+          // Stamp the design this experiment is cut to build (stale-experiment guardrail).
+          ...(() => {
+            const fp = storyDesignFingerprint(consortDir, feature, args.story);
+            return fp !== void 0 ? { design_fingerprint: fp } : {};
+          })()
+        })
+      );
       process.stdout.write(`cut experiment ${args.slug} for ${args.story} on ${args.branch} (parent ${args.parent})
 `);
       return 0;
     }
     case "await-acceptance": {
       if (!args.story) return usage("await-acceptance needs --story");
-      awaitAcceptance(pipeline, args.story);
-      writePipeline(consortDir, pipeline);
+      updatePipeline(consortDir, feature, (p) => awaitAcceptance(p, args.story));
       process.stdout.write(`${args.story} -> awaiting-acceptance (PO reviewing the running story)
 `);
       return 0;

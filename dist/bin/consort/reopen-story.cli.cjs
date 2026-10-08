@@ -6700,6 +6700,11 @@ function findFeatureDir(tdd, featureId) {
   const matches = fs.readdirSync(root).filter((d) => d === featureId || d.startsWith(`${featureId}-`));
   return matches.length === 1 ? (0, import_node_path.join)(root, matches[0]) : void 0;
 }
+function requireFeatureDir(tdd, featureId) {
+  const dir = findFeatureDir(tdd, featureId);
+  if (!dir) throw new Error(`feature ${featureId} not found (or ambiguous) under ${featuresDir(tdd)}`);
+  return dir;
+}
 
 // consort/gates/reopen-story.ts
 init_cjs_shims();
@@ -6708,8 +6713,8 @@ var import_node_path3 = require("path");
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_fs2 = require("fs");
-var import_path4 = require("path");
+var import_fs3 = require("fs");
+var import_path5 = require("path");
 
 // consort/gates/gate-conformance-guard.ts
 init_cjs_shims();
@@ -6843,6 +6848,90 @@ var EVENT_TEMPLATES = {
 };
 var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 
+// consort/gates/gates-lock.ts
+init_cjs_shims();
+var import_fs2 = require("fs");
+var import_path4 = require("path");
+var GatesLockBusyError = class extends Error {
+  constructor(featureId, heldByPid, retries) {
+    super(
+      `gates.json lock for ${featureId} is held by PID ${heldByPid ?? "unknown"} after ${retries} retries. If the holder has crashed, remove the lock file manually.`
+    );
+    this.featureId = featureId;
+    this.heldByPid = heldByPid;
+    this.retries = retries;
+    this.name = "GatesLockBusyError";
+  }
+  featureId;
+  heldByPid;
+  retries;
+};
+var HELD_LOCKS = /* @__PURE__ */ new Set();
+function withGatesLock(featureId, fn, opts = {}) {
+  const consortDir = opts.consortDir ?? resolveConsortDir();
+  const maxRetries = opts.maxRetries ?? 5;
+  const initialBackoffMs = opts.initialBackoffMs ?? 20;
+  const sleep = opts.sleep ?? defaultSleep;
+  const lockPath = gatesLockFilePath(consortDir, featureId, opts.lockBasename ?? ".gates.lock");
+  if (HELD_LOCKS.has(lockPath)) {
+    throw new Error(
+      `re-entrant lock on ${lockPath}: a holder tried to acquire it again (nested updatePipeline / withGatesLock). Mutate within the single outer critical section instead.`
+    );
+  }
+  let acquired = false;
+  let attempts = 0;
+  while (!acquired && attempts <= maxRetries) {
+    try {
+      const fd = (0, import_fs2.openSync)(lockPath, "wx");
+      (0, import_fs2.writeFileSync)(fd, String(process.pid));
+      (0, import_fs2.closeSync)(fd);
+      acquired = true;
+      HELD_LOCKS.add(lockPath);
+    } catch (err) {
+      if (!isEexist(err)) throw err;
+      attempts += 1;
+      if (attempts > maxRetries) {
+        const heldByPid = readHeldByPid(lockPath);
+        throw new GatesLockBusyError(featureId, heldByPid, maxRetries);
+      }
+      sleep(initialBackoffMs * 2 ** (attempts - 1));
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    HELD_LOCKS.delete(lockPath);
+    try {
+      (0, import_fs2.unlinkSync)(lockPath);
+    } catch {
+    }
+  }
+}
+function isEexist(err) {
+  return typeof err === "object" && err !== null && err.code === "EEXIST";
+}
+function readHeldByPid(lockPath) {
+  try {
+    const text = (0, import_fs2.readFileSync)(lockPath, "utf8");
+    const n = Number(text.trim());
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+function gatesLockFilePath(consortDir, featureId, basename2) {
+  const dir = requireFeatureDir(consortDir, featureId);
+  (0, import_fs2.mkdirSync)(dir, { recursive: true });
+  return (0, import_path4.join)(dir, basename2);
+}
+function withPipelineLock(featureId, fn, opts = {}) {
+  return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
+}
+function defaultSleep(ms) {
+  const buf = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(buf, 0, 0, ms);
+}
+
 // consort/pipeline/story-pipeline.ts
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
@@ -6852,13 +6941,25 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!(0, import_fs2.existsSync)(p)) return initPipeline(featureId);
-  return JSON.parse((0, import_fs2.readFileSync)(p, "utf8"));
+  if (!(0, import_fs3.existsSync)(p)) return initPipeline(featureId);
+  return JSON.parse((0, import_fs3.readFileSync)(p, "utf8"));
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
-  (0, import_fs2.mkdirSync)((0, import_path4.dirname)(p), { recursive: true });
-  (0, import_fs2.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+  (0, import_fs3.mkdirSync)((0, import_path5.dirname)(p), { recursive: true });
+  (0, import_fs3.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+}
+function updatePipeline(consortDir, featureId, mutate) {
+  return withPipelineLock(
+    featureId,
+    () => {
+      const pipeline = readPipeline(consortDir, featureId);
+      mutate(pipeline);
+      writePipeline(consortDir, pipeline);
+      return pipeline;
+    },
+    { consortDir }
+  );
 }
 
 // consort/gates/workflow-phase.ts
@@ -6915,14 +7016,16 @@ function resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared
     cleared.push("../deploy-evidence.json (feature deploy gate)");
   }
   try {
-    const pipeline = readPipeline(consortDir, feature);
-    if (pipeline.stories[story]) {
-      pipeline.stories[story] = { status: "designing" };
-      pipeline.build_queue = pipeline.build_queue.filter((s) => s !== story);
-      if (pipeline.build_active === story) pipeline.build_active = null;
-      writePipeline(consortDir, pipeline);
-      cleared.push("pipeline entry -> designing (spec gate + experiment + acceptance cleared)");
-    }
+    let didClear = false;
+    updatePipeline(consortDir, feature, (pipeline) => {
+      if (pipeline.stories[story]) {
+        pipeline.stories[story] = { status: "designing" };
+        pipeline.build_queue = pipeline.build_queue.filter((s) => s !== story);
+        if (pipeline.build_active === story) pipeline.build_active = null;
+        didClear = true;
+      }
+    });
+    if (didClear) cleared.push("pipeline entry -> designing (spec gate + experiment + acceptance cleared)");
   } catch {
   }
   try {

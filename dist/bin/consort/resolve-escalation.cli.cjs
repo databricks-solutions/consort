@@ -7063,6 +7063,40 @@ function escalationsFromSmells(consortDir, featureId) {
     raised_at: d.detected_at
   }));
 }
+function pendingBlockers(consortDir, feature) {
+  return [
+    ...readEscalations(consortDir).filter((e) => !e.resolved_at),
+    ...escalationsFromSmells(consortDir, feature)
+  ];
+}
+function escalationInScope(e, scope) {
+  if (scope.id) return e.id === scope.id;
+  if (scope.feature && e.feature_id !== void 0 && e.feature_id !== scope.feature) return false;
+  if (scope.story && e.story_id !== scope.story) return false;
+  return true;
+}
+function resolveBlockers(consortDir, scope) {
+  const pending = pendingBlockers(consortDir, scope.feature);
+  const resolved = [];
+  resolved.push(
+    ...resolveEscalations(consortDir, {
+      ...scope.id ? { id: scope.id } : {},
+      ...scope.feature ? { featureId: scope.feature } : {},
+      ...scope.story ? { story: scope.story } : {},
+      ...scope.resolution ? { resolution: scope.resolution } : {}
+    })
+  );
+  for (const e of pending.filter((x) => scope.all || escalationInScope(x, scope))) {
+    if (!e.source.startsWith("smell:")) continue;
+    const n = resolveOpenSmells(consortDir, e.source.slice("smell:".length), {
+      ...e.story_id ? { story_id: e.story_id } : {},
+      kind: "cleared",
+      ...scope.resolution ? { note: scope.resolution } : {}
+    });
+    if (n > 0 && !resolved.includes(e.id)) resolved.push(e.id);
+  }
+  return resolved;
+}
 
 // bin/consort/resolve-escalation.cli.ts
 function parseArgs(argv) {
@@ -7106,18 +7140,10 @@ function parseArgs(argv) {
 }
 var describe = (e) => `  ${e.id}
       source: ${e.source}  reason: ${e.reason}${e.feature_id ? `  feature: ${e.feature_id}` : ""}${e.story_id ? `  story: ${e.story_id}` : ""}`;
-function inScope(e, args) {
-  if (args.id) return e.id === args.id;
-  if (args.feature && e.feature_id !== void 0 && e.feature_id !== args.feature) return false;
-  if (args.story && e.story_id !== args.story) return false;
-  return true;
-}
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const consortDir = args.consortDir ?? resolveConsortDir(args.projectDir);
-  const fileEscalations = readEscalations(consortDir).filter((e) => !e.resolved_at);
-  const smellEscalations = escalationsFromSmells(consortDir, args.feature);
-  const pending = [...fileEscalations, ...smellEscalations];
+  const pending = pendingBlockers(consortDir, args.feature);
   if (args.list) {
     if (!pending.length) {
       process.stdout.write("consort-resolve-escalation: no pending escalations or blocking smells.\n");
@@ -7141,25 +7167,7 @@ ${pending.map(describe).join("\n")}
     );
     return 2;
   }
-  const resolved = [];
-  resolved.push(
-    ...resolveEscalations(consortDir, {
-      ...args.id ? { id: args.id } : {},
-      ...args.feature ? { featureId: args.feature } : {},
-      ...args.story ? { story: args.story } : {},
-      ...args.resolution ? { resolution: args.resolution } : {}
-    })
-  );
-  for (const s of smellEscalations) {
-    if (!args.all && !inScope(s, args)) continue;
-    const smellName = s.source.startsWith("smell:") ? s.source.slice("smell:".length) : s.source;
-    const n = resolveOpenSmells(consortDir, smellName, {
-      ...s.story_id ? { story_id: s.story_id } : {},
-      kind: "cleared",
-      ...args.resolution ? { note: args.resolution } : {}
-    });
-    if (n > 0) resolved.push(s.id);
-  }
+  const resolved = resolveBlockers(consortDir, args);
   if (!resolved.length) {
     process.stderr.write("consort-resolve-escalation: nothing matched (check --id / --feature / --story against --list).\n");
     return 2;

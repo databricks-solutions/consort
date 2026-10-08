@@ -6700,6 +6700,11 @@ function findFeatureDir(tdd, featureId) {
   const matches = fs.readdirSync(root).filter((d) => d === featureId || d.startsWith(`${featureId}-`));
   return matches.length === 1 ? (0, import_node_path.join)(root, matches[0]) : void 0;
 }
+function requireFeatureDir(tdd, featureId) {
+  const dir = findFeatureDir(tdd, featureId);
+  if (!dir) throw new Error(`feature ${featureId} not found (or ambiguous) under ${featuresDir(tdd)}`);
+  return dir;
+}
 
 // consort/experiment/experiment.ts
 var RUNTIME_ARTIFACT_PREFIXES = [
@@ -6904,8 +6909,8 @@ init_cjs_shims();
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_fs4 = require("fs");
-var import_path6 = require("path");
+var import_fs5 = require("fs");
+var import_path7 = require("path");
 
 // consort/gates/gate-conformance-guard.ts
 init_cjs_shims();
@@ -7188,6 +7193,90 @@ function logGateApproved(a) {
   }
 }
 
+// consort/gates/gates-lock.ts
+init_cjs_shims();
+var import_fs4 = require("fs");
+var import_path6 = require("path");
+var GatesLockBusyError = class extends Error {
+  constructor(featureId, heldByPid, retries) {
+    super(
+      `gates.json lock for ${featureId} is held by PID ${heldByPid ?? "unknown"} after ${retries} retries. If the holder has crashed, remove the lock file manually.`
+    );
+    this.featureId = featureId;
+    this.heldByPid = heldByPid;
+    this.retries = retries;
+    this.name = "GatesLockBusyError";
+  }
+  featureId;
+  heldByPid;
+  retries;
+};
+var HELD_LOCKS = /* @__PURE__ */ new Set();
+function withGatesLock(featureId, fn, opts = {}) {
+  const consortDir = opts.consortDir ?? resolveConsortDir();
+  const maxRetries = opts.maxRetries ?? 5;
+  const initialBackoffMs = opts.initialBackoffMs ?? 20;
+  const sleep = opts.sleep ?? defaultSleep;
+  const lockPath = gatesLockFilePath(consortDir, featureId, opts.lockBasename ?? ".gates.lock");
+  if (HELD_LOCKS.has(lockPath)) {
+    throw new Error(
+      `re-entrant lock on ${lockPath}: a holder tried to acquire it again (nested updatePipeline / withGatesLock). Mutate within the single outer critical section instead.`
+    );
+  }
+  let acquired = false;
+  let attempts = 0;
+  while (!acquired && attempts <= maxRetries) {
+    try {
+      const fd = (0, import_fs4.openSync)(lockPath, "wx");
+      (0, import_fs4.writeFileSync)(fd, String(process.pid));
+      (0, import_fs4.closeSync)(fd);
+      acquired = true;
+      HELD_LOCKS.add(lockPath);
+    } catch (err) {
+      if (!isEexist(err)) throw err;
+      attempts += 1;
+      if (attempts > maxRetries) {
+        const heldByPid = readHeldByPid(lockPath);
+        throw new GatesLockBusyError(featureId, heldByPid, maxRetries);
+      }
+      sleep(initialBackoffMs * 2 ** (attempts - 1));
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    HELD_LOCKS.delete(lockPath);
+    try {
+      (0, import_fs4.unlinkSync)(lockPath);
+    } catch {
+    }
+  }
+}
+function isEexist(err) {
+  return typeof err === "object" && err !== null && err.code === "EEXIST";
+}
+function readHeldByPid(lockPath) {
+  try {
+    const text = (0, import_fs4.readFileSync)(lockPath, "utf8");
+    const n = Number(text.trim());
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+function gatesLockFilePath(consortDir, featureId, basename2) {
+  const dir = requireFeatureDir(consortDir, featureId);
+  (0, import_fs4.mkdirSync)(dir, { recursive: true });
+  return (0, import_path6.join)(dir, basename2);
+}
+function withPipelineLock(featureId, fn, opts = {}) {
+  return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
+}
+function defaultSleep(ms) {
+  const buf = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(buf, 0, 0, ms);
+}
+
 // consort/pipeline/story-pipeline.ts
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
@@ -7197,13 +7286,25 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!(0, import_fs4.existsSync)(p)) return initPipeline(featureId);
-  return JSON.parse((0, import_fs4.readFileSync)(p, "utf8"));
+  if (!(0, import_fs5.existsSync)(p)) return initPipeline(featureId);
+  return JSON.parse((0, import_fs5.readFileSync)(p, "utf8"));
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
-  (0, import_fs4.mkdirSync)((0, import_path6.dirname)(p), { recursive: true });
-  (0, import_fs4.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+  (0, import_fs5.mkdirSync)((0, import_path7.dirname)(p), { recursive: true });
+  (0, import_fs5.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+}
+function updatePipeline(consortDir, featureId, mutate) {
+  return withPipelineLock(
+    featureId,
+    () => {
+      const pipeline = readPipeline(consortDir, featureId);
+      mutate(pipeline);
+      writePipeline(consortDir, pipeline);
+      return pipeline;
+    },
+    { consortDir }
+  );
 }
 function setStoryStatus(pipeline, storyId, status) {
   const existing = pipeline.stories[storyId];
@@ -7297,8 +7398,8 @@ var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
-var import_fs5 = require("fs");
-var import_path7 = require("path");
+var import_fs6 = require("fs");
+var import_path8 = require("path");
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
@@ -7422,24 +7523,24 @@ async function commitDriveStateForAccept(projectDir, message) {
   return (0, import_git.commitAllIfChanged)({ cwd: projectDir, message, untrackedAllow: [] });
 }
 function resetStoryBuildState(consortDir, featureId, story) {
-  const cyclesDir = (0, import_path7.join)(cyclesRootDir(consortDir), featureId, story);
+  const cyclesDir = (0, import_path8.join)(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
-  if ((0, import_fs5.existsSync)(cyclesDir)) {
-    (0, import_fs5.rmSync)(cyclesDir, { recursive: true, force: true });
+  if ((0, import_fs6.existsSync)(cyclesDir)) {
+    (0, import_fs6.rmSync)(cyclesDir, { recursive: true, force: true });
     cyclesCleared = true;
   }
   let testItemsReset = 0;
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if ((0, import_fs5.existsSync)(tlPath)) {
+  if ((0, import_fs6.existsSync)(tlPath)) {
     try {
-      const tl = JSON.parse((0, import_fs5.readFileSync)(tlPath, "utf8"));
+      const tl = JSON.parse((0, import_fs6.readFileSync)(tlPath, "utf8"));
       for (const item of tl.items ?? []) {
         if (item.status && item.status !== "pending") {
           item.status = "pending";
           testItemsReset++;
         }
       }
-      (0, import_fs5.writeFileSync)(tlPath, JSON.stringify(tl, null, 2) + "\n");
+      (0, import_fs6.writeFileSync)(tlPath, JSON.stringify(tl, null, 2) + "\n");
     } catch {
     }
   }
@@ -7481,9 +7582,7 @@ async function mergeAndAcceptStory(args, ops = realExperimentOps) {
       ops
     );
   }
-  const p = readPipeline(args.consortDir, args.featureId);
-  acceptStory(p, args.storyId, { approver: args.approver, at });
-  writePipeline(args.consortDir, p);
+  updatePipeline(args.consortDir, args.featureId, (p) => acceptStory(p, args.storyId, { approver: args.approver, at }));
   logGateApproved({ consortDir: args.consortDir, gate: "acceptance", story: args.storyId, featureId: args.featureId, approver: args.approver });
 }
 
@@ -7608,20 +7707,22 @@ async function main() {
         ttl: args.ttl,
         ...args.resetStaleBranch ? { resetStaleBranch: true } : {}
       });
-      const p = readPipeline(consortDir, feature);
-      cutStoryExperiment(p, story, {
-        slug,
-        branch: rec.branch_id,
-        parent: args.parent,
-        at,
-        // Stamp the design this experiment is cut to build (stale-experiment guardrail):
-        // a later redesign under this same experiment then reads as stale and re-cuts.
-        ...(() => {
-          const fp = storyDesignFingerprint(consortDir, feature, story);
-          return fp !== void 0 ? { design_fingerprint: fp } : {};
-        })()
-      });
-      writePipeline(consortDir, p);
+      updatePipeline(
+        consortDir,
+        feature,
+        (p) => cutStoryExperiment(p, story, {
+          slug,
+          branch: rec.branch_id,
+          parent: args.parent,
+          at,
+          // Stamp the design this experiment is cut to build (stale-experiment guardrail):
+          // a later redesign under this same experiment then reads as stale and re-cuts.
+          ...(() => {
+            const fp = storyDesignFingerprint(consortDir, feature, story);
+            return fp !== void 0 ? { design_fingerprint: fp } : {};
+          })()
+        })
+      );
       process.stdout.write(`cut experiment ${slug} on ${rec.branch_id} (parent ${args.parent})
 `);
       return 0;
@@ -7651,16 +7752,16 @@ async function main() {
         { consortDir, projectDir, featureId: feature, storyId: story, experimentSlug: slug, instance },
         realExperimentOps
       );
-      const p = readPipeline(consortDir, feature);
       const approver = args.approver;
       const reason = args.reason;
-      if (args.revise) {
-        reviseStory(p, story, { approver, at, reason });
-        resetStoryBuildState(consortDir, feature, story);
-      } else {
-        discardStory(p, story, { approver, at, reason });
-      }
-      writePipeline(consortDir, p);
+      updatePipeline(consortDir, feature, (p) => {
+        if (args.revise) {
+          reviseStory(p, story, { approver, at, reason });
+        } else {
+          discardStory(p, story, { approver, at, reason });
+        }
+      });
+      if (args.revise) resetStoryBuildState(consortDir, feature, story);
       logExperimentEvent(consortDir, args.revise ? "experiment.revised" : "experiment.discarded", story, reason);
       process.stdout.write(
         `${args.revise ? "revised" : "discarded"} ${slug}; experiment torn down; story ${story} ${args.revise ? "-> designing" : "out of sprint"}

@@ -6841,12 +6841,18 @@ var GatesLockBusyError = class extends Error {
   heldByPid;
   retries;
 };
+var HELD_LOCKS = /* @__PURE__ */ new Set();
 function withGatesLock(featureId, fn, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const maxRetries = opts.maxRetries ?? 5;
   const initialBackoffMs = opts.initialBackoffMs ?? 20;
   const sleep = opts.sleep ?? defaultSleep;
-  const lockPath = gatesLockFilePath(consortDir, featureId);
+  const lockPath = gatesLockFilePath(consortDir, featureId, opts.lockBasename ?? ".gates.lock");
+  if (HELD_LOCKS.has(lockPath)) {
+    throw new Error(
+      `re-entrant lock on ${lockPath}: a holder tried to acquire it again (nested updatePipeline / withGatesLock). Mutate within the single outer critical section instead.`
+    );
+  }
   let acquired = false;
   let attempts = 0;
   while (!acquired && attempts <= maxRetries) {
@@ -6855,6 +6861,7 @@ function withGatesLock(featureId, fn, opts = {}) {
       writeFileSync2(fd, String(process.pid));
       closeSync(fd);
       acquired = true;
+      HELD_LOCKS.add(lockPath);
     } catch (err) {
       if (!isEexist(err)) throw err;
       attempts += 1;
@@ -6868,6 +6875,7 @@ function withGatesLock(featureId, fn, opts = {}) {
   try {
     return fn();
   } finally {
+    HELD_LOCKS.delete(lockPath);
     try {
       unlinkSync(lockPath);
     } catch {
@@ -6886,10 +6894,13 @@ function readHeldByPid(lockPath) {
     return null;
   }
 }
-function gatesLockFilePath(consortDir, featureId) {
+function gatesLockFilePath(consortDir, featureId, basename4) {
   const dir = requireFeatureDir(consortDir, featureId);
   mkdirSync2(dir, { recursive: true });
-  return join2(dir, ".gates.lock");
+  return join2(dir, basename4);
+}
+function withPipelineLock(featureId, fn, opts = {}) {
+  return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
 }
 function defaultSleep(ms) {
   const buf = new Int32Array(new SharedArrayBuffer(4));
@@ -9078,6 +9089,18 @@ function writePipeline(consortDir, pipeline) {
   mkdirSync8(dirname8(p), { recursive: true });
   writeFileSync9(p, JSON.stringify(pipeline, null, 2) + "\n");
 }
+function updatePipeline(consortDir, featureId, mutate) {
+  return withPipelineLock(
+    featureId,
+    () => {
+      const pipeline = readPipeline(consortDir, featureId);
+      mutate(pipeline);
+      writePipeline(consortDir, pipeline);
+      return pipeline;
+    },
+    { consortDir }
+  );
+}
 function setStoryStatus(pipeline, storyId, status) {
   const existing = pipeline.stories[storyId];
   pipeline.stories[storyId] = { ...existing, status };
@@ -9429,9 +9452,7 @@ function applyReviseSelfHeal(args) {
     );
   } catch {
   }
-  const pipeline = readPipeline(consortDir, args.featureId);
-  reviseStory(pipeline, args.story, { approver, at, reason: args.reason });
-  writePipeline(consortDir, pipeline);
+  updatePipeline(consortDir, args.featureId, (p) => reviseStory(p, args.story, { approver, at, reason: args.reason }));
   resetStoryBuildState(consortDir, args.featureId, args.story);
   staleStoryArtifactsForRevise(consortDir, args.featureId, args.story, args.gate);
   try {

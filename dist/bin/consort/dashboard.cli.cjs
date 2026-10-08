@@ -48,7 +48,7 @@ function kitRoot() {
 
 // bin/consort/dashboard.cli.ts
 function parseArgs(argv) {
-  const out = { projectDir: process.cwd(), host: "localhost", open: true, status: false, detach: false, openReady: false };
+  const out = { projectDir: process.cwd(), host: "localhost", open: true, status: false, detach: false, openReady: false, openOnly: false };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case "--project-dir":
@@ -75,10 +75,13 @@ function parseArgs(argv) {
       case "--open-ready":
         out.openReady = true;
         break;
+      case "--open":
+        out.openOnly = true;
+        break;
       case "-h":
       case "--help":
         console.log(
-          "consort-dashboard [--project-dir <p>] [--port <n>] [--record-dir <p>] [--host <h>] [--no-open] [--status] [--detach]\nLaunch the dashboard on a local project's .consort/ (prebuilt bundle, or next dev in a dev clone).\n--detach spawns the server detached + prints the URL + returns at once (opens the browser when ready).\n--status reports whether one is already running (running <url> / stopped) without launching."
+          "consort-dashboard [--project-dir <p>] [--port <n>] [--record-dir <p>] [--host <h>] [--no-open] [--status] [--detach]\nLaunch the dashboard on a local project's .consort/ (prebuilt bundle, or next dev in a dev clone).\n--detach spawns the server detached + prints the URL + returns at once (opens the browser when ready).\n--status reports whether one is already running (running <url> / stopped) without launching.\n--open re-opens the browser on an already-running dashboard (running <url> + open + exit 0, stopped + exit 3); never launches."
         );
         process.exit(0);
         break;
@@ -159,6 +162,16 @@ async function main() {
     const rec = await runningRecord(projectDir);
     if (rec) {
       console.log(`running ${rec.url}`);
+      process.exit(0);
+    }
+    console.log("stopped");
+    process.exit(3);
+  }
+  if (args.openOnly) {
+    const rec = await runningRecord(projectDir);
+    if (rec) {
+      console.log(`running ${rec.url}`);
+      if (args.open) openBrowser(rec.url);
       process.exit(0);
     }
     console.log("stopped");

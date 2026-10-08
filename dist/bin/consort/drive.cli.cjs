@@ -10527,6 +10527,9 @@ function readConventions(consortDir) {
 // consort/logging/gate-decision-log.ts
 init_cjs_shims();
 
+// consort/gates/gates-lock.ts
+init_cjs_shims();
+
 // consort/pipeline/story-pipeline.ts
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
@@ -15094,15 +15097,18 @@ function buildNextOptions(action, ctx) {
   switch (action.kind) {
     case "accept": {
       const story = storyOf4(action) ?? "<story>";
+      const review = ctx.storyReview?.[story];
+      const swaggerOffer = review?.apiOnly ? ` This is an API-ONLY story, so ALWAYS offer its Swagger / OpenAPI UI as the review surface: ${review.docsUrl ? `open ${review.docsUrl} (the deployed server serves it live)` : "start the app (`./scripts/run-dev.sh`) and open `<base_url>/docs`"} to review and exercise every endpoint against this story's ACs, rather than hand-rolled curl.` : "";
+      const swaggerNote = review?.apiOnly ? ` API-only story: ALWAYS offer the Swagger UI (${review.docsUrl ?? "`<base_url>/docs` on the running server"}) as the acceptance surface.` : "";
       return [
         {
           id: "acceptance.accept",
           title: `Accept story ${story}`,
-          hil_prompt: `Accept story ${story}? I will merge its experiment into the feature branch, run its migrations, and tear the experiment down. First OFFER the human to SEE it working: the story's experiment branch is checked out + deployed, so \`./scripts/run-dev.sh\` serves the real app on its paired Lakebase branch \u2013 for a UI product point them at the client URL to click through this story; for a backend/service, give them the endpoint(s) + a curl/Postman example that exercises this story's ACs. Only then take the accept/discard/revise decision.`,
+          hil_prompt: `Accept story ${story}? I will merge its experiment into the feature branch, run its migrations, and tear the experiment down. First OFFER the human to SEE it working: the story's experiment branch is checked out + deployed, so \`./scripts/run-dev.sh\` serves the real app on its paired Lakebase branch \u2013 for a UI product point them at the client URL to click through this story; for a backend/service, give them the endpoint(s) + a curl/Postman example that exercises this story's ACs.${swaggerOffer} Only then take the accept/discard/revise decision.`,
           kind: "gate",
           enact: gateEnact,
           // consort-pipeline accept ... (owns the merge)
-          note: "Before deciding, offer a working-software review \u2013 run `./scripts/run-dev.sh` (serves the checked-out experiment branch against its Lakebase branch) and hand the human the client URL (UI) or the API endpoint + a curl/Postman example for this story's ACs; stop the server when they're done. Also offer to GENERATE SEED DATA so it isn't an empty app: run-dev.sh auto-runs `scripts/seed_dev.py` on start (SEED=0 skips; idempotent); if none exists, generate one that inserts representative rows for this story's tables."
+          note: `Before deciding, offer a working-software review \u2013 run \`./scripts/run-dev.sh\` (serves the checked-out experiment branch against its Lakebase branch) and hand the human the client URL (UI) or the API endpoint + a curl/Postman example for this story's ACs; stop the server when they're done. Also offer to GENERATE SEED DATA so it isn't an empty app: run-dev.sh auto-runs \`scripts/seed_dev.py\` on start (SEED=0 skips; idempotent); if none exists, generate one that inserts representative rows for this story's tables.${swaggerNote}`
         },
         {
           id: "acceptance.discard",
@@ -15328,12 +15334,39 @@ function buildNextSnapshot(scope, state, ctx, transition = nextTransition) {
     generated_at: ctx.now ?? (/* @__PURE__ */ new Date()).toISOString()
   };
 }
+var UI_TEST_KINDS = /* @__PURE__ */ new Set(["client", "e2e"]);
+function buildStoryReview(consortDir, featureId) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return {};
+  const storiesDir2 = path11.join(fdir, "stories");
+  let ids;
+  try {
+    ids = fs19.readdirSync(storiesDir2, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return {};
+  }
+  const out = {};
+  for (const story of ids) {
+    const sdir = path11.join(storiesDir2, story);
+    let items = [];
+    try {
+      items = JSON.parse(fs19.readFileSync(path11.join(sdir, "test-list-per-story.json"), "utf8")).items ?? [];
+    } catch {
+    }
+    const apiOnly = items.length > 0 && !items.some((i) => typeof i.kind === "string" && UI_TEST_KINDS.has(i.kind));
+    const ev = readDeployEvidence(path11.join(sdir, "deploy-evidence.json"));
+    const docsUrl = apiOnly && ev && deployEvidencePasses(ev) && ev.url ? ev.url.replace(/\/+$/, "") + "/docs" : void 0;
+    out[story] = { apiOnly, ...docsUrl ? { docsUrl } : {} };
+  }
+  return out;
+}
 function readFeatureNextSnapshot(consortDir, featureId, projectDir, ctx = {}) {
   const state = readDriveStateFromDisk(consortDir, featureId, projectDir, { uiTrack: ctx.uiTrack });
   return buildNextSnapshot("feature", state, {
     ...ctx,
     featureId,
-    stories: summarizeStories(consortDir, featureId)
+    stories: summarizeStories(consortDir, featureId),
+    storyReview: buildStoryReview(consortDir, featureId)
   });
 }
 function emitNextJson(consortDir, featureId, projectDir, ctx = {}) {

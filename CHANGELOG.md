@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.103] - 2026-10-08
+
+- **API-only stories offer a Swagger UI for acceptance review.** A clicked API-only story (no client/e2e tests) surfaces its backend's Swagger UI (`<base_url>/docs`) as the acceptance surface, gated to the deployed server; the Node (Express) scaffold now serves `/docs` too via scm-utils 0.2.46 (FastAPI already did).
+- **Start wizard re-opens an already-running dashboard** on resume (`consort-dashboard --open`), instead of only printing its URL.
+- **Resolving an escalation by `--id` alone now clears its backing smell** — fixes a drive thrash where a smell-derived escalation's `resolution` was never written to smells.json and the drive re-raised it every tick.
+- **Pipeline writes are lock-guarded** (`updatePipeline` + a reused file lock): a stale whole-file write can no longer drop a concurrently-landed per-story gate approval (the lost update that silently reset an approved spec gate); a nested acquire fails fast.
+- **Dashboard UX:** topology card-click frontier rules (the active cell shows prompt-only until it completes; cells after the live/scrubber position show the uninvoked state, not prior-run data); draggable splits in the pull-out viewer (file list | content) and the correspondence pane's three sections.
+- Repoints bundled scm-utils 0.2.45 → 0.2.46.
+
 ## [0.3.102] - 2026-09-26
 
 - **Pre-reflect whole-table-aggregate check (design lane).** The LLM navigator reflect kept catching an absolute whole-table aggregate authored in the test-list (e.g. "returns exactly the count of rows with NULL batch_number") — a defect the code-level `whole-table-aggregate` detector already owns, but only on the scenario CODE at GREEN. `checkTestlistWholeTableAggregate` mirrors that rule at the test-list DESCRIPTION layer so the deterministic pre-reflect gate flags it before an LLM reflect lap (an absolute count/total of rows with no own-row scope and no delta; a bare column filter does not exempt). Migration-marker isolation was evaluated as a sibling and REJECTED — it false-positived a legitimate reversibility round-trip in the recorded corpus (the marker is a code detail descriptions don't reliably name).

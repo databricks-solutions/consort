@@ -6702,16 +6702,21 @@ function findFeatureDir(tdd, featureId) {
   const matches = fs.readdirSync(root).filter((d) => d === featureId || d.startsWith(`${featureId}-`));
   return matches.length === 1 ? join(root, matches[0]) : void 0;
 }
+function requireFeatureDir(tdd, featureId) {
+  const dir = findFeatureDir(tdd, featureId);
+  if (!dir) throw new Error(`feature ${featureId} not found (or ambiguous) under ${featuresDir(tdd)}`);
+  return dir;
+}
 
 // consort/gates/reopen-story.ts
 init_esm_shims();
 import * as fs3 from "fs";
-import { basename, dirname as dirname5, join as join7 } from "path";
+import { basename, dirname as dirname5, join as join8 } from "path";
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync2, mkdirSync as mkdirSync2, readdirSync as readdirSync3, statSync as statSync3, rmSync } from "fs";
-import { dirname as dirname4, join as join6 } from "path";
+import { existsSync as existsSync5, readFileSync as readFileSync5, writeFileSync as writeFileSync3, mkdirSync as mkdirSync3, readdirSync as readdirSync4, statSync as statSync3, rmSync } from "fs";
+import { dirname as dirname4, join as join7 } from "path";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
@@ -6845,6 +6850,90 @@ var EVENT_TEMPLATES = {
 };
 var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 
+// consort/gates/gates-lock.ts
+init_esm_shims();
+import { closeSync, mkdirSync as mkdirSync2, openSync, readFileSync as readFileSync4, unlinkSync, writeFileSync as writeFileSync2 } from "fs";
+import { join as join6 } from "path";
+var GatesLockBusyError = class extends Error {
+  constructor(featureId, heldByPid, retries) {
+    super(
+      `gates.json lock for ${featureId} is held by PID ${heldByPid ?? "unknown"} after ${retries} retries. If the holder has crashed, remove the lock file manually.`
+    );
+    this.featureId = featureId;
+    this.heldByPid = heldByPid;
+    this.retries = retries;
+    this.name = "GatesLockBusyError";
+  }
+  featureId;
+  heldByPid;
+  retries;
+};
+var HELD_LOCKS = /* @__PURE__ */ new Set();
+function withGatesLock(featureId, fn, opts = {}) {
+  const consortDir = opts.consortDir ?? resolveConsortDir();
+  const maxRetries = opts.maxRetries ?? 5;
+  const initialBackoffMs = opts.initialBackoffMs ?? 20;
+  const sleep = opts.sleep ?? defaultSleep;
+  const lockPath = gatesLockFilePath(consortDir, featureId, opts.lockBasename ?? ".gates.lock");
+  if (HELD_LOCKS.has(lockPath)) {
+    throw new Error(
+      `re-entrant lock on ${lockPath}: a holder tried to acquire it again (nested updatePipeline / withGatesLock). Mutate within the single outer critical section instead.`
+    );
+  }
+  let acquired = false;
+  let attempts = 0;
+  while (!acquired && attempts <= maxRetries) {
+    try {
+      const fd = openSync(lockPath, "wx");
+      writeFileSync2(fd, String(process.pid));
+      closeSync(fd);
+      acquired = true;
+      HELD_LOCKS.add(lockPath);
+    } catch (err) {
+      if (!isEexist(err)) throw err;
+      attempts += 1;
+      if (attempts > maxRetries) {
+        const heldByPid = readHeldByPid(lockPath);
+        throw new GatesLockBusyError(featureId, heldByPid, maxRetries);
+      }
+      sleep(initialBackoffMs * 2 ** (attempts - 1));
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    HELD_LOCKS.delete(lockPath);
+    try {
+      unlinkSync(lockPath);
+    } catch {
+    }
+  }
+}
+function isEexist(err) {
+  return typeof err === "object" && err !== null && err.code === "EEXIST";
+}
+function readHeldByPid(lockPath) {
+  try {
+    const text = readFileSync4(lockPath, "utf8");
+    const n = Number(text.trim());
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+function gatesLockFilePath(consortDir, featureId, basename2) {
+  const dir = requireFeatureDir(consortDir, featureId);
+  mkdirSync2(dir, { recursive: true });
+  return join6(dir, basename2);
+}
+function withPipelineLock(featureId, fn, opts = {}) {
+  return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
+}
+function defaultSleep(ms) {
+  const buf = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(buf, 0, 0, ms);
+}
+
 // consort/pipeline/story-pipeline.ts
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
@@ -6854,13 +6943,25 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!existsSync4(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync4(p, "utf8"));
+  if (!existsSync5(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync5(p, "utf8"));
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
-  mkdirSync2(dirname4(p), { recursive: true });
-  writeFileSync2(p, JSON.stringify(pipeline, null, 2) + "\n");
+  mkdirSync3(dirname4(p), { recursive: true });
+  writeFileSync3(p, JSON.stringify(pipeline, null, 2) + "\n");
+}
+function updatePipeline(consortDir, featureId, mutate) {
+  return withPipelineLock(
+    featureId,
+    () => {
+      const pipeline = readPipeline(consortDir, featureId);
+      mutate(pipeline);
+      writePipeline(consortDir, pipeline);
+      return pipeline;
+    },
+    { consortDir }
+  );
 }
 
 // consort/gates/workflow-phase.ts
@@ -6873,11 +6974,11 @@ function reopenStoryForRedesign(consortDir, feature, story, opts = {}) {
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
   const storyRoot = storyResolved(consortDir, feature, story);
   const stamp = now().toISOString().replace(/[:.]/g, "-");
-  const backupDir = join7(consortDir, `.backup-${basename(storyRoot)}-redesign-${stamp}`);
+  const backupDir = join8(consortDir, `.backup-${basename(storyRoot)}-redesign-${stamp}`);
   const cleared = [];
   const rel = (p) => p.slice(storyRoot.length).replace(/^[/\\]/, "") || basename(p);
   const backup = (p) => {
-    const dest = join7(backupDir, rel(p));
+    const dest = join8(backupDir, rel(p));
     fs3.mkdirSync(dirname5(dest), { recursive: true });
     fs3.cpSync(p, dest, { recursive: true });
   };
@@ -6910,21 +7011,23 @@ function reopenStoryForRedesign(consortDir, feature, story, opts = {}) {
 function resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared) {
   const fde = featureDeployEvidenceJson(consortDir, feature);
   if (fs3.existsSync(fde)) {
-    const dest = join7(backupDir, "feature-deploy-evidence.json");
+    const dest = join8(backupDir, "feature-deploy-evidence.json");
     fs3.mkdirSync(dirname5(dest), { recursive: true });
     fs3.cpSync(fde, dest);
     fs3.rmSync(fde, { force: true });
     cleared.push("../deploy-evidence.json (feature deploy gate)");
   }
   try {
-    const pipeline = readPipeline(consortDir, feature);
-    if (pipeline.stories[story]) {
-      pipeline.stories[story] = { status: "designing" };
-      pipeline.build_queue = pipeline.build_queue.filter((s) => s !== story);
-      if (pipeline.build_active === story) pipeline.build_active = null;
-      writePipeline(consortDir, pipeline);
-      cleared.push("pipeline entry -> designing (spec gate + experiment + acceptance cleared)");
-    }
+    let didClear = false;
+    updatePipeline(consortDir, feature, (pipeline) => {
+      if (pipeline.stories[story]) {
+        pipeline.stories[story] = { status: "designing" };
+        pipeline.build_queue = pipeline.build_queue.filter((s) => s !== story);
+        if (pipeline.build_active === story) pipeline.build_active = null;
+        didClear = true;
+      }
+    });
+    if (didClear) cleared.push("pipeline entry -> designing (spec gate + experiment + acceptance cleared)");
   } catch {
   }
   try {
@@ -6932,7 +7035,7 @@ function resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared
     if (fs3.existsSync(wsFile)) {
       const ws = JSON.parse(fs3.readFileSync(wsFile, "utf8"));
       if (ws.phase !== void 0 || ws[PHASE_OWNER_KEY] !== void 0) {
-        const dest = join7(backupDir, "workflow-state.json");
+        const dest = join8(backupDir, "workflow-state.json");
         fs3.mkdirSync(dirname5(dest), { recursive: true });
         fs3.cpSync(wsFile, dest);
         delete ws.phase;
@@ -6944,12 +7047,12 @@ function resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared
   } catch {
   }
   try {
-    const storyCyclesDir = join7(cyclesRootDir(consortDir), feature, story);
+    const storyCyclesDir = join8(cyclesRootDir(consortDir), feature, story);
     if (fs3.existsSync(storyCyclesDir)) {
       for (const acEntry of fs3.readdirSync(storyCyclesDir)) {
-        const gf = join7(storyCyclesDir, acEntry, "green-failure.json");
+        const gf = join8(storyCyclesDir, acEntry, "green-failure.json");
         if (!fs3.existsSync(gf)) continue;
-        const dest = join7(backupDir, "cycles", acEntry, "green-failure.json");
+        const dest = join8(backupDir, "cycles", acEntry, "green-failure.json");
         fs3.mkdirSync(dirname5(dest), { recursive: true });
         fs3.cpSync(gf, dest);
         fs3.rmSync(gf, { force: true });
@@ -6972,10 +7075,10 @@ function reopenStoryFromRole(consortDir, feature, story, fromRole, opts = {}) {
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
   const storyRoot = storyResolved(consortDir, feature, story);
   const stamp = now().toISOString().replace(/[:.]/g, "-");
-  const backupDir = join7(consortDir, `.backup-${basename(storyRoot)}-reopen-${fromRole}-${stamp}`);
+  const backupDir = join8(consortDir, `.backup-${basename(storyRoot)}-reopen-${fromRole}-${stamp}`);
   const cleared = [];
   const backupTo = (p, name) => {
-    const dest = join7(backupDir, name);
+    const dest = join8(backupDir, name);
     fs3.mkdirSync(dirname5(dest), { recursive: true });
     fs3.cpSync(p, dest, { recursive: true });
   };
@@ -6988,8 +7091,8 @@ function reopenStoryFromRole(consortDir, feature, story, fromRole, opts = {}) {
   const clearForRole = {
     "ux-designer": () => {
       clearFile(designGuideJson(consortDir), "design/design-guide.json (UX)", "design-guide.json");
-      clearFile(join7(designDir(consortDir), "design-guide.md"), "design/design-guide.md (UX)", "design-guide.md");
-      clearFile(join7(designDir(consortDir), "ia.md"), "design/ia.md (UX)", "ia.md");
+      clearFile(join8(designDir(consortDir), "design-guide.md"), "design/design-guide.md (UX)", "design-guide.md");
+      clearFile(join8(designDir(consortDir), "ia.md"), "design/ia.md (UX)", "ia.md");
     },
     "architect-reviewer": () => {
       clearFile(architectureJson(consortDir, feature), "architecture.json (feature)", "architecture.json");
@@ -7022,12 +7125,12 @@ function stripArchitecturalNotes(consortDir, feature, story, backupDir, cleared)
   let stripped = 0;
   for (const name of fs3.readdirSync(dir)) {
     if (!name.endsWith(".json")) continue;
-    const p = join7(dir, name);
+    const p = join8(dir, name);
     try {
       const ac = JSON.parse(fs3.readFileSync(p, "utf8"));
       if (!("architectural_notes" in ac)) continue;
-      fs3.mkdirSync(join7(backupDir, "acs"), { recursive: true });
-      fs3.cpSync(p, join7(backupDir, "acs", name));
+      fs3.mkdirSync(join8(backupDir, "acs"), { recursive: true });
+      fs3.cpSync(p, join8(backupDir, "acs", name));
       delete ac.architectural_notes;
       fs3.writeFileSync(p, JSON.stringify(ac, null, 2) + "\n");
       stripped++;

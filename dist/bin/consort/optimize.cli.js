@@ -14775,6 +14775,9 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
 
+// consort/gates/gates-lock.ts
+init_esm_shims();
+
 // consort/pipeline/story-pipeline.ts
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
