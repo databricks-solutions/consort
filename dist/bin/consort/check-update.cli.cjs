@@ -124,20 +124,22 @@ function formatUpdateNotice(installed, latest) {
   return `[consort] A newer Consort is available: ${latest} (you have ${installed}).
           Update the plugin:  claude plugin marketplace update databricks-solutions \\
                               && claude plugin update consort@databricks-solutions
-          In a project, also: ./scripts/lk --warm   (refresh the runtime kit)
+          Move a project onto it (at a stop): ./scripts/lk consort-upgrade --pid <drive-pid>
+          (advances .lakebase/kit-ref to ${latest}; a plain --warm does NOT move the pin)
 `;
 }
 function checkForUpdate(deps) {
   const now = (deps.now ?? Date.now)();
   const throttleMs = deps.throttleMs ?? DEFAULT_THROTTLE_MS;
   const state = readState(deps);
-  const due = deps.force || state.last_check_ms === void 0 || now - state.last_check_ms >= throttleMs;
+  const versionChanged = state.last_installed !== void 0 && state.last_installed !== deps.installedVersion;
+  const due = deps.force || versionChanged || state.last_check_ms === void 0 || now - state.last_check_ms >= throttleMs;
   let latest = state.last_latest;
   let checkedNetwork = false;
   if (due) {
     const fetched = (deps.fetchLatest ?? (() => fetchLatestTag()))();
     checkedNetwork = true;
-    writeState(deps, { last_check_ms: now, last_latest: fetched ?? state.last_latest });
+    writeState(deps, { last_check_ms: now, last_latest: fetched ?? state.last_latest, last_installed: deps.installedVersion });
     if (fetched) latest = fetched;
   }
   const behind = !!latest && isNewer(latest, deps.installedVersion);
