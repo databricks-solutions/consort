@@ -39,7 +39,7 @@ import {
   featuresFromLog,
   latestOrchestratorActivity,
 } from "./derive";
-import { LANE_IDS, laneProgress, laneStepMeta, nodeForPhase, passedNodes } from "./topology";
+import { LANE_IDS, laneProgress, laneStepMeta, nodeForPhase, passedNodes, reachedThisPass } from "./topology";
 import { GATE_ROLE_BY_KEY } from "./gates";
 
 // A Claude session that wrote its transcript within this window counts as "actively
@@ -192,6 +192,7 @@ export function emptyState(projectDir: string, generatedAt: string): DashboardSt
       // Derived from LANE_IDS (not a hand-written literal) so the empty shape can never drift from
       // the fold path's laneSteps, which is also keyed by LANE_IDS.
       laneSteps: Object.fromEntries(LANE_IDS.map((l) => [l, [] as string[]])),
+      reachedThisPass: [],
       laneCurrent: null,
       atTimestamp: null,
     },
@@ -277,6 +278,7 @@ function deriveTopology(
     passedNodes: [...passedNodes(slice, undefined, scope)],
     activeNode,
     laneSteps,
+    reachedThisPass: [...reachedThisPass(slice, undefined, scope)],
     laneCurrent: progress.current,
     atTimestamp: slice.length > 0 ? slice[slice.length - 1].timestamp : null,
   };

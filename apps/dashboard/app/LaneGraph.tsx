@@ -89,6 +89,12 @@ export function LaneGraph({ state, onOpenRole }: { state: DashboardState; onOpen
   const currentStep = state.focus.kind === "step" ? state.focus.step : null;
   // ALL lanes stay expanded – no accordion – so clicking one never collapses the others. The
   // active lane is highlighted (LanePanel's accent border + header tint); the rest render quietly.
+  // The per-lane sub-graph lights nodes by the CURRENT pass's traversal (reachedThisPass), NOT the
+  // monotonic lane-reach: at a new build loop (b-red) the later nodes go dim/pending again instead
+  // of carrying last cycle's cards. Step ids are unique across lanes, so one global set serves every
+  // LanePanel (each only queries its own steps). The lifecycle SPINE (WorkflowGraph) keeps using
+  // passedNodes, so a feature's overall design-done/build-in-progress arc is unaffected.
+  const reachedPass = new Set(state.topology.reachedThisPass);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {LANE_IDS.map((laneId) => (
@@ -96,7 +102,10 @@ export function LaneGraph({ state, onOpenRole }: { state: DashboardState; onOpen
           key={laneId}
           laneId={laneId}
           lane={WORKFLOW.lanes[laneId]}
-          done={new Set(state.topology.laneSteps[laneId] ?? [])}
+          // Each lane gets ITS OWN pass-scoped reached subset (not the global union), so the
+          // per-lane `done.size`/count/status semantics hold — a build lane with nothing reached
+          // this pass still reads 0/not-started while design is lit.
+          done={new Set(WORKFLOW.lanes[laneId].steps.filter((s) => reachedPass.has(s.id)).map((s) => s.id))}
           currentStep={currentStep}
           state={state}
           onOpenRole={onOpenRole}
@@ -682,7 +691,10 @@ function LaneSvg({
               x={pos.get(s.id)!.x}
               y={pos.get(s.id)!.y}
               state={stepState(s, done, currentStep, state)}
-              meta={state.laneStepMeta?.[s.id] ?? null}
+              // Metrics only for a step the CURRENT pass has reached (or the running one). A node
+              // not yet traversed this pass shows NO metrics — never last cycle's model/cost/turns
+              // (laneStepMeta is run-cumulative), so it reads as pending everywhere.
+              meta={done.has(s.id) || s.id === currentStep ? state.laneStepMeta?.[s.id] ?? null : null}
               elapsed={elapsed}
               onOpenRole={onOpenRole}
             />
