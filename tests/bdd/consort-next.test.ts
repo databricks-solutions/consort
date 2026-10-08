@@ -12,6 +12,7 @@ import { join } from "node:path";
 import {
   buildNextOptions,
   buildNextSnapshot,
+  buildStoryReview,
   readFeatureNextSnapshot,
   emitNextJson,
   type NextContext,
@@ -168,6 +169,57 @@ describe("buildNextOptions: the decision menu per stop", () => {
     expect(opts).toHaveLength(1);
     expect(opts[0].kind).toBe("noop");
     expect(opts[0].enact).toBeNull();
+  });
+});
+
+describe("api-only stories offer the Swagger UI at the acceptance gate", () => {
+  it("api-only + a live deploy: the accept prompt offers the Swagger UI at the docs URL", () => {
+    const accept = buildNextOptions(
+      { kind: "accept", story: "S3" },
+      { ...CTX, storyReview: { S3: { apiOnly: true, docsUrl: "http://127.0.0.1:8000/docs" } } },
+    ).find((o) => o.id === "acceptance.accept")!;
+    expect(accept.hil_prompt).toMatch(/API-ONLY/i);
+    expect(accept.hil_prompt).toMatch(/Swagger/);
+    expect(accept.hil_prompt).toContain("http://127.0.0.1:8000/docs");
+    expect(accept.note).toMatch(/Swagger/);
+  });
+
+  it("api-only but no live docs URL yet: STILL always offers Swagger via run-dev.sh + /docs", () => {
+    const accept = buildNextOptions(
+      { kind: "accept", story: "S3" },
+      { ...CTX, storyReview: { S3: { apiOnly: true } } },
+    ).find((o) => o.id === "acceptance.accept")!;
+    expect(accept.hil_prompt).toMatch(/Swagger/);
+    expect(accept.hil_prompt).toMatch(/\/docs/);
+    expect(accept.hil_prompt).toMatch(/run-dev\.sh/);
+  });
+
+  it("a UI story (not api-only) gets NO Swagger offer", () => {
+    const accept = buildNextOptions(
+      { kind: "accept", story: "S3" },
+      { ...CTX, storyReview: { S3: { apiOnly: false } } },
+    ).find((o) => o.id === "acceptance.accept")!;
+    expect(accept.hil_prompt).not.toMatch(/Swagger/);
+  });
+
+  it("buildStoryReview: a backend-only test list is apiOnly with a live /docs URL; a client test is not", () => {
+    const consortDir = mkdtempSync(join(tmpdir(), "next-review-"));
+    const mk = (story: string, items: Array<{ kind: string }>, evidence?: object): void => {
+      const sdir = join(consortDir, "features", "F1-checkout", "stories", story);
+      mkdirSync(sdir, { recursive: true });
+      writeFileSync(join(sdir, "test-list-per-story.json"), JSON.stringify({ items }));
+      if (evidence) writeFileSync(join(sdir, "deploy-evidence.json"), JSON.stringify(evidence));
+    };
+    mk("S1", [{ kind: "behavior" }, { kind: "fitness" }], {
+      schema_version: 1, feature_id: "F1-checkout", story_id: "S1", target: "local",
+      url: "http://127.0.0.1:8000/", reachable: true, verify: { passed: true }, deployed_at: "2026-01-01T00:00:00Z",
+    });
+    mk("S2", [{ kind: "behavior" }, { kind: "client" }]); // has a UI test -> not api-only
+    const review = buildStoryReview(consortDir, "F1-checkout");
+    expect(review.S1).toEqual({ apiOnly: true, docsUrl: "http://127.0.0.1:8000/docs" });
+    expect(review.S2.apiOnly).toBe(false);
+    expect(review.S2.docsUrl).toBeUndefined();
+    rmSync(consortDir, { recursive: true, force: true });
   });
 });
 

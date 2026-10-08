@@ -12,7 +12,7 @@ import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lake
 import { deriveSprintPlanningState } from "../../consort/intake/orchestrator-sprint.js";
 import { summarizeStories } from "../../consort/orchestrator/status/feature-status.js";
 import { kitVersion } from "../../consort/config/kit-bin.js";
-import { buildNextSnapshot, renderNextSnapshot, type NextContext } from "../../consort/orchestrator/status/next.js";
+import { buildNextSnapshot, buildStoryReview, renderNextSnapshot, type NextContext } from "../../consort/orchestrator/status/next.js";
 
 interface ParsedArgs {
   feature?: string;
@@ -110,6 +110,7 @@ function main(): number {
         {
           ...ctx,
           stories: summarizeStories(consortDir, args.feature!),
+          storyReview: buildStoryReview(consortDir, args.feature!),
           // The promote gate's required --promote-ref is the feature's canonical
           // branch, recorded in the SCM workflow state at claim (FEIP-8019).
           ...(readWorkflowState(projectDir)?.branch ? { featureBranch: readWorkflowState(projectDir)!.branch } : {}),

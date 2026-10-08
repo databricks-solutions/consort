@@ -28,6 +28,8 @@ import type { DriveState, WorkflowAction } from "../../../consort/orchestrator/d
 import { nextTransition } from "../../../consort/orchestrator/drive/orchestrator-drive.js";
 import { describeAction, gateEnactCommand, type EnactCommand } from "../../../consort/logging/orchestrator-logging.js";
 import { deriveFeaturePhase, summarizeStories, type StoryStatusEntry } from "./feature-status.js";
+import { findFeatureDir } from "../../../consort/config/consort-paths.js";
+import { readDeployEvidence, deployEvidencePasses } from "../../../consort/deploy/deploy.js";
 import { readDriveStateFromDisk } from "../../../consort/orchestrator/drive/orchestrator-effects.js";
 
 /** One choice on the decision menu the human (or the agent, on their behalf)
@@ -123,6 +125,18 @@ export interface NextContext {
   /** Per-story derived rows (feature scope), for the reconciled state + phase.
    *  Reuses feature-status' summarizeStories so `next` and `feature-status` agree. */
   stories?: StoryStatusEntry[];
+  /** Per-story acceptance-review hints keyed by story_id: API-only (no UI tests) + the live
+   *  Swagger/OpenAPI docs URL to offer at the acceptance gate. Computed in the disk layer
+   *  (buildStoryReview) so buildNextSnapshot stays pure. */
+  storyReview?: Record<string, StoryReview>;
+}
+
+/** Acceptance-review hint for one story. `apiOnly` = its per-story test list is backend-only
+ *  (no client/e2e UI tests). `docsUrl` = the deployed server's live Swagger UI, present only when
+ *  the story's deploy verified reachable. */
+export interface StoryReview {
+  apiOnly: boolean;
+  docsUrl?: string;
 }
 
 /** The universal "resume the drive to the next stop" enact for a scope. */
@@ -172,14 +186,24 @@ export function buildNextOptions(action: WorkflowAction, ctx: NextContext): Next
       // LANDS the story (git-merge experiment -> feature + migrate + teardown);
       // discard drops it out of the sprint; revise sends it back to designing.
       const story = storyOf(action) ?? "<story>";
+      // API-only stories get a Swagger/OpenAPI UI as the acceptance-review surface (every scaffold
+      // backend serves one: FastAPI + the Express scaffold at `/docs`). ALWAYS offer it for such a
+      // story instead of hand-rolled curl, so the PO can review and exercise the API against its ACs.
+      const review = ctx.storyReview?.[story];
+      const swaggerOffer = review?.apiOnly
+        ? ` This is an API-ONLY story, so ALWAYS offer its Swagger / OpenAPI UI as the review surface: ${review.docsUrl ? `open ${review.docsUrl} (the deployed server serves it live)` : "start the app (`./scripts/run-dev.sh`) and open `<base_url>/docs`"} to review and exercise every endpoint against this story's ACs, rather than hand-rolled curl.`
+        : "";
+      const swaggerNote = review?.apiOnly
+        ? ` API-only story: ALWAYS offer the Swagger UI (${review.docsUrl ?? "`<base_url>/docs` on the running server"}) as the acceptance surface.`
+        : "";
       return [
         {
           id: "acceptance.accept",
           title: `Accept story ${story}`,
-          hil_prompt: `Accept story ${story}? I will merge its experiment into the feature branch, run its migrations, and tear the experiment down. First OFFER the human to SEE it working: the story's experiment branch is checked out + deployed, so \`./scripts/run-dev.sh\` serves the real app on its paired Lakebase branch – for a UI product point them at the client URL to click through this story; for a backend/service, give them the endpoint(s) + a curl/Postman example that exercises this story's ACs. Only then take the accept/discard/revise decision.`,
+          hil_prompt: `Accept story ${story}? I will merge its experiment into the feature branch, run its migrations, and tear the experiment down. First OFFER the human to SEE it working: the story's experiment branch is checked out + deployed, so \`./scripts/run-dev.sh\` serves the real app on its paired Lakebase branch – for a UI product point them at the client URL to click through this story; for a backend/service, give them the endpoint(s) + a curl/Postman example that exercises this story's ACs.${swaggerOffer} Only then take the accept/discard/revise decision.`,
           kind: "gate",
           enact: gateEnact, // consort-pipeline accept ... (owns the merge)
-          note: "Before deciding, offer a working-software review – run `./scripts/run-dev.sh` (serves the checked-out experiment branch against its Lakebase branch) and hand the human the client URL (UI) or the API endpoint + a curl/Postman example for this story's ACs; stop the server when they're done. Also offer to GENERATE SEED DATA so it isn't an empty app: run-dev.sh auto-runs `scripts/seed_dev.py` on start (SEED=0 skips; idempotent); if none exists, generate one that inserts representative rows for this story's tables.",
+          note: `Before deciding, offer a working-software review – run \`./scripts/run-dev.sh\` (serves the checked-out experiment branch against its Lakebase branch) and hand the human the client URL (UI) or the API endpoint + a curl/Postman example for this story's ACs; stop the server when they're done. Also offer to GENERATE SEED DATA so it isn't an empty app: run-dev.sh auto-runs \`scripts/seed_dev.py\` on start (SEED=0 skips; idempotent); if none exists, generate one that inserts representative rows for this story's tables.${swaggerNote}`,
         },
         {
           id: "acceptance.discard",
@@ -455,6 +479,44 @@ export function buildNextSnapshot(
   };
 }
 
+/** UI test kinds — a story with any of these in its per-story test list is user-facing, not API-only. */
+const UI_TEST_KINDS: ReadonlySet<string> = new Set(["client", "e2e"]);
+
+/**
+ * Per-story acceptance-review hints (impure; reads disk), keyed by story_id. A story is API-only
+ * when its per-story test list (`stories/<s>/test-list-per-story.json`) is non-empty and has NO
+ * client/e2e UI test; `docsUrl` is the deployed server's live Swagger UI (`<url>/docs`), present
+ * only when the story's deploy verified reachable (so we never offer a dead link). An empty/absent
+ * test list is NOT treated as API-only (its shape is not yet known), so the offer only fires once
+ * the story is genuinely backend-only. Computed here so buildNextSnapshot stays pure.
+ */
+export function buildStoryReview(consortDir: string, featureId: string): Record<string, StoryReview> {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return {};
+  const storiesDir = path.join(fdir, "stories");
+  let ids: string[];
+  try {
+    ids = fs.readdirSync(storiesDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return {};
+  }
+  const out: Record<string, StoryReview> = {};
+  for (const story of ids) {
+    const sdir = path.join(storiesDir, story);
+    let items: Array<{ kind?: string }> = [];
+    try {
+      items = (JSON.parse(fs.readFileSync(path.join(sdir, "test-list-per-story.json"), "utf8")) as { items?: Array<{ kind?: string }> }).items ?? [];
+    } catch {
+      /* no per-story test list yet */
+    }
+    const apiOnly = items.length > 0 && !items.some((i) => typeof i.kind === "string" && UI_TEST_KINDS.has(i.kind));
+    const ev = readDeployEvidence(path.join(sdir, "deploy-evidence.json"));
+    const docsUrl = apiOnly && ev && deployEvidencePasses(ev) && ev.url ? ev.url.replace(/\/+$/, "") + "/docs" : undefined;
+    out[story] = { apiOnly, ...(docsUrl ? { docsUrl } : {}) };
+  }
+  return out;
+}
+
 /**
  * Build the feature-scope snapshot straight from disk (read-only): the drive's
  * auto-emit + the CLI share this so both reflect the exact on-disk state via the
@@ -472,6 +534,7 @@ export function readFeatureNextSnapshot(
     ...ctx,
     featureId,
     stories: summarizeStories(consortDir, featureId),
+    storyReview: buildStoryReview(consortDir, featureId),
   });
 }
 
