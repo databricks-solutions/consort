@@ -4,7 +4,7 @@
 // resolved records, so the drive stops pre-empting and retries.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync as readFileSyncNode } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { writeFileSync as fsWrite } from "fs";
@@ -12,10 +12,11 @@ import {
   writeEscalation,
   readEscalations,
   resolveEscalations,
+  resolveBlockers,
   firstPendingEscalation,
   escalationsFromSmells,
 } from "../../consort/gates/escalation";
-import { resolveOpenSmells } from "../../consort/smells/smells";
+import { resolveOpenSmells, hasOpenSmell } from "../../consort/smells/smells";
 
 let tdd: string;
 beforeEach(() => {
@@ -97,5 +98,44 @@ describe("writeEscalation: the record self-documents its resolve path (so a sess
     // Persisted to disk (what a session opening the file directly actually reads), not just returned.
     const onDisk = readEscalations(tdd).find((x) => x.id === e.id);
     expect(onDisk?.how_to_resolve).toBe(e.how_to_resolve);
+  });
+});
+
+describe("resolveBlockers: resolving by --id ALONE clears the backing smell (the thrash fix)", () => {
+  it("a filed smell escalation resolved by id (no --feature) clears smells.json so the drive stops re-raising", () => {
+    // The exact shape that thrashed: a blocking ux-adherence smell audited to BOTH a smells.json
+    // entry AND an escalation FILE (feature F1 / story S1). Resolving by the file's --id alone used
+    // to stamp the file's resolved_at but leave the smell open, so the drive re-raised it every tick.
+    fsWrite(
+      join(tdd, "smells.json"),
+      JSON.stringify({
+        detected: [{ smell: "ux-adherence", story_id: "S1", detail: "app shell is off-brand", detected_at: "2026-01-01T00:00:00Z" }],
+      }),
+    );
+    const e = writeEscalation(tdd, { source: "smell:ux-adherence", reason: "blocking smell ux-adherence", feature_id: "F1", story_id: "S1" });
+    expect(firstPendingEscalation(tdd)).not.toBeNull();
+    expect(hasOpenSmell(tdd, "ux-adherence", "S1")).toBe(true);
+
+    // Resolve with ONLY --id — no --feature / --story (the repro).
+    const ids = resolveBlockers(tdd, { id: e.id });
+    expect(ids).toContain(e.id);
+
+    // The smell is now cleared, so escalationsFromSmells no longer re-raises it (no thrash).
+    expect(hasOpenSmell(tdd, "ux-adherence", "S1")).toBe(false);
+    expect(escalationsFromSmells(tdd, "F1")).toHaveLength(0);
+    expect(firstPendingEscalation(tdd)).toBeNull();
+  });
+
+  it("the smell entry itself gains resolution_kind: 'cleared' (single source of truth, not just the file)", () => {
+    fsWrite(
+      join(tdd, "smells.json"),
+      JSON.stringify({
+        detected: [{ smell: "ux-adherence", story_id: "S1", detail: "off-brand", detected_at: "2026-01-01T00:00:00Z" }],
+      }),
+    );
+    const e = writeEscalation(tdd, { source: "smell:ux-adherence", reason: "blocking", feature_id: "F1", story_id: "S1" });
+    resolveBlockers(tdd, { id: e.id });
+    const log = JSON.parse(readFileSyncNode(join(tdd, "smells.json"), "utf8")) as { detected: Array<{ resolution_kind?: string }> };
+    expect(log.detected[0].resolution_kind).toBe("cleared");
   });
 });
