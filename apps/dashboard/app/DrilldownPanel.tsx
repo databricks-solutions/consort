@@ -5,6 +5,7 @@ import { nodeById, primaryOutputNodeForRole } from "@/lib/topology";
 import { colorForRole, font, radius } from "@/lib/theme";
 import type { ArtifactContent, StepOutputAsset, StepOutputs } from "@/lib/types";
 import { buildFileTree, type FileTreeRow } from "@/lib/filetree";
+import { ResizableSplit } from "./ResizableSplit";
 
 // The ONE drill-down surface. Everything the board lets you click — an event-stream row that begins
 // a recorded turn, an event row that names a produced artifact, or a lifecycle node on the graph —
@@ -679,11 +680,14 @@ function TabButton({ active, onClick, disabled, children }: { active: boolean; o
 // selected file's content on the right — the reference's full-height `.pane.split.show` (230px 1fr),
 // in the app's tokens. Each side scrolls independently; the split itself takes all remaining height.
 function SplitPane({ list, viewer }: { list: React.ReactNode; viewer: React.ReactNode }) {
+  // Draggable file-list | content split (drag the handle toward the file list to give the content
+  // body more room). The file list keeps single-line, ellipsis-clipped rows (see FileRow/CodeTree);
+  // the content body wraps (see Pre). The handle supplies the divider the grid border used to.
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "minmax(140px, 230px) 1fr", overflow: "hidden" }}>
-      <div style={{ borderRight: `1px solid var(--border-default)`, overflowY: "auto", padding: "8px 0" }}>{list}</div>
-      <div style={{ overflowY: "auto", padding: "12px 14px" }}>{viewer}</div>
-    </div>
+    <ResizableSplit direction="horizontal" initialWeights={[230, 640]} minSize={120}>
+      <div style={{ overflowY: "auto", padding: "8px 0", flex: 1, minHeight: 0 }}>{list}</div>
+      <div style={{ overflowY: "auto", padding: "12px 14px", flex: 1, minHeight: 0 }}>{viewer}</div>
+    </ResizableSplit>
   );
 }
 
@@ -742,21 +746,29 @@ export function TranscriptView({ turn }: { turn: TurnPayload }) {
   // + the role name in each label make "what was passed back and forth" legible at a glance rather
   // than three flat sections a viewer has to mentally assign a direction to.
   const role = turn.role ?? "agent";
-  return (
-    // Fills the (bounded) tab body: the Prompt (top) and Reasoning (bottom) sections GROW to share
-    // the height and each scrolls on its own, so a long prompt or long reasoning never pushes the
-    // whole panel into one outer scroll. The Tools list keeps its own fixed-height scroll between them.
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}>
-      <Section label={`▸ Prompt → ${role}`} fill>
-        <Pre fill>{prompt || "(empty)"}</Pre>
-      </Section>
-      {tools.length > 0 ? (
-        <Section label={`◂ Tools ${role} invoked (${tools.length})`} fill>
+  // The three sections (Prompt ▸, Tools ◂, Reasoning ◂) stack vertically with DRAGGABLE dividers
+  // between them (ResizableSplit), so a viewer can grow whichever they're reading; each still scrolls
+  // within its slice. Only the present sections are included — tools/reasoning are conditional — and
+  // the default weights keep the prompt + tools primary with reasoning given a smaller initial share.
+  const parts: { node: React.ReactNode; weight: number }[] = [
+    {
+      weight: 1,
+      node: (
+        <Section key="prompt" label={`▸ Prompt → ${role}`} fill>
+          <Pre fill>{prompt || "(empty)"}</Pre>
+        </Section>
+      ),
+    },
+  ];
+  if (tools.length > 0) {
+    parts.push({
+      weight: 1,
+      node: (
+        <Section key="tools" label={`◂ Tools ${role} invoked (${tools.length})`} fill>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: "1 1 0", minHeight: 0, overflowY: "auto" }}>
             {tools.map((t, i) => {
               // Tool lines arrive as "ToolName rest of the call…"; bold the tool name and mute the
-              // arguments so a viewer scans WHICH tools ran without the args drowning them out
-              // (Kevin's `.tn` treatment).
+              // arguments so a viewer scans WHICH tools ran without the args drowning them out.
               const sp = t.indexOf(" ");
               const name = sp > 0 ? t.slice(0, sp) : t;
               const rest = sp > 0 ? t.slice(sp) : "";
@@ -769,15 +781,23 @@ export function TranscriptView({ turn }: { turn: TurnPayload }) {
             })}
           </div>
         </Section>
-      ) : null}
-      {reasoning ? (
-        // Final reasoning gets a SMALLER share (weight 0.4) — the prompt (▸) and the tools list are
-        // the primary content, so they take the bulk of the height; reasoning scrolls within its slice.
-        <Section label={`◂ ${role}'s final reasoning`} fill={0.4}>
+      ),
+    });
+  }
+  if (reasoning) {
+    parts.push({
+      weight: 0.4,
+      node: (
+        <Section key="reasoning" label={`◂ ${role}'s final reasoning`} fill>
           <Pre fill>{reasoning}</Pre>
         </Section>
-      ) : null}
-    </div>
+      ),
+    });
+  }
+  return (
+    <ResizableSplit direction="vertical" initialWeights={parts.map((p) => p.weight)} minSize={48}>
+      {parts.map((p) => p.node)}
+    </ResizableSplit>
   );
 }
 
