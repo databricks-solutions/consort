@@ -9,6 +9,7 @@ import {
   laneStepForEvent,
   laneProgress,
   latestTurnOrdinalForStep,
+  MULTI_STEP_ROLES,
   passedNodes,
   nodeForPhase,
   nodeById,
@@ -112,6 +113,18 @@ describe("topology — graph integrity", () => {
     expect(latestTurnOrdinalForStep(events, recentTurns, "b-review")).toBe(11); // NOT 10 — step-specific
     // a step with no turn in the window → null (caller falls back to the role shell, not a wrong turn)
     expect(latestTurnOrdinalForStep(events, recentTurns, "b-refactor")).toBeNull();
+  });
+
+  it("MULTI_STEP_ROLES captures roles that own >1 lane step, so a card click can't cross to a sibling step's turn", () => {
+    // navigator is the reported case: it owns red/review/assess (+ reflect in design), so clicking
+    // navigator-red must NOT fall back to the role's latest turn (which could be navigator-reflect).
+    expect(MULTI_STEP_ROLES.has("navigator")).toBe(true);
+    expect(MULTI_STEP_ROLES.size).toBeGreaterThan(0);
+    // every member genuinely appears in more than one lane step
+    for (const role of MULTI_STEP_ROLES) {
+      const count = LANE_IDS.reduce((n, l) => n + WORKFLOW.lanes[l].steps.filter((s) => s.role === role).length, 0);
+      expect(count).toBeGreaterThan(1);
+    }
   });
 
   it("every lifecycle node + gate has a STEP_OUTPUTS entry, so all are clickable to show outputs", () => {
