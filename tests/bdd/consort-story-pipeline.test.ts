@@ -2,6 +2,7 @@
 // Hermetic (in-memory + tmpdir); no live Lakebase.
 
 import { describe, it, expect, afterEach } from "vitest";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -448,5 +449,39 @@ describe("story-pipeline: persistence + schema", () => {
     enqueueReady(p, "S2-owner");
     dispatchNext(p);
     expect(validate(p)).toBe(true);
+  });
+});
+
+describe("writePipeline self-heals a legacy-TRACKED pipeline.json (Fix A: run-state must not promote)", () => {
+  const git = (dir: string, args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+
+  it("drops a tracked per-feature pipeline.json from the index on write, keeping the working file", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-untrack-"));
+    tmpDirs.push(root);
+    git(root, ["init", "-b", "main"]);
+    git(root, ["config", "user.email", "t@e.com"]);
+    git(root, ["config", "user.name", "t"]);
+    const consortDir = path.join(root, ".consort");
+    fs.mkdirSync(consortDir, { recursive: true });
+
+    // Simulate the legacy state: pipeline.json exists AND is committed (tracked).
+    writePipeline(consortDir, initPipeline("F1"));
+    const rel = path.relative(root, path.join(consortDir, "features", "F1", "pipeline.json"));
+    git(root, ["add", "-f", rel]);
+    git(root, ["commit", "-m", "legacy: tracked pipeline.json"]);
+    const tracked = () => execFileSync("git", ["ls-files", "--", rel], { cwd: root, encoding: "utf8" }).trim();
+    expect(tracked()).not.toBe(""); // tracked before the heal
+
+    // A normal write now self-heals: index drops it, the file stays on disk.
+    writePipeline(consortDir, setStoryStatus(initPipeline("F1"), "S1", "designing"));
+    expect(tracked()).toBe(""); // no longer tracked
+    expect(fs.existsSync(path.join(consortDir, "features", "F1", "pipeline.json"))).toBe(true); // working file kept
+  });
+
+  it("is a no-op outside a git repo (never throws into the writer)", () => {
+    const consortDir = path.join(mkTdd(), ".consort"); // parent is a bare tmpdir, not a repo
+    fs.mkdirSync(consortDir, { recursive: true });
+    expect(() => writePipeline(consortDir, initPipeline("F1"))).not.toThrow();
+    expect(fs.existsSync(path.join(consortDir, "features", "F1", "pipeline.json"))).toBe(true);
   });
 });

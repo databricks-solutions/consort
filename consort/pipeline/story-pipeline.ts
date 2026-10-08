@@ -4,6 +4,7 @@
 // .tdd/features/<F>/pipeline.json. Exactly one story builds at a time; the
 // orchestrator owns these transitions.
 
+import { execFileSync } from "child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, rmSync } from "fs";
 import { dirname, join } from "path";
 import {
@@ -160,6 +161,30 @@ export function writePipeline(consortDir: string, pipeline: StoryPipeline): void
   const p = pipelinePath(consortDir, pipeline.feature_id);
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(pipeline, null, 2) + "\n");
+  selfHealUntrack(consortDir, p);
+}
+
+/** pipeline.json is per-run gate bookkeeping, gitignored by intent — but a project created before
+ *  the per-feature ignore pattern was fixed has it TRACKED, so it travels onto staging/main and
+ *  collides at the promotion merge. Mirror the Finding-28 workflow-state self-heal: if the file is
+ *  tracked, drop it from the index (keep the working file) on write, so it stops promoting and a
+ *  checkout can't revert the live run-state. Best-effort: a no-op outside a git repo / when already
+ *  untracked, and never throws into the writer. */
+function selfHealUntrack(consortDir: string, absPath: string): void {
+  const repoRoot = dirname(consortDir); // consortDir is <root>/.consort
+  try {
+    const tracked = execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    void tracked; // threw above if untracked / not a repo
+    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+  } catch {
+    /* untracked, or not a git repo, or git unavailable — nothing to heal */
+  }
 }
 
 /**
