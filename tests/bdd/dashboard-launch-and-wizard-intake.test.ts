@@ -118,6 +118,20 @@ describe("Part B — wizard-style intake canon", () => {
     expect(start).toMatch(/install\/upgrade|install \(or upgrade\)/i);
   });
 
+  it("drives the resume tooling hand-off off the deterministic preflight.tooling.offers_pending agenda (not prose memory)", () => {
+    const start = read("commands/start.md");
+    // The preflight blob must advertise the agenda, and step (a) must be DRIVEN by it —
+    // this is what makes the "tooling offer got dropped on resume" defect hard to repeat:
+    // the agent clears a concrete list it already holds, BEFORE the situation report / diagnosis.
+    expect(start).toContain("tooling.offers_pending");
+    expect(start, "the agenda must gate the step BEFORE consort-next / diagnosis").toMatch(
+      /offers_pending[\s\S]*before[\s\S]*(consort-next|diagnosis)/i,
+    );
+    // move-to-editor is a LIST membership decision (present only when outside the IDE),
+    // so its absence means skip — not a prose-only editor sniff at the point of offer.
+    expect(start).toContain("move-to-editor");
+  });
+
   it("offers to re-open an already-running dashboard on resume (consort-dashboard --open), not just the URL", () => {
     const start = read("commands/start.md");
     // The already-running branch must OFFER to re-open the browser (the resume case: the detached

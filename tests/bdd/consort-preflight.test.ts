@@ -41,7 +41,23 @@ describe("buildPreflight: best-effort, never throws", () => {
     expect(b.telemetry.acknowledged).toBe(false);
     expect(b.scm.branch).toBeNull(); // not a git repo
     expect(b.first_project.offered_before).toBe(false);
+    expect(Array.isArray(b.tooling.offers_pending)).toBe(true);
     expect(Array.isArray(b.warnings)).toBe(true);
+  });
+
+  it("tooling.offers_pending: owes dashboard + move-to-editor + extension when OUTSIDE an editor", () => {
+    // Outside an IDE terminal, the move offer IS owed (there is somewhere to move to).
+    const b = buildPreflight(proj, deps());
+    expect(b.env.inside_editor).toBe(false);
+    expect(b.tooling.offers_pending).toEqual(["dashboard", "move-to-editor", "extension"]);
+  });
+
+  it("tooling.offers_pending: DROPS move-to-editor when already INSIDE an editor", () => {
+    // Inside the IDE there is nothing to move, so the move offer is omitted — its absence
+    // is the signal to skip it, never prompt the human out of the terminal they are in.
+    const b = buildPreflight(proj, { env: { XDG_CONFIG_HOME: cfgHome, TERM_PROGRAM: "vscode" } as NodeJS.ProcessEnv, home: cfgHome });
+    expect(b.env.inside_editor).toBe(true);
+    expect(b.tooling.offers_pending).toEqual(["dashboard", "extension"]);
   });
 
   it("reads the drive's .consort/next.json stop-state for the project signal", () => {
