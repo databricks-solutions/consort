@@ -66,6 +66,11 @@ export function fetchLatestTag(repo: string = CONSORT_REPO, timeoutMs = 4000): s
 interface UpdateState {
   last_check_ms?: number;
   last_latest?: string;
+  /** The installed version at the last network check. When the installed version changes
+   *  (a plugin/kit upgrade), the cached `last_latest` can no longer be trusted — a release
+   *  may have landed inside the throttle window — so the next check MUST re-fetch rather
+   *  than serve a cache captured before the upgrade. */
+  last_installed?: string;
 }
 
 /** The throttle-state file, in the SAME XDG dir as telemetry config but a SEPARATE file
@@ -89,14 +94,52 @@ function writeState(deps: HomeConfigDeps, s: UpdateState): void {
   }
 }
 
-/** The one-time notice (stderr-style). Names both layers: the plugin AND the runtime kit. */
+/** The one-time notice (stderr-style). Names both layers: the plugin AND the runtime kit.
+ *  The project step is `consort-upgrade`, NOT `--warm`: `--warm` only re-installs the
+ *  version a project is ALREADY pinned to; it does not advance `.lakebase/kit-ref`, so a
+ *  project pinned to the old release keeps running it. `consort-upgrade` dual-pins the ref
+ *  to the target (at a stop), which is the move that actually puts the project on the new kit. */
 export function formatUpdateNotice(installed: string, latest: string): string {
   return (
     `[consort] A newer Consort is available: ${latest} (you have ${installed}).\n` +
     `          Update the plugin:  claude plugin marketplace update databricks-solutions \\\n` +
     `                              && claude plugin update consort@databricks-solutions\n` +
-    `          In a project, also: ./scripts/lk --warm   (refresh the runtime kit)\n`
+    `          Move a project onto it (at a stop): ./scripts/lk consort-upgrade --pid <drive-pid>\n` +
+    `          (advances .lakebase/kit-ref to ${latest}; a plain --warm does NOT move the pin)\n`
   );
+}
+
+/** The pin-lag notice: this project's runtime-kit PIN is behind the INSTALLED plugin.
+ *  A `claude plugin update` advances the plugin on disk but NOT a project's pinned kit
+ *  (moving a project is a separate, explicit step), so a resume silently keeps running the
+ *  older kit. This is the signal that catches that gap. */
+export function formatPinLagNotice(pin: string, plugin: string): string {
+  return (
+    `[consort] This project's runtime kit is pinned to ${pin}, but your installed plugin is ${plugin}.\n` +
+    `          The project will keep running the OLDER kit until you move it (at a stop):\n` +
+    `            ./scripts/lk consort-upgrade --pid <drive-pid>\n` +
+    `          (dual-pins .lakebase/kit-ref + kit-ref.local to ${plugin}; a plain --warm does NOT move the pin)\n`
+  );
+}
+
+export interface PinLagResult {
+  /** The project's effective runtime-kit pin (kit-ref.local ?? kit-ref), if any. */
+  pin?: string;
+  /** The installed plugin version to compare the pin against. */
+  plugin: string;
+  /** True when the pin is strictly behind the plugin. */
+  behind: boolean;
+  /** Present only when behind: the notice to print. */
+  notice?: string;
+}
+
+/** Compare a project's runtime-kit PIN against the installed PLUGIN version. LOCAL,
+ *  network-free, and UN-throttled — a resume can run it every time at no cost. Returns a
+ *  notice only when the pin is strictly behind the plugin (an unpinned project — no pin —
+ *  is never flagged: it resolves the plugin version anyway). Bad inputs never claim behind. */
+export function checkPinLag(pin: string | undefined, plugin: string): PinLagResult {
+  const behind = !!pin && isNewer(plugin, pin);
+  return { pin, plugin, behind, notice: behind ? formatPinLagNotice(pin!, plugin) : undefined };
 }
 
 export interface UpdateCheckDeps extends HomeConfigDeps {
@@ -130,15 +173,20 @@ export function checkForUpdate(deps: UpdateCheckDeps): UpdateCheckResult {
   const now = (deps.now ?? Date.now)();
   const throttleMs = deps.throttleMs ?? DEFAULT_THROTTLE_MS;
   const state = readState(deps);
-  const due = deps.force || state.last_check_ms === undefined || now - state.last_check_ms >= throttleMs;
+  // Release-aware throttle: a cache captured BEFORE an upgrade can mask a release that landed
+  // inside the window, so force a re-fetch whenever the installed version changed since the
+  // last check — otherwise honor the once/day throttle.
+  const versionChanged = state.last_installed !== undefined && state.last_installed !== deps.installedVersion;
+  const due = deps.force || versionChanged || state.last_check_ms === undefined || now - state.last_check_ms >= throttleMs;
 
   let latest = state.last_latest;
   let checkedNetwork = false;
   if (due) {
     const fetched = (deps.fetchLatest ?? (() => fetchLatestTag()))();
     checkedNetwork = true;
-    // Persist the check time regardless; only overwrite last_latest when the fetch succeeded.
-    writeState(deps, { last_check_ms: now, last_latest: fetched ?? state.last_latest });
+    // Persist the check time + the installed version we checked against; only overwrite
+    // last_latest when the fetch succeeded (an offline fetch keeps the prior cached latest).
+    writeState(deps, { last_check_ms: now, last_latest: fetched ?? state.last_latest, last_installed: deps.installedVersion });
     if (fetched) latest = fetched;
   }
 
