@@ -44,10 +44,16 @@ interface Args {
    *  host:port answers, opens the browser, and exits. Keeps the browser-open off the launcher's
    *  critical path so `--detach` can return immediately yet the browser still opens reliably. */
   openReady: boolean;
+  /** --open: re-open the browser on an ALREADY-running dashboard for this project, then exit
+   *  (`running <url>` + open + exit 0, or `stopped` + exit 3). The acting mirror of --status:
+   *  --status only reports, --open focuses the tab. Never launches a server. Distinct from
+   *  --no-open (which merely suppresses the auto-open during a launch). Lets /consort:start offer
+   *  "open it" on a resume where the detached server survived but no browser tab is open. */
+  openOnly: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { projectDir: process.cwd(), host: "localhost", open: true, status: false, detach: false, openReady: false };
+  const out: Args = { projectDir: process.cwd(), host: "localhost", open: true, status: false, detach: false, openReady: false, openOnly: false };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case "--project-dir": out.projectDir = argv[++i]; break;
@@ -58,12 +64,14 @@ function parseArgs(argv: string[]): Args {
       case "--status": out.status = true; break;
       case "--detach": out.detach = true; break;
       case "--open-ready": out.openReady = true; break;
+      case "--open": out.openOnly = true; break;
       case "-h": case "--help":
         console.log(
           "consort-dashboard [--project-dir <p>] [--port <n>] [--record-dir <p>] [--host <h>] [--no-open] [--status] [--detach]\n" +
             "Launch the dashboard on a local project's .consort/ (prebuilt bundle, or next dev in a dev clone).\n" +
             "--detach spawns the server detached + prints the URL + returns at once (opens the browser when ready).\n" +
-            "--status reports whether one is already running (running <url> / stopped) without launching.",
+            "--status reports whether one is already running (running <url> / stopped) without launching.\n" +
+            "--open re-opens the browser on an already-running dashboard (running <url> + open + exit 0, stopped + exit 3); never launches.",
         );
         process.exit(0);
         break;
@@ -186,6 +194,21 @@ async function main(): Promise<void> {
     const rec = await runningRecord(projectDir);
     if (rec) {
       console.log(`running ${rec.url}`);
+      process.exit(0);
+    }
+    console.log("stopped");
+    process.exit(3);
+  }
+
+  // --open: the ACTING mirror of --status. Re-open the browser on the dashboard already serving
+  // this project, then exit — never launch. (--status only reports; --open focuses the tab.) Lets
+  // /consort:start offer "open it" on a resume where the detached server survived but no browser
+  // tab is open, without risking a foreground spawn if the record turns out stale.
+  if (args.openOnly) {
+    const rec = await runningRecord(projectDir);
+    if (rec) {
+      console.log(`running ${rec.url}`);
+      if (args.open) openBrowser(rec.url);
       process.exit(0);
     }
     console.log("stopped");
