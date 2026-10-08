@@ -85,6 +85,7 @@
     "consort-approve-gate": "./dist/bin/consort/approve-gate.cli.js",
     "consort-canon-notes": "./dist/bin/consort/project-canon-notes.cli.js",
     "consort-check-update": "./dist/bin/consort/check-update.cli.js",
+    "consort-check-pin-lag": "./dist/bin/consort/check-pin-lag.cli.js",
     "consort-contract-clean": "./dist/bin/consort/contract-clean.cli.js",
     "consort-cross-story-context": "./dist/bin/consort/cross-story-context.cli.js",
     "consort-reopen-story": "./dist/bin/consort/reopen-story.cli.js",

@@ -46,6 +46,7 @@ export default defineConfig({
     "bin/consort/telemetry.cli": "bin/consort/telemetry.cli.ts",
     "bin/consort/telemetry-send.cli": "bin/consort/telemetry-send.cli.ts",
     "bin/consort/check-update.cli": "bin/consort/check-update.cli.ts",
+    "bin/consort/check-pin-lag.cli": "bin/consort/check-pin-lag.cli.ts",
     "bin/consort/annotate-ac.cli": "bin/consort/annotate-ac.cli.ts",
     "bin/consort/cross-story-context.cli": "bin/consort/cross-story-context.cli.ts",
     "bin/consort/reopen-story.cli": "bin/consort/reopen-story.cli.ts",

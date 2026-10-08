@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { parseSemver, isNewer, checkForUpdate } from "../../consort/update/check-update.js";
+import { parseSemver, isNewer, checkForUpdate, checkPinLag } from "../../consort/update/check-update.js";
 
 describe("parseSemver / isNewer", () => {
   it("parses vX.Y.Z and X.Y.Z, rejects junk", () => {
@@ -51,7 +51,10 @@ describe("checkForUpdate", () => {
     expect(r.latest).toBe("v0.3.14");
     expect(r.notice).toContain("0.3.14");
     expect(r.notice).toContain("claude plugin update consort@databricks-solutions");
-    expect(r.notice).toContain("./scripts/lk --warm");
+    // The project step is consort-upgrade (advances the pin), NOT --warm (re-installs the
+    // version already pinned, which would leave the project on the old kit).
+    expect(r.notice).toContain("consort-upgrade");
+    expect(r.notice).not.toContain("./scripts/lk --warm");
     expect(r.checkedNetwork).toBe(true);
   });
 
@@ -75,6 +78,25 @@ describe("checkForUpdate", () => {
     expect(second.latest).toBe("v0.3.14");
   });
 
+  it("release-aware throttle: a changed installed version forces a re-fetch inside the window", () => {
+    let calls = 0;
+    const fetchLatest = () => { calls++; return calls === 1 ? "v0.3.102" : "v0.3.103"; };
+    // First check on the old kit: caches latest=v0.3.102, installed=v0.3.102 (current).
+    const first = run("v0.3.102", fetchLatest);
+    expect(first.checkedNetwork).toBe(true);
+    expect(first.behind).toBe(false);
+    expect(calls).toBe(1);
+    // Same clock (inside the window) but the installed version changed (a plugin upgrade):
+    // the cache captured BEFORE that change can't be trusted, so it MUST re-fetch.
+    const second = run("v0.3.103", fetchLatest);
+    expect(second.checkedNetwork).toBe(true);
+    expect(calls).toBe(2);
+    // And an UNCHANGED version right after still honors the throttle (serves cache, no fetch).
+    const third = run("v0.3.103", fetchLatest);
+    expect(third.checkedNetwork).toBe(false);
+    expect(calls).toBe(2);
+  });
+
   it("--force bypasses the throttle", () => {
     let calls = 0;
     const fetchLatest = () => { calls++; return "v0.3.14"; };
@@ -88,5 +110,33 @@ describe("checkForUpdate", () => {
     expect(r.behind).toBe(false);
     expect(r.notice).toBeUndefined();
     expect(r.latest).toBeUndefined();
+  });
+});
+
+describe("checkPinLag (project pin vs installed plugin — local, no network)", () => {
+  it("flags a pin behind the plugin, naming the consort-upgrade move (not --warm)", () => {
+    const r = checkPinLag("v0.3.102", "v0.3.103");
+    expect(r.behind).toBe(true);
+    expect(r.notice).toContain("v0.3.102");
+    expect(r.notice).toContain("v0.3.103");
+    expect(r.notice).toContain("consort-upgrade");
+    expect(r.notice).not.toContain("--warm\n"); // the aside explains --warm does NOT move the pin, but never prescribes it
+  });
+
+  it("is silent when the pin equals the plugin", () => {
+    const r = checkPinLag("v0.3.103", "v0.3.103");
+    expect(r.behind).toBe(false);
+    expect(r.notice).toBeUndefined();
+  });
+
+  it("never flags an unpinned project (no kit-ref)", () => {
+    const r = checkPinLag(undefined, "v0.3.103");
+    expect(r.behind).toBe(false);
+    expect(r.notice).toBeUndefined();
+  });
+
+  it("never flags when the pin is AHEAD of the plugin (bad/ahead inputs never claim behind)", () => {
+    expect(checkPinLag("v0.3.104", "v0.3.103").behind).toBe(false);
+    expect(checkPinLag("nightly", "v0.3.103").behind).toBe(false);
   });
 });
