@@ -25,8 +25,7 @@ import { resolveConsortDir } from "../../consort/config/consort-paths.js";
 import { discardExperimentBranch } from "../../consort/experiment/experiment-lifecycle";
 import { realExperimentOps, mergeAndAcceptStory } from "../../consort/experiment/experiment-merge.js";
 import {
-  readPipeline,
-  writePipeline,
+  updatePipeline,
   cutStoryExperiment,
   discardStory,
   reviseStory,
@@ -87,20 +86,20 @@ async function main(): Promise<number> {
         ttl: args.ttl,
         ...(args.resetStaleBranch ? { resetStaleBranch: true } : {}),
       });
-      const p = readPipeline(consortDir, feature);
-      cutStoryExperiment(p, story, {
-        slug,
-        branch: rec.branch_id,
-        parent: args.parent as string,
-        at,
-        // Stamp the design this experiment is cut to build (stale-experiment guardrail):
-        // a later redesign under this same experiment then reads as stale and re-cuts.
-        ...(() => {
-          const fp = storyDesignFingerprint(consortDir, feature, story);
-          return fp !== undefined ? { design_fingerprint: fp } : {};
-        })(),
-      });
-      writePipeline(consortDir, p);
+      updatePipeline(consortDir, feature, (p) =>
+        cutStoryExperiment(p, story, {
+          slug,
+          branch: rec.branch_id,
+          parent: args.parent as string,
+          at,
+          // Stamp the design this experiment is cut to build (stale-experiment guardrail):
+          // a later redesign under this same experiment then reads as stale and re-cuts.
+          ...(() => {
+            const fp = storyDesignFingerprint(consortDir, feature, story);
+            return fp !== undefined ? { design_fingerprint: fp } : {};
+          })(),
+        }),
+      );
       process.stdout.write(`cut experiment ${slug} on ${rec.branch_id} (parent ${args.parent})\n`);
       return 0;
     }
@@ -131,20 +130,19 @@ async function main(): Promise<number> {
         { consortDir, projectDir, featureId: feature, storyId: story, experimentSlug: slug, instance },
         realExperimentOps,
       );
-      const p = readPipeline(consortDir, feature);
       const approver = args.approver as string;
       const reason = args.reason as string;
-      if (args.revise) {
-        reviseStory(p, story, { approver, at, reason });
-        // reviseStory only flips the pipeline status to "designing"; the build
-        // lane derives "pending" from the cycle records on disk, so without also
-        // clearing them the revised story reads as allGreen and re-deploys its
-        // stale build. Reset the build state so it genuinely re-drives.
-        resetStoryBuildState(consortDir, feature, story);
-      } else {
-        discardStory(p, story, { approver, at, reason });
-      }
-      writePipeline(consortDir, p);
+      updatePipeline(consortDir, feature, (p) => {
+        if (args.revise) {
+          reviseStory(p, story, { approver, at, reason });
+        } else {
+          discardStory(p, story, { approver, at, reason });
+        }
+      });
+      // reviseStory only flips the pipeline status to "designing"; the build lane derives "pending"
+      // from the cycle records on disk, so without also clearing them the revised story reads as
+      // allGreen and re-deploys its stale build. Reset the build state so it genuinely re-drives.
+      if (args.revise) resetStoryBuildState(consortDir, feature, story);
       logExperimentEvent(consortDir, args.revise ? "experiment.revised" : "experiment.discarded", story, reason);
       process.stdout.write(
         `${args.revise ? "revised" : "discarded"} ${slug}; experiment torn down; story ${story} ${args.revise ? "-> designing" : "out of sprint"}\n`,

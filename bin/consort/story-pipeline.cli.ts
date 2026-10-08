@@ -37,6 +37,7 @@
 import {
   readPipeline,
   writePipeline,
+  updatePipeline,
   setStoryStatus,
   enqueueReady,
   dispatchNext,
@@ -228,8 +229,7 @@ async function main(): Promise<number> {
       if (!args.status || !(STORY_STATUSES as readonly string[]).includes(args.status)) {
         return usage(`set needs a valid --status (${STORY_STATUSES.join("|")})`);
       }
-      setStoryStatus(pipeline, args.story, args.status as StoryStatus);
-      writePipeline(consortDir, pipeline);
+      updatePipeline(consortDir, feature, (p) => setStoryStatus(p, args.story!, args.status as StoryStatus));
       process.stdout.write(`${args.story} -> ${args.status}\n`);
       return 0;
     }
@@ -237,8 +237,7 @@ async function main(): Promise<number> {
       if (!args.story) return usage("surface needs --story");
       const batched = rejectBatchedDraft(consortDir, feature, pipeline, args.story);
       if (batched !== null) return batched;
-      surfaceForGate(pipeline, args.story);
-      writePipeline(consortDir, pipeline);
+      updatePipeline(consortDir, feature, (p) => surfaceForGate(p, args.story!));
       process.stdout.write(`surfaced ${args.story} for the per-story spec gate (awaiting-gate)\n`);
       return 0;
     }
@@ -270,31 +269,33 @@ async function main(): Promise<number> {
       if (!args.approver) return usage("withdraw-gate needs --approver");
       if (!args.reason) return usage("withdraw-gate needs --reason");
       const at = args.at ?? new Date().toISOString();
-      withdrawStoryGate(pipeline, args.story, { approver: args.approver, at, reason: args.reason });
-      writePipeline(consortDir, pipeline);
+      updatePipeline(consortDir, feature, (p) => withdrawStoryGate(p, args.story!, { approver: args.approver!, at, reason: args.reason! }));
       process.stdout.write(`withdrew gate for ${args.story} (${args.reason}); back to awaiting-gate\n`);
       return 0;
     }
     case "enqueue": {
       if (!args.story) return usage("enqueue needs --story");
-      enqueueReady(pipeline, args.story);
-      writePipeline(consortDir, pipeline);
-      process.stdout.write(`enqueued ${args.story} (queue: ${pipeline.build_queue.join(", ")})\n`);
+      const afterEnqueue = updatePipeline(consortDir, feature, (p) => enqueueReady(p, args.story!));
+      process.stdout.write(`enqueued ${args.story} (queue: ${afterEnqueue.build_queue.join(", ")})\n`);
       return 0;
     }
     case "dispatch": {
-      const dispatched = dispatchNext(pipeline);
-      writePipeline(consortDir, pipeline);
+      let dispatched: string | null = null;
+      const afterDispatch = updatePipeline(consortDir, feature, (p) => {
+        dispatched = dispatchNext(p) ?? null;
+      });
       process.stdout.write(
         dispatched
           ? `dispatched ${dispatched} to the build lane\n`
-          : `no dispatch: ${pipeline.build_active ? `lane busy on ${pipeline.build_active}` : "queue empty"}\n`,
+          : `no dispatch: ${afterDispatch.build_active ? `lane busy on ${afterDispatch.build_active}` : "queue empty"}\n`,
       );
       return 0;
     }
     case "complete": {
-      const completed = completeActive(pipeline);
-      writePipeline(consortDir, pipeline);
+      let completed: string | null = null;
+      updatePipeline(consortDir, feature, (p) => {
+        completed = completeActive(p) ?? null;
+      });
       process.stdout.write(completed ? `completed ${completed}; lane idle\n` : `no active story to complete\n`);
       return 0;
     }
@@ -303,28 +304,28 @@ async function main(): Promise<number> {
       if (!args.slug || !args.branch || !args.parent) {
         return usage("cut-experiment needs --slug, --branch, and --parent");
       }
-      cutStoryExperiment(pipeline, args.story, {
-        slug: args.slug,
-        branch: args.branch,
-        parent: args.parent,
-        lakebase_branch_uid: args.lakebaseUid,
-        parent_sha: args.parentSha,
-        n: args.n !== undefined ? Number(args.n) : undefined,
-        at: args.at ?? new Date().toISOString(),
-        // Stamp the design this experiment is cut to build (stale-experiment guardrail).
-        ...(() => {
-          const fp = storyDesignFingerprint(consortDir, feature, args.story as string);
-          return fp !== undefined ? { design_fingerprint: fp } : {};
-        })(),
-      });
-      writePipeline(consortDir, pipeline);
+      updatePipeline(consortDir, feature, (p) =>
+        cutStoryExperiment(p, args.story!, {
+          slug: args.slug!,
+          branch: args.branch!,
+          parent: args.parent!,
+          lakebase_branch_uid: args.lakebaseUid,
+          parent_sha: args.parentSha,
+          n: args.n !== undefined ? Number(args.n) : undefined,
+          at: args.at ?? new Date().toISOString(),
+          // Stamp the design this experiment is cut to build (stale-experiment guardrail).
+          ...(() => {
+            const fp = storyDesignFingerprint(consortDir, feature, args.story as string);
+            return fp !== undefined ? { design_fingerprint: fp } : {};
+          })(),
+        }),
+      );
       process.stdout.write(`cut experiment ${args.slug} for ${args.story} on ${args.branch} (parent ${args.parent})\n`);
       return 0;
     }
     case "await-acceptance": {
       if (!args.story) return usage("await-acceptance needs --story");
-      awaitAcceptance(pipeline, args.story);
-      writePipeline(consortDir, pipeline);
+      updatePipeline(consortDir, feature, (p) => awaitAcceptance(p, args.story!));
       process.stdout.write(`${args.story} -> awaiting-acceptance (PO reviewing the running story)\n`);
       return 0;
     }

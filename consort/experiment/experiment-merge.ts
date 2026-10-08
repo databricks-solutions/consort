@@ -14,7 +14,7 @@
 
 import { mergeExperimentIntoFeature, type ExperimentBranchOps } from "./experiment-lifecycle.js";
 import { deleteExperiment } from "./experiment.js";
-import { readPipeline, writePipeline, acceptStory } from "../pipeline/story-pipeline.js";
+import { readPipeline, updatePipeline, acceptStory } from "../pipeline/story-pipeline.js";
 import { logGateApproved } from "../logging/gate-decision-log.js";
 import { mergePaired } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { commitExperimentCode, commitDriveStateForAccept } from "../pipeline/cycle-record.js";
@@ -94,9 +94,7 @@ export async function mergeAndAcceptStory(
   }
   // Re-read: mergeExperimentIntoFeature does not touch pipeline.json (its ops are
   // git/lakebase); acceptStory is what records merged + done + frees the lane.
-  const p = readPipeline(args.consortDir, args.featureId);
-  acceptStory(p, args.storyId, { approver: args.approver, at });
-  writePipeline(args.consortDir, p);
+  updatePipeline(args.consortDir, args.featureId, (p) => acceptStory(p, args.storyId, { approver: args.approver, at }));
   // The acceptance gate CLEARS here. This is the ONE funnel EVERY acceptance path reaches — the drive's
   // dispatched accept action, the headless proxy, and a direct `consort-experiment merge` all land here
   // (acceptStory is called from nowhere else). Emit gate.approved("acceptance") so the acceptance

@@ -43,6 +43,9 @@ export interface WithGatesLockOpts extends GatesIoOpts {
   initialBackoffMs?: number;
   /** Test seam: deterministic sleep replacement. */
   sleep?: (ms: number) => void;
+  /** Lock-file basename. Default `.gates.lock`. Lets the same primitive serialize other per-feature
+   *  read-modify-write files — notably pipeline.json via `.pipeline.lock` (see withPipelineLock). */
+  lockBasename?: string;
 }
 
 export class GatesLockBusyError extends Error {
@@ -60,6 +63,11 @@ export class GatesLockBusyError extends Error {
     this.name = "GatesLockBusyError";
   }
 }
+
+/** Lock paths this PROCESS currently holds, for re-entrancy (see withGatesLock). The on-disk file
+ *  mutex is a cross-process guard; this set makes a same-process nested acquire a no-op instead of a
+ *  self-deadlock. */
+const HELD_LOCKS = new Set<string>();
 
 /**
  * Acquire the lock for a feature's gates.json, run fn, release the lock.
@@ -81,7 +89,17 @@ export function withGatesLock<T>(
   const initialBackoffMs = opts.initialBackoffMs ?? 20;
   const sleep = opts.sleep ?? defaultSleep;
 
-  const lockPath = gatesLockFilePath(consortDir, featureId);
+  const lockPath = gatesLockFilePath(consortDir, featureId, opts.lockBasename ?? ".gates.lock");
+  // Fail-fast on a same-process NESTED acquire. The file mutex is not re-entrant; worse, letting a
+  // nested updatePipeline run its own read-modify-write would have the inner write clobbered by the
+  // outer frame's later write — a silent lost update, the exact bug this lock exists to prevent.
+  // Nesting is a code smell: do all mutation within ONE outer critical section.
+  if (HELD_LOCKS.has(lockPath)) {
+    throw new Error(
+      `re-entrant lock on ${lockPath}: a holder tried to acquire it again (nested updatePipeline / ` +
+        `withGatesLock). Mutate within the single outer critical section instead.`,
+    );
+  }
   let acquired = false;
   let attempts = 0;
 
@@ -91,6 +109,7 @@ export function withGatesLock<T>(
       writeFileSync(fd, String(process.pid));
       closeSync(fd);
       acquired = true;
+      HELD_LOCKS.add(lockPath);
     } catch (err) {
       if (!isEexist(err)) throw err;
       attempts += 1;
@@ -105,6 +124,7 @@ export function withGatesLock<T>(
   try {
     return fn();
   } finally {
+    HELD_LOCKS.delete(lockPath);
     try {
       unlinkSync(lockPath);
     } catch {
@@ -132,13 +152,25 @@ function readHeldByPid(lockPath: string): number | null {
   }
 }
 
-function gatesLockFilePath(consortDir: string, featureId: string): string {
+function gatesLockFilePath(consortDir: string, featureId: string, basename: string): string {
   const dir = findFeatureDir(consortDir, featureId);
   // Ensure the feature dir exists for the lockfile placement; gates.ts
   // also enforces this for the gates.json path. We mirror that behavior
   // so the lock can be acquired even on a fresh feature.
   mkdirSync(dir, { recursive: true });
-  return join(dir, ".gates.lock");
+  return join(dir, basename);
+}
+
+/**
+ * The SAME file-lock primitive, guarding a feature's pipeline.json read-modify-write via a
+ * `.pipeline.lock` sibling. Every pipeline mutator (approve/surface gate, experiment cut/merge,
+ * revise, reopen, the pipeline CLIs) must perform its read -> mutate -> write INSIDE this lock —
+ * a plain readPipeline/writePipeline pair races: a writer holding a stale whole-pipeline copy
+ * overwrites a per-story gate approval that landed concurrently (the lost update that silently
+ * cleared an approved spec gate). See updatePipeline in story-pipeline.ts for the choke point.
+ */
+export function withPipelineLock<T>(featureId: string, fn: () => T, opts: WithGatesLockOpts = {}): T {
+  return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
 }
 
 function defaultSleep(ms: number): void {
