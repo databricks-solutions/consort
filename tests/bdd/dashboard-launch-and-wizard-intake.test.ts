@@ -106,6 +106,16 @@ describe("Part B — wizard-style intake canon", () => {
     expect(start).toMatch(/kevin-hartman\\?\.lakebase-scm-extension/);
   });
 
+  it("offers to re-open an already-running dashboard on resume (consort-dashboard --open), not just the URL", () => {
+    const start = read("commands/start.md");
+    // The already-running branch must OFFER to re-open the browser (the resume case: the detached
+    // server is alive but no tab is open) via the open-only flag — not merely print the URL and
+    // move on, which is the "I wasn't offered to open the dashboard" defect.
+    expect(start, "already-running path must offer consort-dashboard --open").toMatch(/consort-dashboard --open\b/);
+    // Still gated on --status first (don't re-ask to START what's already up).
+    expect(start).toContain("consort-dashboard --status");
+  });
+
   it("keeps the extension and the dashboard as DISTINCT views (no false 'same live view' equivalence)", () => {
     const start = read("commands/start.md");
     // The extension is the SCM view (code + paired DB branch); the dashboard is the run (phase/gate,
