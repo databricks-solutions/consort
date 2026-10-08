@@ -1093,3 +1093,47 @@ export function edgeDone(lane: LaneId, edge: WorkflowEdge, progress: LaneProgres
   const reached = progress.done[lane];
   return reached.has(edge[0]) && reached.has(edge[1]);
 }
+
+// --------------------------------------------------------------------------- pass-scoped reach
+
+/** Each lane's FIRST declared step — the node whose RE-entry marks a new pass through that lane
+ *  (the build loop's `b-refactor → b-red`, or a new story's cycle). Derived from WORKFLOW. */
+const LANE_FIRST_STEP: Record<LaneId, string | null> = Object.fromEntries(
+  LANE_IDS.map((lane) => [lane, WORKFLOW.lanes[lane].steps[0]?.id ?? null]),
+) as Record<LaneId, string | null>;
+
+/** Every step id grouped by its lane — so a pass reset can clear exactly the looping lane's nodes
+ *  (and nothing upstream). */
+const LANE_STEP_IDS: Record<LaneId, ReadonlySet<string>> = Object.fromEntries(
+  LANE_IDS.map((lane) => [lane, new Set(WORKFLOW.lanes[lane].steps.map((s) => s.id))]),
+) as Record<LaneId, ReadonlySet<string>>;
+
+/**
+ * The steps actually TRAVERSED to reach the playhead, scoped to the CURRENT pass — NOT the
+ * monotonic done-set. This is "what the DAG followed, this iteration": fold events[0..upTo),
+ * light each step, and when a lane's FIRST step is re-entered (the `b-refactor → b-red` loop
+ * edge, or a new story's red) CLEAR that lane's accumulated steps and start the pass fresh. A
+ * verify-fail branch (b-assess/b-repair) that ran THIS pass stays reached; one that didn't is
+ * absent. Upstream lanes never re-enter their first step, so their steps stay reached (a build
+ * playhead keeps design full). This is the single source for every node-state surface — reveal,
+ * the per-step cards, and the lane shading — so a node can never read "done" in one and
+ * "not yet run" in another.
+ *
+ * `upTo`/`feature` match laneProgress exactly (live edge or scrubber playhead; feature-scoped),
+ * so live and scrubber share this one computation.
+ */
+export function reachedThisPass(events: AgentLogEvent[], upTo?: number, feature?: string): Set<string> {
+  const reached = new Set<string>();
+  for (const { e, feature: f, phase, buildMode } of eventsWithFeature(events, upTo)) {
+    if (feature !== undefined && f !== feature) continue;
+    const hit = laneStepForEvent(withCarried(e, phase, buildMode));
+    if (!hit) continue;
+    // A new pass through this lane: its first step is lit AGAIN. Drop everything this lane
+    // accumulated in the prior pass so a later step from last cycle no longer reads as reached.
+    if (hit.step === LANE_FIRST_STEP[hit.lane] && reached.has(hit.step)) {
+      for (const id of LANE_STEP_IDS[hit.lane]) reached.delete(id);
+    }
+    reached.add(hit.step);
+  }
+  return reached;
+}

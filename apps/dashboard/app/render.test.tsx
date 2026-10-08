@@ -208,8 +208,13 @@ const renderLane = (s: DashboardState) => <LaneGraph state={s} />;
 describe("render — LaneGraph", () => {
   // Corpus-shaped states, which is where the single-feature fixtures above can't reach. All
   // three of these are real playhead positions in stockflow-rerecord (see reducer.test.ts).
-  const withTopology = (over: Partial<DashboardState["topology"]>, rest: Partial<DashboardState> = {}) =>
-    withFocus({ ...state, ...rest, topology: { ...state.topology, ...over } } as DashboardState);
+  const withTopology = (over: Partial<DashboardState["topology"]>, rest: Partial<DashboardState> = {}) => {
+    const topology = { ...state.topology, ...over };
+    // These single-pass scenarios set `laneSteps` as "what was reached"; mirror that into the
+    // pass-scoped set (which now drives node lighting) unless a case overrides it explicitly.
+    if (!("reachedThisPass" in over)) topology.reachedThisPass = Object.values(topology.laneSteps).flat();
+    return withFocus({ ...state, ...rest, topology } as DashboardState);
+  };
 
   it("does not claim a lane is not-started when the lifecycle has passed it", () => {
     // Reported: at corpus events 20/90/230/260, passedNodes contains "plan" — the lifecycle
@@ -402,12 +407,37 @@ describe("render — LaneGraph", () => {
     expect(markup).toContain("genuine"); // assess → raise-to-HIL
   });
 
+  it("a new build loop at b-red shows the later steps PENDING, not the prior loop's results", () => {
+    // The reported bug: at the start of a new TDD loop (navigator red) the later cards (green/
+    // review/refactor) carried last cycle's turns. With reachedThisPass reset to just b-red, they
+    // must read pending — even though the monotonic laneSteps still lists them from the prior loop.
+    const markup = renderToStaticMarkup(
+      renderLane(
+        withTopology(
+          {
+            laneCurrent: { lane: "build", step: "b-red" },
+            passedNodes: ["intake", "plan", "design", "build"],
+            laneSteps: { plan: [], design: ["d-spec"], build: ["b-red", "b-green", "b-review", "b-refactor"] }, // prior loop ran them all
+            reachedThisPass: ["d-spec", "b-red"], // this pass has only reached red
+          },
+          { lane: "build" },
+        ),
+      ),
+    );
+    // The later steps are pending (not done), so no stale turn/metrics are shown for them.
+    expect(markup).toContain("minimal honest code (GREEN) · pending"); // b-green
+    expect(markup).toContain("review · pending"); // b-review
+    expect(markup).toContain("refactor (structure) · pending"); // b-refactor
+    // ...and none of them read "done" this pass.
+    expect(markup).not.toContain("minimal honest code (GREEN) · done");
+  });
+
   it("survives an empty board without throwing", () => {
     // A run with no events: every lane not started, nothing current, no gates.
     const empty = {
       ...state,
       gates: [],
-      topology: { ...state.topology, passedNodes: [], laneSteps: { plan: [], design: [], build: [], deploy: [] }, laneCurrent: null },
+      topology: { ...state.topology, passedNodes: [], laneSteps: { plan: [], design: [], build: [], deploy: [] }, reachedThisPass: [], laneCurrent: null },
     };
     const markup = renderToStaticMarkup(<LaneGraph state={empty} />);
     expect((markup.match(/<svg/g) ?? []).length).toBe(4); // all lanes render even when empty
@@ -728,6 +758,11 @@ describe("render — DrilldownPanel", () => {
     expect(markup).toContain("only the prompt is shown"); // the "running" note
     expect(markup).not.toContain("Artifacts"); // no tabbed body — prompt and nothing else
     expect(markup).not.toContain("Correspondence");
+    // The title must read "running", NOT the resolved ordinal (#16): an active step's turn
+    // is unrecorded, so the ordinal the card resolved to is a PRIOR turn in the step (the
+    // "shows #36 while it's really on the unfinished #44" bug). Show the state, not a stale number.
+    expect(markup).toContain("running");
+    expect(markup).not.toContain("#16");
   });
 
   // Kevin's ask, in the drill-down: the turn must read as an EXCHANGE — an inbound prompt to the

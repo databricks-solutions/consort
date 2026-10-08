@@ -115,10 +115,16 @@ export default function Home() {
     // single-step roles; for a multi-step role, resolve strictly by step (null → a role shell, which
     // the frontier reveal then renders as prompt-only when the step is active, not a sibling's turn).
     const roleFallbackSafe = !MULTI_STEP_ROLES.has(role);
-    const ord =
-      latestTurnOrdinalForStep(state.recentEvents, recentTurns, stepId) ??
-      (roleFallbackSafe ? state.source?.correlation?.latestTurnByRole?.[role] : undefined) ??
-      (roleFallbackSafe ? latestTurnOrdinalForRole(state.recentEvents, recentTurns, role) : undefined);
+    // Only resolve a turn ordinal for a step the CURRENT pass has actually reached (or the running
+    // step). A step not yet traversed this pass must NOT inherit a prior-loop ordinal (the stale
+    // "#36 while really on #44" bug) — open its role shell instead, which revealFor renders as the
+    // uninvoked not-yet-run body. Same source of truth as the reveal, so the two can't disagree.
+    const traversed = state.topology.reachedThisPass.includes(stepId) || state.topology.laneCurrent?.step === stepId;
+    const ord = !traversed
+      ? undefined
+      : latestTurnOrdinalForStep(state.recentEvents, recentTurns, stepId) ??
+        (roleFallbackSafe ? state.source?.correlation?.latestTurnByRole?.[role] : undefined) ??
+        (roleFallbackSafe ? latestTurnOrdinalForRole(state.recentEvents, recentTurns, role) : undefined);
     // Tag the target with the originating topology step so the panel can be frontier-gated (see
     // revealFor): the step id survives even when it resolves to a turn ordinal.
     const target: DrilldownTarget = ord != null && canDrillDown ? { kind: "turn", ord, fromStep: stepId } : { kind: "role", role, fromStep: stepId };
@@ -133,18 +139,20 @@ export default function Home() {
     });
   };
 
-  // Frontier reveal for a topology card click, recomputed LIVE from the current playhead (so an
-  // active cell flips to full automatically once the run — or the scrubber — passes it):
-  //   active (the playhead's lit step)        -> "prompt-only" (prompt only, until it completes)
-  //   already reached as-of-playhead          -> "full"
-  //   not reached (incl. only in a PRIOR run) -> "none" (the uninvoked state)
-  // A non-topology open (no fromStep) is never gated.
+  // Frontier reveal for a topology card click, by the pass-scoped TRAVERSAL (what the DAG actually
+  // followed this iteration), recomputed from the current playhead so a cell flips as the run — or
+  // the scrubber — advances:
+  //   the playhead's lit step            -> "prompt-only" (prompt only, until it completes)
+  //   traversed earlier THIS pass        -> "full"
+  //   not traversed this pass            -> "none" (uninvoked), even if it ran in a PRIOR loop
+  // `reachedThisPass` resets at the loop's first-step re-entry (b-refactor→b-red / a new story), so
+  // at the start of a new cycle every later node reads "none" — nothing stale shown ahead. A
+  // non-topology open (no fromStep) is never gated.
   const revealFor = (t: DrilldownTarget | null): DrilldownReveal => {
     const stepId = t && (t.kind === "turn" || t.kind === "role") ? t.fromStep : undefined;
     if (!stepId || !state) return "full";
     if (state.topology.laneCurrent?.step === stepId) return "prompt-only";
-    const reached = Object.values(state.topology.laneSteps).some((ids) => ids.includes(stepId));
-    return reached ? "full" : "none";
+    return state.topology.reachedThisPass.includes(stepId) ? "full" : "none";
   };
 
   return (

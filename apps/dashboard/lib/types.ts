@@ -444,7 +444,11 @@ export interface DashboardState {
   topology: {
     passedNodes: string[]; // lifecycle nodes reached by atEventIndex
     activeNode: string | null; // node the playhead sits in
-    laneSteps: Record<string, string[]>; // laneId → sub-steps reached
+    laneSteps: Record<string, string[]>; // laneId → sub-steps reached (MONOTONIC across the whole fold)
+    // Steps traversed in the CURRENT pass only (the looping lane resets at its first-step re-entry) —
+    // the single source for node-state: reveal, per-step cards, lane shading. A step NOT in this set
+    // is "not yet run THIS pass" (uninvoked), even if it ran in a prior loop.
+    reachedThisPass: string[];
     laneCurrent: { lane: string; step: string } | null; // sub-step lit at the playhead
     atTimestamp: string | null; // timestamp of the event at the playhead, for the clock
   };

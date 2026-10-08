@@ -17,6 +17,7 @@ import {
   primaryOutputNodeForRole,
   gateForNode,
   edgeDone,
+  reachedThisPass,
   type LaneId,
   type LaneStep,
   type StepMatch,
@@ -1359,5 +1360,61 @@ describe("laneProgress — a `reasoning` event holds the turn's step (no highlig
       ev("reasoning", "navigator", {}),
     ];
     expect(laneProgress(events).current).toEqual({ lane: "build", step: "b-review" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reachedThisPass: the pass-scoped traversal (what the DAG followed THIS iteration),
+// which resets a looping lane at its first-step re-entry so a new loop's later nodes
+// read "not yet run" instead of carrying the previous loop's results.
+
+describe("topology — reachedThisPass (pass-scoped traversal)", () => {
+  // One full build cycle, then a NEW cycle's RED (the b-refactor→b-red loop edge).
+  const red = ev("phase.start", "navigator", { phase: "red" }); // b-red
+  const green = ev("phase.start", "driver", {}); // b-green (no excluded buildMode)
+  const review = ev("phase.start", "navigator", { buildMode: "review" }); // b-review
+  const refactor = ev("phase.start", "driver", { buildMode: "refactor" }); // b-refactor
+  const cycle1 = [red, green, review, refactor];
+
+  it("accumulates the steps traversed WITHIN a pass", () => {
+    const reached = reachedThisPass(cycle1);
+    expect([...reached].sort()).toEqual(["b-green", "b-red", "b-refactor", "b-review"]);
+  });
+
+  it("RESETS the looping lane when its first step (b-red) is re-entered — a new loop", () => {
+    // After one full cycle, a SECOND b-red begins the next TDD loop: green/review/refactor from
+    // the PRIOR loop must drop out, so clicking them reads "not yet run" rather than last cycle's turn.
+    const reached = reachedThisPass([...cycle1, red]);
+    expect([...reached]).toEqual(["b-red"]);
+    expect(reached.has("b-green")).toBe(false);
+    expect(reached.has("b-review")).toBe(false);
+    expect(reached.has("b-refactor")).toBe(false);
+  });
+
+  it("keeps a verify-fail BRANCH that ran this pass, and omits one that did not", () => {
+    const verify = ev("verify.start", "release-engineer", {}); // b-verify (eventPrefix verify)
+    const assess = ev("phase.start", "navigator", { buildMode: "assess" }); // b-assess (branch)
+    const repair = ev("phase.start", "driver", { buildMode: "repair" }); // b-repair (branch)
+    const ran = reachedThisPass([red, green, verify, assess, repair]);
+    expect(ran.has("b-assess")).toBe(true);
+    expect(ran.has("b-repair")).toBe(true);
+    // A pass that went straight through never lights the branch.
+    const straight = reachedThisPass([red, green, review, refactor]);
+    expect(straight.has("b-assess")).toBe(false);
+    expect(straight.has("b-repair")).toBe(false);
+  });
+
+  it("does NOT reset an UPSTREAM lane: a design step stays reached through the build loop", () => {
+    const dSpec = ev("phase.start", "spec-author", { phase: "design" }); // d-spec
+    const reached = reachedThisPass([dSpec, ...cycle1, red]);
+    expect(reached.has("d-spec")).toBe(true); // design is behind the frontier, never reset
+    expect(reached.has("b-green")).toBe(false); // the build loop still reset at the new red
+  });
+
+  it("honors upTo (scrubber parity): folding mid-loop matches the live fold to that point", () => {
+    // At upTo = 3 (red, green, review folded; refactor not yet), the pass has reached red/green/review.
+    const reached = reachedThisPass([...cycle1, red], 3);
+    expect([...reached].sort()).toEqual(["b-green", "b-red", "b-review"]);
+    expect(reached.has("b-refactor")).toBe(false);
   });
 });

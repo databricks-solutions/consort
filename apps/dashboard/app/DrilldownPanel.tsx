@@ -212,7 +212,7 @@ function RoleBody({
     return (
       <PromptOnlyBody
         accent={colorForRole(role)}
-        title={turnTitle(null, role)}
+        title={runningTitle(role)}
         role={role}
         prompt="(no prompt recorded for this step yet)"
         note="Running — this step is active; its prompt isn't recorded yet."
@@ -353,6 +353,18 @@ function turnTitle(ord: number | null, roleText: string): React.ReactNode {
   return (
     <>
       <span style={{ color: "var(--text-faint)", fontWeight: 600 }}>#{ordStr}</span> {roleText}
+    </>
+  );
+}
+
+// A RUNNING step's title: an active cell has NO honest ordinal to show — its turn isn't
+// recorded yet, and the last recorded turn FOR THE STEP is a PRIOR turn (e.g. showing "#36"
+// while the step is actually on its unfinished turn 44). So we drop the misleading ordinal
+// and label it "running" instead of a stale "#NN". Used for every prompt-only (active) body.
+function runningTitle(roleText: string): React.ReactNode {
+  return (
+    <>
+      <span style={{ color: "var(--text-faint)", fontWeight: 600 }}>running</span> {roleText}
     </>
   );
 }
@@ -653,9 +665,9 @@ function TurnBody({ ord, mode, reveal = "full", onClose }: { ord: number; mode: 
     return (
       <PromptOnlyBody
         accent={roleColor}
-        title={title}
+        title={runningTitle(roleText)}
         role={turn?.role ?? "agent"}
-        prompt={error ? error : !turn ? `Loading turn ${ord}…` : turn.transcript?.prompt || "(no prompt recorded for this turn)"}
+        prompt={error ? error : !turn ? `Loading…` : turn.transcript?.prompt || "(no prompt recorded for this turn)"}
         note="Running — only the prompt is shown until this agent completes."
         onClose={onClose}
       />
