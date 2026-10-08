@@ -64,6 +64,17 @@ export interface PreflightBlob {
     /** Running inside an IDE terminal (VS Code / Cursor), per env markers. */
     inside_editor: boolean;
   };
+  tooling: {
+    /** The deterministic AGENDA of hand-off offers this session still owes the human in
+     *  the shared "offer dashboard + viewer extension + get the terminal right" step —
+     *  front-loaded into the blob the session reliably reads so step (a) is driven by DATA,
+     *  not a prose reminder the agent skims past (the recurring "tooling offer got dropped"
+     *  defect). `"dashboard"` and `"extension"` are ALWAYS owed — the session resolves the
+     *  running / installed-vs-latest state and clears each SILENTLY when already satisfied;
+     *  `"move-to-editor"` is owed ONLY when not already inside an IDE terminal (nothing to
+     *  move otherwise). A non-empty list the session skipped past is the defect. */
+    offers_pending: string[];
+  };
   /** Non-fatal issues collected while composing (a source that failed to read). */
   warnings: string[];
 }
@@ -176,6 +187,13 @@ export function buildPreflight(projectDir: string = process.cwd(), deps: Preflig
     warnings.push("first_project: could not stat the marker");
   }
 
+  // ── tooling: the deterministic agenda of owed hand-off offers (dashboard first, then
+  //    the terminal move only when external, then the extension). Derived purely from the
+  //    editor sniff — no spawn, no network — so the session clears a concrete list rather
+  //    than relying on remembering to run the prose step. ──
+  const inside = insideEditor(env);
+  const offers_pending = ["dashboard", ...(inside ? [] : ["move-to-editor"]), "extension"];
+
   return {
     preflight_at: new Date().toISOString(),
     project,
@@ -183,7 +201,8 @@ export function buildPreflight(projectDir: string = process.cwd(), deps: Preflig
     telemetry,
     scm,
     first_project: { offered_before: offeredBefore },
-    env: { inside_editor: insideEditor(env) },
+    env: { inside_editor: inside },
+    tooling: { offers_pending },
     warnings,
   };
 }
