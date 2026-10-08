@@ -106,6 +106,18 @@ describe("Part B — wizard-style intake canon", () => {
     expect(start).toMatch(/kevin-hartman\\?\.lakebase-scm-extension/);
   });
 
+  it("upgrades a STALE installed extension: the check is version-aware (installed vs latest release), not presence-only", () => {
+    const start = read("commands/start.md");
+    // Must read the INSTALLED version (--show-versions), not just presence — a presence-only check
+    // left an already-installed older extension un-upgraded after a new release.
+    expect(start, "must read installed version via --show-versions").toMatch(/--list-extensions --show-versions/);
+    // Must compare against the LATEST release tag.
+    expect(start, "must look up the latest release tag").toMatch(/gh release view .*lakebase-scm-extension.*tagName/);
+    // Must offer the install/upgrade when MISSING or OLDER (not skip when merely present).
+    expect(start).toMatch(/OLDER/);
+    expect(start).toMatch(/install\/upgrade|install \(or upgrade\)/i);
+  });
+
   it("offers to re-open an already-running dashboard on resume (consort-dashboard --open), not just the URL", () => {
     const start = read("commands/start.md");
     // The already-running branch must OFFER to re-open the browser (the resume case: the detached
