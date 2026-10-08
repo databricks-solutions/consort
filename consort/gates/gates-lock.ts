@@ -43,6 +43,9 @@ export interface WithGatesLockOpts extends GatesIoOpts {
   initialBackoffMs?: number;
   /** Test seam: deterministic sleep replacement. */
   sleep?: (ms: number) => void;
+  /** Lock-file basename. Default `.gates.lock`. Lets the same primitive serialize other per-feature
+   *  read-modify-write files — notably pipeline.json via `.pipeline.lock` (see withPipelineLock). */
+  lockBasename?: string;
 }
 
 export class GatesLockBusyError extends Error {
@@ -81,7 +84,7 @@ export function withGatesLock<T>(
   const initialBackoffMs = opts.initialBackoffMs ?? 20;
   const sleep = opts.sleep ?? defaultSleep;
 
-  const lockPath = gatesLockFilePath(consortDir, featureId);
+  const lockPath = gatesLockFilePath(consortDir, featureId, opts.lockBasename ?? ".gates.lock");
   let acquired = false;
   let attempts = 0;
 
@@ -132,13 +135,25 @@ function readHeldByPid(lockPath: string): number | null {
   }
 }
 
-function gatesLockFilePath(consortDir: string, featureId: string): string {
+function gatesLockFilePath(consortDir: string, featureId: string, basename: string): string {
   const dir = findFeatureDir(consortDir, featureId);
   // Ensure the feature dir exists for the lockfile placement; gates.ts
   // also enforces this for the gates.json path. We mirror that behavior
   // so the lock can be acquired even on a fresh feature.
   mkdirSync(dir, { recursive: true });
-  return join(dir, ".gates.lock");
+  return join(dir, basename);
+}
+
+/**
+ * The SAME file-lock primitive, guarding a feature's pipeline.json read-modify-write via a
+ * `.pipeline.lock` sibling. Every pipeline mutator (approve/surface gate, experiment cut/merge,
+ * revise, reopen, the pipeline CLIs) must perform its read -> mutate -> write INSIDE this lock —
+ * a plain readPipeline/writePipeline pair races: a writer holding a stale whole-pipeline copy
+ * overwrites a per-story gate approval that landed concurrently (the lost update that silently
+ * cleared an approved spec gate). See updatePipeline in story-pipeline.ts for the choke point.
+ */
+export function withPipelineLock<T>(featureId: string, fn: () => T, opts: WithGatesLockOpts = {}): T {
+  return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
 }
 
 function defaultSleep(ms: number): void {

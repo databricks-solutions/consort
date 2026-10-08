@@ -13,6 +13,7 @@ import {
   completeActive,
   readPipeline,
   writePipeline,
+  updatePipeline,
   surfaceForGate,
   approveStoryGate,
   withdrawStoryGate,
@@ -39,6 +40,45 @@ function mkTdd(): string {
   tmpDirs.push(d);
   return d;
 }
+
+describe("story-pipeline: lock-guarded writes don't drop a concurrently-approved gate (lost-update fix)", () => {
+  const AT = "2026-10-08T00:00:00.000Z";
+  // Seed a feature with S3 surfaced for its spec gate, persisted to disk.
+  function seedS3Surfaced(consortDir: string): void {
+    const p = initPipeline("F1");
+    setStoryStatus(p, "S3", "designing");
+    surfaceForGate(p, "S3");
+    writePipeline(consortDir, p); // creates features/F1/ so the pipeline lock can be placed
+  }
+
+  it("a stale writer going through updatePipeline re-reads fresh, so an approved gate survives", () => {
+    const dir = mkTdd();
+    seedS3Surfaced(dir);
+    // Approve S3 through the lock-guarded choke point.
+    updatePipeline(dir, "F1", (pp) => approveStoryGate(pp, "S3", { approver: "po@example", at: AT }));
+    expect(readPipeline(dir, "F1").stories["S3"].gate!.status).toBe("approved");
+
+    // A different actor (which read the pipeline BEFORE the approval) now mutates an UNRELATED story
+    // via updatePipeline — it re-reads fresh inside the lock, so it cannot clobber S3's approval.
+    updatePipeline(dir, "F1", (pp) => setStoryStatus(pp, "S2", "building"));
+
+    const after = readPipeline(dir, "F1");
+    expect(after.stories["S3"].gate!.status).toBe("approved");
+    expect(after.stories["S3"].gate!.history.length).toBe(1); // approval intact, not reset to a fresh open gate
+    expect(after.stories["S2"].status).toBe("building"); // the unrelated mutation still applied
+  });
+
+  it("CONTRAST: a RAW writePipeline from a stale copy clobbers the approval (why every writer must use updatePipeline)", () => {
+    const dir = mkTdd();
+    seedS3Surfaced(dir);
+    const stale = readPipeline(dir, "F1"); // captured BEFORE approval: S3 gate still open
+    updatePipeline(dir, "F1", (pp) => approveStoryGate(pp, "S3", { approver: "po@example", at: AT }));
+    expect(readPipeline(dir, "F1").stories["S3"].gate!.status).toBe("approved");
+
+    writePipeline(dir, stale); // the un-converted, stale whole-file overwrite — reproduces the bug
+    expect(readPipeline(dir, "F1").stories["S3"].gate!.status).toBe("open");
+  });
+});
 
 describe("story-pipeline: syncBreakdownToPipeline", () => {
   function writeStoryDir(consortDir: string, feature: string, story: string): void {

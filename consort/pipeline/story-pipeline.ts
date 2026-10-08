@@ -15,6 +15,7 @@ import {
 } from "../../consort/config/consort-paths.js";
 import { featureDir, storyAcsConformanceReason, storyIndependenceForStoryReason, storyRequiresE2eReason, registeredBreakdownReason } from "../../consort/gates/gate-conformance-guard.js";
 import { logGateApproved } from "../../consort/logging/gate-decision-log.js";
+import { withPipelineLock } from "../../consort/gates/gates-lock.js";
 
 export const STORY_STATUSES = [
   "designing",
@@ -159,6 +160,34 @@ export function writePipeline(consortDir: string, pipeline: StoryPipeline): void
   const p = pipelinePath(consortDir, pipeline.feature_id);
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(pipeline, null, 2) + "\n");
+}
+
+/**
+ * The concurrency-safe way to mutate pipeline.json: acquire the per-feature pipeline lock, read the
+ * CURRENT on-disk pipeline, apply `mutate`, write it back, release — all inside the critical section.
+ * Returns the mutated pipeline.
+ *
+ * A plain `readPipeline(...)` ... `writePipeline(...)` pair is NOT safe: the whole file is rewritten
+ * from an in-memory copy, so a writer holding a copy read BEFORE a concurrent per-story gate approval
+ * lands will overwrite that approval when it writes (the lost update that silently reset an approved
+ * spec gate to `open`). Every pipeline mutator must go through here (or hold withPipelineLock itself)
+ * and re-read fresh inside the lock, so no stale write can regress a sibling story's gate.
+ */
+export function updatePipeline(
+  consortDir: string,
+  featureId: string,
+  mutate: (pipeline: StoryPipeline) => void,
+): StoryPipeline {
+  return withPipelineLock(
+    featureId,
+    () => {
+      const pipeline = readPipeline(consortDir, featureId);
+      mutate(pipeline);
+      writePipeline(consortDir, pipeline);
+      return pipeline;
+    },
+    { consortDir },
+  );
 }
 
 /**
@@ -456,21 +485,27 @@ export function approveStoryGateFromDisk(
   // Fails at ITS OWN spec gate (fail-closed) rather than opening on a flattened backend-only spec.
   const e2eReason = storyRequiresE2eReason(featureDir(consortDir, feature), story);
   if (e2eReason) return { ok: false, error: e2eReason };
+  // The mutation runs under the pipeline lock, re-reading the pipeline FRESH inside the critical
+  // section (not the copy read above for validation): a plain write here races a concurrent writer
+  // holding a stale whole-pipeline copy, whose write would drop this just-landed approval — the lost
+  // update that reset S3's approved spec gate back to `open`. updatePipeline makes it atomic.
+  let mutated: StoryPipeline;
   try {
-    approveStoryGate(pipeline, story, {
-      approver: opts.approver,
-      at: opts.at ?? new Date().toISOString(),
-      spec_hash: opts.specHash,
-    });
+    mutated = updatePipeline(consortDir, feature, (p) =>
+      approveStoryGate(p, story, {
+        approver: opts.approver,
+        at: opts.at ?? new Date().toISOString(),
+        spec_hash: opts.specHash,
+      }),
+    );
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
-  writePipeline(consortDir, pipeline);
   // Log the approval to the shared agent-log trail (G4b): the per-story spec gate lives in
   // pipeline.json, so before this it cleared silently and the dashboard had to infer it. Now it
   // logs a story-scoped gate.approved. Best-effort — observability never blocks the approval.
   logGateApproved({ consortDir, gate: "spec", story, featureId: feature, approver: opts.approver });
-  return { ok: true, queue: pipeline.build_queue };
+  return { ok: true, queue: mutated.build_queue };
 }
 
 /**
