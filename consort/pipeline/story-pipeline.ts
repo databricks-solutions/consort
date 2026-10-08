@@ -220,24 +220,26 @@ export function syncBreakdownToPipeline(
   featureId: string,
 ): { added: string[]; total: string[] } {
   const storiesDir = storiesDirOf(consortDir, featureId);
-  const pipeline = readPipeline(consortDir, featureId);
   const added: string[] = [];
-  if (existsSync(storiesDir)) {
-    for (const storyId of readdirSync(storiesDir).sort()) {
-      let isDir = false;
-      try {
-        isDir = statSync(join(storiesDir, storyId)).isDirectory();
-      } catch {
-        isDir = false;
-      }
-      if (!isDir) continue;
-      if (pipeline.stories[storyId] === undefined) {
-        setStoryStatus(pipeline, storyId, "designing");
-        added.push(storyId);
+  // Seed under the pipeline lock, re-reading fresh: a plain read-modify-write here races the design
+  // lane's own pipeline writes (a stale whole-file write could drop a sibling's just-landed gate).
+  const pipeline = updatePipeline(consortDir, featureId, (p) => {
+    if (existsSync(storiesDir)) {
+      for (const storyId of readdirSync(storiesDir).sort()) {
+        let isDir = false;
+        try {
+          isDir = statSync(join(storiesDir, storyId)).isDirectory();
+        } catch {
+          isDir = false;
+        }
+        if (!isDir) continue;
+        if (p.stories[storyId] === undefined) {
+          setStoryStatus(p, storyId, "designing");
+          added.push(storyId);
+        }
       }
     }
-  }
-  if (added.length > 0) writePipeline(consortDir, pipeline);
+  });
   return { added, total: Object.keys(pipeline.stories) };
 }
 

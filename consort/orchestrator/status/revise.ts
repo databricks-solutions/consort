@@ -28,7 +28,7 @@ import {
   storyAcIds,
   resolveConsortDir,
 } from "../../../consort/config/consort-paths.js";
-import { readPipeline, writePipeline, reviseStory, setStoryStatus } from "../../../consort/pipeline/story-pipeline.js";
+import { readPipeline, updatePipeline, reviseStory, setStoryStatus } from "../../../consort/pipeline/story-pipeline.js";
 import {
   markSmellResolved,
   composeReviseBrief,
@@ -213,9 +213,7 @@ export function applyReviseSelfHeal(args: ReviseSelfHealArgs): ReviseSelfHealRes
   }
 
   // 2. Reset the story to designing (discard experiment + reopen gate + free lane).
-  const pipeline = readPipeline(consortDir, args.featureId);
-  reviseStory(pipeline, args.story, { approver, at, reason: args.reason });
-  writePipeline(consortDir, pipeline);
+  updatePipeline(consortDir, args.featureId, (p) => reviseStory(p, args.story, { approver, at, reason: args.reason }));
 
   // 2a. Reset the story's BUILD state (Finding 27). reviseStory only flips the
   // pipeline status; the build lane derives "pending" from the cycle records on
@@ -373,13 +371,13 @@ export function reviseStoryWithSelfHeal(
     });
     return { mode: "self-heal", story, smell: routable.smell, routedTo: routable.routedTo };
   }
-  const pipeline = readPipeline(consortDir, featureId);
-  reviseStory(pipeline, story, {
-    approver: opts.approver,
-    at: opts.at ?? new Date().toISOString(),
-    reason: opts.reason,
-  });
-  writePipeline(consortDir, pipeline);
+  updatePipeline(consortDir, featureId, (p) =>
+    reviseStory(p, story, {
+      approver: opts.approver,
+      at: opts.at ?? new Date().toISOString(),
+      reason: opts.reason,
+    }),
+  );
   // Finding 27: even the plain reset must clear the stale build cycles, or the
   // (still-present) test-list reads allGreen off them and the build lane skips.
   resetStoryBuildState(consortDir, featureId, story);
@@ -445,19 +443,22 @@ export function rebuildStory(
   // the drive re-cut (experimentCut reads false) and pass --reset-stale-branch, so
   // the rebuild forks a clean paired branch off feature HEAD rather than reusing
   // the branch that carries the discarded build's schema.
+  // Pipeline mutations under the lock, re-reading fresh so a concurrent writer can neither clobber
+  // nor be clobbered by this rebuild's whole-file write.
   let experimentReset = false;
-  if (entry.experiment && entry.experiment.status !== "discarded") {
-    entry.experiment.status = "discarded";
-    entry.experiment.closed_at = at;
-    experimentReset = true;
-  }
-
-  // Put the story back on the single build lane from the clean slate.
-  setStoryStatus(pipeline, story, "building");
-  pipeline.build_active = story;
-  const idx = pipeline.build_queue.indexOf(story);
-  if (idx !== -1) pipeline.build_queue.splice(idx, 1);
-  writePipeline(consortDir, pipeline);
+  updatePipeline(consortDir, featureId, (p) => {
+    const e = p.stories[story];
+    if (e?.experiment && e.experiment.status !== "discarded") {
+      e.experiment.status = "discarded";
+      e.experiment.closed_at = at;
+      experimentReset = true;
+    }
+    // Put the story back on the single build lane from the clean slate.
+    setStoryStatus(p, story, "building");
+    p.build_active = story;
+    const idx = p.build_queue.indexOf(story);
+    if (idx !== -1) p.build_queue.splice(idx, 1);
+  });
 
   return {
     cyclesCleared: build.cyclesCleared,

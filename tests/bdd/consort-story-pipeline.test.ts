@@ -78,6 +78,18 @@ describe("story-pipeline: lock-guarded writes don't drop a concurrently-approved
     writePipeline(dir, stale); // the un-converted, stale whole-file overwrite — reproduces the bug
     expect(readPipeline(dir, "F1").stories["S3"].gate!.status).toBe("open");
   });
+
+  it("fails fast on a NESTED updatePipeline (no silent lost update, no deadlock)", () => {
+    const dir = mkTdd();
+    writePipeline(dir, initPipeline("F1")); // create features/F1/ so the lock can be placed
+    expect(() =>
+      updatePipeline(dir, "F1", () => {
+        // A mutator that itself calls updatePipeline while already holding the lock would, if allowed,
+        // have THIS inner write silently clobbered by the outer frame's write. Must throw instead.
+        updatePipeline(dir, "F1", (q) => setStoryStatus(q, "S1", "designing"));
+      }),
+    ).toThrow(/re-entrant lock/);
+  });
 });
 
 describe("story-pipeline: syncBreakdownToPipeline", () => {

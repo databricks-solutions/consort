@@ -32,7 +32,7 @@ import {
   designDir,
   cyclesRootDir,
 } from "../config/consort-paths.js";
-import { readPipeline, writePipeline } from "../pipeline/story-pipeline.js";
+import { updatePipeline } from "../pipeline/story-pipeline.js";
 import { PHASE_OWNER_KEY } from "./workflow-phase.js";
 
 export interface ReopenResult {
@@ -130,14 +130,16 @@ function resetBuildStateForReopen(
   // feature reading complete and routes to DEPLOY. Clear the entry to a bare `designing` – dropping
   // the spec gate, experiment, AND acceptance in one write – and pull it off the build lane. Idempotent.
   try {
-    const pipeline = readPipeline(consortDir, feature);
-    if (pipeline.stories[story]) {
-      pipeline.stories[story] = { status: "designing" };
-      pipeline.build_queue = pipeline.build_queue.filter((s) => s !== story);
-      if (pipeline.build_active === story) pipeline.build_active = null;
-      writePipeline(consortDir, pipeline);
-      cleared.push("pipeline entry -> designing (spec gate + experiment + acceptance cleared)");
-    }
+    let didClear = false;
+    updatePipeline(consortDir, feature, (pipeline) => {
+      if (pipeline.stories[story]) {
+        pipeline.stories[story] = { status: "designing" };
+        pipeline.build_queue = pipeline.build_queue.filter((s) => s !== story);
+        if (pipeline.build_active === story) pipeline.build_active = null;
+        didClear = true;
+      }
+    });
+    if (didClear) cleared.push("pipeline entry -> designing (spec gate + experiment + acceptance cleared)");
   } catch {
     /* no/ malformed pipeline: the artifact clear above already reverts the design output */
   }

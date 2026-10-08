@@ -64,6 +64,11 @@ export class GatesLockBusyError extends Error {
   }
 }
 
+/** Lock paths this PROCESS currently holds, for re-entrancy (see withGatesLock). The on-disk file
+ *  mutex is a cross-process guard; this set makes a same-process nested acquire a no-op instead of a
+ *  self-deadlock. */
+const HELD_LOCKS = new Set<string>();
+
 /**
  * Acquire the lock for a feature's gates.json, run fn, release the lock.
  * Returns whatever fn returned. Throws GatesLockBusyError if the lock
@@ -85,6 +90,16 @@ export function withGatesLock<T>(
   const sleep = opts.sleep ?? defaultSleep;
 
   const lockPath = gatesLockFilePath(consortDir, featureId, opts.lockBasename ?? ".gates.lock");
+  // Fail-fast on a same-process NESTED acquire. The file mutex is not re-entrant; worse, letting a
+  // nested updatePipeline run its own read-modify-write would have the inner write clobbered by the
+  // outer frame's later write — a silent lost update, the exact bug this lock exists to prevent.
+  // Nesting is a code smell: do all mutation within ONE outer critical section.
+  if (HELD_LOCKS.has(lockPath)) {
+    throw new Error(
+      `re-entrant lock on ${lockPath}: a holder tried to acquire it again (nested updatePipeline / ` +
+        `withGatesLock). Mutate within the single outer critical section instead.`,
+    );
+  }
   let acquired = false;
   let attempts = 0;
 
@@ -94,6 +109,7 @@ export function withGatesLock<T>(
       writeFileSync(fd, String(process.pid));
       closeSync(fd);
       acquired = true;
+      HELD_LOCKS.add(lockPath);
     } catch (err) {
       if (!isEexist(err)) throw err;
       attempts += 1;
@@ -108,6 +124,7 @@ export function withGatesLock<T>(
   try {
     return fn();
   } finally {
+    HELD_LOCKS.delete(lockPath);
     try {
       unlinkSync(lockPath);
     } catch {
