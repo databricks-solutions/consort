@@ -1098,15 +1098,23 @@ export function edgeDone(lane: LaneId, edge: WorkflowEdge, progress: LaneProgres
 
 /** Each lane's FIRST declared step — the node whose RE-entry marks a new pass through that lane
  *  (the build loop's `b-refactor → b-red`, or a new story's cycle). Derived from WORKFLOW. */
-const LANE_FIRST_STEP: Record<LaneId, string | null> = Object.fromEntries(
-  LANE_IDS.map((lane) => [lane, WORKFLOW.lanes[lane].steps[0]?.id ?? null]),
-) as Record<LaneId, string | null>;
+const LANE_FIRST_STEP: Record<LaneId, string | null> = LANE_IDS.reduce(
+  (acc, lane) => {
+    acc[lane] = WORKFLOW.lanes[lane].steps[0]?.id ?? null;
+    return acc;
+  },
+  {} as Record<LaneId, string | null>,
+);
 
 /** Every step id grouped by its lane — so a pass reset can clear exactly the looping lane's nodes
  *  (and nothing upstream). */
-const LANE_STEP_IDS: Record<LaneId, ReadonlySet<string>> = Object.fromEntries(
-  LANE_IDS.map((lane) => [lane, new Set(WORKFLOW.lanes[lane].steps.map((s) => s.id))]),
-) as Record<LaneId, ReadonlySet<string>>;
+const LANE_STEP_IDS: Record<LaneId, ReadonlySet<string>> = LANE_IDS.reduce(
+  (acc, lane) => {
+    acc[lane] = new Set(WORKFLOW.lanes[lane].steps.map((s) => s.id));
+    return acc;
+  },
+  {} as Record<LaneId, ReadonlySet<string>>,
+);
 
 /**
  * The steps actually TRAVERSED to reach the playhead, scoped to the CURRENT pass — NOT the
