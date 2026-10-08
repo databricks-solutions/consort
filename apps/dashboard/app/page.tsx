@@ -5,7 +5,7 @@ import { usePolledState } from "./usePolledState";
 import { Transport } from "./Transport";
 import { WorkflowGraph } from "./WorkflowGraph";
 import { LaneGraph } from "./LaneGraph";
-import { DrilldownPanel, type DrilldownTarget } from "./DrilldownPanel";
+import { DrilldownPanel, type DrilldownTarget, type DrilldownReveal } from "./DrilldownPanel";
 import { BacklogPanel } from "./BacklogPanel";
 import { FeatureStatusSection } from "./FeatureStatusSection";
 import { OrchestratorLane } from "./OrchestratorLane";
@@ -112,7 +112,9 @@ export default function Home() {
       latestTurnOrdinalForStep(state.recentEvents, recentTurns, stepId) ??
       state.source?.correlation?.latestTurnByRole?.[role] ??
       latestTurnOrdinalForRole(state.recentEvents, recentTurns, role);
-    const target: DrilldownTarget = ord != null && canDrillDown ? { kind: "turn", ord } : { kind: "role", role };
+    // Tag the target with the originating topology step so the panel can be frontier-gated (see
+    // revealFor): the step id survives even when it resolves to a turn ordinal.
+    const target: DrilldownTarget = ord != null && canDrillDown ? { kind: "turn", ord, fromStep: stepId } : { kind: "role", role, fromStep: stepId };
     // TOGGLE, mirroring the workflow-graph nodes: clicking the SAME card whose panel is already open
     // slides it back out. Same target = the same turn ordinal, or the same role's shell.
     setDrilldown((cur) => {
@@ -122,6 +124,20 @@ export default function Home() {
           (target.kind === "role" && cur.kind === "role" && cur.role === target.role));
       return same ? null : target;
     });
+  };
+
+  // Frontier reveal for a topology card click, recomputed LIVE from the current playhead (so an
+  // active cell flips to full automatically once the run — or the scrubber — passes it):
+  //   active (the playhead's lit step)        -> "prompt-only" (prompt only, until it completes)
+  //   already reached as-of-playhead          -> "full"
+  //   not reached (incl. only in a PRIOR run) -> "none" (the uninvoked state)
+  // A non-topology open (no fromStep) is never gated.
+  const revealFor = (t: DrilldownTarget | null): DrilldownReveal => {
+    const stepId = t && (t.kind === "turn" || t.kind === "role") ? t.fromStep : undefined;
+    if (!stepId || !state) return "full";
+    if (state.topology.laneCurrent?.step === stepId) return "prompt-only";
+    const reached = Object.values(state.topology.laneSteps).some((ids) => ids.includes(stepId));
+    return reached ? "full" : "none";
   };
 
   return (
@@ -300,6 +316,7 @@ export default function Home() {
                 target={shownTarget}
                 mode={state.source?.mode ?? null}
                 feature={state.feature ?? null}
+                reveal={revealFor(shownTarget)}
                 onClose={() => setDrilldown(null)}
               />
             ) : null}

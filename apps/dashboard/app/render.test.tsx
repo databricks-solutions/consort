@@ -715,6 +715,21 @@ describe("render — DrilldownPanel", () => {
     expect(markup).toContain("Close drill-down panel");
   });
 
+  it("frontier: a cell AFTER the active position (reveal=none) shows the uninvoked state, not its prior-run turn", () => {
+    const markup = renderToStaticMarkup(<DrilldownPanel target={{ kind: "turn", ord: 16, fromStep: "future-step" }} mode="replay" feature={null} reveal="none" onClose={() => {}} />);
+    expect(markup).toContain("run at the current position"); // the uninvoked message
+    expect(markup).not.toContain("Loading turn 16"); // did NOT open its prior-run turn
+    expect(markup).not.toContain("Correspondence"); // no tabbed turn body
+  });
+
+  it("frontier: the ACTIVE cell (reveal=prompt-only) shows only the prompt, no tabs, until it completes", () => {
+    const markup = renderToStaticMarkup(<DrilldownPanel target={{ kind: "turn", ord: 16, fromStep: "active-step" }} mode="replay" feature={null} reveal="prompt-only" onClose={() => {}} />);
+    expect(markup).toContain("Prompt →"); // the prompt section label
+    expect(markup).toContain("only the prompt is shown"); // the "running" note
+    expect(markup).not.toContain("Artifacts"); // no tabbed body — prompt and nothing else
+    expect(markup).not.toContain("Correspondence");
+  });
+
   // Kevin's ask, in the drill-down: the turn must read as an EXCHANGE — an inbound prompt to the
   // role, then the role's tools + reasoning back — with the tool NAME legible apart from its args.
   it("frames the transcript as a directional exchange with the role named, and splits tool name from args", () => {
