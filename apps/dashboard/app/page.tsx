@@ -14,7 +14,7 @@ import { useTheme } from "./useTheme";
 import type { DashboardState } from "@/lib/types";
 import { colorForRole, font, radius } from "@/lib/theme";
 import { latestTurnOrdinalForRole } from "@/lib/derive";
-import { latestTurnOrdinalForStep } from "@/lib/topology";
+import { latestTurnOrdinalForStep, MULTI_STEP_ROLES } from "@/lib/topology";
 
 // The usage UNIT shown for the run's compute: token counts (default) or dollar cost. Toggled by
 // the header "usage:" control; drives both the run-vitals metric and the per-agent contribution bar.
@@ -108,10 +108,17 @@ export default function Home() {
   const onOpenRole = (role: string, stepId: string) => {
     if (!state) return;
     const recentTurns = state.source?.correlation?.recentTurns ?? [];
+    // Resolve to the CLICKED step's own turn. The role-level fallbacks (latestTurnByRole /
+    // latestTurnOrdinalForRole) return the role's LATEST turn across ALL its steps, which for a
+    // multi-step role (navigator owns red/review/assess + reflect) is a SIBLING step — e.g. clicking
+    // navigator-red at build start would surface navigator-reflect. So use those fallbacks ONLY for
+    // single-step roles; for a multi-step role, resolve strictly by step (null → a role shell, which
+    // the frontier reveal then renders as prompt-only when the step is active, not a sibling's turn).
+    const roleFallbackSafe = !MULTI_STEP_ROLES.has(role);
     const ord =
       latestTurnOrdinalForStep(state.recentEvents, recentTurns, stepId) ??
-      state.source?.correlation?.latestTurnByRole?.[role] ??
-      latestTurnOrdinalForRole(state.recentEvents, recentTurns, role);
+      (roleFallbackSafe ? state.source?.correlation?.latestTurnByRole?.[role] : undefined) ??
+      (roleFallbackSafe ? latestTurnOrdinalForRole(state.recentEvents, recentTurns, role) : undefined);
     // Tag the target with the originating topology step so the panel can be frontier-gated (see
     // revealFor): the step id survives even when it resolves to a turn ordinal.
     const target: DrilldownTarget = ord != null && canDrillDown ? { kind: "turn", ord, fromStep: stepId } : { kind: "role", role, fromStep: stepId };

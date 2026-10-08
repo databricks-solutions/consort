@@ -846,6 +846,22 @@ export function matchesStep(m: StepMatch | null, e: AgentLogEvent): boolean {
   return true;
 }
 
+/** Roles that own MORE THAN ONE lane step (navigator → red/review/assess, plus reflect in design;
+ *  spec-author → propose/breakdown/author; product-owner → intake/feature; …). A topology card click
+ *  for such a role MUST resolve to the CLICKED step's own turn and never fall back to the role's
+ *  latest turn — that latest turn could belong to a SIBLING step (e.g. clicking navigator-red at
+ *  build start would otherwise surface the earlier navigator-reflect turn). Single-step roles are
+ *  safe to resolve by role. Derived once from WORKFLOW so it can't drift from the lane definitions. */
+export const MULTI_STEP_ROLES: ReadonlySet<string> = (() => {
+  const count: Record<string, number> = {};
+  for (const lane of Object.values(WORKFLOW.lanes)) {
+    for (const step of lane.steps) {
+      if (step.role) { count[step.role] = (count[step.role] ?? 0) + 1; }
+    }
+  }
+  return new Set(Object.keys(count).filter((r) => count[r] > 1));
+})();
+
 export interface LaneHit {
   lane: LaneId;
   step: string;
