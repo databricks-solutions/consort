@@ -20,13 +20,21 @@ import { ResizableSplit } from "./ResizableSplit";
 // target shows a lifecycle step's recorded deliverables. The page gates which targets are offered
 // (by capability), so this never renders an affordance the source can't satisfy.
 
+// How much of a clicked topology cell to reveal, per the frontier rules: a cell AT the active
+// position (live or scrubber) shows only its prompt until it completes; a cell AFTER the active
+// position shows the uninvoked state even if it ran in a prior run; a cell before it shows all.
+export type DrilldownReveal = "full" | "prompt-only" | "none";
+
 export type DrilldownTarget =
-  | { kind: "turn"; ord: number }
+  // `fromStep` tags a target opened from a TOPOLOGY card (the step id), so the page can classify it
+  // against the current frontier and set the reveal level. Absent for non-topology opens (an event-
+  // ticker turn, an artifact), which are never frontier-gated.
+  | { kind: "turn"; ord: number; fromStep?: string }
   // A role bubble with NO recorded turn yet (a plain live run, or a role that hasn't taken a turn
   // in the event tail). Clicking a bubble ALWAYS opens the panel – this target just renders the
   // shell + an honest "nothing recorded yet" body instead of a turn, so the panel is never a dead
   // click even when there's nothing to show.
-  | { kind: "role"; role: string }
+  | { kind: "role"; role: string; fromStep?: string }
   // Live's shallower drill-down: a produced file, read at the project's current HEAD.
   | { kind: "artifact"; path: string }
   // A lifecycle step's deliverables. Timeline-independent (a recorded artifact is the same at every
@@ -76,6 +84,7 @@ export function DrilldownPanel({
   target,
   mode,
   feature,
+  reveal = "full",
   onClose,
 }: {
   target: DrilldownTarget;
@@ -84,13 +93,17 @@ export function DrilldownPanel({
   // rather than baked into a step target, so switching the pin re-scopes an open step drill-down.
   // Only step targets read it.
   feature: string | null;
+  // Frontier gating for a topology card click (computed live from the current playhead): "full"
+  // (before the frontier), "prompt-only" (the active cell, until it completes), or "none" (a cell
+  // after the frontier — shown as uninvoked). "full" for non-topology opens.
+  reveal?: DrilldownReveal;
   onClose: () => void;
 }) {
   switch (target.kind) {
     case "turn":
-      return <TurnBody ord={target.ord} mode={mode} onClose={onClose} />;
+      return <TurnBody ord={target.ord} mode={mode} reveal={reveal} onClose={onClose} />;
     case "role":
-      return <RoleBody role={target.role} feature={feature} mode={mode} onClose={onClose} />;
+      return <RoleBody role={target.role} feature={feature} mode={mode} reveal={reveal} onClose={onClose} />;
     case "artifact":
       return <ArtifactBody path={target.path} mode={mode} onClose={onClose} />;
     case "step":
@@ -108,11 +121,13 @@ function RoleBody({
   role,
   feature,
   mode,
+  reveal = "full",
   onClose,
 }: {
   role: string;
   feature: string | null;
   mode: "live" | "replay" | null;
+  reveal?: DrilldownReveal;
   onClose: () => void;
 }) {
   // The lifecycle node whose recorded deliverables this role authors (product-owner → intake, ...),
@@ -126,6 +141,8 @@ function RoleBody({
   // Fetch the role's produced deliverables so Artifacts/Code are populated. Re-scopes with the
   // pinned feature (the per-feature specs), exactly like StepBody. No node → nothing to fetch.
   useEffect(() => {
+    // At/after the frontier the body is gated below; don't fetch this step's prior deliverables.
+    if (reveal !== "full") return;
     setSelected(null);
     setFile(null);
     if (!node) {
@@ -147,7 +164,7 @@ function RoleBody({
     return () => {
       live = false;
     };
-  }, [node, feature, mode]);
+  }, [node, feature, mode, reveal]);
 
   // Selected deliverable's content — same reader the step drill-down uses.
   useEffect(() => {
@@ -186,6 +203,23 @@ function RoleBody({
       <ContentView file={selected === null ? undefined : file} idle="Select a file to view it." loadingName={selected} />
     </>
   );
+
+  // Frontier gating (topology clicks only):
+  if (reveal === "none") {
+    return <NotYetRunBody accent={colorForRole(role)} title={turnTitle(null, role)} onClose={onClose} />;
+  }
+  if (reveal === "prompt-only") {
+    return (
+      <PromptOnlyBody
+        accent={colorForRole(role)}
+        title={turnTitle(null, role)}
+        role={role}
+        prompt="(no prompt recorded for this step yet)"
+        note="Running — this step is active; its prompt isn't recorded yet."
+        onClose={onClose}
+      />
+    );
+  }
 
   return (
     <PanelShell accent={colorForRole(role)} title={turnTitle(null, role)} onClose={onClose} bodyScroll={false}>
@@ -494,7 +528,31 @@ function isCodePath(p: string): boolean {
   return CODE_EXT.test(p);
 }
 
-function TurnBody({ ord, mode, onClose }: { ord: number; mode: "live" | "replay" | null; onClose: () => void }) {
+// Frontier gate bodies, shared by TurnBody + RoleBody so a topology click past/at the active cell
+// renders identically regardless of whether a prior-run turn happened to exist.
+// A cell AFTER the frontier: the uninvoked state (no prior-run content).
+function NotYetRunBody({ accent, title, onClose }: { accent: string; title: React.ReactNode; onClose: () => void }) {
+  return (
+    <PanelShell accent={accent} title={title} onClose={onClose} bodyScroll={false}>
+      <Empty>This step hasn&apos;t run at the current position. Advance the run — or move the scrubber — to its turn to see what it produced.</Empty>
+    </PanelShell>
+  );
+}
+// The ACTIVE cell: only the prompt, until the agent completes (then the reveal flips to "full").
+function PromptOnlyBody({ accent, title, role, prompt, note, onClose }: { accent: string; title: React.ReactNode; role: string; prompt: string; note: string; onClose: () => void }) {
+  return (
+    <PanelShell accent={accent} title={title} onClose={onClose} bodyScroll={false}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 16px" }}>
+        <Section label={`▸ Prompt → ${role}`} fill>
+          <Pre fill>{prompt}</Pre>
+        </Section>
+        <div style={{ flex: "none", fontSize: "0.68rem", color: "var(--text-faint)", marginTop: 8 }}>{note}</div>
+      </div>
+    </PanelShell>
+  );
+}
+
+function TurnBody({ ord, mode, reveal = "full", onClose }: { ord: number; mode: "live" | "replay" | null; reveal?: DrilldownReveal; onClose: () => void }) {
   const [turn, setTurn] = useState<TurnPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("correspondence");
@@ -504,6 +562,8 @@ function TurnBody({ ord, mode, onClose }: { ord: number; mode: "live" | "replay"
   // Reset on ordinal change, so opening a second turn never shows the first while the new fetch is
   // in flight.
   useEffect(() => {
+    // A cell AFTER the frontier must read as uninvoked — don't fetch (or reveal) its prior-run turn.
+    if (reveal === "none") return;
     let live = true;
     setTurn(null);
     setError(null);
@@ -531,7 +591,7 @@ function TurnBody({ ord, mode, onClose }: { ord: number; mode: "live" | "replay"
     return () => {
       live = false;
     };
-  }, [ord, mode]);
+  }, [ord, mode, reveal]);
 
   // Selected file's content — separate effect so switching files doesn't refetch the turn.
   useEffect(() => {
@@ -584,6 +644,23 @@ function TurnBody({ ord, mode, onClose }: { ord: number; mode: "live" | "replay"
       <ContentView file={selected === null ? undefined : file} idle="Select a file to view its snapshot." loadingName={selected} />
     </>
   );
+
+  // Frontier gating (topology clicks only; non-topology opens pass reveal="full"):
+  if (reveal === "none") {
+    return <NotYetRunBody accent={"var(--border-strong)"} title={turnTitle(ord, "not yet run")} onClose={onClose} />;
+  }
+  if (reveal === "prompt-only") {
+    return (
+      <PromptOnlyBody
+        accent={roleColor}
+        title={title}
+        role={turn?.role ?? "agent"}
+        prompt={error ? error : !turn ? `Loading turn ${ord}…` : turn.transcript?.prompt || "(no prompt recorded for this turn)"}
+        note="Running — only the prompt is shown until this agent completes."
+        onClose={onClose}
+      />
+    );
+  }
 
   return (
     <PanelShell accent={roleColor} title={title} meta={meta} onClose={onClose} bodyScroll={false}>
