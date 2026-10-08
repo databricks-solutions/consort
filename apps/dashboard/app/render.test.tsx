@@ -728,6 +728,11 @@ describe("render — DrilldownPanel", () => {
     expect(markup).toContain("only the prompt is shown"); // the "running" note
     expect(markup).not.toContain("Artifacts"); // no tabbed body — prompt and nothing else
     expect(markup).not.toContain("Correspondence");
+    // The title must read "running", NOT the resolved ordinal (#16): an active step's turn
+    // is unrecorded, so the ordinal the card resolved to is a PRIOR turn in the step (the
+    // "shows #36 while it's really on the unfinished #44" bug). Show the state, not a stale number.
+    expect(markup).toContain("running");
+    expect(markup).not.toContain("#16");
   });
 
   // Kevin's ask, in the drill-down: the turn must read as an EXCHANGE — an inbound prompt to the
