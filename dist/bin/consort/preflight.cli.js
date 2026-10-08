@@ -162,6 +162,8 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
   } catch {
     warnings.push("first_project: could not stat the marker");
   }
+  const inside = insideEditor(env);
+  const offers_pending = ["dashboard", ...inside ? [] : ["move-to-editor"], "extension"];
   return {
     preflight_at: (/* @__PURE__ */ new Date()).toISOString(),
     project,
@@ -169,7 +171,8 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
     telemetry,
     scm,
     first_project: { offered_before: offeredBefore },
-    env: { inside_editor: insideEditor(env) },
+    env: { inside_editor: inside },
+    tooling: { offers_pending },
     warnings
   };
 }
