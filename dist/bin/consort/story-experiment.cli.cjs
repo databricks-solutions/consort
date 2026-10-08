@@ -6909,6 +6909,7 @@ init_cjs_shims();
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
+var import_child_process = require("child_process");
 var import_fs5 = require("fs");
 var import_path7 = require("path");
 
@@ -7293,6 +7294,22 @@ function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
   (0, import_fs5.mkdirSync)((0, import_path7.dirname)(p), { recursive: true });
   (0, import_fs5.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
+  selfHealUntrack(consortDir, p);
+}
+function selfHealUntrack(consortDir, absPath) {
+  const repoRoot = (0, import_path7.dirname)(consortDir);
+  try {
+    const tracked = (0, import_child_process.execFileSync)("git", ["ls-files", "--error-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+    void tracked;
+    (0, import_child_process.execFileSync)("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+  } catch {
+  }
 }
 function updatePipeline(consortDir, featureId, mutate) {
   return withPipelineLock(

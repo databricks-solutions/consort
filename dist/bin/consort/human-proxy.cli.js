@@ -9071,6 +9071,7 @@ import { join as join27, dirname as dirname14 } from "path";
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
+import { execFileSync } from "child_process";
 import { existsSync as existsSync14, readFileSync as readFileSync14, writeFileSync as writeFileSync9, mkdirSync as mkdirSync8, readdirSync as readdirSync9, statSync as statSync5, rmSync } from "fs";
 import { dirname as dirname8, join as join14 } from "path";
 function initPipeline(featureId) {
@@ -9088,6 +9089,22 @@ function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
   mkdirSync8(dirname8(p), { recursive: true });
   writeFileSync9(p, JSON.stringify(pipeline, null, 2) + "\n");
+  selfHealUntrack(consortDir, p);
+}
+function selfHealUntrack(consortDir, absPath) {
+  const repoRoot = dirname8(consortDir);
+  try {
+    const tracked = execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+    void tracked;
+    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+  } catch {
+  }
 }
 function updatePipeline(consortDir, featureId, mutate) {
   return withPipelineLock(
@@ -9149,7 +9166,7 @@ import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase
 
 // consort/experiment/experiment.ts
 init_esm_shims();
-import { execFileSync } from "child_process";
+import { execFileSync as execFileSync2 } from "child_process";
 import { createPairedBranch, deletePairedBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 var RUNTIME_ARTIFACT_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -9293,7 +9310,7 @@ import { join as join19 } from "path";
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs4 from "fs";
-import { execFileSync as execFileSync2 } from "child_process";
+import { execFileSync as execFileSync3 } from "child_process";
 import { createHash as createHash3 } from "crypto";
 import { dirname as dirname11, join as join20 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
@@ -9330,7 +9347,7 @@ import { join as join23, relative as relative2, extname as extname2 } from "path
 
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
-import { execFileSync as execFileSync3 } from "child_process";
+import { execFileSync as execFileSync4 } from "child_process";
 import { existsSync as existsSync25 } from "fs";
 import { join as join24 } from "path";
 

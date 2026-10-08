@@ -6715,6 +6715,7 @@ import { basename, dirname as dirname5, join as join8 } from "path";
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
+import { execFileSync } from "child_process";
 import { existsSync as existsSync5, readFileSync as readFileSync5, writeFileSync as writeFileSync3, mkdirSync as mkdirSync3, readdirSync as readdirSync4, statSync as statSync3, rmSync } from "fs";
 import { dirname as dirname4, join as join7 } from "path";
 
@@ -6950,6 +6951,22 @@ function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
   mkdirSync3(dirname4(p), { recursive: true });
   writeFileSync3(p, JSON.stringify(pipeline, null, 2) + "\n");
+  selfHealUntrack(consortDir, p);
+}
+function selfHealUntrack(consortDir, absPath) {
+  const repoRoot = dirname4(consortDir);
+  try {
+    const tracked = execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+    void tracked;
+    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+  } catch {
+  }
 }
 function updatePipeline(consortDir, featureId, mutate) {
   return withPipelineLock(

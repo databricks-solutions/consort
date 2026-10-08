@@ -9006,6 +9006,7 @@ function drainGatesAsHumanProxy(args) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
+import { execFileSync } from "child_process";
 import { existsSync as existsSync15, readFileSync as readFileSync15, writeFileSync as writeFileSync11, mkdirSync as mkdirSync10, readdirSync as readdirSync9, statSync as statSync5, rmSync } from "fs";
 import { dirname as dirname9, join as join14 } from "path";
 function initPipeline(featureId) {
@@ -9023,6 +9024,22 @@ function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
   mkdirSync10(dirname9(p), { recursive: true });
   writeFileSync11(p, JSON.stringify(pipeline, null, 2) + "\n");
+  selfHealUntrack(consortDir, p);
+}
+function selfHealUntrack(consortDir, absPath) {
+  const repoRoot = dirname9(consortDir);
+  try {
+    const tracked = execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+    void tracked;
+    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+  } catch {
+  }
 }
 function updatePipeline(consortDir, featureId, mutate) {
   return withPipelineLock(

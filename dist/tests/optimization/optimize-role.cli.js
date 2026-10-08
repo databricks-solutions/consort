@@ -16170,7 +16170,7 @@ function formatRoleSweepReport(r) {
 // tests/integration/live/driver-build-support.ts
 init_esm_shims();
 import { readFileSync as readFileSync58, writeFileSync as writeFileSync34, existsSync as existsSync64, statSync as statSync24, readdirSync as readdirSync38, mkdtempSync as mkdtempSync2, mkdirSync as mkdirSync38, chmodSync as chmodSync2, rmSync as rmSync18, cpSync as cpSync10 } from "fs";
-import { execFileSync as execFileSync8 } from "child_process";
+import { execFileSync as execFileSync9 } from "child_process";
 import { tmpdir as tmpdir2 } from "os";
 import { join as join65, relative as relative10 } from "path";
 
@@ -17838,6 +17838,7 @@ function assertRouteSatisfiable(action, step, ctx, exists = existsSync55) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
+import { execFileSync as execFileSync8 } from "child_process";
 import { existsSync as existsSync57, readFileSync as readFileSync51, writeFileSync as writeFileSync31, mkdirSync as mkdirSync35, readdirSync as readdirSync33, statSync as statSync21, rmSync as rmSync16 } from "fs";
 import { dirname as dirname29, join as join59 } from "path";
 
@@ -17871,6 +17872,22 @@ function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
   mkdirSync35(dirname29(p), { recursive: true });
   writeFileSync31(p, JSON.stringify(pipeline, null, 2) + "\n");
+  selfHealUntrack(consortDir, p);
+}
+function selfHealUntrack(consortDir, absPath) {
+  const repoRoot = dirname29(consortDir);
+  try {
+    const tracked = execFileSync8("git", ["ls-files", "--error-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+    void tracked;
+    execFileSync8("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], {
+      cwd: repoRoot,
+      stdio: ["ignore", "ignore", "ignore"]
+    });
+  } catch {
+  }
 }
 
 // consort/session/response-formatter.ts
@@ -19231,8 +19248,8 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
   const projectDir = wtDir;
   try {
     layBundle(projectDir, consortDir, driverTurn, b);
-    execFileSync8("git", ["add", "-A"], { cwd: projectDir, stdio: "pipe" });
-    execFileSync8("git", ["commit", "-m", `seed: pre-turn F6/S3 snapshot for driver ${driverTurn} (live)`, "--no-verify"], { cwd: projectDir, stdio: "pipe" });
+    execFileSync9("git", ["add", "-A"], { cwd: projectDir, stdio: "pipe" });
+    execFileSync9("git", ["commit", "-m", `seed: pre-turn F6/S3 snapshot for driver ${driverTurn} (live)`, "--no-verify"], { cwd: projectDir, stdio: "pipe" });
     await cutExperiment({
       instance: lakebaseProjectId,
       consortDir,
