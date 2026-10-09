@@ -452,11 +452,11 @@ describe("story-pipeline: persistence + schema", () => {
   });
 });
 
-describe("writePipeline self-heals a legacy-TRACKED pipeline.json (Fix A: run-state must not promote)", () => {
+describe("writePipeline keeps the per-feature pipeline.json TRACKED (durable ledger — never untracks it)", () => {
   const git = (dir: string, args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "ignore" });
 
-  it("drops a tracked per-feature pipeline.json from the index on write, keeping the working file", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-untrack-"));
+  it("leaves a committed pipeline.json tracked on write (regression guard: a prior self-heal untracked it, losing the ledger across sessions)", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pipeline-track-"));
     tmpDirs.push(root);
     git(root, ["init", "-b", "main"]);
     git(root, ["config", "user.email", "t@e.com"]);
@@ -464,29 +464,23 @@ describe("writePipeline self-heals a legacy-TRACKED pipeline.json (Fix A: run-st
     const consortDir = path.join(root, ".consort");
     fs.mkdirSync(consortDir, { recursive: true });
 
-    // Simulate the legacy state: pipeline.json exists AND is committed (tracked).
+    // The durable ledger is tracked by design (persists across sessions / clones / checkouts).
     writePipeline(consortDir, initPipeline("F1"));
     const rel = path.relative(root, path.join(consortDir, "features", "F1", "pipeline.json"));
-    git(root, ["add", "-f", rel]);
-    git(root, ["commit", "-m", "legacy: tracked pipeline.json"]);
+    git(root, ["add", rel]);
+    git(root, ["commit", "-m", "ledger committed"]);
     const tracked = () => execFileSync("git", ["ls-files", "--", rel], { cwd: root, encoding: "utf8" }).trim();
-    expect(tracked()).not.toBe(""); // tracked before the heal
+    expect(tracked()).not.toBe(""); // tracked
 
-    // A normal write now self-heals: index drops it, the file stays on disk.
+    // A subsequent write must NOT untrack it, and must NOT gitignore it — it stays a tracked ledger.
     writePipeline(consortDir, setStoryStatus(initPipeline("F1"), "S1", "designing"));
-    expect(tracked()).toBe(""); // no longer tracked
-    expect(fs.existsSync(path.join(consortDir, "features", "F1", "pipeline.json"))).toBe(true); // working file kept
-
-    // ...AND it covers .gitignore so the untrack STICKS — the load-bearing half: without the
-    // ignore entry, the drive's next `git add -A` would silently re-track it (the recurrence on a
-    // pre-0.2.47-substrate project). Prove it survives a full add.
-    expect(fs.readFileSync(path.join(root, ".gitignore"), "utf8")).toContain(".consort/features/*/pipeline.json");
-    git(root, ["add", "-A"]);
-    expect(tracked()).toBe(""); // STILL untracked after `git add -A` — the heal held
+    expect(tracked()).not.toBe(""); // STILL tracked after the write
+    const gi = fs.existsSync(path.join(root, ".gitignore")) ? fs.readFileSync(path.join(root, ".gitignore"), "utf8") : "";
+    expect(gi).not.toContain("pipeline.json"); // write never adds a gitignore entry
   });
 
-  it("is a no-op outside a git repo (never throws into the writer)", () => {
-    const consortDir = path.join(mkTdd(), ".consort"); // parent is a bare tmpdir, not a repo
+  it("writes the ledger without throwing outside a git repo", () => {
+    const consortDir = path.join(mkTdd(), ".consort");
     fs.mkdirSync(consortDir, { recursive: true });
     expect(() => writePipeline(consortDir, initPipeline("F1"))).not.toThrow();
     expect(fs.existsSync(path.join(consortDir, "features", "F1", "pipeline.json"))).toBe(true);
