@@ -4,8 +4,7 @@
 // .tdd/features/<F>/pipeline.json. Exactly one story builds at a time; the
 // orchestrator owns these transitions.
 
-import { execFileSync } from "child_process";
-import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, statSync, rmSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, rmSync } from "fs";
 import { dirname, join } from "path";
 import {
   pipelineJson,
@@ -157,54 +156,17 @@ export function readPipeline(consortDir: string, featureId: string): StoryPipeli
   return JSON.parse(readFileSync(p, "utf8")) as StoryPipeline;
 }
 
+// pipeline.json is the DURABLE per-story ledger (designing → awaiting-gate → ready → done),
+// persisted PER FEATURE at .consort/features/<id>/pipeline.json and TRACKED by design so it
+// survives across sessions / clones / branch checkouts. It must NEVER be untracked or gitignored:
+// a prior change self-heal-untracked it, which turned the authoritative ledger into local-only
+// state that vanished across sessions, desyncing consort-next from the real on-disk ledger. The
+// promotion-merge conflict it was trying to avoid is handled at the MERGE layer (scm-merge
+// reconciles it to the run side), not by dropping it from git.
 export function writePipeline(consortDir: string, pipeline: StoryPipeline): void {
   const p = pipelinePath(consortDir, pipeline.feature_id);
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(pipeline, null, 2) + "\n");
-  selfHealUntrack(consortDir, p);
-}
-
-/** The per-feature pipeline.json ignore pattern — the one scm-utils' .gitignore template should
- *  carry (fixed in 0.2.47), but a project on an older substrate pin does NOT. The self-heal below
- *  writes it itself so the untrack STICKS regardless of substrate version. */
-const PIPELINE_IGNORE_PATTERN = ".consort/features/*/pipeline.json";
-
-/** pipeline.json is per-run gate bookkeeping, gitignored by intent — but a project created before
- *  the per-feature ignore pattern was fixed has it TRACKED, so it travels onto staging/main and
- *  collides at the promotion merge. Fully mirror the Finding-28 workflow-state self-heal: untrack
- *  it (index-only; the working file stays) AND cover it in .gitignore. Covering .gitignore is
- *  load-bearing — a bare `git rm --cached` without the ignore entry is undone by the drive's very
- *  next `git add` (the file isn't ignored, so it re-tracks), so the untrack never sticks and the
- *  promotion conflict recurs on a project whose substrate .gitignore lacks the per-feature pattern
- *  (scm-utils < 0.2.47). Best-effort: a no-op outside a git repo / when already clean; never throws
- *  into the writer. */
-function selfHealUntrack(consortDir: string, absPath: string): void {
-  const repoRoot = dirname(consortDir); // consortDir is <root>/.consort
-  // (1) Cover it in .gitignore first, so even if the untrack below races the next add, the file is
-  //     already ignored. Idempotent: skip when the pattern (or a bare `.consort/` ignore) is present.
-  try {
-    const gitignore = join(repoRoot, ".gitignore");
-    const existing = existsSync(gitignore) ? readFileSync(gitignore, "utf8") : "";
-    const alreadyIgnored = existing
-      .split("\n")
-      .some((l) => l.trim() === PIPELINE_IGNORE_PATTERN || l.trim() === ".consort/" || l.trim() === ".consort/**");
-    if (!alreadyIgnored) {
-      const sep = existing === "" || existing.endsWith("\n") ? "" : "\n";
-      appendFileSync(
-        gitignore,
-        `${sep}# Per-feature run-state (gate bookkeeping): never tracked, so it can't travel onto a tier\n# and collide at the promotion merge (self-heal for a project on a pre-0.2.47 substrate).\n${PIPELINE_IGNORE_PATTERN}\n`,
-      );
-    }
-  } catch {
-    /* unwritable .gitignore / not a repo — the untrack below is still attempted */
-  }
-  // (2) Untrack the already-committed copy (index-only; working file kept).
-  try {
-    execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
-    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
-  } catch {
-    /* untracked, or not a git repo, or git unavailable — nothing to untrack */
-  }
 }
 
 /**
