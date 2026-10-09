@@ -10502,7 +10502,7 @@ init_esm_shims();
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync31, readFileSync as readFileSync30, writeFileSync as writeFileSync18, appendFileSync as appendFileSync3, mkdirSync as mkdirSync17, readdirSync as readdirSync18, statSync as statSync11, rmSync as rmSync9 } from "fs";
+import { existsSync as existsSync31, readFileSync as readFileSync30, writeFileSync as writeFileSync18, mkdirSync as mkdirSync17, readdirSync as readdirSync18, statSync as statSync11, rmSync as rmSync9 } from "fs";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();

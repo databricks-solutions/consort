@@ -9006,8 +9006,7 @@ function drainGatesAsHumanProxy(args) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { execFileSync } from "child_process";
-import { existsSync as existsSync15, readFileSync as readFileSync15, writeFileSync as writeFileSync11, appendFileSync as appendFileSync2, mkdirSync as mkdirSync10, readdirSync as readdirSync9, statSync as statSync5, rmSync } from "fs";
+import { existsSync as existsSync15, readFileSync as readFileSync15, writeFileSync as writeFileSync11, mkdirSync as mkdirSync10, readdirSync as readdirSync9, statSync as statSync5, rmSync } from "fs";
 import { dirname as dirname9, join as join14 } from "path";
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
@@ -9024,32 +9023,6 @@ function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
   mkdirSync10(dirname9(p), { recursive: true });
   writeFileSync11(p, JSON.stringify(pipeline, null, 2) + "\n");
-  selfHealUntrack(consortDir, p);
-}
-var PIPELINE_IGNORE_PATTERN = ".consort/features/*/pipeline.json";
-function selfHealUntrack(consortDir, absPath) {
-  const repoRoot = dirname9(consortDir);
-  try {
-    const gitignore = join14(repoRoot, ".gitignore");
-    const existing = existsSync15(gitignore) ? readFileSync15(gitignore, "utf8") : "";
-    const alreadyIgnored = existing.split("\n").some((l) => l.trim() === PIPELINE_IGNORE_PATTERN || l.trim() === ".consort/" || l.trim() === ".consort/**");
-    if (!alreadyIgnored) {
-      const sep = existing === "" || existing.endsWith("\n") ? "" : "\n";
-      appendFileSync2(
-        gitignore,
-        `${sep}# Per-feature run-state (gate bookkeeping): never tracked, so it can't travel onto a tier
-# and collide at the promotion merge (self-heal for a project on a pre-0.2.47 substrate).
-${PIPELINE_IGNORE_PATTERN}
-`
-      );
-    }
-  } catch {
-  }
-  try {
-    execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
-    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
-  } catch {
-  }
 }
 function updatePipeline(consortDir, featureId, mutate) {
   return withPipelineLock(

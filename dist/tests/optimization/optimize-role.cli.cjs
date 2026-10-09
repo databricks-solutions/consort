@@ -17850,7 +17850,6 @@ function assertRouteSatisfiable(action, step, ctx, exists = import_node_fs30.exi
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_child_process = require("child_process");
 var import_fs17 = require("fs");
 var import_path14 = require("path");
 
@@ -17884,32 +17883,6 @@ function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
   (0, import_fs17.mkdirSync)((0, import_path14.dirname)(p), { recursive: true });
   (0, import_fs17.writeFileSync)(p, JSON.stringify(pipeline, null, 2) + "\n");
-  selfHealUntrack(consortDir, p);
-}
-var PIPELINE_IGNORE_PATTERN = ".consort/features/*/pipeline.json";
-function selfHealUntrack(consortDir, absPath) {
-  const repoRoot = (0, import_path14.dirname)(consortDir);
-  try {
-    const gitignore = (0, import_path14.join)(repoRoot, ".gitignore");
-    const existing = (0, import_fs17.existsSync)(gitignore) ? (0, import_fs17.readFileSync)(gitignore, "utf8") : "";
-    const alreadyIgnored = existing.split("\n").some((l) => l.trim() === PIPELINE_IGNORE_PATTERN || l.trim() === ".consort/" || l.trim() === ".consort/**");
-    if (!alreadyIgnored) {
-      const sep2 = existing === "" || existing.endsWith("\n") ? "" : "\n";
-      (0, import_fs17.appendFileSync)(
-        gitignore,
-        `${sep2}# Per-feature run-state (gate bookkeeping): never tracked, so it can't travel onto a tier
-# and collide at the promotion merge (self-heal for a project on a pre-0.2.47 substrate).
-${PIPELINE_IGNORE_PATTERN}
-`
-      );
-    }
-  } catch {
-  }
-  try {
-    (0, import_child_process.execFileSync)("git", ["ls-files", "--error-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
-    (0, import_child_process.execFileSync)("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
-  } catch {
-  }
 }
 
 // consort/session/response-formatter.ts
