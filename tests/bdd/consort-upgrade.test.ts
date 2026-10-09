@@ -114,4 +114,18 @@ describe("refreshSurface – brings agents + commands to the target + stamps the
     expect(readFileSync(join(proj, "scripts", "lk"), "utf8")).toContain("# project shim"); // NOT clobbered
     expect(existsSync(join(proj, "scripts", "run-tests.sh"))).toBe(true); // kit helper still refreshed
   });
+
+  it("moves the SUBSTRATE pin in lockstep: writes .lakebase/scm-utils-ref{,.local} to the version this kit ships", () => {
+    // The split-version defect: consort-upgrade bumped only the kit, leaving the local scm-utils
+    // pin at the scaffolded/seeded version, so ./scripts/lk kept resolving the OLD substrate (its
+    // CI-auth + pipeline.json-gitignore fixes absent). refreshSurface must now pin both scm-utils
+    // refs to the version consort depends on, matching the workflows + a fresh scaffold.
+    const dep = (JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { dependencies?: Record<string, string> })
+      .dependencies?.["@databricks-solutions/lakebase-scm-utils"] ?? "";
+    const expected = "v" + (dep.match(/#v?(\d+\.\d+\.\d+)/)?.[1] ?? dep.match(/^\D*(\d+\.\d+\.\d+)/)?.[1] ?? "");
+    expect(expected).toMatch(/^v\d+\.\d+\.\d+$/); // the kit pins an exact scm-utils version
+    refreshSurface(proj, repoRoot, "9.9.9-test");
+    expect(readFileSync(join(proj, ".lakebase", "scm-utils-ref"), "utf8").trim()).toBe(expected);
+    expect(readFileSync(join(proj, ".lakebase", "scm-utils-ref.local"), "utf8").trim()).toBe(expected);
+  });
 });
