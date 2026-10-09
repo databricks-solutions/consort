@@ -6652,7 +6652,7 @@ init_esm_shims();
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
 import { execFileSync } from "child_process";
-import { existsSync as existsSync7, readFileSync as readFileSync7, writeFileSync as writeFileSync3, mkdirSync as mkdirSync4, readdirSync as readdirSync5, statSync as statSync3, rmSync } from "fs";
+import { existsSync as existsSync7, readFileSync as readFileSync7, writeFileSync as writeFileSync3, appendFileSync as appendFileSync2, mkdirSync as mkdirSync4, readdirSync as readdirSync5, statSync as statSync3, rmSync } from "fs";
 import { dirname as dirname6, join as join10 } from "path";
 
 // consort/config/consort-paths.ts
@@ -7526,18 +7526,28 @@ function writePipeline(consortDir, pipeline) {
   writeFileSync3(p, JSON.stringify(pipeline, null, 2) + "\n");
   selfHealUntrack(consortDir, p);
 }
+var PIPELINE_IGNORE_PATTERN = ".consort/features/*/pipeline.json";
 function selfHealUntrack(consortDir, absPath) {
   const repoRoot = dirname6(consortDir);
   try {
-    const tracked = execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], {
-      cwd: repoRoot,
-      stdio: ["ignore", "ignore", "ignore"]
-    });
-    void tracked;
-    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], {
-      cwd: repoRoot,
-      stdio: ["ignore", "ignore", "ignore"]
-    });
+    const gitignore = join10(repoRoot, ".gitignore");
+    const existing = existsSync7(gitignore) ? readFileSync7(gitignore, "utf8") : "";
+    const alreadyIgnored = existing.split("\n").some((l) => l.trim() === PIPELINE_IGNORE_PATTERN || l.trim() === ".consort/" || l.trim() === ".consort/**");
+    if (!alreadyIgnored) {
+      const sep = existing === "" || existing.endsWith("\n") ? "" : "\n";
+      appendFileSync2(
+        gitignore,
+        `${sep}# Per-feature run-state (gate bookkeeping): never tracked, so it can't travel onto a tier
+# and collide at the promotion merge (self-heal for a project on a pre-0.2.47 substrate).
+${PIPELINE_IGNORE_PATTERN}
+`
+      );
+    }
+  } catch {
+  }
+  try {
+    execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
+    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
   } catch {
   }
 }

@@ -279,6 +279,8 @@ function loadConsortConfig(projectDir) {
 
 // consort/lakebase/upgrade.ts
 var KIT_REF_PREV_FILE = "kit-ref.prev";
+var SCM_UTILS_REF_FILE = "scm-utils-ref";
+var SCM_UTILS_REF_LOCAL_FILE = "scm-utils-ref.local";
 var AGENT_SYNC_MARKER = path5.join(".claude", "agents", ".kit-version");
 function lakebaseFile2(projectDir, name) {
   return path5.join(projectDir, ".lakebase", name);
@@ -397,6 +399,13 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
   if (substrate) {
     substituteWorkflowVersion(workflowsDir, substrate);
     substituteScmUtilsVersionInScripts(path5.join(projectDir, "scripts"), substrate);
+    try {
+      const ref = `v${substrate}`;
+      fs5.mkdirSync(path5.join(projectDir, ".lakebase"), { recursive: true });
+      fs5.writeFileSync(lakebaseFile2(projectDir, SCM_UTILS_REF_FILE), ref + "\n", "utf8");
+      fs5.writeFileSync(lakebaseFile2(projectDir, SCM_UTILS_REF_LOCAL_FILE), ref + "\n", "utf8");
+    } catch {
+    }
   }
   let e2e = false;
   try {
@@ -416,7 +425,7 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
   const count = (files) => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
   return { agents: count(a.files), commands: count(c.files), scripts, workflows, e2e };
 }
-var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", "scripts", ".github/workflows", ".lakebase/kit-ref"];
+var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
 function commitRefreshedSurface(projectDir, targetVersion, git = (a) => {
   const r = spawnSync2("git", ["-C", projectDir, ...a], { encoding: "utf8" });
   return { status: r.status, stdout: r.stdout ?? "" };

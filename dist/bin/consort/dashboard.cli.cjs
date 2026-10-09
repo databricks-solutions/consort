@@ -6,6 +6,10 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -22,6 +26,20 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// bin/consort/dashboard.cli.ts
+var dashboard_cli_exports = {};
+__export(dashboard_cli_exports, {
+  runningRecord: () => runningRecord,
+  staleServer: () => staleServer,
+  writeRecord: () => writeRecord
+});
+module.exports = __toCommonJS(dashboard_cli_exports);
+
+// node_modules/tsup/assets/cjs_shims.js
+var getImportMetaUrl = () => typeof document === "undefined" ? new URL(`file:${__filename}`).href : document.currentScript && document.currentScript.tagName.toUpperCase() === "SCRIPT" ? document.currentScript.src : new URL("main.js", document.baseURI).href;
+var importMetaUrl = /* @__PURE__ */ getImportMetaUrl();
 
 // bin/consort/dashboard.cli.ts
 var import_node_child_process2 = require("child_process");
@@ -30,6 +48,7 @@ var crypto = __toESM(require("crypto"), 1);
 var fs2 = __toESM(require("fs"), 1);
 var os = __toESM(require("os"), 1);
 var path2 = __toESM(require("path"), 1);
+var import_util = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // consort/config/kit-bin.ts
 var import_node_child_process = require("child_process");
@@ -44,6 +63,14 @@ function resolveKitRoot() {
 }
 function kitRoot() {
   return resolveKitRoot();
+}
+function kitVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(resolveKitRoot(), "package.json"), "utf8"));
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 // bin/consort/dashboard.cli.ts
@@ -127,9 +154,16 @@ function pidAlive(pid) {
     return false;
   }
 }
-async function runningRecord(projectDir) {
+async function runningRecord(projectDir, expectVersion) {
   const rec = readRecord(projectDir);
   if (!rec || !pidAlive(rec.pid)) return null;
+  if (expectVersion !== void 0 && rec.version !== expectVersion) return null;
+  const up = await waitListening(rec.host, rec.port, 3);
+  return up ? rec : null;
+}
+async function staleServer(projectDir, current) {
+  const rec = readRecord(projectDir);
+  if (!rec || rec.version === current || !pidAlive(rec.pid)) return null;
   const up = await waitListening(rec.host, rec.port, 3);
   return up ? rec : null;
 }
@@ -152,6 +186,7 @@ function prebuiltServer(kit) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const projectDir = path2.resolve(args.projectDir);
+  const current = kitVersion();
   if (args.openReady) {
     const port2 = args.port ?? 0;
     const ready = await waitListening(args.host, port2, 480);
@@ -159,7 +194,7 @@ async function main() {
     process.exit(0);
   }
   if (args.status) {
-    const rec = await runningRecord(projectDir);
+    const rec = await runningRecord(projectDir, current);
     if (rec) {
       console.log(`running ${rec.url}`);
       process.exit(0);
@@ -168,7 +203,7 @@ async function main() {
     process.exit(3);
   }
   if (args.openOnly) {
-    const rec = await runningRecord(projectDir);
+    const rec = await runningRecord(projectDir, current);
     if (rec) {
       console.log(`running ${rec.url}`);
       if (args.open) openBrowser(rec.url);
@@ -177,12 +212,21 @@ async function main() {
     console.log("stopped");
     process.exit(3);
   }
-  const existing = await runningRecord(projectDir);
+  const existing = await runningRecord(projectDir, current);
   if (existing) {
     console.log(`Consort dashboard already running \u2192 ${existing.url}
   project: ${projectDir}`);
     if (args.open) openBrowser(existing.url);
     process.exit(0);
+  }
+  const stale = await staleServer(projectDir, current);
+  if (stale) {
+    console.log(`Replacing stale dashboard (kit ${stale.version ?? "unknown"} \u2192 ${current}) for this project at ${stale.url}`);
+    try {
+      process.kill(stale.pid);
+    } catch {
+    }
+    clearRecord(projectDir);
   }
   const kit = kitRoot();
   const port = args.port && Number.isFinite(args.port) ? args.port : await freePort(args.host);
@@ -230,7 +274,7 @@ async function main() {
   const childPid = child.pid;
   if (args.detach) {
     child.unref();
-    if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: (/* @__PURE__ */ new Date()).toISOString(), version: current });
     if (args.open) {
       try {
         (0, import_node_child_process2.spawn)(process.execPath, [process.argv[1], "--open-ready", "--host", args.host, "--port", String(port)], {
@@ -245,7 +289,7 @@ async function main() {
   }
   void waitListening(args.host, port).then((ready) => {
     if (ready) {
-      if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: (/* @__PURE__ */ new Date()).toISOString() });
+      if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: (/* @__PURE__ */ new Date()).toISOString(), version: current });
       if (args.open) openBrowser(url);
     } else {
       console.error(
@@ -284,7 +328,15 @@ function openBrowser(url) {
   } catch {
   }
 }
-main().catch((err) => {
-  console.error(`consort-dashboard: ${err instanceof Error ? err.message : String(err)}`);
-  process.exit(1);
+if ((0, import_util.isCliEntry)(importMetaUrl)) {
+  main().catch((err) => {
+    console.error(`consort-dashboard: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  });
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  runningRecord,
+  staleServer,
+  writeRecord
 });

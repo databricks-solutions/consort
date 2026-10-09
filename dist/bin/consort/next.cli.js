@@ -10073,7 +10073,7 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync42, readFileSync as readFileSync39, writeFileSync as writeFileSync24, mkdirSync as mkdirSync24, readdirSync as readdirSync26, statSync as statSync16, rmSync as rmSync10 } from "fs";
+import { existsSync as existsSync42, readFileSync as readFileSync39, writeFileSync as writeFileSync24, appendFileSync as appendFileSync2, mkdirSync as mkdirSync24, readdirSync as readdirSync26, statSync as statSync16, rmSync as rmSync10 } from "fs";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();

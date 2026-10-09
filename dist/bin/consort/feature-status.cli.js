@@ -7313,7 +7313,7 @@ function readPlan(consortDir, featureId, storyId) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync22, readFileSync as readFileSync23, writeFileSync as writeFileSync14, mkdirSync as mkdirSync12, readdirSync as readdirSync14, statSync as statSync10, rmSync as rmSync5 } from "fs";
+import { existsSync as existsSync22, readFileSync as readFileSync23, writeFileSync as writeFileSync14, appendFileSync as appendFileSync2, mkdirSync as mkdirSync12, readdirSync as readdirSync14, statSync as statSync10, rmSync as rmSync5 } from "fs";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();

@@ -9072,7 +9072,7 @@ import { join as join27, dirname as dirname14 } from "path";
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
 import { execFileSync } from "child_process";
-import { existsSync as existsSync14, readFileSync as readFileSync14, writeFileSync as writeFileSync9, mkdirSync as mkdirSync8, readdirSync as readdirSync9, statSync as statSync5, rmSync } from "fs";
+import { existsSync as existsSync14, readFileSync as readFileSync14, writeFileSync as writeFileSync9, appendFileSync as appendFileSync2, mkdirSync as mkdirSync8, readdirSync as readdirSync9, statSync as statSync5, rmSync } from "fs";
 import { dirname as dirname8, join as join14 } from "path";
 function initPipeline(featureId) {
   return { version: 1, feature_id: featureId, stories: {}, build_queue: [], build_active: null };
@@ -9091,18 +9091,28 @@ function writePipeline(consortDir, pipeline) {
   writeFileSync9(p, JSON.stringify(pipeline, null, 2) + "\n");
   selfHealUntrack(consortDir, p);
 }
+var PIPELINE_IGNORE_PATTERN = ".consort/features/*/pipeline.json";
 function selfHealUntrack(consortDir, absPath) {
   const repoRoot = dirname8(consortDir);
   try {
-    const tracked = execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], {
-      cwd: repoRoot,
-      stdio: ["ignore", "ignore", "ignore"]
-    });
-    void tracked;
-    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], {
-      cwd: repoRoot,
-      stdio: ["ignore", "ignore", "ignore"]
-    });
+    const gitignore = join14(repoRoot, ".gitignore");
+    const existing = existsSync14(gitignore) ? readFileSync14(gitignore, "utf8") : "";
+    const alreadyIgnored = existing.split("\n").some((l) => l.trim() === PIPELINE_IGNORE_PATTERN || l.trim() === ".consort/" || l.trim() === ".consort/**");
+    if (!alreadyIgnored) {
+      const sep = existing === "" || existing.endsWith("\n") ? "" : "\n";
+      appendFileSync2(
+        gitignore,
+        `${sep}# Per-feature run-state (gate bookkeeping): never tracked, so it can't travel onto a tier
+# and collide at the promotion merge (self-heal for a project on a pre-0.2.47 substrate).
+${PIPELINE_IGNORE_PATTERN}
+`
+      );
+    }
+  } catch {
+  }
+  try {
+    execFileSync("git", ["ls-files", "--error-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
+    execFileSync("git", ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", absPath], { cwd: repoRoot, stdio: ["ignore", "ignore", "ignore"] });
   } catch {
   }
 }
