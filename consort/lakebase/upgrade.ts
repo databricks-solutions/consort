@@ -32,6 +32,10 @@ import { loadConsortConfig } from "../config/consort-config-file.js";
 
 /** Where the prior pins are recorded so an upgrade is reversible (rollback). */
 export const KIT_REF_PREV_FILE = "kit-ref.prev";
+/** The substrate (scm-utils) pins, lk-resolved: the committed CI ref + the gitignored run ref.
+ *  consort-upgrade moves BOTH in lockstep with the kit so the local substrate never lags. */
+const SCM_UTILS_REF_FILE = "scm-utils-ref";
+const SCM_UTILS_REF_LOCAL_FILE = "scm-utils-ref.local";
 /** The agent-sync marker (mirror of AGENT_SYNC_MARKER) reset on upgrade so the next
  *  drive's resyncAgentsOnKitDrift sees the surface already at the target version. */
 const AGENT_SYNC_MARKER = path.join(".claude", "agents", ".kit-version");
@@ -256,6 +260,21 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
   if (substrate) {
     substituteWorkflowVersion(workflowsDir, substrate);
     substituteScmUtilsVersionInScripts(path.join(projectDir, "scripts"), substrate);
+    // Move the SUBSTRATE pin in lockstep with the kit. consort-upgrade historically bumped only
+    // the consort kit-ref, leaving `.lakebase/scm-utils-ref` at the version the project was
+    // scaffolded/seeded with — so `./scripts/lk` kept resolving the OLD scm-utils locally (its
+    // CI-auth + pipeline.json-gitignore fixes absent), the split-version defect behind the
+    // recurring promotion-CI failures. Pin both the committed CI ref AND the run-local ref to the
+    // version THIS kit ships, so the local substrate matches the workflows + a freshly-scaffolded
+    // project. Best-effort: a write failure must never abort the surface refresh.
+    try {
+      const ref = `v${substrate}`;
+      fs.mkdirSync(path.join(projectDir, ".lakebase"), { recursive: true });
+      fs.writeFileSync(lakebaseFile(projectDir, SCM_UTILS_REF_FILE), ref + "\n", "utf8");
+      fs.writeFileSync(lakebaseFile(projectDir, SCM_UTILS_REF_LOCAL_FILE), ref + "\n", "utf8");
+    } catch {
+      /* best-effort: workflows/scripts already carry the version; a stale local pin is recoverable */
+    }
   }
   // Re-append the Playwright E2E block to run-tests.sh for a UI project. The scripts copy above
   // just reset run-tests.sh to the kit TEMPLATE, which carries NO E2E block – the block is appended
@@ -290,7 +309,7 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
  *  commit never touches app code, the `.consort` corpus, the scm-utils `scripts/lk` shim (which
  *  refreshSurface leaves untouched), or the run-local pins (`.lakebase/kit-ref.local` / `.prev`
  *  are gitignored; `.lakebase/kit-ref` is the tracked CI pin). */
-const KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", "scripts", ".github/workflows", ".lakebase/kit-ref"];
+const KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
 
 export interface CommitSurfaceResult {
   committed: boolean;

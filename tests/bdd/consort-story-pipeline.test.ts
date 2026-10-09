@@ -476,6 +476,13 @@ describe("writePipeline self-heals a legacy-TRACKED pipeline.json (Fix A: run-st
     writePipeline(consortDir, setStoryStatus(initPipeline("F1"), "S1", "designing"));
     expect(tracked()).toBe(""); // no longer tracked
     expect(fs.existsSync(path.join(consortDir, "features", "F1", "pipeline.json"))).toBe(true); // working file kept
+
+    // ...AND it covers .gitignore so the untrack STICKS — the load-bearing half: without the
+    // ignore entry, the drive's next `git add -A` would silently re-track it (the recurrence on a
+    // pre-0.2.47-substrate project). Prove it survives a full add.
+    expect(fs.readFileSync(path.join(root, ".gitignore"), "utf8")).toContain(".consort/features/*/pipeline.json");
+    git(root, ["add", "-A"]);
+    expect(tracked()).toBe(""); // STILL untracked after `git add -A` — the heal held
   });
 
   it("is a no-op outside a git repo (never throws into the writer)", () => {
