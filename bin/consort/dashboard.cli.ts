@@ -23,7 +23,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { kitRoot } from "../../consort/config/kit-bin.js";
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
+import { kitRoot, kitVersion } from "../../consort/config/kit-bin.js";
 
 interface Args {
   projectDir: string;
@@ -98,6 +99,12 @@ interface DashboardRecord {
   host: string;
   url: string;
   startedAt: string;
+  /** The kit version whose dashboard BUNDLE this server is running. A long-lived server started
+   *  on an older kit keeps serving that OLD bundle after the project is upgraded — so a v0.3.106
+   *  project could silently be viewed through a v0.3.102 dashboard (missing per-step card fixes).
+   *  Recording it lets a relaunch detect the skew and replace the stale server. Absent on records
+   *  written before this field existed → treated as a mismatch (relaunch). */
+  version?: string;
 }
 
 function recordPath(projectDir: string): string {
@@ -113,7 +120,7 @@ function readRecord(projectDir: string): DashboardRecord | null {
   }
 }
 
-function writeRecord(projectDir: string, rec: DashboardRecord): void {
+export function writeRecord(projectDir: string, rec: DashboardRecord): void {
   try {
     fs.mkdirSync(path.dirname(recordPath(projectDir)), { recursive: true });
     fs.writeFileSync(recordPath(projectDir), JSON.stringify(rec));
@@ -139,13 +146,27 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-/** The live dashboard record for this project, or null. Verifies BOTH that the recorded pid is
- *  alive AND that its port still answers — so a stale record (crashed server) or a reused pid
- *  never false-positives into "already running". */
-async function runningRecord(projectDir: string): Promise<DashboardRecord | null> {
+/** The live dashboard record for this project running the CURRENT kit version, or null. Verifies
+ *  the recorded pid is alive, its port still answers (so a crashed server or reused pid never
+ *  false-positives), AND — when `expectVersion` is given — that the server's bundle version matches
+ *  the kit now launching. A version MISMATCH returns null so the launcher never reuses a stale-kit
+ *  server for an upgraded project (the v0.3.102-serving-v0.3.106 defect); `staleServer` finds that
+ *  one to replace. Omit `expectVersion` to accept any live server (version-agnostic callers). */
+export async function runningRecord(projectDir: string, expectVersion?: string): Promise<DashboardRecord | null> {
   const rec = readRecord(projectDir);
   if (!rec || !pidAlive(rec.pid)) return null;
+  if (expectVersion !== undefined && rec.version !== expectVersion) return null;
   const up = await waitListening(rec.host, rec.port, 3); // quick probe, not the full startup wait
+  return up ? rec : null;
+}
+
+/** A live server for this project whose bundle version does NOT match `current` — a stale-kit
+ *  dashboard the launcher must stop before starting the correct one, so an upgraded project is
+ *  never left viewed through (and never piles up orphan ports from) an older bundle. */
+export async function staleServer(projectDir: string, current: string): Promise<DashboardRecord | null> {
+  const rec = readRecord(projectDir);
+  if (!rec || rec.version === current || !pidAlive(rec.pid)) return null;
+  const up = await waitListening(rec.host, rec.port, 3);
   return up ? rec : null;
 }
 
@@ -176,6 +197,9 @@ function prebuiltServer(kit: string): string | null {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const projectDir = path.resolve(args.projectDir);
+  // The kit version THIS invocation runs (via lk, the project's pinned kit). Any running server
+  // on a different version is serving a stale bundle for this project and must not be reused.
+  const current = kitVersion();
 
   // --open-ready (internal, spawned detached by a --detach launch): poll until the server binds,
   // open the browser, exit. Runs OFF the launcher's critical path so --detach returns at once yet
@@ -191,11 +215,14 @@ async function main(): Promise<void> {
   // caller (e.g. /consort:start) checks this to decide whether to OFFER the dashboard, instead
   // of re-asking on every resume when one is already up.
   if (args.status) {
-    const rec = await runningRecord(projectDir);
+    const rec = await runningRecord(projectDir, current);
     if (rec) {
       console.log(`running ${rec.url}`);
       process.exit(0);
     }
+    // A stale-version server still up counts as "stopped" here: the CURRENT-kit dashboard is not
+    // running, so the caller (e.g. /consort:start) should offer to launch it (the launch path
+    // replaces the stale one).
     console.log("stopped");
     process.exit(3);
   }
@@ -205,7 +232,7 @@ async function main(): Promise<void> {
   // /consort:start offer "open it" on a resume where the detached server survived but no browser
   // tab is open, without risking a foreground spawn if the record turns out stale.
   if (args.openOnly) {
-    const rec = await runningRecord(projectDir);
+    const rec = await runningRecord(projectDir, current);
     if (rec) {
       console.log(`running ${rec.url}`);
       if (args.open) openBrowser(rec.url);
@@ -215,13 +242,23 @@ async function main(): Promise<void> {
     process.exit(3);
   }
 
-  // Already running for this project? Don't spawn a duplicate server — just re-open the browser
-  // on the existing one and exit. Makes the bin idempotent, so a re-launch is harmless.
-  const existing = await runningRecord(projectDir);
+  // Already running for this project ON THE CURRENT KIT? Don't spawn a duplicate — re-open the
+  // browser on it and exit (idempotent re-launch).
+  const existing = await runningRecord(projectDir, current);
   if (existing) {
     console.log(`Consort dashboard already running → ${existing.url}\n  project: ${projectDir}`);
     if (args.open) openBrowser(existing.url);
     process.exit(0);
+  }
+
+  // A server from a DIFFERENT kit version is still up for this project (e.g. started before an
+  // upgrade): stop it so we don't leave the project viewed through a stale bundle or orphan its
+  // port, then fall through to launch the current-kit server.
+  const stale = await staleServer(projectDir, current);
+  if (stale) {
+    console.log(`Replacing stale dashboard (kit ${stale.version ?? "unknown"} → ${current}) for this project at ${stale.url}`);
+    try { process.kill(stale.pid); } catch { /* already gone */ }
+    clearRecord(projectDir);
   }
 
   const kit = kitRoot();
@@ -285,7 +322,7 @@ async function main(): Promise<void> {
   // whenever the server is ready, however long a cold boot takes.
   if (args.detach) {
     child.unref();
-    if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: new Date().toISOString() });
+    if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: new Date().toISOString(), version: current });
     if (args.open) {
       try {
         spawn(process.execPath, [process.argv[1], "--open-ready", "--host", args.host, "--port", String(port)], {
@@ -306,7 +343,7 @@ async function main(): Promise<void> {
   // comes up (a startup crash), say so loudly and point at where the output went.
   void waitListening(args.host, port).then((ready) => {
     if (ready) {
-      if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: new Date().toISOString() });
+      if (childPid) writeRecord(projectDir, { pid: childPid, port, host: args.host, url, startedAt: new Date().toISOString(), version: current });
       if (args.open) openBrowser(url);
     } else {
       console.error(
@@ -351,7 +388,9 @@ function openBrowser(url: string): void {
   }
 }
 
-main().catch((err) => {
-  console.error(`consort-dashboard: ${err instanceof Error ? err.message : String(err)}`);
-  process.exit(1);
-});
+if (isCliEntry(import.meta.url)) {
+  main().catch((err) => {
+    console.error(`consort-dashboard: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  });
+}
