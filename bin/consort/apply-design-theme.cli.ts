@@ -28,8 +28,11 @@ function main(): number {
   const a = parse(process.argv.slice(2));
   const projectDir = a.project ?? process.cwd();
   try {
-    const { themePath, varCount } = applyDesignGuideTheme(projectDir);
+    const { themePath, varCount, iconInstalled } = applyDesignGuideTheme(projectDir);
     process.stdout.write(`apply-design-theme: wrote ${varCount} design tokens to ${themePath} (:root generated from design-guide.json).\n`);
+    if (iconInstalled) {
+      process.stdout.write(`apply-design-theme: installed the brand app icon + pointed the favicon at it (design-guide app_icon).\n`);
+    }
     return 0;
   } catch (err) {
     process.stderr.write(`apply-design-theme: ${(err as Error).message}\n`);

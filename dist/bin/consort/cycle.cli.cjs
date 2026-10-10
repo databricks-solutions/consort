@@ -7883,6 +7883,45 @@ function readAppIconFromGuide(consortDir) {
     return void 0;
   }
 }
+function installBrandAsset(projectDir, consortDir, appIcon) {
+  try {
+    const base = (0, import_node_path4.basename)(appIcon.install_to);
+    const src = [
+      (0, import_node_path4.join)(designAssetsDir(consortDir), base),
+      (0, import_node_path4.join)(projectDir, appIcon.source),
+      (0, import_node_path4.join)(consortDir, appIcon.source)
+    ].find((p) => (0, import_node_fs3.existsSync)(p));
+    if (!src) return false;
+    const dest = (0, import_node_path4.join)(projectDir, appIcon.install_to);
+    (0, import_node_fs3.mkdirSync)((0, import_node_path4.dirname)(dest), { recursive: true });
+    (0, import_node_fs3.copyFileSync)(src, dest);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function applyBrandIconReference(projectDir, installTo) {
+  const indexHtml = (0, import_node_path4.join)(projectDir, "client", "index.html");
+  if (!(0, import_node_fs3.existsSync)(indexHtml)) return false;
+  try {
+    const href = `/${(0, import_node_path4.basename)(installTo)}`;
+    const src = (0, import_node_fs3.readFileSync)(indexHtml, "utf8");
+    const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
+    if (linkRe.test(src)) {
+      const next = src.replace(linkRe, `<link rel="icon"$1href="${href}"$2>`);
+      if (next !== src) (0, import_node_fs3.writeFileSync)(indexHtml, next);
+      return true;
+    }
+    if (/<\/head>/i.test(src)) {
+      (0, import_node_fs3.writeFileSync)(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />
+</head>`));
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 var VAR_CALL = /var\(\s*--[A-Za-z0-9-]+[^)]*\)/g;
 var ROUTE_ELEMENT_RE = /element=\{\s*<\s*([A-Z][A-Za-z0-9_]*)/g;
 var ROUTE_COMPONENT_RE = /\bComponent=\{\s*([A-Z][A-Za-z0-9_]*)\s*\}/g;
@@ -9237,45 +9276,6 @@ function firstRefactorPendingAc(consortDir, featureId, story) {
     return states.find((a) => a.reviewed && !a.refactored)?.acId ?? null;
   }
   return null;
-}
-function installBrandAsset(projectDir, consortDir, appIcon) {
-  try {
-    const base = (0, import_path7.basename)(appIcon.install_to);
-    const src = [
-      (0, import_path7.join)(designAssetsDir(consortDir), base),
-      (0, import_path7.join)(projectDir, appIcon.source),
-      (0, import_path7.join)(consortDir, appIcon.source)
-    ].find((p) => (0, import_fs7.existsSync)(p));
-    if (!src) return false;
-    const dest = (0, import_path7.join)(projectDir, appIcon.install_to);
-    (0, import_fs7.mkdirSync)((0, import_path7.dirname)(dest), { recursive: true });
-    (0, import_fs7.copyFileSync)(src, dest);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function applyBrandIconReference(projectDir, installTo) {
-  const indexHtml = (0, import_path7.join)(projectDir, "client", "index.html");
-  if (!(0, import_fs7.existsSync)(indexHtml)) return false;
-  try {
-    const href = `/${(0, import_path7.basename)(installTo)}`;
-    const src = (0, import_fs7.readFileSync)(indexHtml, "utf8");
-    const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
-    if (linkRe.test(src)) {
-      const next = src.replace(linkRe, `<link rel="icon"$1href="${href}"$2>`);
-      if (next !== src) (0, import_fs7.writeFileSync)(indexHtml, next);
-      return true;
-    }
-    if (/<\/head>/i.test(src)) {
-      (0, import_fs7.writeFileSync)(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />
-</head>`));
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
 }
 function flagUxAdherenceIfDirty(consortDir, story) {
   try {

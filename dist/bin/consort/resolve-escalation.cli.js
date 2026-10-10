@@ -6835,8 +6835,8 @@ function resolveOpenSmells(consortDir, smell, opts) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync13, readFileSync as readFileSync13, readdirSync as readdirSync8, statSync as statSync6, writeFileSync as writeFileSync7, mkdirSync as mkdirSync6, rmSync as rmSync5, copyFileSync } from "fs";
-import { join as join14, dirname as dirname5, basename } from "path";
+import { existsSync as existsSync13, readFileSync as readFileSync13, readdirSync as readdirSync8, statSync as statSync6, writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, rmSync as rmSync5 } from "fs";
+import { join as join14, dirname as dirname6 } from "path";
 
 // consort/test-list/test-list.ts
 init_esm_shims();
@@ -6869,15 +6869,15 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync6, readFileSync as readFileSync7, readdirSync as readdirSync4 } from "fs";
-import { join as join7 } from "path";
+import { existsSync as existsSync6, readFileSync as readFileSync7, readdirSync as readdirSync4, writeFileSync as writeFileSync5, mkdirSync as mkdirSync4, copyFileSync } from "fs";
+import { join as join7, dirname as dirname3, basename } from "path";
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs3 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname3, join as join8 } from "path";
+import { dirname as dirname4, join as join8 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",

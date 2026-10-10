@@ -6762,7 +6762,7 @@ function readAcLayer(tdd, f, acId) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync12, statSync as statSync9, writeFileSync as writeFileSync11, mkdirSync as mkdirSync11, rmSync as rmSync5, copyFileSync } from "fs";
+import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync12, statSync as statSync9, writeFileSync as writeFileSync12, mkdirSync as mkdirSync12, rmSync as rmSync5 } from "fs";
 
 // consort/config/consort-env.ts
 init_esm_shims();
@@ -6794,7 +6794,7 @@ function warnLegacyEnv(legacyName, suffix) {
 }
 
 // consort/pipeline/cycle-record.ts
-import { join as join18, dirname as dirname7, basename } from "path";
+import { join as join18, dirname as dirname8 } from "path";
 
 // consort/test-list/test-list.ts
 init_esm_shims();
@@ -7875,8 +7875,8 @@ function stopLocal(projectDir, targetName) {
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync11, readFileSync as readFileSync12, readdirSync as readdirSync8 } from "fs";
-import { join as join11 } from "path";
+import { existsSync as existsSync11, readFileSync as readFileSync12, readdirSync as readdirSync8, writeFileSync as writeFileSync9, mkdirSync as mkdirSync9, copyFileSync } from "fs";
+import { join as join11, dirname as dirname5, basename } from "path";
 function readAppIconFromGuide(consortDir) {
   try {
     const gp = designGuideJson(consortDir);
@@ -7886,6 +7886,45 @@ function readAppIconFromGuide(consortDir) {
     return icon && typeof icon.source === "string" && typeof icon.install_to === "string" ? { source: icon.source, install_to: icon.install_to } : void 0;
   } catch {
     return void 0;
+  }
+}
+function installBrandAsset(projectDir, consortDir, appIcon) {
+  try {
+    const base = basename(appIcon.install_to);
+    const src = [
+      join11(designAssetsDir(consortDir), base),
+      join11(projectDir, appIcon.source),
+      join11(consortDir, appIcon.source)
+    ].find((p) => existsSync11(p));
+    if (!src) return false;
+    const dest = join11(projectDir, appIcon.install_to);
+    mkdirSync9(dirname5(dest), { recursive: true });
+    copyFileSync(src, dest);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function applyBrandIconReference(projectDir, installTo) {
+  const indexHtml = join11(projectDir, "client", "index.html");
+  if (!existsSync11(indexHtml)) return false;
+  try {
+    const href = `/${basename(installTo)}`;
+    const src = readFileSync12(indexHtml, "utf8");
+    const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
+    if (linkRe.test(src)) {
+      const next = src.replace(linkRe, `<link rel="icon"$1href="${href}"$2>`);
+      if (next !== src) writeFileSync9(indexHtml, next);
+      return true;
+    }
+    if (/<\/head>/i.test(src)) {
+      writeFileSync9(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />
+</head>`));
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
   }
 }
 var VAR_CALL = /var\(\s*--[A-Za-z0-9-]+[^)]*\)/g;
@@ -8015,7 +8054,7 @@ init_esm_shims();
 import * as fs4 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname5, join as join12 } from "path";
+import { dirname as dirname6, join as join12 } from "path";
 function supersededTestsJson(tdd, feature, story, ac) {
   return join12(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
@@ -8088,7 +8127,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs4.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState(dirname5(tdd));
+      const cur = computeTreeState(dirname6(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs4.rmSync(file, { force: true });
         return void 0;
@@ -8102,7 +8141,7 @@ function readGreenFailure(tdd, feature, story, ac) {
 function writeGreenFailure(tdd, feature, story, ac, value) {
   let stamped = value;
   if (stamped.treeState === void 0) {
-    const ts = computeTreeState(dirname5(tdd));
+    const ts = computeTreeState(dirname6(tdd));
     if (ts) stamped = { ...stamped, treeState: ts };
   }
   fs4.mkdirSync(cycleDir(tdd, feature, story, ac), { recursive: true });
@@ -8915,7 +8954,7 @@ async function commitExperimentCode(projectDir, message) {
 }
 async function commitCycleWork(consortDir, message) {
   try {
-    await commitExperimentCode(dirname7(consortDir), message);
+    await commitExperimentCode(dirname8(consortDir), message);
   } catch (e) {
     if (e instanceof ProtectedBranchCommitError) throw e;
   }
@@ -9063,10 +9102,10 @@ async function greenOpenCycle(args) {
     branch_id: open.branch_id
   };
   const verify = args.verify ?? defaultGreenVerifier;
-  let result = await verify({ projectDir: dirname7(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+  let result = await verify({ projectDir: dirname8(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
   let testSmellRemediation;
   if (!result.passed && !consortEnv("REPLAY_BUILD_DIR") && isProvisioningFaultSummary(result.summary)) {
-    const retry = await verify({ projectDir: dirname7(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+    const retry = await verify({ projectDir: dirname8(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
     if (retry.passed) {
       result = retry;
     } else if (isProvisioningFaultSummary(retry.summary)) {
@@ -9084,20 +9123,20 @@ async function greenOpenCycle(args) {
   }
   if (result.passed && !consortEnv("REPLAY_BUILD_DIR")) {
     try {
-      const mig = checkMigrationAppClean({ projectDir: dirname7(consortDir) });
+      const mig = checkMigrationAppClean({ projectDir: dirname8(consortDir) });
       if (!mig.clean && mig.remediation) result = { passed: false, summary: mig.remediation };
     } catch {
     }
     if (result.passed) {
       try {
-        const hist = checkShippedMigrationImmutable({ projectDir: dirname7(consortDir) });
+        const hist = checkShippedMigrationImmutable({ projectDir: dirname8(consortDir) });
         if (!hist.clean && hist.remediation) result = { passed: false, summary: hist.remediation };
       } catch {
       }
     }
     if (result.passed) {
       try {
-        const smells = checkTestSmells({ projectDir: dirname7(consortDir) });
+        const smells = checkTestSmells({ projectDir: dirname8(consortDir) });
         if (!smells.clean && smells.remediation) {
           result = { passed: false, summary: smells.remediation };
           testSmellRemediation = smells.remediation;
@@ -9138,9 +9177,9 @@ async function greenOpenCycle(args) {
       let contractRefs;
       let supersededTestRefs;
       try {
-        const contract = checkContractClean({ projectDir: dirname7(consortDir) });
+        const contract = checkContractClean({ projectDir: dirname8(consortDir) });
         if (!contract.clean && contract.remediation) contractRefs = contract.remediation;
-        const superseded = supersededTestCandidates({ projectDir: dirname7(consortDir) });
+        const superseded = supersededTestCandidates({ projectDir: dirname8(consortDir) });
         if (superseded.advisory) supersededTestRefs = superseded.advisory;
       } catch {
       }
@@ -9243,45 +9282,6 @@ function firstRefactorPendingAc(consortDir, featureId, story) {
   }
   return null;
 }
-function installBrandAsset(projectDir, consortDir, appIcon) {
-  try {
-    const base = basename(appIcon.install_to);
-    const src = [
-      join18(designAssetsDir(consortDir), base),
-      join18(projectDir, appIcon.source),
-      join18(consortDir, appIcon.source)
-    ].find((p) => existsSync18(p));
-    if (!src) return false;
-    const dest = join18(projectDir, appIcon.install_to);
-    mkdirSync11(dirname7(dest), { recursive: true });
-    copyFileSync(src, dest);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function applyBrandIconReference(projectDir, installTo) {
-  const indexHtml = join18(projectDir, "client", "index.html");
-  if (!existsSync18(indexHtml)) return false;
-  try {
-    const href = `/${basename(installTo)}`;
-    const src = readFileSync18(indexHtml, "utf8");
-    const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
-    if (linkRe.test(src)) {
-      const next = src.replace(linkRe, `<link rel="icon"$1href="${href}"$2>`);
-      if (next !== src) writeFileSync11(indexHtml, next);
-      return true;
-    }
-    if (/<\/head>/i.test(src)) {
-      writeFileSync11(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />
-</head>`));
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
 function flagUxAdherenceIfDirty(consortDir, story) {
   try {
     let designClasses;
@@ -9297,10 +9297,10 @@ function flagUxAdherenceIfDirty(consortDir, story) {
     } catch {
     }
     if (appIcon) {
-      installBrandAsset(dirname7(consortDir), consortDir, appIcon);
-      applyBrandIconReference(dirname7(consortDir), appIcon.install_to);
+      installBrandAsset(dirname8(consortDir), consortDir, appIcon);
+      applyBrandIconReference(dirname8(consortDir), appIcon.install_to);
     }
-    const ux = checkUxClean({ projectDir: dirname7(consortDir), designClasses, appIcon });
+    const ux = checkUxClean({ projectDir: dirname8(consortDir), designClasses, appIcon });
     if (!ux.clean && !hasOpenSmell(consortDir, "ux-adherence", story)) {
       writeSmellsLog(consortDir, [{ smell: "ux-adherence", cycle_ids: [], detail: summarizeUxViolations(ux), story_id: story }]);
     }
@@ -9320,8 +9320,8 @@ function reviewAc(consortDir, featureId, story, acId) {
   const refactorRequested = verdict.refactor === true;
   const file = acReviewJson(consortDir, featureId, story, acId);
   const prior = readReview(consortDir, featureId, story, acId);
-  mkdirSync11(dirname7(file), { recursive: true });
-  writeFileSync11(
+  mkdirSync12(dirname8(file), { recursive: true });
+  writeFileSync12(
     file,
     JSON.stringify(
       { ...prior, reviewed_at: (/* @__PURE__ */ new Date()).toISOString(), refactor_requested: refactorRequested, ...verdict.notes ? { refactor_notes: verdict.notes } : {} },
@@ -9347,7 +9347,7 @@ function reviewAc(consortDir, featureId, story, acId) {
 async function refactorAc(consortDir, featureId, story, acId, opts) {
   const exp = storyExperiment(consortDir, featureId, story);
   const verify = opts?.verify ?? defaultGreenVerifier;
-  const result = await verify({ projectDir: dirname7(consortDir), consortDir, featureId, story, branchId: exp.branch });
+  const result = await verify({ projectDir: dirname8(consortDir), consortDir, featureId, story, branchId: exp.branch });
   if (!result.passed) {
     const escalation = writeEscalation(consortDir, {
       source: "driver-refactor",
@@ -9360,8 +9360,8 @@ async function refactorAc(consortDir, featureId, story, acId, opts) {
   }
   const file = acReviewJson(consortDir, featureId, story, acId);
   const prior = readReview(consortDir, featureId, story, acId);
-  mkdirSync11(dirname7(file), { recursive: true });
-  writeFileSync11(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
+  mkdirSync12(dirname8(file), { recursive: true });
+  writeFileSync12(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
   for (const d of readSmellsLog(consortDir).detected) {
     if (!d.resolution && isBuildRefactorRoutableSmell(d.smell) && (d.story_id === void 0 || d.story_id === story)) {
       markSmellResolved(consortDir, d.smell, { story_id: d.story_id, kind: "accepted", note: `refactored: ${acId}` });
@@ -9400,8 +9400,8 @@ function reviewStory(consortDir, featureId, story) {
   const refactorRequested = verdict.refactor === true;
   const file = storyReviewJson(consortDir, featureId, story);
   const prior = readStoryReview(consortDir, featureId, story);
-  mkdirSync11(dirname7(file), { recursive: true });
-  writeFileSync11(
+  mkdirSync12(dirname8(file), { recursive: true });
+  writeFileSync12(
     file,
     JSON.stringify(
       { ...prior, reviewed_at: (/* @__PURE__ */ new Date()).toISOString(), refactor_requested: refactorRequested, ...verdict.notes ? { refactor_notes: verdict.notes } : {} },
@@ -9427,13 +9427,13 @@ function reviewStory(consortDir, featureId, story) {
 async function refactorStory(consortDir, featureId, story, opts) {
   const exp = storyExperiment(consortDir, featureId, story);
   const verify = opts?.verify ?? defaultGreenVerifier;
-  const result = await verify({ projectDir: dirname7(consortDir), consortDir, featureId, story, branchId: exp.branch });
+  const result = await verify({ projectDir: dirname8(consortDir), consortDir, featureId, story, branchId: exp.branch });
   if (!result.passed) {
     const rf = readRefactorVerifyAssessMarker(consortDir, featureId, story);
     if (!rf?.assessed) {
       let supersededAdvisory;
       try {
-        const superseded = supersededTestCandidates({ projectDir: dirname7(consortDir) });
+        const superseded = supersededTestCandidates({ projectDir: dirname8(consortDir) });
         if (superseded.advisory) supersededAdvisory = superseded.advisory;
       } catch {
       }
@@ -9454,12 +9454,12 @@ async function refactorStory(consortDir, featureId, story, opts) {
   clearRefactorVerifyAssessMarker(consortDir, featureId, story);
   const file = storyReviewJson(consortDir, featureId, story);
   const prior = readStoryReview(consortDir, featureId, story);
-  mkdirSync11(dirname7(file), { recursive: true });
-  writeFileSync11(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
+  mkdirSync12(dirname8(file), { recursive: true });
+  writeFileSync12(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
   for (const d of readSmellsLog(consortDir).detected) {
     if (!d.resolution && isBuildRefactorRoutableSmell(d.smell) && (d.story_id === void 0 || d.story_id === story)) {
       if (d.smell === "ux-adherence") {
-        const ux = checkUxClean({ projectDir: dirname7(consortDir), appIcon: readAppIconFromGuide(consortDir) });
+        const ux = checkUxClean({ projectDir: dirname8(consortDir), appIcon: readAppIconFromGuide(consortDir) });
         if (!ux.clean) continue;
       }
       markSmellResolved(consortDir, d.smell, { story_id: d.story_id, kind: "accepted", note: `refactored story: ${story}` });
@@ -9479,7 +9479,7 @@ async function refactorStory(consortDir, featureId, story, opts) {
 
 // consort/smells/reflection.ts
 init_esm_shims();
-import { existsSync as existsSync19, readFileSync as readFileSync19, writeFileSync as writeFileSync12, mkdirSync as mkdirSync12, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync19, readFileSync as readFileSync19, writeFileSync as writeFileSync13, mkdirSync as mkdirSync13, rmSync as rmSync6 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"

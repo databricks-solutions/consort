@@ -231,6 +231,16 @@ if (p.json) {
     bare (unstyled) feature pages: ${result.tokens.bare.join(", ")}` + (result.tokens.remediation ? `
     -> ${result.tokens.remediation}` : ""));
   }
+  if (!result.vocabulary.ok) {
+    blocks.push(`  [component vocabulary]
+    design classes not defined in global.css: ${result.vocabulary.missing.join(", ")}` + (result.vocabulary.remediation ? `
+    -> ${result.vocabulary.remediation}` : ""));
+  }
+  if (!result.appIcon.ok) {
+    blocks.push(`  [app icon]
+    ${result.appIcon.violations.join("\n    ")}` + (result.appIcon.remediation ? `
+    -> ${result.appIcon.remediation}` : ""));
+  }
   process.stderr.write(`ux-clean: FAILED \u2013 ${summarizeUxViolations(result)}.
 
 ${blocks.join("\n\n")}

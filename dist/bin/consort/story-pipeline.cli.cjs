@@ -7480,10 +7480,10 @@ function readHeldByPid(lockPath) {
     return null;
   }
 }
-function gatesLockFilePath(consortDir, featureId, basename4) {
+function gatesLockFilePath(consortDir, featureId, basename5) {
   const dir = requireFeatureDir(consortDir, featureId);
   (0, import_fs4.mkdirSync)(dir, { recursive: true });
-  return (0, import_path7.join)(dir, basename4);
+  return (0, import_path7.join)(dir, basename5);
 }
 function withPipelineLock(featureId, fn, opts = {}) {
   return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });

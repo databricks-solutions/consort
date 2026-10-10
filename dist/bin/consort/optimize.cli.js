@@ -9763,7 +9763,7 @@ function composeOnAction(...hooks) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_esm_shims();
 import * as fs17 from "fs";
-import { dirname as dirname28, join as join50 } from "path";
+import { dirname as dirname29, join as join50 } from "path";
 
 // consort/orchestrator/drive/orchestrator-drive.ts
 init_esm_shims();
@@ -12791,8 +12791,8 @@ function coveredTestIds(c) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync42, readFileSync as readFileSync36, readdirSync as readdirSync26, statSync as statSync18, writeFileSync as writeFileSync22, mkdirSync as mkdirSync26, rmSync as rmSync9, copyFileSync as copyFileSync4 } from "fs";
-import { join as join42, dirname as dirname22, basename as basename4 } from "path";
+import { existsSync as existsSync42, readFileSync as readFileSync36, readdirSync as readdirSync26, statSync as statSync18, writeFileSync as writeFileSync23, mkdirSync as mkdirSync27, rmSync as rmSync9 } from "fs";
+import { join as join42, dirname as dirname23 } from "path";
 
 // consort/test-list/test-list.ts
 init_esm_shims();
@@ -13241,15 +13241,15 @@ function storyDeployVerified(consortDir, featureId, storyId) {
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync35, readFileSync as readFileSync30, readdirSync as readdirSync22 } from "fs";
-import { join as join35 } from "path";
+import { existsSync as existsSync35, readFileSync as readFileSync30, readdirSync as readdirSync22, writeFileSync as writeFileSync20, mkdirSync as mkdirSync24, copyFileSync as copyFileSync4 } from "fs";
+import { join as join35, dirname as dirname20, basename as basename4 } from "path";
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs13 from "fs";
 import { execFileSync as execFileSync3 } from "child_process";
 import { createHash as createHash3 } from "crypto";
-import { dirname as dirname20, join as join36 } from "path";
+import { dirname as dirname21, join as join36 } from "path";
 function supersededTestsJson(tdd, feature, story, ac) {
   return join36(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
@@ -13315,7 +13315,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs13.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState(dirname20(tdd));
+      const cur = computeTreeState(dirname21(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs13.rmSync(file, { force: true });
         return void 0;
@@ -13588,7 +13588,7 @@ function storyDesignFingerprint(consortDir, feature, story) {
 
 // consort/gates/gates.ts
 init_esm_shims();
-import { existsSync as existsSync43, readFileSync as readFileSync38, renameSync, unlinkSync, writeFileSync as writeFileSync23 } from "fs";
+import { existsSync as existsSync43, readFileSync as readFileSync38, renameSync, unlinkSync, writeFileSync as writeFileSync24 } from "fs";
 import { join as join43 } from "path";
 var GATES_SCHEMA_VERSION = 1;
 var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
@@ -13685,7 +13685,7 @@ import { readWorkflowState as readWorkflowState2, SCM_STATES } from "@databricks
 
 // consort/smells/reflection.ts
 init_esm_shims();
-import { existsSync as existsSync44, readFileSync as readFileSync39, writeFileSync as writeFileSync24, mkdirSync as mkdirSync27, rmSync as rmSync10 } from "fs";
+import { existsSync as existsSync44, readFileSync as readFileSync39, writeFileSync as writeFileSync25, mkdirSync as mkdirSync28, rmSync as rmSync10 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"
@@ -13751,7 +13751,7 @@ function testListConforms(consortDir, featureId, story) {
 
 // consort/architecture/architecture-canon.ts
 init_esm_shims();
-import { existsSync as existsSync46, readFileSync as readFileSync41, writeFileSync as writeFileSync25, mkdirSync as mkdirSync28, readdirSync as readdirSync29 } from "fs";
+import { existsSync as existsSync46, readFileSync as readFileSync41, writeFileSync as writeFileSync26, mkdirSync as mkdirSync29, readdirSync as readdirSync29 } from "fs";
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
@@ -14117,16 +14117,16 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync51, readFileSync as readFileSync46, writeFileSync as writeFileSync27, mkdirSync as mkdirSync30, readdirSync as readdirSync33, statSync as statSync21, rmSync as rmSync11 } from "fs";
+import { existsSync as existsSync51, readFileSync as readFileSync46, writeFileSync as writeFileSync28, mkdirSync as mkdirSync31, readdirSync as readdirSync33, statSync as statSync21, rmSync as rmSync11 } from "fs";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
 import { existsSync as existsSync50, readFileSync as readFileSync45, readdirSync as readdirSync32, statSync as statSync20 } from "fs";
-import { join as join46, dirname as dirname24 } from "path";
+import { join as join46, dirname as dirname25 } from "path";
 
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
-import { existsSync as existsSync48, readFileSync as readFileSync43, writeFileSync as writeFileSync26, mkdirSync as mkdirSync29 } from "fs";
+import { existsSync as existsSync48, readFileSync as readFileSync43, writeFileSync as writeFileSync27, mkdirSync as mkdirSync30 } from "fs";
 function normModule(m) {
   return m.replace(/\/+$/, "");
 }
@@ -14606,7 +14606,7 @@ function e2eLayerPresentReason(consortDir, featureId) {
   }
   let uiReact = false;
   try {
-    const proj = resolveProjectSettings(dirname24(consortDir)).project;
+    const proj = resolveProjectSettings(dirname25(consortDir)).project;
     uiReact = proj.uiTrack === true && proj.clientFramework === "react";
   } catch {
   }
@@ -14794,7 +14794,7 @@ function readPipeline(consortDir, featureId) {
 // consort/session/response-formatter.ts
 init_esm_shims();
 import { existsSync as existsSync53, readFileSync as readFileSync48, readdirSync as readdirSync35 } from "fs";
-import { dirname as dirname25 } from "path";
+import { dirname as dirname26 } from "path";
 
 // consort/architecture/e2e-route-adherence.ts
 init_esm_shims();
@@ -15173,7 +15173,7 @@ function checkUxDesigner(args, v) {
   if (!b.ok) v.push({ artifact: "design/design-guide.json", problem: b.problem ?? "a staged brand asset is not declared as app_icon" });
 }
 function checkNavigator(args, v) {
-  const projectDir = dirname25(args.consortDir);
+  const projectDir = dirname26(args.consortDir);
   for (const x of checkE2eRouteCollision(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
   for (const x of checkE2eSeedBackendDerivation(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
 }
@@ -15195,7 +15195,7 @@ function formatRoleResponse(args) {
 // consort/orchestrator/status/feature-status.ts
 init_esm_shims();
 import { existsSync as existsSync54, readFileSync as readFileSync49, readdirSync as readdirSync36, statSync as statSync23 } from "fs";
-import { dirname as dirname26, join as join48 } from "path";
+import { dirname as dirname27, join as join48 } from "path";
 
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
@@ -15258,7 +15258,7 @@ function deliveredFeatures(consortDir) {
 init_esm_shims();
 import { execSync as execSync2 } from "child_process";
 import * as fs16 from "fs";
-import { dirname as dirname27, join as join49 } from "path";
+import { dirname as dirname28, join as join49 } from "path";
 function artifactRoot(consortDir) {
   return consortDir;
 }
@@ -15332,7 +15332,7 @@ function readCtxLeverMarker(consortDir) {
   }
 }
 function failingTestBlock(consortDir, story, reader = defaultFailingTestReader) {
-  const body = reader(dirname27(consortDir), story);
+  const body = reader(dirname28(consortDir), story);
   return body ? ` FAILING TEST (make THIS pass; do NOT search for it) ::
 \`\`\`python
 ${body}
@@ -15352,7 +15352,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
     parts.push(` LAYOUT (place/judge code at THESE paths, do not scan for them) :: ${layout}.`);
   }
   {
-    const language = projectLanguage(dirname27(consortDir));
+    const language = projectLanguage(dirname28(consortDir));
     const runHint = language === "nodejs" ? ` RUN/REACHABILITY :: node project \u2013 source under src/ (there is NO app/). To confirm the app boots or is reachable, run the project's OWN start (the package.json start/dev script, e.g. \`node src/index.js\`) and GET the health path over HTTP \u2013 do NOT assume Python or run \`python -c "import app.main"\` (it will false-fail here).` : language === "java" || language === "kotlin" ? ` RUN/REACHABILITY :: ${language} project. To confirm the app boots or is reachable, run \`./mvnw spring-boot:run\` and GET the health path over HTTP \u2013 do NOT assume Python (\`python -c "import app.main"\` false-fails here).` : ` RUN/REACHABILITY :: python project \u2013 source under app/. To confirm the app boots or is reachable, run \`uv run uvicorn app.main:app\` and GET the health path over HTTP. Reachability is an HTTP response, never just an import succeeding.`;
     parts.push(runHint);
   }
@@ -15364,7 +15364,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   const marker = readCtxLeverMarker(consortDir);
   const dbOn = opts.dbState ?? marker.dbState ?? consortEnv("CTX_DBSTATE") === "1";
   if (dbOn) {
-    const st = (opts.dbStateReader ?? defaultDbStateReader)(dirname27(consortDir));
+    const st = (opts.dbStateReader ?? defaultDbStateReader)(dirname28(consortDir));
     if (st && (st.current || st.heads)) {
       parts.push(
         ` DB STATE (already probed, do NOT re-run alembic current/heads) ::${st.current ? ` current=${st.current.replace(/\s+/g, " ")}` : ""}${st.heads ? ` head=${st.heads.replace(/\s+/g, " ")}` : ""}. The branch is migrated to head; iterate with \`uv run --env-file .env pytest <path>\` (no re-migrate).`
@@ -15380,7 +15380,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   if (scopeOn) parts.push(scopeNoteBlock());
   const migrationOn = opts.migration ?? marker.migration ?? consortEnv("CTX_MIGRATION") === "1";
   if (migrationOn) {
-    const language = projectLanguage(dirname27(consortDir));
+    const language = projectLanguage(dirname28(consortDir));
     const migrationGuide = language === "nodejs" ? ` MIGRATION :: knex migrations live in migrations/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Source/models live under src/; apply with \`npm run migrate\`.` : language === "java" || language === "kotlin" ? ` MIGRATION :: flyway migrations live in src/main/resources/db/migration/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Apply with \`./mvnw -q flyway:migrate\`.` : ` MIGRATION :: alembic migrations live in alembic/versions/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author the revision file or grep scripts/lk to find the command). ORM models are in app/models.py; apply with \`uv run --env-file .env alembic upgrade head\`.`;
     parts.push(migrationGuide);
   }
@@ -16191,7 +16191,7 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
       return deployGateCmds(f, cfg, deployTarget);
     case "deploy-verify-reverify":
       const markerFile = featureDeployReverifyMarkerJson(cfg.consortDir, f);
-      fs17.mkdirSync(dirname28(markerFile), { recursive: true });
+      fs17.mkdirSync(dirname29(markerFile), { recursive: true });
       fs17.writeFileSync(markerFile, JSON.stringify({ routed_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
       return deployGateCmds(f, cfg, deployTarget);
     case "approve-deploy-gate":
@@ -16378,7 +16378,7 @@ function buildDriveEffects(cfg) {
     onHandback(handoff, detail) {
       const file = handbackFile(cfg.consortDir, cfg.featureId, handoff.responder, handoff.story);
       try {
-        fs17.mkdirSync(dirname28(file), { recursive: true });
+        fs17.mkdirSync(dirname29(file), { recursive: true });
         fs17.writeFileSync(file, `${detail}
 `, "utf8");
       } catch {
@@ -16573,25 +16573,25 @@ function makeOpusJudge(opts) {
 
 // consort/optimize/optimize-live.ts
 init_esm_shims();
-import { existsSync as existsSync58, mkdirSync as mkdirSync33, readFileSync as readFileSync54, rmSync as rmSync15, writeFileSync as writeFileSync30 } from "fs";
+import { existsSync as existsSync58, mkdirSync as mkdirSync34, readFileSync as readFileSync54, rmSync as rmSync15, writeFileSync as writeFileSync31 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
 import { join as join54 } from "path";
 
 // consort/optimize/optimize-agent-overlay.ts
 init_esm_shims();
-import { existsSync as existsSync57, mkdirSync as mkdirSync32, readFileSync as readFileSync53, rmSync as rmSync13, writeFileSync as writeFileSync29 } from "fs";
-import { dirname as dirname29, join as join52 } from "path";
+import { existsSync as existsSync57, mkdirSync as mkdirSync33, readFileSync as readFileSync53, rmSync as rmSync13, writeFileSync as writeFileSync30 } from "fs";
+import { dirname as dirname30, join as join52 } from "path";
 function overlayAgent(args) {
   const { projectDir, role, markdown } = args;
   const agentPath = join52(projectDir, ".claude", "agents", `${role}.md`);
   const hadBaseline = existsSync57(agentPath);
   const baseline = hadBaseline ? readFileSync53(agentPath, "utf8") : void 0;
-  mkdirSync32(dirname29(agentPath), { recursive: true });
-  writeFileSync29(agentPath, markdown);
+  mkdirSync33(dirname30(agentPath), { recursive: true });
+  writeFileSync30(agentPath, markdown);
   return {
     restore() {
       if (hadBaseline) {
-        writeFileSync29(agentPath, baseline);
+        writeFileSync30(agentPath, baseline);
       } else if (existsSync57(agentPath)) {
         rmSync13(agentPath, { force: true });
       }
@@ -16643,7 +16643,7 @@ function evaluateDesignGate(args) {
 init_esm_shims();
 import { cpSync as cpSync8, mkdtempSync, rmSync as rmSync14 } from "fs";
 import { tmpdir } from "os";
-import { basename as basename5, dirname as dirname30, join as join53 } from "path";
+import { basename as basename6, dirname as dirname31, join as join53 } from "path";
 function captureDesignArtifacts(args) {
   const { consortDir, destDir } = args;
   rmSync14(destDir, { recursive: true, force: true });
@@ -16658,7 +16658,7 @@ function restoreDesignArtifacts(args) {
 function snapshotDesign(args) {
   const { consortDir } = args;
   const backup = mkdtempSync(join53(tmpdir(), "optimize-design-snap-"));
-  const backupTree = join53(backup, basename5(consortDir));
+  const backupTree = join53(backup, basename6(consortDir));
   cpSync8(consortDir, backupTree, { recursive: true });
   return {
     restore() {
@@ -16731,9 +16731,9 @@ function applyCandidate(ctx, candidate) {
 }
 function writeTrialRecord(ctx, handoff, candidate, trial, result) {
   const dir = join54(ctx.experimentsDir, handoff.id, candidate.id, `trial-${trial}`);
-  mkdirSync33(dir, { recursive: true });
-  writeFileSync30(join54(dir, "candidate.json"), JSON.stringify(candidate, null, 2) + "\n");
-  writeFileSync30(join54(dir, "result.json"), JSON.stringify(result, null, 2) + "\n");
+  mkdirSync34(dir, { recursive: true });
+  writeFileSync31(join54(dir, "candidate.json"), JSON.stringify(candidate, null, 2) + "\n");
+  writeFileSync31(join54(dir, "result.json"), JSON.stringify(result, null, 2) + "\n");
 }
 function makeChampionWalkDeps(ctx) {
   return {
@@ -16811,8 +16811,8 @@ function makeChampionWalkDeps(ctx) {
       const champ = join54(ctx.experimentsDir, "champion-walk.json");
       const prior = existsSync58(champ) ? JSON.parse(readFileSync54(champ, "utf8")) : { winners: [] };
       prior.winners.push({ handoffId: handoff.id, candidateId: candidate.id });
-      mkdirSync33(ctx.experimentsDir, { recursive: true });
-      writeFileSync30(champ, JSON.stringify(prior, null, 2) + "\n");
+      mkdirSync34(ctx.experimentsDir, { recursive: true });
+      writeFileSync31(champ, JSON.stringify(prior, null, 2) + "\n");
     }
   };
 }

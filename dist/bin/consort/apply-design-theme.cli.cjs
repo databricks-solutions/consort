@@ -48,8 +48,48 @@ function resolveConsortDir(projectDir = process.cwd()) {
 }
 var designDir = (tdd) => (0, import_node_path.join)(tdd, "design");
 var designGuideJson = (tdd) => (0, import_node_path.join)(designDir(tdd), "design-guide.json");
+var designAssetsDir = (tdd) => (0, import_node_path.join)(designDir(tdd), "assets");
 
 // consort/architecture/design-adherence.ts
+function installBrandAsset(projectDir, consortDir, appIcon) {
+  try {
+    const base = (0, import_node_path2.basename)(appIcon.install_to);
+    const src = [
+      (0, import_node_path2.join)(designAssetsDir(consortDir), base),
+      (0, import_node_path2.join)(projectDir, appIcon.source),
+      (0, import_node_path2.join)(consortDir, appIcon.source)
+    ].find((p) => (0, import_node_fs.existsSync)(p));
+    if (!src) return false;
+    const dest = (0, import_node_path2.join)(projectDir, appIcon.install_to);
+    (0, import_node_fs.mkdirSync)((0, import_node_path2.dirname)(dest), { recursive: true });
+    (0, import_node_fs.copyFileSync)(src, dest);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function applyBrandIconReference(projectDir, installTo) {
+  const indexHtml = (0, import_node_path2.join)(projectDir, "client", "index.html");
+  if (!(0, import_node_fs.existsSync)(indexHtml)) return false;
+  try {
+    const href = `/${(0, import_node_path2.basename)(installTo)}`;
+    const src = (0, import_node_fs.readFileSync)(indexHtml, "utf8");
+    const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
+    if (linkRe.test(src)) {
+      const next = src.replace(linkRe, `<link rel="icon"$1href="${href}"$2>`);
+      if (next !== src) (0, import_node_fs.writeFileSync)(indexHtml, next);
+      return true;
+    }
+    if (/<\/head>/i.test(src)) {
+      (0, import_node_fs.writeFileSync)(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />
+</head>`));
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 function designGuideToCssVars(guide) {
   const vars = {};
   vars["--font-sans"] = guide.typography.font_family;
@@ -101,7 +141,8 @@ function buildThemeCss(guide) {
   return THEME_HEADER + renderThemeRootCss(guide);
 }
 function applyDesignGuideTheme(projectDir) {
-  const guidePath = designGuideJson(resolveConsortDir(projectDir));
+  const consortDir = resolveConsortDir(projectDir);
+  const guidePath = designGuideJson(consortDir);
   if (!(0, import_node_fs2.existsSync)(guidePath)) {
     throw new Error(
       `apply-theme: no design guide at ${guidePath} \u2014 run the UX designer first (this is a UI project's design system).`
@@ -111,7 +152,12 @@ function applyDesignGuideTheme(projectDir) {
   const themePath = (0, import_node_path3.join)(projectDir, "client", "src", "styles", "theme.css");
   const css = buildThemeCss(guide);
   (0, import_node_fs2.writeFileSync)(themePath, css);
-  return { themePath, varCount: (css.match(/--[\w-]+:/g) ?? []).length };
+  let iconInstalled = false;
+  if (guide.app_icon) {
+    iconInstalled = installBrandAsset(projectDir, consortDir, guide.app_icon);
+    applyBrandIconReference(projectDir, guide.app_icon.install_to);
+  }
+  return { themePath, varCount: (css.match(/--[\w-]+:/g) ?? []).length, iconInstalled };
 }
 
 // bin/consort/apply-design-theme.cli.ts
@@ -126,9 +172,13 @@ function main() {
   const a = parse(process.argv.slice(2));
   const projectDir = a.project ?? process.cwd();
   try {
-    const { themePath, varCount } = applyDesignGuideTheme(projectDir);
+    const { themePath, varCount, iconInstalled } = applyDesignGuideTheme(projectDir);
     process.stdout.write(`apply-design-theme: wrote ${varCount} design tokens to ${themePath} (:root generated from design-guide.json).
 `);
+    if (iconInstalled) {
+      process.stdout.write(`apply-design-theme: installed the brand app icon + pointed the favicon at it (design-guide app_icon).
+`);
+    }
     return 0;
   } catch (err) {
     process.stderr.write(`apply-design-theme: ${err.message}

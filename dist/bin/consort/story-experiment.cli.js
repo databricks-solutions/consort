@@ -7269,10 +7269,10 @@ function readHeldByPid(lockPath) {
     return null;
   }
 }
-function gatesLockFilePath(consortDir, featureId, basename2) {
+function gatesLockFilePath(consortDir, featureId, basename3) {
   const dir = requireFeatureDir(consortDir, featureId);
   mkdirSync4(dir, { recursive: true });
-  return join8(dir, basename2);
+  return join8(dir, basename3);
 }
 function withPipelineLock(featureId, fn, opts = {}) {
   return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
@@ -7403,8 +7403,8 @@ import { mergePaired } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync13, statSync as statSync9, writeFileSync as writeFileSync10, mkdirSync as mkdirSync11, rmSync as rmSync6, copyFileSync } from "fs";
-import { join as join20, dirname as dirname10, basename } from "path";
+import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync13, statSync as statSync9, writeFileSync as writeFileSync11, mkdirSync as mkdirSync12, rmSync as rmSync6 } from "fs";
+import { join as join20, dirname as dirname11 } from "path";
 
 // consort/deploy/deploy.ts
 init_esm_shims();
@@ -7445,15 +7445,15 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync11, readFileSync as readFileSync12, readdirSync as readdirSync9 } from "fs";
-import { join as join13 } from "path";
+import { existsSync as existsSync11, readFileSync as readFileSync12, readdirSync as readdirSync9, writeFileSync as writeFileSync8, mkdirSync as mkdirSync9, copyFileSync } from "fs";
+import { join as join13, dirname as dirname8, basename } from "path";
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs4 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname8, join as join14 } from "path";
+import { dirname as dirname9, join as join14 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7545,7 +7545,7 @@ function resetStoryBuildState(consortDir, featureId, story) {
           testItemsReset++;
         }
       }
-      writeFileSync10(tlPath, JSON.stringify(tl, null, 2) + "\n");
+      writeFileSync11(tlPath, JSON.stringify(tl, null, 2) + "\n");
     } catch {
     }
   }

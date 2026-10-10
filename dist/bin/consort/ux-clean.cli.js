@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 // consort/architecture/design-adherence.ts
-import { existsSync as existsSync2, readFileSync as readFileSync2, readdirSync as readdirSync2 } from "fs";
-import { join as join2 } from "path";
+import { existsSync as existsSync2, readFileSync as readFileSync2, readdirSync as readdirSync2, writeFileSync as writeFileSync2, mkdirSync as mkdirSync2, copyFileSync } from "fs";
+import { join as join2, dirname, basename } from "path";
 
 // consort/config/consort-paths.ts
 import * as fs from "fs";
@@ -207,6 +207,16 @@ if (p.json) {
     blocks.push(`  [token consumption]
     bare (unstyled) feature pages: ${result.tokens.bare.join(", ")}` + (result.tokens.remediation ? `
     -> ${result.tokens.remediation}` : ""));
+  }
+  if (!result.vocabulary.ok) {
+    blocks.push(`  [component vocabulary]
+    design classes not defined in global.css: ${result.vocabulary.missing.join(", ")}` + (result.vocabulary.remediation ? `
+    -> ${result.vocabulary.remediation}` : ""));
+  }
+  if (!result.appIcon.ok) {
+    blocks.push(`  [app icon]
+    ${result.appIcon.violations.join("\n    ")}` + (result.appIcon.remediation ? `
+    -> ${result.appIcon.remediation}` : ""));
   }
   process.stderr.write(`ux-clean: FAILED \u2013 ${summarizeUxViolations(result)}.
 

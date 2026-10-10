@@ -7775,7 +7775,7 @@ function resolveConsortSettings(inputs) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_esm_shims();
 import * as fs17 from "fs";
-import { dirname as dirname24, join as join42 } from "path";
+import { dirname as dirname25, join as join42 } from "path";
 
 // consort/orchestrator/drive/orchestrator-drive.ts
 init_esm_shims();
@@ -8810,8 +8810,8 @@ function coveredTestIds(c) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync35, readFileSync as readFileSync31, readdirSync as readdirSync20, statSync as statSync13, writeFileSync as writeFileSync20, mkdirSync as mkdirSync21, rmSync as rmSync8, copyFileSync as copyFileSync3 } from "fs";
-import { join as join36, dirname as dirname19, basename as basename4 } from "path";
+import { existsSync as existsSync35, readFileSync as readFileSync31, readdirSync as readdirSync20, statSync as statSync13, writeFileSync as writeFileSync21, mkdirSync as mkdirSync22, rmSync as rmSync8 } from "fs";
+import { join as join36, dirname as dirname20 } from "path";
 
 // consort/test-list/test-list.ts
 init_esm_shims();
@@ -9206,15 +9206,15 @@ function storyDeployVerified(consortDir, featureId, storyId) {
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync28, readFileSync as readFileSync25, readdirSync as readdirSync16 } from "fs";
-import { join as join29 } from "path";
+import { existsSync as existsSync28, readFileSync as readFileSync25, readdirSync as readdirSync16, writeFileSync as writeFileSync18, mkdirSync as mkdirSync19, copyFileSync as copyFileSync3 } from "fs";
+import { join as join29, dirname as dirname17, basename as basename4 } from "path";
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs13 from "fs";
 import { execFileSync as execFileSync3 } from "child_process";
 import { createHash as createHash3 } from "crypto";
-import { dirname as dirname17, join as join30 } from "path";
+import { dirname as dirname18, join as join30 } from "path";
 function supersededTestsJson(tdd, feature, story, ac) {
   return join30(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
@@ -9280,7 +9280,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs13.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState(dirname17(tdd));
+      const cur = computeTreeState(dirname18(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs13.rmSync(file, { force: true });
         return void 0;
@@ -9544,7 +9544,7 @@ function storyDesignFingerprint(consortDir, feature, story) {
 
 // consort/gates/gates.ts
 init_esm_shims();
-import { existsSync as existsSync36, readFileSync as readFileSync33, renameSync, unlinkSync, writeFileSync as writeFileSync21 } from "fs";
+import { existsSync as existsSync36, readFileSync as readFileSync33, renameSync, unlinkSync, writeFileSync as writeFileSync22 } from "fs";
 import { join as join37 } from "path";
 var GATES_SCHEMA_VERSION = 1;
 var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
@@ -9641,7 +9641,7 @@ import { readWorkflowState as readWorkflowState2, SCM_STATES } from "@databricks
 
 // consort/smells/reflection.ts
 init_esm_shims();
-import { existsSync as existsSync37, readFileSync as readFileSync34, writeFileSync as writeFileSync22, mkdirSync as mkdirSync22, rmSync as rmSync9 } from "fs";
+import { existsSync as existsSync37, readFileSync as readFileSync34, writeFileSync as writeFileSync23, mkdirSync as mkdirSync23, rmSync as rmSync9 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"
@@ -9707,7 +9707,7 @@ function testListConforms(consortDir, featureId, story) {
 
 // consort/architecture/architecture-canon.ts
 init_esm_shims();
-import { existsSync as existsSync39, readFileSync as readFileSync36, writeFileSync as writeFileSync23, mkdirSync as mkdirSync23, readdirSync as readdirSync23 } from "fs";
+import { existsSync as existsSync39, readFileSync as readFileSync36, writeFileSync as writeFileSync24, mkdirSync as mkdirSync24, readdirSync as readdirSync23 } from "fs";
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
@@ -10073,12 +10073,12 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync42, readFileSync as readFileSync39, writeFileSync as writeFileSync24, mkdirSync as mkdirSync24, readdirSync as readdirSync26, statSync as statSync16, rmSync as rmSync10 } from "fs";
+import { existsSync as existsSync42, readFileSync as readFileSync39, writeFileSync as writeFileSync25, mkdirSync as mkdirSync25, readdirSync as readdirSync26, statSync as statSync16, rmSync as rmSync10 } from "fs";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
 import { existsSync as existsSync41, readFileSync as readFileSync38, readdirSync as readdirSync25, statSync as statSync15 } from "fs";
-import { join as join39, dirname as dirname21 } from "path";
+import { join as join39, dirname as dirname22 } from "path";
 
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
@@ -10108,7 +10108,7 @@ function readPipeline(consortDir, featureId) {
 // consort/session/response-formatter.ts
 init_esm_shims();
 import { existsSync as existsSync44, readFileSync as readFileSync41, readdirSync as readdirSync28 } from "fs";
-import { dirname as dirname22 } from "path";
+import { dirname as dirname23 } from "path";
 
 // consort/architecture/e2e-route-adherence.ts
 init_esm_shims();
@@ -10169,7 +10169,7 @@ function deriveFeaturePhase(stories) {
 init_esm_shims();
 import { execSync as execSync2 } from "child_process";
 import * as fs16 from "fs";
-import { dirname as dirname23, join as join41 } from "path";
+import { dirname as dirname24, join as join41 } from "path";
 
 // consort/orchestrator/build/preconditions.ts
 init_esm_shims();
@@ -10234,7 +10234,7 @@ init_esm_shims();
 
 // consort/gates/sprint-gates.ts
 init_esm_shims();
-import { existsSync as existsSync46, mkdirSync as mkdirSync26, readFileSync as readFileSync44, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync26 } from "fs";
+import { existsSync as existsSync46, mkdirSync as mkdirSync27, readFileSync as readFileSync44, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync27 } from "fs";
 
 // consort/gates/gate-hash.ts
 init_esm_shims();

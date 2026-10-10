@@ -7429,15 +7429,15 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync12, readFileSync as readFileSync12, readdirSync as readdirSync7 } from "fs";
-import { join as join11 } from "path";
+import { existsSync as existsSync12, readFileSync as readFileSync12, readdirSync as readdirSync7, writeFileSync as writeFileSync9, mkdirSync as mkdirSync7, copyFileSync } from "fs";
+import { join as join11, dirname as dirname7, basename as basename2 } from "path";
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs3 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname7, join as join12 } from "path";
+import { dirname as dirname8, join as join12 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",

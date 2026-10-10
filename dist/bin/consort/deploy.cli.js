@@ -6654,8 +6654,8 @@ import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 init_esm_shims();
 import { execSync, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync13, mkdirSync as mkdirSync7, readFileSync as readFileSync13, rmSync as rmSync4, writeFileSync as writeFileSync6 } from "fs";
-import { dirname as dirname5, join as join13 } from "path";
+import { existsSync as existsSync13, mkdirSync as mkdirSync8, readFileSync as readFileSync13, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "fs";
+import { dirname as dirname6, join as join13 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -6927,15 +6927,15 @@ init_esm_shims();
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync2 } from "fs";
-import { join as join4 } from "path";
+import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync2, mkdirSync as mkdirSync3, copyFileSync } from "fs";
+import { join as join4, dirname as dirname2, basename } from "path";
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs2 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname2, join as join5 } from "path";
+import { dirname as dirname3, join as join5 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7300,9 +7300,9 @@ function writeDeployEvidence(consortDir, evidence) {
   const fdir = findFeatureDir(consortDir, evidence.feature_id);
   if (!fdir) return void 0;
   const dir = evidence.story_id ? join13(fdir, "stories", evidence.story_id) : fdir;
-  mkdirSync7(dir, { recursive: true });
+  mkdirSync8(dir, { recursive: true });
   const file = join13(dir, "deploy-evidence.json");
-  writeFileSync6(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
+  writeFileSync7(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
   return file;
 }
 function defaultStart(cmd, cwd, env) {
@@ -7433,8 +7433,8 @@ async function deployToTarget(args) {
   }
   const pid = start(cfg.run, args.projectDir, env);
   const pf = pidFile(args.projectDir, args.targetName);
-  mkdirSync7(dirname5(pf), { recursive: true });
-  writeFileSync6(pf, String(pid));
+  mkdirSync8(dirname6(pf), { recursive: true });
+  writeFileSync7(pf, String(pid));
   const servingOk = args.servingOk ?? args.reachable ?? probeServingOk;
   const readyProbe = args.rejectForeignPort ? servingOk : reachable;
   const poll = await pollUntil({

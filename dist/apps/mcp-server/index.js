@@ -7015,7 +7015,7 @@ import {
 // consort/orchestrator/status/feature-status.ts
 init_esm_shims();
 import { existsSync as existsSync30, readFileSync as readFileSync31, readdirSync as readdirSync20, statSync as statSync12 } from "fs";
-import { dirname as dirname16, join as join27 } from "path";
+import { dirname as dirname17, join as join27 } from "path";
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_esm_shims();
@@ -7238,15 +7238,15 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync17, readFileSync as readFileSync18, readdirSync as readdirSync12 } from "fs";
-import { join as join17 } from "path";
+import { existsSync as existsSync17, readFileSync as readFileSync18, readdirSync as readdirSync12, writeFileSync as writeFileSync15, mkdirSync as mkdirSync15, copyFileSync as copyFileSync3 } from "fs";
+import { join as join17, dirname as dirname12, basename } from "path";
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs9 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname12, join as join18 } from "path";
+import { dirname as dirname13, join as join18 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7320,7 +7320,7 @@ import { readFileSync as readFileSync24 } from "fs";
 
 // consort/gates/gates.ts
 init_esm_shims();
-import { existsSync as existsSync24, readFileSync as readFileSync25, renameSync, unlinkSync, writeFileSync as writeFileSync17 } from "fs";
+import { existsSync as existsSync24, readFileSync as readFileSync25, renameSync, unlinkSync, writeFileSync as writeFileSync18 } from "fs";
 import { join as join24 } from "path";
 var GATES_SCHEMA_VERSION = 1;
 var GATE_NAMES = ["spec", "plan", "test_list", "promote", "deploy"];
@@ -7512,7 +7512,7 @@ function readGateApproved(featureId, consortDir, gate) {
 
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync27, readFileSync as readFileSync28, writeFileSync as writeFileSync19, mkdirSync as mkdirSync18 } from "fs";
+import { appendFileSync, existsSync as existsSync27, readFileSync as readFileSync28, writeFileSync as writeFileSync20, mkdirSync as mkdirSync19 } from "fs";
 
 // consort/gates/registered-breakdown.ts
 init_esm_shims();
@@ -7529,12 +7529,12 @@ function readPlan(consortDir, featureId, storyId) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync29, readFileSync as readFileSync30, writeFileSync as writeFileSync20, mkdirSync as mkdirSync19, readdirSync as readdirSync19, statSync as statSync11, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync29, readFileSync as readFileSync30, writeFileSync as writeFileSync21, mkdirSync as mkdirSync20, readdirSync as readdirSync19, statSync as statSync11, rmSync as rmSync6 } from "fs";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
 import { existsSync as existsSync28, readFileSync as readFileSync29, readdirSync as readdirSync18, statSync as statSync10 } from "fs";
-import { join as join26, dirname as dirname15 } from "path";
+import { join as join26, dirname as dirname16 } from "path";
 
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
@@ -7674,7 +7674,7 @@ function readProgression(consortDir, featureId, projectDir) {
     return null;
   }
 }
-function getFeatureStatus(consortDir, featureId, projectDir = dirname16(consortDir)) {
+function getFeatureStatus(consortDir, featureId, projectDir = dirname17(consortDir)) {
   const plans = [];
   for (const storyId of listFeatureStories(consortDir, featureId)) {
     const p = readPlan(consortDir, featureId, storyId);
