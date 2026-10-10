@@ -18,7 +18,7 @@
 // drift – the bug that stalled the live smoke (the Navigator hand-wrote a
 // cycle with `status:"red"` instead of the `red_at` the probe reads).
 
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync, copyFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { consortEnv } from "../../consort/config/consort-env.js";
 import { join, dirname, basename } from "path";
 import {
@@ -30,14 +30,13 @@ import {
   storyReviewVerdictJson,
   ALL_ARTIFACT_ROOTS,
   designGuideJson,
-  designAssetsDir,
 } from "../../consort/config/consort-paths.js";
 import { markTestItemGreen } from "../test-list/test-list.js";
 import { listExperiments } from "../../consort/experiment/experiment.js";
 import { ensureDeployedAndVerify } from "../deploy/deploy.js";
 import { writeEscalation, type Escalation } from "../../consort/gates/escalation.js";
 import { readSmellsLog, markSmellResolved, isBuildRefactorRoutableSmell, hasOpenBuildRefactorRoutableSmell, writeSmellsLog, hasOpenSmell } from "../smells/smells.js";
-import { checkUxClean, summarizeUxViolations, readAppIconFromGuide } from "../architecture/design-adherence.js";
+import { checkUxClean, summarizeUxViolations, readAppIconFromGuide, installBrandAsset, applyBrandIconReference } from "../architecture/design-adherence.js";
 import {
   readGreenFailure,
   writeGreenFailure,
@@ -933,72 +932,6 @@ export function firstRefactorPendingAc(consortDir: string, featureId: string, st
  * clean, so non-UI projects are a complete no-op. Best-effort: never throws into the
  * review path (a scan error must not block recording the verdict).
  */
-/**
- * Deterministically install the brand icon's REAL bytes at the design-guide's
- * `install_to` (e.g. client/public/warehouse.png). The staged intake asset lives at
- * `.consort/design/assets/<basename>` (stage-first-project put it there); a coding agent
- * cannot copy a binary via text writes, so this is the ONLY place the actual image lands
- * in the client – the driver only references it. Overwrites (the staged asset is the
- * source of truth, so it replaces any placeholder the driver wrote to pass the check).
- * Best-effort + idempotent; when no staged source exists the ux-adherence gate reports
- * the asset missing at `install_to` as usual. Exported for a focused test.
- */
-export function installBrandAsset(
-  projectDir: string,
-  consortDir: string,
-  appIcon: { source: string; install_to: string },
-): boolean {
-  try {
-    const base = basename(appIcon.install_to);
-    // Prefer the staged design asset; fall back to the guide's declared source path.
-    const src = [
-      join(designAssetsDir(consortDir), base),
-      join(projectDir, appIcon.source),
-      join(consortDir, appIcon.source),
-    ].find((p) => existsSync(p));
-    if (!src) return false; // no bytes to install – the gate flags "missing at install_to"
-    const dest = join(projectDir, appIcon.install_to);
-    mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
-    return true;
-  } catch {
-    return false; // best-effort; a copy failure surfaces as the gate's "asset missing" violation
-  }
-}
-
-/**
- * Deterministically wire the favicon REFERENCE to the installed brand icon: rewrite
- * client/index.html's `<link rel="icon">` href to the install_to basename (e.g.
- * /warehouse.png), replacing the scaffold placeholder. installBrandAsset lands the
- * BYTES; this lands the REFERENCE, so the design-guide's brand icon is actually
- * SERVED rather than merely present on disk – the shipped app no longer needs the
- * icon reference hand-written by the driver to pass checkAppIcon (the stockflow S1
- * gap: bytes installed, placeholder reference shipped, smell waived). Idempotent (a
- * correct href is a no-op); inserts the link before </head> when absent. Best-effort:
- * no index.html -> false, and the adherence check reports as usual.
- */
-export function applyBrandIconReference(projectDir: string, installTo: string): boolean {
-  const indexHtml = join(projectDir, "client", "index.html");
-  if (!existsSync(indexHtml)) return false;
-  try {
-    const href = `/${basename(installTo)}`;
-    const src = readFileSync(indexHtml, "utf8");
-    const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
-    if (linkRe.test(src)) {
-      const next = src.replace(linkRe, `<link rel="icon"$1href="${href}"$2>`);
-      if (next !== src) writeFileSync(indexHtml, next);
-      return true;
-    }
-    if (/<\/head>/i.test(src)) {
-      writeFileSync(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />\n</head>`));
-      return true;
-    }
-    return false;
-  } catch {
-    return false; // best-effort; a write failure surfaces as the gate's reference violation
-  }
-}
-
 function flagUxAdherenceIfDirty(consortDir: string, story: string): void {
   try {
     // Read the design guide (when present) so the scan enforces its declared

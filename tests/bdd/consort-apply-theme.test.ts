@@ -6,7 +6,7 @@
 // `./scripts/lk consort-apply-design-theme` resolves.
 
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildThemeCss, applyDesignGuideTheme } from "../../consort/architecture/apply-theme";
@@ -70,6 +70,45 @@ describe("applyDesignGuideTheme: overwrites theme.css from the guide", () => {
   it("throws loud when there is no design guide (UX designer must run first)", () => {
     const dir = scaffold(undefined);
     expect(() => applyDesignGuideTheme(dir)).toThrowError(/no design guide/i);
+  });
+});
+
+describe("applyDesignGuideTheme: installs the brand icon at design-apply time", () => {
+  const ICON_GUIDE = {
+    ...INDIGO_GUIDE,
+    app_icon: { source: ".consort/design/assets/warehouse.png", install_to: "client/public/warehouse.png" },
+  };
+
+  function scaffoldWithIcon(declareIcon: boolean): string {
+    const dir = scaffold(declareIcon ? ICON_GUIDE : INDIGO_GUIDE);
+    // Stage the intake asset (real bytes a coding agent cannot copy via text) + a client
+    // index.html carrying the generic scaffold placeholder favicon.
+    mkdirSync(join(dir, ".consort", "design", "assets"), { recursive: true });
+    writeFileSync(join(dir, ".consort", "design", "assets", "warehouse.png"), "PNG-BYTES");
+    writeFileSync(join(dir, "client", "index.html"), '<!doctype html><html><head><link rel="icon" type="image/svg+xml" href="/favicon.svg" /></head><body></body></html>');
+    return dir;
+  }
+
+  it("copies the staged asset to install_to AND points the favicon at it", () => {
+    const dir = scaffoldWithIcon(true);
+    const res = applyDesignGuideTheme(dir);
+    expect(res.iconInstalled).toBe(true);
+    // bytes landed in client/public
+    const installed = join(dir, "client", "public", "warehouse.png");
+    expect(existsSync(installed)).toBe(true);
+    expect(readFileSync(installed, "utf8")).toBe("PNG-BYTES");
+    // favicon reference rewritten off the placeholder onto the brand icon
+    const html = readFileSync(join(dir, "client", "index.html"), "utf8");
+    expect(html).toContain('href="/warehouse.png"');
+    expect(html).not.toContain("favicon.svg");
+  });
+
+  it("is a no-op when the guide declares no app_icon (iconInstalled false, nothing installed)", () => {
+    const dir = scaffoldWithIcon(false);
+    const res = applyDesignGuideTheme(dir);
+    expect(res.iconInstalled).toBe(false);
+    expect(existsSync(join(dir, "client", "public", "warehouse.png"))).toBe(false);
+    expect(readFileSync(join(dir, "client", "index.html"), "utf8")).toContain("favicon.svg");
   });
 });
 

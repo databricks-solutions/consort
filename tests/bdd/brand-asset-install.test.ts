@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installBrandAsset } from "../../consort/pipeline/cycle-record";
+import { installBrandAsset } from "../../consort/architecture/design-adherence.js";
 
 const ICON = { source: "intake/assets/warehouse.png", install_to: "client/public/warehouse.png" };
 

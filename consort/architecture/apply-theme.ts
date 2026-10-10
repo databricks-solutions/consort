@@ -14,7 +14,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { renderThemeRootCss, type DesignGuide } from "./design-adherence.js";
+import { renderThemeRootCss, installBrandAsset, applyBrandIconReference, type DesignGuide } from "./design-adherence.js";
 import { resolveConsortDir, designGuideJson } from "../config/consort-paths.js";
 
 const THEME_HEADER = `/*
@@ -30,6 +30,9 @@ const THEME_HEADER = `/*
 export interface ApplyThemeResult {
   themePath: string;
   varCount: number;
+  /** True iff the guide declared an app_icon AND its real bytes were installed to install_to
+   *  (false when no app_icon is declared or no staged source asset exists). */
+  iconInstalled: boolean;
 }
 
 /** The full theme.css text for a guide: the generated banner + the :root block. */
@@ -44,7 +47,8 @@ export function buildThemeCss(guide: DesignGuide): string {
  * Throws (loud) when no guide exists — the UX designer must run first.
  */
 export function applyDesignGuideTheme(projectDir: string): ApplyThemeResult {
-  const guidePath = designGuideJson(resolveConsortDir(projectDir));
+  const consortDir = resolveConsortDir(projectDir);
+  const guidePath = designGuideJson(consortDir);
   if (!existsSync(guidePath)) {
     throw new Error(
       `apply-theme: no design guide at ${guidePath} — run the UX designer first (this is a UI project's design system).`,
@@ -54,5 +58,15 @@ export function applyDesignGuideTheme(projectDir: string): ApplyThemeResult {
   const themePath = join(projectDir, "client", "src", "styles", "theme.css");
   const css = buildThemeCss(guide);
   writeFileSync(themePath, css);
-  return { themePath, varCount: (css.match(/--[\w-]+:/g) ?? []).length };
+  // Applying the design is also where the brand icon lands: a coding agent cannot copy a
+  // binary via text writes, so install the real bytes + point the favicon at them HERE —
+  // so a project that has had its design applied already carries its brand icon, not only
+  // after the first build-lane review. Best-effort + idempotent; no app_icon (or no staged
+  // source) -> no-op, and the ux-adherence gate reports the asset missing as usual.
+  let iconInstalled = false;
+  if (guide.app_icon) {
+    iconInstalled = installBrandAsset(projectDir, consortDir, guide.app_icon);
+    applyBrandIconReference(projectDir, guide.app_icon.install_to);
+  }
+  return { themePath, varCount: (css.match(/--[\w-]+:/g) ?? []).length, iconInstalled };
 }

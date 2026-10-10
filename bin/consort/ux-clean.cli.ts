@@ -79,6 +79,12 @@ if (p.json) {
   if (!result.tokens.ok) {
     blocks.push(`  [token consumption]\n    bare (unstyled) feature pages: ${result.tokens.bare.join(", ")}` + (result.tokens.remediation ? `\n    -> ${result.tokens.remediation}` : ""));
   }
+  if (!result.vocabulary.ok) {
+    blocks.push(`  [component vocabulary]\n    design classes not defined in global.css: ${result.vocabulary.missing.join(", ")}` + (result.vocabulary.remediation ? `\n    -> ${result.vocabulary.remediation}` : ""));
+  }
+  if (!result.appIcon.ok) {
+    blocks.push(`  [app icon]\n    ${result.appIcon.violations.join("\n    ")}` + (result.appIcon.remediation ? `\n    -> ${result.appIcon.remediation}` : ""));
+  }
   process.stderr.write(`ux-clean: FAILED – ${summarizeUxViolations(result)}.\n\n${blocks.join("\n\n")}\n\n${UX_CLEAN_REMEDIATION}\n`);
 }
 
