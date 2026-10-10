@@ -58,7 +58,7 @@ describe("stageFirstProject (first-project example seed stager)", () => {
       "utf8",
     );
     expect(f6.toLowerCase()).toContain("drop");
-    expect(f6).toContain("inventory_code");
+    expect(f6).toContain("tracking_code");
   });
 
   it("stages the pre-registration to .consort/registration.json (activates the registered-breakdown guard)", () => {
