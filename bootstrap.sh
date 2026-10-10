@@ -394,8 +394,7 @@ echo -e "${BLUE}Next:${NC}"
 echo "  claude"
 echo "  /consort:start    # in the folder for your project"
 echo
-echo "/consort:start runs the full environment doctor against your chosen"
-echo "workspace, INCLUDING the check that it has Lakebase enabled, before it"
-echo "provisions anything. That workspace check belongs there, not here: it needs"
-echo "a target, and there is no target until you pick a workspace at create time."
+echo "When you create a project, /consort:start runs a full environment doctor"
+echo "against the workspace you choose — including that it has Lakebase enabled —"
+echo "and won't provision anything until it passes."
 exit 0
