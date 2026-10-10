@@ -136,11 +136,6 @@ export function buildCrossStoryContext(consortDir: string, feature: string, curr
   return ctx;
 }
 
-/** The context serialized for injection as a manifest input value. */
-export function crossStoryContextJson(consortDir: string, feature: string, story: string): string {
-  return JSON.stringify(buildCrossStoryContext(consortDir, feature, story), null, 2);
-}
-
 /**
  * The cross-story review context as a prompt BLOCK, for the orchestrator to INJECT into the
  * design-lane reviewers (navigator reflect, architect-reviewer) as a precondition. This is the
