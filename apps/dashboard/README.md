@@ -47,7 +47,7 @@ Or use the helper (it warns if the target has no `.consort/`):
 ```bash
 ./run.sh /absolute/path/to/your/stockflow          # defaults to port 3000
 PORT=3737 ./run.sh /absolute/path/to/your/stockflow # custom port
-THEME=dark ./run.sh /absolute/path/to/your/stockflow # boot in dark mode
+THEME=light ./run.sh /absolute/path/to/your/stockflow # opt back to light (dark is the default)
 ```
 
 If `CONSORT_PROJECT_DIR` is unset it falls back to the current working directory, so you can `cd`
@@ -55,13 +55,14 @@ into a scaffolded Consort project and run the dashboard from there.
 
 ### Dark mode
 
-The board ships light by default and has a dark theme built from the palette of Kevin's original
-dashboard (warm near-black surfaces, tan text, the c1–c10 role hues). Two ways to choose:
+The board ships **dark by default**, built from the palette of Kevin's original dashboard (warm
+near-black surfaces, tan text, the c1–c10 role hues); a light theme is available. Two ways to choose:
 
 - **In-app toggle** — the ☀️/🌙 button in the header. The choice is remembered per browser
   (`localStorage`), so it survives reloads and restarts.
-- **Launch default** — `THEME=dark ./run.sh …` (or `?theme=dark` on the URL) boots the board dark,
-  useful for a pinned demo/projector. A stored toggle choice overrides the launch default.
+- **Launch default** — the board boots dark; `THEME=light ./run.sh …` (or `?theme=light` on the
+  URL) opts a pinned demo/projector back to light (`THEME=dark` is still honored). A stored toggle
+  choice overrides the launch default.
 
 Theming is a single `data-theme` flip on `<html>` over CSS custom properties (generated from
 `lib/theme.ts`), so switching is instant and there is no flash of the wrong theme on load. We do

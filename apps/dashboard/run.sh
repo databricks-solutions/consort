@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Launch the Consort dashboard against a scaffolded Consort project.
 # Usage: ./run.sh /absolute/path/to/project   [PORT=3000] [THEME=dark] [CONSORT_RECORD_DIR=/path]
-#   THEME=dark boots the board in dark mode (Kevin's palette). Default is light; the in-app
-#   ☀️/🌙 toggle overrides this per viewer and is remembered in localStorage.
+#   The board boots in dark mode by default (Kevin's palette); THEME=light opts back to light
+#   (THEME=dark is still honored). The in-app ☀️/🌙 toggle overrides this per viewer and is
+#   remembered in localStorage.
 #   CONSORT_RECORD_DIR (or LAKEBASE_CONSORT_RECORD_DIR) points at the drive's record-lane corpus.
 #   Set it to show the FULL agent exchange — the prompt sent to each role, plus its reasoning,
 #   tools and the HIL↔orchestrator conversation — LIVE as the build runs. Without it, a live board

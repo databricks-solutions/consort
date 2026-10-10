@@ -1,8 +1,9 @@
 /* Design tokens (--surface-*, --text-*, --status-*, --role-*) are injected by layout.tsx as
    two blocks generated from lib/theme.ts: a light :root and a :root[data-theme="dark"] (each
-   also sets color-scheme). We deliberately do NOT invert on prefers-color-scheme — dark is an
-   explicit choice (the in-app toggle or THEME=dark), so the board looks identical on any
-   machine unless someone asks for dark. */
+   also sets color-scheme). The board boots DARK by default (layout.tsx sets data-theme="dark"
+   unless THEME=light); we deliberately do NOT invert on prefers-color-scheme, so it looks
+   identical on any machine regardless of OS appearance — a viewer opts to light via the in-app
+   toggle (persisted) or ?theme=light / THEME=light. */
 html {
   height: 100%;
 }

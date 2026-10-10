@@ -18,14 +18,14 @@ export const metadata: Metadata = {
   description: "Live observability for a Consort run",
 };
 
-// The launch/env default: `THEME=dark ./run.sh` boots the board dark (deterministic for a
-// pinned demo). A per-viewer choice from the in-app toggle lives in localStorage and overrides
-// this — see the no-flash script below and app/useTheme.ts. Default is light, matching the
-// board's "looks identical on any machine unless you ask otherwise" stance.
-const envTheme = process.env.THEME === "dark" ? "dark" : undefined;
+// The launch/env default: the board boots DARK by default; `THEME=light ./run.sh` opts a
+// pinned demo back to light (and `THEME=dark` is still honored, so existing dark launches keep
+// working). A per-viewer choice from the in-app toggle lives in localStorage and overrides this
+// — see the no-flash script below and app/useTheme.ts — so anyone who picked light stays on it.
+const envTheme = process.env.THEME === "light" ? "light" : "dark";
 
-// Runs before first paint so a stored/queried dark choice doesn't flash the light default.
-// Precedence: ?theme= query (transient) > localStorage (persisted) > env SSR default.
+// Runs before first paint so a stored/queried light choice doesn't flash the dark default.
+// Precedence: ?theme= query (transient) > localStorage (persisted) > env SSR default (dark).
 const noFlashTheme = `(function(){try{
   var q=new URLSearchParams(location.search).get('theme');
   var s=localStorage.getItem('theme');
