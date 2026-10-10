@@ -6669,14 +6669,19 @@ var acReviewJson = (tdd, f, s, ac) => (0, import_node_path.join)(cyclesRootDir(t
 var acReviewVerdictJson = (tdd, f, s, ac) => (0, import_node_path.join)(cyclesRootDir(tdd), f, s, ac, "review-verdict.json");
 var storyReviewJson = (tdd, f, s) => (0, import_node_path.join)(cyclesRootDir(tdd), f, s, "review.json");
 var storyReviewVerdictJson = (tdd, f, s) => (0, import_node_path.join)(cyclesRootDir(tdd), f, s, "review-verdict.json");
+var nfrsMd = (tdd) => (0, import_node_path.join)(tdd, "nfrs.md");
 var designDir = (tdd) => (0, import_node_path.join)(tdd, "design");
 var designGuideJson = (tdd) => (0, import_node_path.join)(designDir(tdd), "design-guide.json");
 var designAssetsDir = (tdd) => (0, import_node_path.join)(designDir(tdd), "assets");
+var architectureDir = (tdd) => (0, import_node_path.join)(tdd, "architecture");
+var architectureConventionsJson = (tdd) => (0, import_node_path.join)(architectureDir(tdd), "conventions.json");
 var featureDir = (tdd, featureId) => (0, import_node_path.join)(featuresDir(tdd), featureId);
 var featureResolved = (tdd, f) => findFeatureDir(tdd, f) ?? featureDir(tdd, f);
 var architectureJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "architecture.json");
+var dbDesignJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "db-design.json");
 var featureTestListJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "test-list.json");
 var featureTestListMd = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "test-list.md");
+var featureNfrsMd = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "nfrs.md");
 var storiesDir = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "stories");
 var storyDir = (tdd, f, s) => (0, import_node_path.join)(storiesDir(tdd, f), s);
 function findStoryDir(tdd, f, s) {
@@ -6757,7 +6762,7 @@ function readAcLayer(tdd, f, acId) {
 
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
-var import_fs7 = require("fs");
+var import_fs12 = require("fs");
 
 // consort/config/consort-env.ts
 init_cjs_shims();
@@ -6789,25 +6794,1115 @@ function warnLegacyEnv(legacyName, suffix) {
 }
 
 // consort/pipeline/cycle-record.ts
-var import_path7 = require("path");
+var import_path12 = require("path");
 
-// consort/test-list/test-list.ts
+// consort/gates/verify-gate-integrity.ts
+init_cjs_shims();
+
+// consort/gates/gate-hash.ts
+init_cjs_shims();
+var import_crypto = require("crypto");
+function normalizeForHash(content) {
+  let normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  normalized = normalized.split("\n").map((line) => line.replace(/[ \t]+$/, "")).join("\n");
+  normalized = normalized.replace(/\n{3,}/g, "\n\n");
+  return normalized;
+}
+function hashArtifact(content) {
+  return (0, import_crypto.createHash)("sha256").update(normalizeForHash(content), "utf8").digest("hex");
+}
+
+// consort/gates/gates.ts
 init_cjs_shims();
 var import_fs = require("fs");
 var import_path = require("path");
+var GATES_SCHEMA_VERSION = 1;
+var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
+function defaultGatesState(featureId) {
+  return {
+    feature_id: featureId,
+    schema_version: GATES_SCHEMA_VERSION,
+    gates: {
+      spec: { status: "open", history: [] },
+      plan: { status: "open", history: [] },
+      test_list: { status: "open", history: [] },
+      promote: { status: "open", history: [] },
+      deploy: { status: "open", history: [] }
+    }
+  };
+}
+function readGates(featureId, opts = {}) {
+  const consortDir = opts.consortDir ?? resolveConsortDir();
+  const file = gatesFilePath(consortDir, featureId);
+  if (!(0, import_fs.existsSync)(file)) {
+    return defaultGatesState(featureId);
+  }
+  const raw = (0, import_fs.readFileSync)(file, "utf8");
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    throw new Error(`gates.json at ${file} is not valid JSON: ${cause}`);
+  }
+  return validateGatesState(parsed, file);
+}
+function gatesFilePath(consortDir, featureId) {
+  return (0, import_path.join)(requireFeatureDir(consortDir, featureId), "gates.json");
+}
+function validateGatesState(parsed, file) {
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(`gates.json at ${file} is not an object`);
+  }
+  const obj = parsed;
+  if (typeof obj.feature_id !== "string" || obj.feature_id.length === 0) {
+    throw new Error(`gates.json at ${file}: missing or invalid feature_id`);
+  }
+  if (typeof obj.schema_version !== "number") {
+    throw new Error(`gates.json at ${file}: missing or invalid schema_version`);
+  }
+  if (typeof obj.gates !== "object" || obj.gates === null) {
+    throw new Error(`gates.json at ${file}: missing or invalid gates`);
+  }
+  const gates = obj.gates;
+  const out = {
+    spec: validateGateRecord(gates.spec, "spec", file),
+    plan: validateGateRecord(gates.plan, "plan", file),
+    test_list: validateGateRecord(gates.test_list, "test_list", file),
+    promote: validateGateRecord(gates.promote, "promote", file),
+    // The deploy gate (working-software) was added after the original four.
+    // A gates.json written before it lacks the key, so backfill a default-open
+    // record rather than reject the file (forward-compatible read).
+    deploy: gates.deploy !== void 0 ? validateGateRecord(gates.deploy, "deploy", file) : { status: "open", history: [] }
+  };
+  return {
+    feature_id: obj.feature_id,
+    schema_version: obj.schema_version,
+    gates: out
+  };
+}
+function validateGateRecord(parsed, gateName, file) {
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(`gates.json at ${file}: gate ${gateName} is not an object`);
+  }
+  const obj = parsed;
+  const status = obj.status;
+  if (typeof status !== "string" || !GATE_STATUSES.includes(status)) {
+    throw new Error(
+      `gates.json at ${file}: gate ${gateName} has invalid status (${String(status)}); expected one of ${GATE_STATUSES.join(", ")}`
+    );
+  }
+  const history = obj.history;
+  if (history !== void 0 && !Array.isArray(history)) {
+    throw new Error(`gates.json at ${file}: gate ${gateName} history must be an array`);
+  }
+  return {
+    status,
+    approver: typeof obj.approver === "string" ? obj.approver : void 0,
+    approved_at: typeof obj.approved_at === "string" ? obj.approved_at : void 0,
+    artifact_hashes: obj.artifact_hashes && typeof obj.artifact_hashes === "object" ? obj.artifact_hashes : void 0,
+    withdrawal_reason: typeof obj.withdrawal_reason === "string" ? obj.withdrawal_reason : void 0,
+    history: history ?? []
+  };
+}
+
+// consort/gates/verify-gate-integrity.ts
+function verifyGateIntegrity(args) {
+  const consortDir = args.consortDir ?? resolveConsortDir();
+  const state = readGates(args.featureId, { consortDir });
+  const record = state.gates[args.gate];
+  if (record.status !== "approved") {
+    return {
+      status: "gate-not-approved",
+      gate: args.gate,
+      current_status: record.status
+    };
+  }
+  const stored = record.artifact_hashes ?? {};
+  const storedNames = new Set(Object.keys(stored));
+  const currentNames = new Set(Object.keys(args.currentInputs));
+  if (storedNames.size !== currentNames.size || [...storedNames].some((n) => !currentNames.has(n))) {
+    const missing = [...storedNames].filter((n) => !currentNames.has(n));
+    const extra = [...currentNames].filter((n) => !storedNames.has(n));
+    const parts = [];
+    if (missing.length > 0) parts.push(`missing: ${missing.join(", ")}`);
+    if (extra.length > 0) parts.push(`unexpected: ${extra.join(", ")}`);
+    throw new Error(
+      `verifyGateIntegrity: artifact name mismatch for ${args.gate} gate (${parts.join("; ")}). Caller must pass exactly the same artifact names that were captured at approval.`
+    );
+  }
+  const drifts = [];
+  for (const name of storedNames) {
+    const expected = stored[name];
+    const actual = hashArtifact(args.currentInputs[name]);
+    if (expected !== actual) {
+      drifts.push({ artifact: name, expected, actual });
+    }
+  }
+  if (drifts.length === 0) {
+    return { status: "ok", gate: args.gate };
+  }
+  return { status: "drift", gate: args.gate, drifts };
+}
+
+// consort/gates/gate-conformance-guard.ts
+init_cjs_shims();
+var import_node_fs = require("fs");
+var import_node_path2 = require("path");
+
+// consort/config/consort-config-file.ts
+init_cjs_shims();
+var import_fs2 = require("fs");
+var import_path3 = require("path");
+
+// consort/config/agent-models.ts
+init_cjs_shims();
+var import_path2 = require("path");
+var RECOMMENDED_MODELS = {
+  "spec-author": "opus",
+  "architect-reviewer": "opus",
+  dba: "opus",
+  "test-strategist": "sonnet",
+  "ux-designer": "sonnet",
+  navigator: "sonnet",
+  driver: "sonnet",
+  "product-owner": "opus"
+};
+var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
+var AGENT_CONFIG_REL = (0, import_path2.join)(".lakebase", "agent-config.json");
+
+// consort/config/consort-config-file.ts
+var CONSORT_CONFIG_REL = (0, import_path3.join)(".lakebase", "consort-config.json");
+var LEGACY_CONFIG_RELS = [
+  (0, import_path3.join)(".lakebase", "sftdd-config.json"),
+  (0, import_path3.join)(".lakebase", "tdd-config.json")
+];
+var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
+function loadConsortConfig(projectDir) {
+  for (const rel of [CONSORT_CONFIG_REL, ...LEGACY_CONFIG_RELS]) {
+    const f = (0, import_path3.join)(projectDir, rel);
+    if (!(0, import_fs2.existsSync)(f)) continue;
+    try {
+      return JSON.parse((0, import_fs2.readFileSync)(f, "utf8"));
+    } catch {
+      return void 0;
+    }
+  }
+  return void 0;
+}
+function resolveProjectSettings(projectDir) {
+  const file = loadConsortConfig(projectDir);
+  const build = {
+    loopGranularity: file?.build?.loopGranularity ?? "story",
+    batchCap: file?.build?.batchCap,
+    sessionScope: file?.build?.sessionScope ?? "story"
+  };
+  const project = {
+    uiTrack: file?.project?.uiTrack ?? true,
+    // HITL-first: the declared project policy defaults to interactive (a human
+    // approves each gate). Headless (proxy) is a deliberate opt-in, set in the
+    // file or as a RUN-SCOPED --gates override (never persisted by a flag).
+    gates: file?.project?.gates ?? "interactive",
+    deployTarget: file?.project?.deployTarget ?? "local",
+    clientFramework: file?.project?.clientFramework ?? "none",
+    // Legacy projects (scaffolded before language was persisted) resolve to "python" – the
+    // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
+    // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
+    // default only affects config-less/legacy trees.
+    language: file?.project?.language ?? "python"
+  };
+  const plan = { sizing: file?.plan?.sizing ?? true };
+  return { build, plan, project };
+}
+
+// consort/orchestrator/validators/conformance/artifact-conformance.ts
+init_cjs_shims();
+var import_fs4 = require("fs");
+var import_path5 = require("path");
+
+// consort/orchestrator/validators/schema-loader.ts
+init_cjs_shims();
+var import_fs3 = require("fs");
+var import_path4 = require("path");
+var import_ajv = __toESM(require_ajv(), 1);
+function resolveSchemaDir() {
+  const direct = (0, import_path4.join)(__dirname, "..", "..", "config", "schemas");
+  if ((0, import_fs3.existsSync)(direct)) return direct;
+  let dir = __dirname;
+  for (let i = 0; i < 8; i++) {
+    const cand = (0, import_path4.join)(dir, "consort", "config", "schemas");
+    if ((0, import_fs3.existsSync)(cand)) return cand;
+    const parent = (0, import_path4.join)(dir, "..");
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return direct;
+}
+var SCHEMA_DIR = resolveSchemaDir();
+var ajv = new import_ajv.default({ allErrors: true, strict: false });
+ajv.addFormat("date-time", true);
+var validatorCache = /* @__PURE__ */ new Map();
+function loadSchema(name) {
+  return JSON.parse((0, import_fs3.readFileSync)((0, import_path4.join)(SCHEMA_DIR, name), "utf8"));
+}
+function getValidator(name) {
+  const cached = validatorCache.get(name);
+  if (cached) return cached;
+  const validate = ajv.compile(loadSchema(name));
+  validatorCache.set(name, validate);
+  return validate;
+}
+function formatSchemaErrors(validate) {
+  const errors = validate.errors ?? [];
+  if (errors.length === 0) return ["schema validation failed"];
+  return errors.map((e) => {
+    const where = e.instancePath && e.instancePath.length > 0 ? e.instancePath : "(root)";
+    return `${where}: ${e.message ?? "invalid"}`;
+  });
+}
+
+// consort/orchestrator/validators/conformance/artifact-conformance.ts
+var ARTIFACT_FORMATS = {
+  "feature-spec.json": { kind: "json-schema", schema: "feature.schema.json" },
+  "story.json": { kind: "json-schema", schema: "story.schema.json" },
+  "ac.json": { kind: "json-schema", schema: "ac.schema.json" },
+  "test-list.json": { kind: "json-schema", schema: "test-list.schema.json" },
+  "plan.json": { kind: "json-schema", schema: "plan.schema.json" },
+  "architecture.json": { kind: "json-schema", schema: "architecture.schema.json" },
+  // DBA's physical schema (tables/DDL + per-story migration plan) that realizes
+  // the architect's persistence_invariants.
+  "db-design.json": { kind: "json-schema", schema: "db-design.schema.json" },
+  "workflow-state.json": { kind: "json-schema", schema: "workflow-state.schema.json" },
+  // Release Engineer's deploy-gate evidence (reachability + feature-verify).
+  "deploy-evidence.json": { kind: "json-schema", schema: "deploy-evidence.schema.json" },
+  // UX Designer (UI projects only): the machine-checkable design tokens.
+  "design-guide.json": { kind: "json-schema", schema: "design-guide.schema.json" },
+  // Architect Reviewer's section 6 + Gate 2 adjudication surface.
+  "architecture.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Architectural Concerns Mapping", match: "architectural concerns mapping" },
+      { label: "Pattern proposals", match: "pattern proposal" },
+      { label: "Risks", match: "risk" },
+      { label: "Gate decisions", match: "decision" },
+      { label: "Sign-off", match: "sign-off" }
+    ]
+  },
+  // Spec Author's draft-spec narrative.
+  "feature-spec.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Summary", match: "summary" },
+      { label: "Stories", match: "stories" },
+      { label: "Out of scope", match: "out of scope" },
+      { label: "Open questions", match: "open question" }
+    ]
+  },
+  // Feature Requester's original ask: the Spec Author's INPUT. Free-form
+  // narrative; only H1 + non-empty body required. Never overwritten.
+  "feature-request.md": { kind: "md-narrative" },
+  // Spec Author's sprint backlog proposal: the artifact the sprint PLAN gate
+  // locks. Free-form narrative; H1 + non-empty body required.
+  "feature-proposals.md": { kind: "md-narrative" },
+  // Product Owner's project-level overview (replaces the old spec.md).
+  "product-overview.md": { kind: "md-narrative" },
+  // HIL non-functional-requirements brief (the Architect's intake). The HIL
+  // states required NFRs (each with a stable R<n> id), preferences, and
+  // out-of-bounds items. The Architect must carry every Required item into
+  // architecture.json via a matching brief_ref (see checkNfrCoverage). Project
+  // -level (.tdd/nfrs.md) or per-feature (.tdd/features/<F>/nfrs.md).
+  "nfrs.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Required", match: "required" },
+      { label: "Preferences", match: "preference" },
+      { label: "Out of bounds", match: "out of bounds" }
+    ]
+  },
+  // HIL design brief (UI projects): the human's reference sites + what to take
+  // from each. The design analogue of product-overview.md, the source the UX
+  // Designer teases the design out of. A brief with no references is
+  // meaningless, so a
+  // References section is the one hard requirement.
+  "design-brief.md": {
+    kind: "md-sections",
+    sections: [{ label: "References", match: "reference" }]
+  },
+  // UX Designer narrative artifacts (UI projects only). design-guide.md
+  // sections are grounded in a real shipped guide (partner-asset-tracker
+  // STYLE_GUIDE.md); design-guide.json carries the machine-checkable tokens.
+  "design-guide.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Design Philosophy", match: "philosophy" },
+      { label: "UI Framework", match: "framework" },
+      { label: "Typography", match: "typography" },
+      { label: "Color Palette", match: "color" },
+      { label: "Spacing", match: "spacing" },
+      { label: "Components", match: "components" },
+      { label: "User Feedback Principles", match: "feedback" }
+    ]
+  },
+  "ia.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Screens", match: "screens" },
+      { label: "Navigation", match: "navigation" },
+      { label: "User flows", match: "flow" }
+    ]
+  },
+  // Beck-style ordered list rendered from test-list.json.
+  "test-list.md": { kind: "test-list-md" }
+};
+function checkArtifactConformance(name, content) {
+  const spec = ARTIFACT_FORMATS[name];
+  if (spec === void 0) return { ok: true };
+  switch (spec.kind) {
+    case "json-schema":
+      return checkJsonSchema(name, content, spec.schema);
+    case "md-narrative":
+      return finalize(checkMdNarrative(name, content));
+    case "md-sections":
+      return finalize(checkMdSections(name, content, spec.sections));
+    case "test-list-md":
+      return finalize(checkTestListMd(content));
+  }
+}
+function finalize(violations) {
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkJsonSchema(name, content, schemaFile) {
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    return { ok: false, violations: [`${name} is not valid JSON: ${cause}`] };
+  }
+  const validate = getValidator(schemaFile);
+  if (validate(parsed)) return { ok: true };
+  return { ok: false, violations: formatSchemaErrors(validate).map((e) => `${name} ${e}`) };
+}
+var HEADING_RE = /^(#{1,6})\s+(.*\S)\s*$/;
+function parseHeadings(content) {
+  const out = [];
+  for (const line of content.split("\n")) {
+    const m = HEADING_RE.exec(line);
+    if (m) out.push({ level: m[1].length, text: m[2] });
+  }
+  return out;
+}
+function hasH1(headings) {
+  return headings.some((h) => h.level === 1);
+}
+function hasBody(content) {
+  return content.split("\n").some((line) => {
+    const t = line.trim();
+    return t.length > 0 && !HEADING_RE.test(line);
+  });
+}
+function checkMdNarrative(name, content) {
+  const violations = [];
+  const headings = parseHeadings(content);
+  if (!hasH1(headings)) violations.push(`${name} has no H1 title`);
+  if (!hasBody(content)) violations.push(`${name} has an empty body (title only)`);
+  return violations;
+}
+function checkMdSections(name, content, sections) {
+  const violations = [];
+  const headings = parseHeadings(content);
+  if (!hasH1(headings)) violations.push(`${name} has no H1 title`);
+  const headingText = headings.map((h) => h.text.toLowerCase());
+  for (const section of sections) {
+    if (!headingText.some((t) => t.includes(section.match))) {
+      violations.push(`${name} missing required section: ${section.label}`);
+    }
+  }
+  return violations;
+}
+var TEST_ITEM_RE = /^\s*[-*]\s*\[[ xX]?\]\s*T\d/;
+var AC_REF_RE = /\bAC\s*\d/i;
+function checkTestListMd(content) {
+  const violations = [];
+  const headings = parseHeadings(content);
+  if (!hasH1(headings)) violations.push("test-list.md has no H1 title");
+  if (!/ordered for\s*:/i.test(content)) {
+    violations.push('test-list.md missing "Ordered for:" ordering rationale');
+  }
+  if (!headings.some((h) => h.text.toLowerCase().includes("deferred"))) {
+    violations.push("test-list.md missing required section: Deferred / skipped");
+  }
+  for (const line of content.split("\n")) {
+    if (TEST_ITEM_RE.test(line) && !AC_REF_RE.test(line)) {
+      violations.push(`test-list.md has a test item with no AC reference (orphan): ${line.trim()}`);
+    }
+  }
+  return violations;
+}
+var REQUIRED_NFR_ITEM_RE = /^\s*[-*]\s+\*{0,2}(R\d+)\*{0,2}\s*[:.)\-]?\s*(.*)$/;
+var PLAIN_LIST_ITEM_RE = /^\s*[-*]\s+(.*\S)\s*$/;
+function parseRequiredNfrs(nfrsMd2) {
+  const lines = nfrsMd2.split("\n");
+  const out = [];
+  let inRequired = false;
+  for (const line of lines) {
+    const h = HEADING_RE.exec(line);
+    if (h) {
+      inRequired = h[2].trim().toLowerCase().startsWith("required");
+      continue;
+    }
+    if (!inRequired) continue;
+    const withId = REQUIRED_NFR_ITEM_RE.exec(line);
+    if (withId) {
+      out.push({ id: withId[1], text: withId[2].trim() });
+      continue;
+    }
+    const plain = PLAIN_LIST_ITEM_RE.exec(line);
+    if (plain) out.push({ id: null, text: plain[1].trim() });
+  }
+  return out;
+}
+function checkNfrCoverage(nfrsMd2, architectureJson2, otherFeatureBriefRefs = /* @__PURE__ */ new Set()) {
+  const required = parseRequiredNfrs(nfrsMd2);
+  if (required.length === 0) return { ok: true };
+  let parsed;
+  try {
+    parsed = JSON.parse(architectureJson2);
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    return { ok: false, violations: [`architecture.json is not valid JSON: ${cause}`] };
+  }
+  const briefRefs = new Set(
+    (parsed.nfrs ?? []).map((n) => n.brief_ref).filter((r) => typeof r === "string" && r.length > 0)
+  );
+  const scopedOut = new Set(
+    (parsed.nfr_out_of_scope ?? []).map((s) => s.ref).filter((r) => typeof r === "string" && r.length > 0)
+  );
+  const violations = [];
+  for (const item of required) {
+    if (item.id === null) {
+      const preview = item.text.length > 50 ? `${item.text.slice(0, 50)}...` : item.text;
+      violations.push(`nfrs.md Required item has no R<n> id (cannot be coverage-tracked): "${preview}"`);
+      continue;
+    }
+    const covered = briefRefs.has(item.id) || otherFeatureBriefRefs.has(item.id) || scopedOut.has(item.id);
+    if (!covered) {
+      violations.push(
+        `Required NFR ${item.id} from nfrs.md is not covered by this feature, any sibling feature, or an explicit nfr_out_of_scope declaration (no matching brief_ref)`
+      );
+    }
+  }
+  return finalize(violations);
+}
+function projectBriefRefs(consortDir) {
+  const refs = /* @__PURE__ */ new Set();
+  const fdir = featuresDir(consortDir);
+  if (!(0, import_fs4.existsSync)(fdir)) return refs;
+  for (const feature of (0, import_fs4.readdirSync)(fdir)) {
+    const archPath = (0, import_path5.join)(fdir, feature, "architecture.json");
+    if (!(0, import_fs4.existsSync)(archPath)) continue;
+    try {
+      const parsed = JSON.parse((0, import_fs4.readFileSync)(archPath, "utf8"));
+      for (const n of parsed.nfrs ?? []) {
+        if (typeof n.brief_ref === "string" && n.brief_ref.length > 0) refs.add(n.brief_ref);
+      }
+    } catch {
+    }
+  }
+  return refs;
+}
+var PERSISTENCE_EVIDENCE_RE = /\b(migrat\w*|schema|persist\w*|stored|store|tables?|database|repositor\w*|\bORM\b)\b/i;
+function checkServiceBackedDeclaration(architectureJson2, evidence) {
+  let parsed;
+  try {
+    parsed = JSON.parse(architectureJson2);
+  } catch (err) {
+    return { ok: false, violations: [`architecture.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const infraAc = (evidence.acLayers ?? []).some((l) => l === "Infra");
+  const persistNfr = (evidence.nfrsText ?? []).some((t) => PERSISTENCE_EVIDENCE_RE.test(t));
+  const why = [
+    infraAc ? "an AC is tagged layer:Infra (a data-store contract)" : "",
+    persistNfr ? "an NFR references persistence (migration/schema/storage)" : ""
+  ].filter(Boolean).join(" and ");
+  if (parsed.service_backed === true) {
+    if (!infraAc && !persistNfr) return { ok: true };
+    const hasInvariants = (parsed.persistence_invariants ?? []).some((i) => i && typeof i.id === "string" && i.id.length > 0);
+    if (hasInvariants) return { ok: true };
+    return {
+      ok: false,
+      violations: [
+        `architecture.json is service_backed and shows persistence evidence (${why}) but declares NO persistence_invariants[]; a feature that persists data must name its DB-level guarantees (unique/FK/CHECK/NOT NULL/transactional/migration-reversible) so the schema gets a real-branch test, OR remove the misleading persistence signal if this service does not actually persist`
+      ]
+    };
+  }
+  if (!infraAc && !persistNfr) return { ok: true };
+  return {
+    ok: false,
+    violations: [
+      `architecture.json is not service_backed but shows persistence evidence (${why}); set service_backed:true + declare boundary/service/repository layers (a data-persisting feature MUST be layered), or remove the misleading signal if the feature is genuinely trivial`
+    ]
+  };
+}
+function checkE2eLayerPresent(architectureJson2, evidence) {
+  let parsed;
+  try {
+    parsed = JSON.parse(architectureJson2);
+  } catch (err) {
+    return { ok: false, violations: [`architecture.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const acLayers = evidence.acLayers ?? [];
+  const declaresRenderingBoundary = (parsed.layers ?? []).some(
+    (l) => l.role === "boundary" && typeof l.renders_via === "string" && l.renders_via.length > 0
+  );
+  const reactFeatureWithApi = evidence.uiReact === true && acLayers.includes("API");
+  const clientFacing = declaresRenderingBoundary || reactFeatureWithApi;
+  if (!clientFacing) return { ok: true };
+  if (acLayers.includes("E2E")) return { ok: true };
+  const why = declaresRenderingBoundary ? `declares a UI-rendering boundary (renders_via)` : `is a React UI-track project exposing an API-layer AC (an endpoint the client consumes)`;
+  return {
+    ok: false,
+    violations: [
+      `the feature ${why} but NO acceptance criterion is tagged layer:"E2E"; a feature that renders a UI has at least one client<->server contract (a form submit, an inline validation rejection, a success/empty state) whose ONLY real verification is a Playwright e2e against the live API \u2013 tag that AC layer:"E2E" (a mocked component test stubs the response envelope, so a fabricated shape passes green while the real wire contract drifts). NOTE: an outcome phrased as "record WHO performed the action" or "the pick is saved", when the operator enters their name on a form with no auth, IS a client form submission (layer:"E2E") \u2013 do not flatten it into a backend "API" AC. If the endpoint is genuinely not consumed by any client, reconsider \u2013 that is unusual for a UI-track feature.`
+    ]
+  };
+}
+function checkLayeringDeclared(architectureJson2) {
+  let parsed;
+  try {
+    parsed = JSON.parse(architectureJson2);
+  } catch (err) {
+    return { ok: false, violations: [`architecture.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  if (parsed.service_backed !== true) return { ok: true };
+  const roles = new Set(
+    (parsed.layers ?? []).map((l) => l.role).filter((r) => typeof r === "string")
+  );
+  const missing = ["boundary", "service", "repository"].filter((r) => !roles.has(r));
+  if (missing.length) {
+    return {
+      ok: false,
+      violations: [
+        `service_backed feature must declare layers [${missing.join(", ")}] in architecture.json (layered architecture: boundary -> service -> repository -> ORM; the boundary never touches the DB session)`
+      ]
+    };
+  }
+  return { ok: true };
+}
+function checkFitnessCoverage(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const declaresConstraint = arch.service_backed === true || Array.isArray(arch.layers) && arch.layers.length > 0;
+  if (!declaresConstraint) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const hasFitness = (tl.items ?? []).some((i) => i.kind === "fitness");
+  if (!hasFitness) {
+    return {
+      ok: false,
+      violations: [
+        `architecture is service-backed/layered but the test-list has no kind:"fitness" item (a service-backed feature needs a fitness test for its gate-uncovered constraints, e.g. a real-branch persistence-invariant test or config-in-env; the inward-deps/ORM-containment layering contract is defended by the consort-layering-clean gate, not a test item; see test-strategy.md)`
+      ]
+    };
+  }
+  return { ok: true };
+}
+function checkE2ECoverage(testListJson, e2eAcIds) {
+  if (e2eAcIds.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const isE2e = (sf) => typeof sf === "string" && /(^|\/)e2e\//.test(sf);
+  const violations = [];
+  for (const acId of e2eAcIds) {
+    const forAc = items.filter((i) => i.ac_id === acId);
+    if (forAc.some((i) => isE2e(i.scenario_file))) continue;
+    const how = forAc.length ? `covered only by ${forAc.map((i) => i.scenario_file ?? `kind:${i.kind ?? "?"}`).join(", ")}` : "has no covering test";
+    violations.push(
+      `E2E-layer AC ${acId} ${how} \u2013 a mocked component test cannot verify the real client<->server contract (a fabricated response envelope passes green while the real wire shape drifts). Add a real Playwright e2e (scenario_file under client/tests/e2e/) that drives the deployed app against the live API`
+    );
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkJsdomBrowserAssertion(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
+  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkTestlistWholeTableAggregate(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const wholeTableCount = /\bcount\s*\(\s*\*\s*\)|\b(?:count|number|total|tally)\s+of\s+(?:all\s+)?(?:the\s+)?rows\b|\brow\s+count\b|\btotal\s+(?:number\s+of\s+)?rows\b|\breturns?\s+(?:exactly\s+)?the\s+count\b/i;
+  const scopedOrDelta = /\bseed(?:s|ed|ing)?\b|\bdelta\b|\bbefore\b.*\bafter\b|\bafter\b.*\bbefore\b|count_before|count_after|probe_before|\bsubtract|\bminus\b|\bits own rows\b|\bthe (?:test'?s?|rows? it) (?:own|seed)|\bscoped to\b|\bmarker\b|\buuid\b|\bunique (?:sku|key)\b|\bper-test\b/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (wholeTableCount.test(desc) && !scopedOrDelta.test(desc)) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts an ABSOLUTE whole-table aggregate ("${desc.slice(0, 90)}\u2026") with no own-row scoping and no delta \u2014 it passes on the isolated experiment branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkPersistenceCoverage(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0);
+  if (invariants.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const covered = new Set((tl.items ?? []).map((i) => i.invariant_id).filter((x) => typeof x === "string" && x.length > 0));
+  const uncovered = invariants.map((i) => i.id).filter((id) => !covered.has(id));
+  if (uncovered.length > 0) {
+    return {
+      ok: false,
+      violations: [
+        `persistence_invariant(s) with no covering test-list item (invariant_id): ${uncovered.join(", ")} (each declared invariant needs >=1 test that verifies the migration realized it against the real branch \u2013 NOT a test of the ORM's generic round-trip; see test-strategy.md)`
+      ]
+    };
+  }
+  return { ok: true };
+}
+function clauseRealizedBy(c) {
+  return typeof c === "object" && c !== null && Array.isArray(c.realized_by) ? c.realized_by.filter((a) => typeof a === "string" && a.length > 0) : [];
+}
+function checkFitnessClauseCoverage(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform").map((n) => ({
+    id: n.id,
+    clauses: n.fitness_functions.filter((c) => typeof c === "string" ? c.trim().length > 0 : typeof c?.clause === "string")
+  })).filter((n) => n.clauses.length > 0);
+  if (atomic.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const allAcIds = new Set(items.map((it) => it.ac_id).filter((a) => typeof a === "string"));
+  const violations = [];
+  for (const nfr of atomic) {
+    const nfrItems = items.filter((it) => it.nfr_id === nfr.id);
+    const acClauses = nfr.clauses.filter((c) => clauseRealizedBy(c).length > 0);
+    const anchoredAcs = new Set(acClauses.flatMap((c) => clauseRealizedBy(c)));
+    for (const c of acClauses) {
+      const rb = clauseRealizedBy(c);
+      const demanded = rb.some((a) => allAcIds.has(a));
+      if (!demanded) continue;
+      const covered = nfrItems.some((it) => typeof it.ac_id === "string" && rb.includes(it.ac_id));
+      if (!covered) {
+        violations.push(
+          `NFR ${nfr.id} clause "${typeof c === "object" && c.clause || ""}" is realized by AC(s) ${rb.join(", ")} present in this test-list but no fitness item tagged nfr_id:"${nfr.id}" anchors to a realizing AC \u2014 author one for it (a bare nfr_id tag on an unrelated AC does not count)`
+        );
+      }
+    }
+    const genericNeed = nfr.clauses.length - acClauses.length;
+    const genericHave = nfrItems.filter((it) => !(typeof it.ac_id === "string" && anchoredAcs.has(it.ac_id))).length;
+    if (genericHave < genericNeed) {
+      violations.push(
+        `NFR ${nfr.id} declares ${genericNeed} atomic fitness clause(s) (fitness_functions) but only ${genericHave} test-list item(s) reference it via nfr_id (author one fitness test per clause, each tagged nfr_id:"${nfr.id}"; do not pack multiple clauses into one test)`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkNfrClauseScope(architectureJson2, knownAcIds) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const known = new Set(knownAcIds);
+  const violations = [];
+  for (const nfr of arch.nfrs ?? []) {
+    if (!nfr || typeof nfr.id !== "string" || !Array.isArray(nfr.fitness_functions)) continue;
+    for (const c of nfr.fitness_functions) {
+      const rb = clauseRealizedBy(c);
+      if (rb.length === 0) continue;
+      if (!rb.some((a) => known.has(a))) {
+        violations.push(
+          `NFR ${nfr.id} clause "${typeof c === "object" && c.clause || ""}" names realized_by AC(s) ${rb.join(", ")}, none of which exist in any story of this feature \u2014 the operation it governs is introduced by no AC. Add the realizing AC, or defer the clause to the story that introduces the operation (do not scope it to a story that lacks it)`
+        );
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+var PLATFORM_NFR_GATES = /* @__PURE__ */ new Set(["consort-layering-clean", "config-in-env"]);
+function checkPlatformNfrDefended(architectureJson2, knownGates = PLATFORM_NFR_GATES) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const violations = [];
+  for (const n of arch.nfrs ?? []) {
+    if (!n || n.tier !== "platform") continue;
+    const label = typeof n.id === "string" && n.id || typeof n.brief === "string" && n.brief || typeof n.requirement === "string" && n.requirement || "(unnamed NFR)";
+    const gate = typeof n.defended_by_gate === "string" ? n.defended_by_gate.trim() : "";
+    const hasSingular = typeof n.fitness_function === "string" && n.fitness_function.trim().length > 0;
+    const hasArray = Array.isArray(n.fitness_functions) && n.fitness_functions.some((c) => typeof c === "string" && c.trim().length > 0);
+    if (gate && knownGates.has(gate)) continue;
+    if (hasSingular || hasArray) continue;
+    if (gate && !knownGates.has(gate)) {
+      violations.push(`platform NFR ${label} names defended_by_gate:"${gate}" which is not a known deterministic gate (known: ${[...knownGates].join(", ")}); name a real gate or give it a feature-level fitness_function`);
+    } else {
+      violations.push(`platform NFR ${label} names no defense: a tier:"platform" NFR must set defended_by_gate (one of: ${[...knownGates].join(", ")}) OR a feature-level fitness_function \u2014 it is defended once, but never dropped`);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkDbDesign(dbDesignJson2, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0).map((i) => i.id);
+  if (invariants.length === 0) return { ok: true };
+  if (dbDesignJson2 === void 0) {
+    return {
+      ok: false,
+      violations: [
+        `feature declares persistence_invariants but has no db-design.json (the DBA runs after the architect and before the test-strategist to realize the schema; declare >=1 table and realize every persistence_invariant; see db-design.schema.json + agents/dba.md)`
+      ]
+    };
+  }
+  let db;
+  try {
+    db = JSON.parse(dbDesignJson2);
+  } catch (err) {
+    return { ok: false, violations: [`db-design.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  if (!Array.isArray(db.tables) || db.tables.length === 0) {
+    violations.push(
+      `db-design.json declares no tables[] but the feature declares persistence_invariants (it persists data, so it has >=1 table; see agents/dba.md)`
+    );
+  }
+  const realized = new Set((db.realizes_invariants ?? []).filter((x) => typeof x === "string" && x.length > 0));
+  const uncovered = invariants.filter((id) => !realized.has(id));
+  if (uncovered.length > 0) {
+    violations.push(
+      `persistence_invariant(s) not realized by db-design.json realizes_invariants[]: ${uncovered.join(", ")} (the DBA must physically realize every invariant the architect declared \u2013 a table/column/constraint/index \u2013 and list its id here; see agents/dba.md)`
+    );
+  }
+  return violations.length > 0 ? { ok: false, violations } : { ok: true };
+}
+function checkStoryIndependence(stories, targetStory) {
+  const parsed = [];
+  for (const s of stories) {
+    let obj;
+    try {
+      obj = JSON.parse(s.content);
+    } catch {
+      continue;
+    }
+    const idForNum = typeof obj.id === "string" ? obj.id : s.name;
+    const m = /^S(\d+)/.exec(idForNum);
+    if (!m) continue;
+    parsed.push({ name: s.name, id: idForNum, num: parseInt(m[1], 10), indep: obj.independence });
+  }
+  if (parsed.length < 2) return { ok: true };
+  const firstNum = Math.min(...parsed.map((p) => p.num));
+  const violations = [];
+  for (const p of parsed) {
+    if (targetStory !== void 0 && p.name !== targetStory && p.id !== targetStory) continue;
+    if (p.num === firstNum) continue;
+    const i = p.indep;
+    if (!i || typeof i !== "object") {
+      violations.push(
+        `${p.name}: missing independence determination (every story after the first must record independence.distinct_from_prior + rationale; apply the story-independence test, or fold/re-scope it)`
+      );
+    } else if (i.distinct_from_prior !== true) {
+      violations.push(
+        `${p.name}: independence.distinct_from_prior is not true (this story's behavior is a subset of an earlier story; fold it into that story or re-scope it to a distinct, independently-RED-able slice)`
+      );
+    } else if (typeof i.rationale !== "string" || i.rationale.trim().length === 0) {
+      violations.push(`${p.name}: independence.rationale is empty (state the distinct behavior this story adds beyond the prior stories)`);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkAcIndependence(acs) {
+  const parsed = [];
+  for (const a of acs) {
+    let obj;
+    try {
+      obj = JSON.parse(a.content);
+    } catch {
+      continue;
+    }
+    const idForNum = typeof obj.id === "string" ? obj.id : a.name;
+    const m = /^AC(\d+)/.exec(idForNum);
+    if (!m) continue;
+    parsed.push({ name: typeof obj.id === "string" ? obj.id : a.name, num: parseInt(m[1], 10), indep: obj.independence });
+  }
+  if (parsed.length < 2) return { ok: true };
+  const firstNum = Math.min(...parsed.map((p) => p.num));
+  const violations = [];
+  for (const p of parsed) {
+    if (p.num === firstNum) continue;
+    const i = p.indep;
+    if (!i || typeof i !== "object") {
+      violations.push(
+        `${p.name}: missing independence determination (every AC after the first must record independence.distinct_from_prior + rationale; apply the AC-independence test, or fold/re-scope it)`
+      );
+    } else if (i.distinct_from_prior !== true) {
+      violations.push(
+        `${p.name}: independence.distinct_from_prior is not true (this AC's outcome is already delivered by an earlier AC; fold it into that AC or re-scope it to a distinct, independently-RED-able outcome)`
+      );
+    } else if (typeof i.rationale !== "string" || i.rationale.trim().length === 0) {
+      violations.push(`${p.name}: independence.rationale is empty (state the distinct outcome this AC adds beyond the earlier ACs)`);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkInvariantCoverageDistinct(perStory, ownerByInvariant) {
+  const carriers = /* @__PURE__ */ new Map();
+  for (const s of perStory) {
+    const m = /^S(\d+)/.exec(s.story);
+    const num = m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+    for (const inv of new Set(s.invariantIds)) {
+      if (!inv) continue;
+      const arr = carriers.get(inv) ?? [];
+      arr.push({ story: s.story, num });
+      carriers.set(inv, arr);
+    }
+  }
+  const violations = [];
+  for (const [inv, stories] of carriers) {
+    const realizer = ownerByInvariant?.get(inv);
+    if (realizer && stories.some((s) => s.story !== realizer)) {
+      const owns = stories.some((s) => s.story === realizer);
+      for (const c of stories) {
+        if (c.story === realizer) continue;
+        violations.push(
+          `${c.story} carries persistence invariant ${inv} but does NOT realize it \u2013 its table/migration is introduced by ${realizer} (db-design schema_changes). Move the ${inv} fitness item to ${realizer}${owns ? "" : " (which must add it)"}; a display/read-only story cannot test an invariant whose table it never creates. Anchor by the realizing story, not AC keyword proximity.`
+        );
+      }
+      continue;
+    }
+    if (stories.length < 2) continue;
+    const sorted = [...stories].sort((a, b) => a.num - b.num || a.story.localeCompare(b.story));
+    const owner = sorted[0].story;
+    for (const later of sorted.slice(1)) {
+      violations.push(
+        `${later.story} re-tests persistence invariant ${inv} already covered by ${owner}. A persistence invariant is realized once per feature and belongs to exactly one story's fitness tests; drop the duplicate fitness item(s) from ${later.story}. If ${later.story}'s migration adds a NEW invariant, cover that new invariant instead.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function invariantRealizingStory(architectureJson2, dbDesignJson2) {
+  const out = /* @__PURE__ */ new Map();
+  if (!architectureJson2 || !dbDesignJson2) return out;
+  let arch;
+  let db;
+  try {
+    arch = JSON.parse(architectureJson2);
+    db = JSON.parse(dbDesignJson2);
+  } catch {
+    return out;
+  }
+  const changes = (db.schema_changes ?? []).filter(
+    (c) => !!c && typeof c.story_id === "string" && typeof c.kind === "string" && typeof c.table === "string"
+  );
+  const sNum = (s) => {
+    const m = /^S(\d+)/.exec(s);
+    return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+  };
+  const tableRealizer = /* @__PURE__ */ new Map();
+  for (const table of new Set(changes.map((c) => c.table))) {
+    const forTable = changes.filter((c) => c.table === table);
+    const creator = forTable.find((c) => c.kind === "create_table");
+    const realizer = creator ? creator.story_id : [...forTable].sort((a, b) => sNum(a.story_id) - sNum(b.story_id))[0]?.story_id;
+    if (realizer) tableRealizer.set(table, realizer);
+  }
+  for (const inv of arch.persistence_invariants ?? []) {
+    if (!inv || typeof inv.id !== "string" || typeof inv.table !== "string") continue;
+    const realizer = tableRealizer.get(inv.table);
+    if (realizer) out.set(inv.id, realizer);
+  }
+  return out;
+}
+function checkSchemaChangeStoryRealizes(schemaChanges, storyLayers) {
+  const canRealize = (story) => (storyLayers.get(story) ?? []).some((l) => l.toUpperCase() !== "E2E");
+  const violations = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const c of schemaChanges) {
+    if (!c || c.kind !== "create_table" || typeof c.story_id !== "string" || typeof c.table !== "string") continue;
+    if (!storyLayers.has(c.story_id)) continue;
+    const key = `${c.story_id}::${c.table}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!canRealize(c.story_id)) {
+      violations.push(
+        `db-design attributes create_table ${c.table} to ${c.story_id}, whose ACs are all non-persisting (UI/E2E shell \u2013 no API/Infra layer). A scaffold/shell story cannot realize a table it has no data AC for. Attribute the create_table (and the invariants it realizes) to the story that first reads/writes ${c.table}; a shell story gets no schema_changes. (This is the mis-anchoring the navigator reflect gate otherwise bounces back through the whole design lane.)`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function canonicalArtifactName(path3) {
+  const base = (0, import_path5.basename)(path3);
+  if ((0, import_path5.basename)((0, import_path5.dirname)(path3)) === "acs" && base.endsWith(".json")) return "ac.json";
+  return base;
+}
+function checkMigrationPreservationClass(architectureJson2, dbDesignJson2) {
+  let arch;
+  let db;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  try {
+    db = dbDesignJson2 ? JSON.parse(dbDesignJson2) : void 0;
+  } catch {
+    db = void 0;
+  }
+  const changes = db?.schema_changes ?? [];
+  if (changes.length === 0) return { ok: true };
+  const allInitialCreate = changes.every((c) => c && c.kind === "create_table");
+  if (!allInitialCreate) return { ok: true };
+  const SELF_CONTRADICTION = /unsatisfiable|skip (it|this)|cannot be satisfied|do not cover/i;
+  const PRESERVATION = /preserv|surviv|no loss|intact|existing (rows|data)/i;
+  const FORWARD_ONLY = /upgrade head|forward (migration|pass|only)/i;
+  const violations = [];
+  for (const n of arch.nfrs ?? []) {
+    if (!n || n.tier === "platform") continue;
+    const label = typeof n.id === "string" && n.id || "(unnamed NFR)";
+    const text = [n.statement, n.brief, ...typeof n.fitness_function === "string" ? [n.fitness_function] : [], ...(Array.isArray(n.fitness_functions) ? n.fitness_functions : []).filter((c) => typeof c === "string")].filter((s) => typeof s === "string").join(" ");
+    if (!text) continue;
+    if (SELF_CONTRADICTION.test(text)) {
+      violations.push(
+        `NFR ${label} declares an obligation its own text calls unsatisfiable / to-be-skipped \u2013 a self-contradiction the design lane cannot satisfy AND cannot ignore (the coverage gates demand the test; the architect's own note forbids it). Either remove/re-tier the NFR or reword it as a forward-only standing guard (seed after create, alembic upgrade head, assert intact).`
+      );
+    } else if (PRESERVATION.test(text) && !FORWARD_ONLY.test(text)) {
+      violations.push(
+        `NFR ${label} promises data/row preservation across migrations, but every schema change in db-design.json is an initial create_table \u2013 there are no pre-existing rows to preserve, so the obligation is unsatisfiable as written. Reword it forward-only (seed after create, alembic upgrade head, assert intact) or move it to the additive story that alters the pre-existing table.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkFitnessSingularCoverage(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const singular = (arch.nfrs ?? []).filter(
+    (n) => n && typeof n.id === "string" && n.id.length > 0 && n.tier !== "platform" && typeof n.fitness_function === "string" && n.fitness_function.trim().length > 0 && !(Array.isArray(n.fitness_functions) && n.fitness_functions.some((c) => typeof c === "string" && c.trim().length > 0))
+  ).map((n) => n.id);
+  if (singular.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const have = new Set((tl.items ?? []).map((i) => i.nfr_id).filter((x) => typeof x === "string" && x.length > 0));
+  const missing = singular.filter((id) => !have.has(id));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      violations: missing.map(
+        (id) => `NFR ${id} declares a singular fitness_function but NO test-list item references it via nfr_id \u2013 author one fitness test tagged nfr_id:"${id}" (the array form is clause-gated; the singular form was escaping to the reflect until this check)`
+      )
+    };
+  }
+  return { ok: true };
+}
+function checkClientKindLayerCoherence(testListJson, acLayerById) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    const layer = acLayerById[it.ac_id];
+    if (layer !== void 0 && layer !== "E2E") {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+
+// consort/test-list/test-list.ts
+init_cjs_shims();
+var import_fs5 = require("fs");
+var import_path6 = require("path");
 function readMasterTestList(tddDir, featureId) {
   requireFeatureDir(tddDir, featureId);
   const file = featureTestListJson(tddDir, featureId);
-  if (!(0, import_fs.existsSync)(file)) {
+  if (!(0, import_fs5.existsSync)(file)) {
     throw new Error(`master test-list.json not found for ${featureId} at ${file}`);
   }
-  const parsed = JSON.parse((0, import_fs.readFileSync)(file, "utf8"));
+  const parsed = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
   return { ...parsed, items: Array.isArray(parsed.items) ? parsed.items : [] };
 }
 function writeMasterTestList(tddDir, list) {
   requireFeatureDir(tddDir, list.feature_id);
   const file = featureTestListJson(tddDir, list.feature_id);
-  (0, import_fs.writeFileSync)(file, JSON.stringify(list, null, 2) + "\n");
+  (0, import_fs5.writeFileSync)(file, JSON.stringify(list, null, 2) + "\n");
 }
 function renderTestListMarkdown(list) {
   const orderedFor = list.ordered_for ?? "design-momentum";
@@ -6837,23 +7932,27 @@ function renderTestListMarkdown(list) {
 function writeTestListMarkdown(tddDir, featureId) {
   const list = readMasterTestList(tddDir, featureId);
   const file = featureTestListMd(tddDir, featureId);
-  (0, import_fs.writeFileSync)(file, renderTestListMarkdown(list));
+  (0, import_fs5.writeFileSync)(file, renderTestListMarkdown(list));
   return file;
 }
 function acIdsInStoryDir(storyDir2) {
-  const dir = (0, import_path.join)(storyDir2, "acs");
-  if (!(0, import_fs.existsSync)(dir)) return [];
+  const dir = (0, import_path6.join)(storyDir2, "acs");
+  if (!(0, import_fs5.existsSync)(dir)) return [];
   const out = [];
-  for (const f of (0, import_fs.readdirSync)(dir)) {
+  for (const f of (0, import_fs5.readdirSync)(dir)) {
     if (!f.endsWith(".json")) continue;
     const base = f.slice(0, -".json".length);
     try {
-      const obj = JSON.parse((0, import_fs.readFileSync)((0, import_path.join)(dir, f), "utf8"));
+      const obj = JSON.parse((0, import_fs5.readFileSync)((0, import_path6.join)(dir, f), "utf8"));
       if (obj && typeof obj.id === "string" && obj.id === base) out.push(base);
     } catch {
     }
   }
   return out.sort();
+}
+function acsForStory(tddDir, featureId, storyId) {
+  const storyDir2 = findStoryDir(tddDir, featureId, storyId);
+  return storyDir2 ? acIdsInStoryDir(storyDir2) : [];
 }
 function scopeToStory(list, storyId, acIds) {
   const want = new Set(acIds);
@@ -6918,8 +8017,8 @@ function writeStoryTestList(tddDir, featureId, storyId) {
   if (!master) return null;
   const scoped = scopeToStory(master, storyId, storyAcIds2);
   const file = storyTestListJson(tddDir, featureId, storyId);
-  (0, import_fs.mkdirSync)((0, import_path.dirname)(file), { recursive: true });
-  (0, import_fs.writeFileSync)(file, JSON.stringify(scoped, null, 2) + "\n");
+  (0, import_fs5.mkdirSync)((0, import_path6.dirname)(file), { recursive: true });
+  (0, import_fs5.writeFileSync)(file, JSON.stringify(scoped, null, 2) + "\n");
   return file;
 }
 function markTestItemGreen(tddDir, featureId, storyId, testId) {
@@ -6944,10 +8043,10 @@ function markTestItemGreen(tddDir, featureId, storyId, testId) {
   if (acPassing) {
     try {
       const f = acJson(tddDir, featureId, storyId, acId);
-      if ((0, import_fs.existsSync)(f)) {
-        const ac = JSON.parse((0, import_fs.readFileSync)(f, "utf8"));
+      if ((0, import_fs5.existsSync)(f)) {
+        const ac = JSON.parse((0, import_fs5.readFileSync)(f, "utf8"));
         ac.status = "passing";
-        (0, import_fs.writeFileSync)(f, JSON.stringify(ac, null, 2) + "\n");
+        (0, import_fs5.writeFileSync)(f, JSON.stringify(ac, null, 2) + "\n");
       }
     } catch {
     }
@@ -6956,14 +8055,662 @@ function markTestItemGreen(tddDir, featureId, storyId, testId) {
 }
 function readStoryTestList(tddDir, featureId, storyId) {
   const file = storyTestListJson(tddDir, featureId, storyId);
-  if (!(0, import_fs.existsSync)(file)) return null;
-  return JSON.parse((0, import_fs.readFileSync)(file, "utf8"));
+  if (!(0, import_fs5.existsSync)(file)) return null;
+  return JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+}
+
+// consort/architecture/architecture-conventions.ts
+init_cjs_shims();
+var import_fs6 = require("fs");
+function normModule(m) {
+  return m.replace(/\/+$/, "");
+}
+function readConventions(consortDir) {
+  const f = architectureConventionsJson(consortDir);
+  if (!(0, import_fs6.existsSync)(f)) return void 0;
+  try {
+    return JSON.parse((0, import_fs6.readFileSync)(f, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function assertArchitectureConforms(conventions, architectureJsonContent) {
+  let doc;
+  try {
+    doc = JSON.parse(architectureJsonContent);
+  } catch (err) {
+    return { ok: false, violations: [`architecture.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  if (doc.service_backed !== true) return { ok: true };
+  const featureLayers = (doc.layers ?? []).filter(
+    (l) => typeof l.role === "string" && typeof l.module === "string"
+  );
+  if (featureLayers.length === 0) return { ok: true };
+  const violations = [];
+  for (const conv of conventions.layers) {
+    const match = featureLayers.find((l) => l.role === conv.role);
+    if (!match) {
+      violations.push(
+        `architecture.json does not realize the established ${conv.role} layer (project convention pins ${conv.role} -> ${conv.module}, set by ${conventions.established_by})`
+      );
+      continue;
+    }
+    if (normModule(match.module) !== conv.module) {
+      violations.push(
+        `architecture.json remaps the ${conv.role} layer to "${normModule(match.module)}" but the project convention pins ${conv.role} -> "${conv.module}" (set by ${conventions.established_by}); reuse the established module path, do not diverge`
+      );
+    }
+    if (conv.renders_via && match.renders_via && match.renders_via !== conv.renders_via) {
+      violations.push(
+        `architecture.json renders the ${conv.role} layer via "${match.renders_via}" but the project convention pins "${conv.renders_via}" (set by ${conventions.established_by})`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+
+// consort/gates/registered-breakdown.ts
+init_cjs_shims();
+var import_fs7 = require("fs");
+var import_path7 = require("path");
+var registrationPath = (consortDir) => (0, import_path7.join)(consortDir, "registration.json");
+function storySlug(id) {
+  return id.replace(/^S\d+-/, "");
+}
+function acSlug(id) {
+  return id.replace(/^AC\d+-/, "");
+}
+function checkRegisteredBreakdown(registration, derived) {
+  const violations = [];
+  const regBySlug = new Map(registration.stories.map((s) => [storySlug(s.id), s]));
+  const derBySlug = new Map(derived.map((s) => [storySlug(s.id), s]));
+  const registeredList = registration.stories.map((s) => s.id).join(", ");
+  for (const d of derived) {
+    if (!regBySlug.has(storySlug(d.id))) {
+      violations.push(`unregistered story "${d.id}" \u2014 not in the registered set (${registeredList}); the design lane must not invent or rename stories for a pre-registered feature`);
+    }
+  }
+  for (const r of registration.stories) {
+    if (!derBySlug.has(storySlug(r.id))) {
+      violations.push(`registered story "${r.id}" is missing from the derived breakdown`);
+    }
+  }
+  for (const r of registration.stories) {
+    const d = derBySlug.get(storySlug(r.id));
+    if (!d || d.acs.length === 0) continue;
+    const regAc = new Set(r.acs.map(acSlug));
+    const derAc = new Set(d.acs.map(acSlug));
+    for (const a of d.acs) {
+      if (!regAc.has(acSlug(a))) violations.push(`story "${d.id}": unregistered AC "${a}" (registered ACs: ${r.acs.join(", ")})`);
+    }
+    for (const a of r.acs) {
+      if (!derAc.has(acSlug(a))) violations.push(`story "${d.id}": registered AC "${a}" is missing`);
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+function readRegistration(consortDir, featureId) {
+  const p = registrationPath(consortDir);
+  if (!(0, import_fs7.existsSync)(p)) return null;
+  try {
+    const reg = JSON.parse((0, import_fs7.readFileSync)(p, "utf8"));
+    if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
+    return reg;
+  } catch {
+    return null;
+  }
+}
+function readDerivedBreakdown(consortDir, featureId) {
+  const sdir = storiesDir(consortDir, featureId);
+  if (!(0, import_fs7.existsSync)(sdir)) return [];
+  return (0, import_fs7.readdirSync)(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+    const adir = acsDir(consortDir, featureId, e.name);
+    const acs = (0, import_fs7.existsSync)(adir) ? (0, import_fs7.readdirSync)(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    return { id: e.name, acs };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// consort/gates/gate-conformance-guard.ts
+function featureDir2(consortDir, featureId) {
+  return featureResolved(consortDir, featureId);
+}
+function conformanceReason(inputs) {
+  const problems = [];
+  for (const [name, content] of Object.entries(inputs)) {
+    const result = checkArtifactConformance(name, content);
+    if (!result.ok) problems.push(...result.violations);
+  }
+  return problems.length === 0 ? null : `format conformance failed: ${problems.join("; ")}`;
+}
+function storyAcProblems(fdir, story) {
+  const acsDir2 = (0, import_node_path2.join)(fdir, "stories", story, "acs");
+  if (!(0, import_node_fs.existsSync)(acsDir2)) return [];
+  const problems = [];
+  const acs = [];
+  for (const f of (0, import_node_fs.readdirSync)(acsDir2)) {
+    if (!f.endsWith(".json")) continue;
+    const p = (0, import_node_path2.join)(acsDir2, f);
+    let content;
+    try {
+      content = (0, import_node_fs.readFileSync)(p, "utf8");
+    } catch {
+      continue;
+    }
+    acs.push({ name: f.replace(/\.json$/, ""), content });
+    const r = checkArtifactConformance(canonicalArtifactName(p), content);
+    if (!r.ok) problems.push(`${story}/acs/${f}: ${r.violations.join("; ")}`);
+  }
+  const indep = checkAcIndependence(acs);
+  if (!indep.ok) problems.push(...indep.violations.map((v) => `${story}/acs: ${v}`));
+  return problems;
+}
+function acsConformanceReason(fdir) {
+  const stories = (0, import_node_path2.join)(fdir, "stories");
+  if (!(0, import_node_fs.existsSync)(stories)) return null;
+  const problems = (0, import_node_fs.readdirSync)(stories).flatMap((s) => storyAcProblems(fdir, s));
+  return problems.length === 0 ? null : `AC conformance failed: ${problems.join("; ")}`;
+}
+function collectStoryJsons(fdir) {
+  const stories = (0, import_node_path2.join)(fdir, "stories");
+  if (!(0, import_node_fs.existsSync)(stories)) return [];
+  const out = [];
+  for (const s of (0, import_node_fs.readdirSync)(stories)) {
+    const p = (0, import_node_path2.join)(stories, s, "story.json");
+    if (!(0, import_node_fs.existsSync)(p)) continue;
+    try {
+      out.push({ name: s, content: (0, import_node_fs.readFileSync)(p, "utf8") });
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+function storyIndependenceReason(fdir) {
+  const r = checkStoryIndependence(collectStoryJsons(fdir));
+  return r.ok ? null : `story independence failed: ${r.violations.join("; ")}`;
+}
+function storyRequiresE2eReason(fdir, story) {
+  const sj = (0, import_node_path2.join)(fdir, "stories", story, "story.json");
+  if (!(0, import_node_fs.existsSync)(sj)) return null;
+  try {
+    if (JSON.parse((0, import_node_fs.readFileSync)(sj, "utf8")).requires_e2e !== true) return null;
+  } catch {
+    return null;
+  }
+  const ad = (0, import_node_path2.join)(fdir, "stories", story, "acs");
+  if ((0, import_node_fs.existsSync)(ad)) {
+    for (const f of (0, import_node_fs.readdirSync)(ad)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        if (JSON.parse((0, import_node_fs.readFileSync)((0, import_node_path2.join)(ad, f), "utf8")).layer === "E2E") return null;
+      } catch {
+      }
+    }
+  }
+  return `story ${story} sets requires_e2e:true but no acceptance criterion is tagged layer:"E2E" \u2013 the client<->server interaction this story exists for (a form submit + its confirmation, an inline validation the client renders) must be an E2E AC verified by a real Playwright test, NOT flattened into a backend "the record is saved" API AC. Add a client-submit AC tagged layer:"E2E" (a mocked component test cannot verify the real wire contract)`;
+}
+function requiresE2eReason(consortDir, featureId) {
+  const fdir = featureDir2(consortDir, featureId);
+  const storiesDir2 = (0, import_node_path2.join)(fdir, "stories");
+  if (!(0, import_node_fs.existsSync)(storiesDir2)) return null;
+  for (const s of (0, import_node_fs.readdirSync)(storiesDir2)) {
+    if (!(0, import_node_fs.existsSync)((0, import_node_path2.join)(storiesDir2, s, "acs"))) continue;
+    const r = storyRequiresE2eReason(fdir, s);
+    if (r !== null) return r;
+  }
+  return null;
+}
+function architectureConventionsReason(consortDir, featureId) {
+  const conventions = readConventions(consortDir);
+  if (!conventions) return null;
+  const archFile = architectureJson(consortDir, featureId);
+  if (!(0, import_node_fs.existsSync)(archFile)) return null;
+  let content;
+  try {
+    content = (0, import_node_fs.readFileSync)(archFile, "utf8");
+  } catch {
+    return null;
+  }
+  const r = assertArchitectureConforms(conventions, content);
+  return r.ok ? null : `architecture conventions failed: ${r.violations.join("; ")}`;
+}
+function readArchitecture(consortDir, featureId) {
+  const f = architectureJson(consortDir, featureId);
+  if (!(0, import_node_fs.existsSync)(f)) return void 0;
+  try {
+    return (0, import_node_fs.readFileSync)(f, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+function layeringDeclaredReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkLayeringDeclared(arch);
+  return r.ok ? null : `layering declaration failed: ${r.violations.join("; ")}`;
+}
+function dbDesignReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = (0, import_node_fs.existsSync)(dbFile) ? (() => {
+    try {
+      return (0, import_node_fs.readFileSync)(dbFile, "utf8");
+    } catch {
+      return void 0;
+    }
+  })() : void 0;
+  const r = checkDbDesign(db, arch);
+  return r.ok ? null : `db-design failed: ${r.violations.join("; ")}`;
+}
+function nfrCoverageReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const featureNfrs = featureNfrsMd(consortDir, featureId);
+  const projectNfrs = nfrsMd(consortDir);
+  const nfrsFile = (0, import_node_fs.existsSync)(featureNfrs) ? featureNfrs : (0, import_node_fs.existsSync)(projectNfrs) ? projectNfrs : void 0;
+  if (nfrsFile === void 0) return null;
+  let nfrsContent;
+  try {
+    nfrsContent = (0, import_node_fs.readFileSync)(nfrsFile, "utf8");
+  } catch {
+    return null;
+  }
+  const r = checkNfrCoverage(nfrsContent, arch, projectBriefRefs(consortDir));
+  if (r.ok) return null;
+  const src = nfrsFile === featureNfrs ? `per-feature nfrs.md (features/${featureId}/nfrs.md)` : "project nfrs.md";
+  return `NFR coverage HARD-BLOCK (spec gate): architecture.json does not cover every ## Required NFR in the ${src} \u2013 ${r.violations.join("; ")}. Add a matching brief_ref on architecture.json (or declare nfr_out_of_scope).`;
+}
+function platformNfrDefendedReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkPlatformNfrDefended(arch);
+  if (r.ok) return null;
+  return `Platform NFR defense HARD-BLOCK (spec gate): ${r.violations.join("; ")}.`;
+}
+function registeredBreakdownReason(consortDir, featureId) {
+  const registration = readRegistration(consortDir, featureId);
+  if (registration === null) return null;
+  const { ok, violations } = checkRegisteredBreakdown(registration, readDerivedBreakdown(consortDir, featureId));
+  if (ok) return null;
+  return `Registered-breakdown HARD-BLOCK (spec gate): the derived breakdown diverges from .consort/registration.json \u2014 ${violations.join("; ")}. Match the registered breakdown, or deliberately update registration.json to re-register the canonical breakdown.`;
+}
+function fitnessCoverageReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkFitnessCoverage(testListJson, arch);
+  return r.ok ? null : `fitness coverage failed: ${r.violations.join("; ")}`;
+}
+function fitnessClauseCoverageReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkFitnessClauseCoverage(testListJson, arch);
+  return r.ok ? null : `atomic fitness-clause coverage failed: ${r.violations.join("; ")}`;
+}
+function nfrClauseScopeReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const storiesDir2 = (0, import_node_path2.join)(featureDir2(consortDir, featureId), "stories");
+  if (!(0, import_node_fs.existsSync)(storiesDir2)) return null;
+  const knownAcIds = [];
+  for (const s of (0, import_node_fs.readdirSync)(storiesDir2)) {
+    const ad = (0, import_node_path2.join)(storiesDir2, s, "acs");
+    if (!(0, import_node_fs.existsSync)(ad)) return null;
+    const files = (0, import_node_fs.readdirSync)(ad).filter((f) => f.endsWith(".json"));
+    if (files.length === 0) return null;
+    for (const f of files) knownAcIds.push(f.replace(/\.json$/, ""));
+  }
+  const r = checkNfrClauseScope(arch, knownAcIds);
+  return r.ok ? null : `NFR clause scope failed: ${r.violations.join("; ")}`;
+}
+function fitnessSingularCoverageReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkFitnessSingularCoverage(testListJson, arch);
+  return r.ok ? null : `singular fitness coverage failed: ${r.violations.join("; ")}`;
+}
+function clientKindLayerReason(consortDir, featureId, testListJson) {
+  const fdir = featureDir2(consortDir, featureId);
+  const storiesDir2 = (0, import_node_path2.join)(fdir, "stories");
+  if (!(0, import_node_fs.existsSync)(storiesDir2)) return null;
+  const acLayerById = {};
+  for (const story of (0, import_node_fs.readdirSync)(storiesDir2)) {
+    const acsDir2 = (0, import_node_path2.join)(storiesDir2, story, "acs");
+    if (!(0, import_node_fs.existsSync)(acsDir2)) continue;
+    for (const f of (0, import_node_fs.readdirSync)(acsDir2)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse((0, import_node_fs.readFileSync)((0, import_node_path2.join)(acsDir2, f), "utf8")).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+      }
+    }
+  }
+  const r = checkClientKindLayerCoherence(testListJson, acLayerById);
+  return r.ok ? null : `client-kind layer coherence failed: ${r.violations.join("; ")}`;
+}
+function migrationPreservationClassReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = (0, import_node_fs.existsSync)(dbFile) ? (() => {
+    try {
+      return (0, import_node_fs.readFileSync)(dbFile, "utf8");
+    } catch {
+      return void 0;
+    }
+  })() : void 0;
+  const r = checkMigrationPreservationClass(arch, db);
+  return r.ok ? null : `migration data-preservation class failed: ${r.violations.join("; ")}`;
+}
+function acReferenceReason(consortDir, featureId, testListJson) {
+  const storiesDir2 = (0, import_node_path2.join)(featureResolved(consortDir, featureId), "stories");
+  if (!(0, import_node_fs.existsSync)(storiesDir2)) return null;
+  const known = /* @__PURE__ */ new Set();
+  for (const story of (0, import_node_fs.readdirSync)(storiesDir2)) {
+    const acsDir2 = (0, import_node_path2.join)(storiesDir2, story, "acs");
+    if (!(0, import_node_fs.existsSync)(acsDir2)) continue;
+    for (const f of (0, import_node_fs.readdirSync)(acsDir2)) {
+      if (f.endsWith(".json")) known.add(f.replace(/\.json$/, ""));
+    }
+  }
+  if (known.size === 0) return null;
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch {
+    return null;
+  }
+  const dangling = (tl.items ?? []).filter((i) => typeof i.ac_id === "string" && !known.has(i.ac_id));
+  if (dangling.length === 0) return null;
+  return `test-list ac_id references failed: ${dangling.map((i) => `${i.id ?? "?"} -> '${i.ac_id}'`).join("; ")} do not resolve to any AC file under stories/*/acs/ (issue #199's mistagging class: an item attached to a non-existent AC anchors nothing, and the story it was meant to cover ships uncovered). Re-point each at the correct existing AC id.`;
+}
+function jsdomBrowserAssertionReason(testListJson) {
+  const r = checkJsdomBrowserAssertion(testListJson);
+  return r.ok ? null : `jsdom-vacuous-browser-assertion: ${r.violations.join("; ")}`;
+}
+function e2eCoverageReason(consortDir, featureId, testListJson) {
+  const storiesDir2 = (0, import_node_path2.join)(featureDir2(consortDir, featureId), "stories");
+  if (!(0, import_node_fs.existsSync)(storiesDir2)) return null;
+  const e2eAcIds = [];
+  for (const s of (0, import_node_fs.readdirSync)(storiesDir2)) {
+    const ad = (0, import_node_path2.join)(storiesDir2, s, "acs");
+    if (!(0, import_node_fs.existsSync)(ad)) continue;
+    for (const f of (0, import_node_fs.readdirSync)(ad)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const ac = JSON.parse((0, import_node_fs.readFileSync)((0, import_node_path2.join)(ad, f), "utf8"));
+        if (ac.layer === "E2E") e2eAcIds.push(ac.id ?? f.replace(/\.json$/, ""));
+      } catch {
+      }
+    }
+  }
+  const r = checkE2ECoverage(testListJson, e2eAcIds);
+  return r.ok ? null : `E2E coverage failed: ${r.violations.join("; ")}`;
+}
+function persistenceCoverageReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkPersistenceCoverage(testListJson, arch);
+  return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
+}
+function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
+  let master;
+  try {
+    master = JSON.parse(testListJson);
+  } catch {
+    return null;
+  }
+  const items = master.items ?? [];
+  const storiesDir2 = (0, import_node_path2.join)(featureDir2(consortDir, featureId), "stories");
+  if (!(0, import_node_fs.existsSync)(storiesDir2)) return null;
+  const perStory = (0, import_node_fs.readdirSync)(storiesDir2).filter((s) => {
+    try {
+      return (0, import_node_fs.statSync)((0, import_node_path2.join)(storiesDir2, s)).isDirectory();
+    } catch {
+      return false;
+    }
+  }).map((story) => {
+    const acIds = new Set(acsForStory(consortDir, featureId, story));
+    const invariantIds = items.filter((it) => typeof it.invariant_id === "string" && it.invariant_id.length > 0 && typeof it.ac_id === "string" && acIds.has(it.ac_id)).map((it) => it.invariant_id);
+    return { story, invariantIds };
+  });
+  const archFile = architectureJson(consortDir, featureId);
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const owner = invariantRealizingStory(
+    (0, import_node_fs.existsSync)(archFile) ? (0, import_node_fs.readFileSync)(archFile, "utf8") : void 0,
+    (0, import_node_fs.existsSync)(dbFile) ? (0, import_node_fs.readFileSync)(dbFile, "utf8") : void 0
+  );
+  const r = checkInvariantCoverageDistinct(perStory, owner);
+  return r.ok ? null : `invariant coverage not distinct across stories: ${r.violations.join("; ")}`;
+}
+function serviceBackedReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const acLayers = [];
+  const fdir = featureDir2(consortDir, featureId);
+  const stories = (0, import_node_path2.join)(fdir, "stories");
+  if ((0, import_node_fs.existsSync)(stories)) {
+    for (const s of (0, import_node_fs.readdirSync)(stories)) {
+      const ad = (0, import_node_path2.join)(stories, s, "acs");
+      if (!(0, import_node_fs.existsSync)(ad)) continue;
+      for (const f of (0, import_node_fs.readdirSync)(ad)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          const layer = JSON.parse((0, import_node_fs.readFileSync)((0, import_node_path2.join)(ad, f), "utf8")).layer;
+          if (typeof layer === "string") acLayers.push(layer);
+        } catch {
+        }
+      }
+    }
+  }
+  const nfrsText = [];
+  try {
+    const nfrs = JSON.parse(arch).nfrs ?? [];
+    for (const n of nfrs) nfrsText.push(n.brief ?? "", n.requirement ?? "", n.notes ?? "");
+  } catch {
+  }
+  const r = checkServiceBackedDeclaration(arch, { acLayers, nfrsText });
+  return r.ok ? null : `service_backed declaration failed: ${r.violations.join("; ")}`;
+}
+function e2eLayerPresentReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const fdir = featureDir2(consortDir, featureId);
+  let declared;
+  try {
+    declared = JSON.parse((0, import_node_fs.readFileSync)((0, import_node_path2.join)(fdir, "feature-spec.json"), "utf8")).stories ?? [];
+  } catch {
+    return null;
+  }
+  if (declared.length === 0) return null;
+  const storiesDir2 = (0, import_node_path2.join)(fdir, "stories");
+  const hasAcs = (story) => (0, import_node_fs.existsSync)((0, import_node_path2.join)(storiesDir2, story, "acs"));
+  if (!declared.every(hasAcs)) return null;
+  const acLayers = [];
+  for (const s of declared) {
+    const ad = (0, import_node_path2.join)(storiesDir2, s, "acs");
+    for (const f of (0, import_node_fs.readdirSync)(ad)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse((0, import_node_fs.readFileSync)((0, import_node_path2.join)(ad, f), "utf8")).layer;
+        if (typeof layer === "string") acLayers.push(layer);
+      } catch {
+      }
+    }
+  }
+  let uiReact = false;
+  try {
+    const proj = resolveProjectSettings((0, import_node_path2.dirname)(consortDir)).project;
+    uiReact = proj.uiTrack === true && proj.clientFramework === "react";
+  } catch {
+  }
+  const r = checkE2eLayerPresent(arch, { acLayers, uiReact });
+  return r.ok ? null : `E2E-layer presence failed: ${r.violations.join("; ")}`;
+}
+function schemaChangeStoryRealizesReason(consortDir, featureId) {
+  const dbFile = dbDesignJson(consortDir, featureId);
+  if (!(0, import_node_fs.existsSync)(dbFile)) return null;
+  let db;
+  try {
+    db = JSON.parse((0, import_node_fs.readFileSync)(dbFile, "utf8"));
+  } catch {
+    return null;
+  }
+  const changes = db.schema_changes ?? [];
+  if (changes.length === 0) return null;
+  const storiesDir2 = (0, import_node_path2.join)(featureDir2(consortDir, featureId), "stories");
+  if (!(0, import_node_fs.existsSync)(storiesDir2)) return null;
+  const storyLayers = /* @__PURE__ */ new Map();
+  for (const s of (0, import_node_fs.readdirSync)(storiesDir2)) {
+    const ad = (0, import_node_path2.join)(storiesDir2, s, "acs");
+    if (!(0, import_node_fs.existsSync)(ad)) continue;
+    const layers = [];
+    for (const f of (0, import_node_fs.readdirSync)(ad)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse((0, import_node_fs.readFileSync)((0, import_node_path2.join)(ad, f), "utf8")).layer;
+        if (typeof layer === "string") layers.push(layer);
+      } catch {
+      }
+    }
+    storyLayers.set(s, layers);
+  }
+  const r = checkSchemaChangeStoryRealizes(changes, storyLayers);
+  return r.ok ? null : `db-design story attribution failed: ${r.violations.join("; ")}`;
+}
+function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
+  const readIfPresent = (name) => {
+    const p = (0, import_node_path2.join)(fdir, name);
+    try {
+      return (0, import_node_fs.existsSync)(p) ? (0, import_node_fs.readFileSync)(p, "utf8") : void 0;
+    } catch {
+      return void 0;
+    }
+  };
+  const withConformance = (inputs) => {
+    const reason = conformanceReason(inputs);
+    return reason === null ? { inputs } : { reason };
+  };
+  switch (gate) {
+    case "spec": {
+      const featureJson = readIfPresent("feature-spec.json");
+      if (featureJson === void 0) {
+        return { reason: "feature-spec.json not found (spec phase not complete)" };
+      }
+      const featureMd = readIfPresent("feature-spec.md");
+      if (featureMd === void 0) {
+        return { reason: "feature-spec.md not found (structured draft spec incomplete)" };
+      }
+      const inputs = {
+        "feature-spec.json": featureJson,
+        "feature-spec.md": featureMd
+      };
+      const conf = withConformance(inputs);
+      if ("reason" in conf) return conf;
+      const acReason = acsConformanceReason(fdir);
+      if (acReason !== null) return { reason: acReason };
+      const indepReason = storyIndependenceReason(fdir);
+      if (indepReason !== null) return { reason: indepReason };
+      const registeredReason = registeredBreakdownReason(consortDir, featureId);
+      if (registeredReason !== null) return { reason: registeredReason };
+      const conventionsReason = architectureConventionsReason(consortDir, featureId);
+      if (conventionsReason !== null) return { reason: conventionsReason };
+      const serviceBacked = serviceBackedReason(consortDir, featureId);
+      if (serviceBacked !== null) return { reason: serviceBacked };
+      const e2eLayerReason = e2eLayerPresentReason(consortDir, featureId);
+      if (e2eLayerReason !== null) return { reason: e2eLayerReason };
+      const requiresE2e = requiresE2eReason(consortDir, featureId);
+      if (requiresE2e !== null) return { reason: requiresE2e };
+      const layeringReason = layeringDeclaredReason(consortDir, featureId);
+      if (layeringReason !== null) return { reason: layeringReason };
+      const dbReason = dbDesignReason(consortDir, featureId);
+      if (dbReason !== null) return { reason: dbReason };
+      const schemaStoryReason = schemaChangeStoryRealizesReason(consortDir, featureId);
+      if (schemaStoryReason !== null) return { reason: schemaStoryReason };
+      const preservReason = migrationPreservationClassReason(consortDir, featureId);
+      if (preservReason !== null) return { reason: preservReason };
+      const nfrReason = nfrCoverageReason(consortDir, featureId);
+      if (nfrReason !== null) return { reason: nfrReason };
+      const platReason = platformNfrDefendedReason(consortDir, featureId);
+      return platReason === null ? conf : { reason: platReason };
+    }
+    case "plan": {
+      const planJson = readIfPresent("plan.json");
+      if (planJson === void 0) {
+        return { reason: "plan.json not found (plan phase not produced)" };
+      }
+      return withConformance({ "plan.json": planJson });
+    }
+    case "test_list": {
+      const tlJson = readIfPresent("test-list.json");
+      const tlMd = readIfPresent("test-list.md");
+      if (tlJson === void 0 && tlMd === void 0) {
+        return { reason: "test-list.json/md not found (test-strategist phase not complete)" };
+      }
+      const inputs = {};
+      if (tlJson !== void 0) inputs["test-list.json"] = tlJson;
+      if (tlMd !== void 0) inputs["test-list.md"] = tlMd;
+      const conf = withConformance(inputs);
+      if ("reason" in conf) return conf;
+      if (tlJson !== void 0) {
+        const acRefReason = acReferenceReason(consortDir, featureId, tlJson);
+        if (acRefReason !== null) return { reason: acRefReason };
+        const fitnessReason = fitnessCoverageReason(consortDir, featureId, tlJson);
+        if (fitnessReason !== null) return { reason: fitnessReason };
+        const clauseReason = fitnessClauseCoverageReason(consortDir, featureId, tlJson);
+        if (clauseReason !== null) return { reason: clauseReason };
+        const scopeReason = nfrClauseScopeReason(consortDir, featureId);
+        if (scopeReason !== null) return { reason: scopeReason };
+        const singularReason = fitnessSingularCoverageReason(consortDir, featureId, tlJson);
+        if (singularReason !== null) return { reason: singularReason };
+        const kindLayerReason = clientKindLayerReason(consortDir, featureId, tlJson);
+        if (kindLayerReason !== null) return { reason: kindLayerReason };
+        const persistenceReason = persistenceCoverageReason(consortDir, featureId, tlJson);
+        if (persistenceReason !== null) return { reason: persistenceReason };
+        const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
+        if (distinctReason !== null) return { reason: distinctReason };
+        const e2eReason = e2eCoverageReason(consortDir, featureId, tlJson);
+        if (e2eReason !== null) return { reason: e2eReason };
+        const jsdomReason = jsdomBrowserAssertionReason(tlJson);
+        if (jsdomReason !== null) return { reason: jsdomReason };
+      }
+      return conf;
+    }
+    case "promote": {
+      if (promoteRef === void 0 || promoteRef.length === 0) {
+        return { reason: "no promote_ref supplied (nothing to promote)" };
+      }
+      return withConformance({ promote_ref: promoteRef });
+    }
+    case "deploy": {
+      const evidence = readIfPresent("deploy-evidence.json");
+      if (evidence === void 0) {
+        return { reason: "deploy-evidence.json not found (feature not deployed + verified)" };
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(evidence);
+      } catch {
+        return { reason: "deploy-evidence.json is not valid JSON" };
+      }
+      if (parsed.reachable !== true) {
+        return { reason: "deploy-evidence records reachable=false (app not reachable on the target)" };
+      }
+      if (parsed.verify?.passed !== true) {
+        return {
+          reason: `deploy-evidence records verify.passed=false (feature-verify did not pass against the running app). An approve cannot clear stale failed evidence (issue #198): fix the cause, then re-run the deploy \`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale deploy server first: \`lsof -tiTCP:8000 | xargs kill\`) to rewrite the evidence, and approve then.`
+        };
+      }
+      return withConformance({ "deploy-evidence.json": evidence });
+    }
+  }
 }
 
 // consort/experiment/experiment.ts
 init_cjs_shims();
-var import_fs2 = require("fs");
-var import_path2 = require("path");
+var import_fs8 = require("fs");
+var import_path8 = require("path");
 var import_node_child_process = require("child_process");
 var import_lakebase = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var RUNTIME_ARTIFACT_PREFIXES = [
@@ -6998,47 +8745,47 @@ function tagRunCount(outcomes, tag) {
   return slot ? slot.passed + slot.failed : 0;
 }
 function experimentsRoot(consortDir, featureId, storyId) {
-  return (0, import_path2.join)(consortDir, "experiments", featureId, storyId);
+  return (0, import_path8.join)(consortDir, "experiments", featureId, storyId);
 }
 function experimentDir(consortDir, featureId, storyId, slug) {
-  return (0, import_path2.join)(experimentsRoot(consortDir, featureId, storyId), slug);
+  return (0, import_path8.join)(experimentsRoot(consortDir, featureId, storyId), slug);
 }
 function listExperiments(consortDir, featureId, storyId) {
   const root = experimentsRoot(consortDir, featureId, storyId);
-  if (!(0, import_fs2.existsSync)(root)) return [];
+  if (!(0, import_fs8.existsSync)(root)) return [];
   const out = [];
-  for (const slug of (0, import_fs2.readdirSync)(root)) {
-    const dir = (0, import_path2.join)(root, slug);
-    if (!(0, import_fs2.statSync)(dir).isDirectory()) continue;
-    const branchFile = (0, import_path2.join)(dir, "branch.txt");
-    if (!(0, import_fs2.existsSync)(branchFile)) continue;
+  for (const slug of (0, import_fs8.readdirSync)(root)) {
+    const dir = (0, import_path8.join)(root, slug);
+    if (!(0, import_fs8.statSync)(dir).isDirectory()) continue;
+    const branchFile = (0, import_path8.join)(dir, "branch.txt");
+    if (!(0, import_fs8.existsSync)(branchFile)) continue;
     out.push({
       feature_id: featureId,
       story_id: storyId,
       experiment_slug: slug,
-      branch_id: (0, import_fs2.readFileSync)(branchFile, "utf8").trim(),
-      created_at: (0, import_fs2.statSync)(branchFile).birthtime.toISOString(),
+      branch_id: (0, import_fs8.readFileSync)(branchFile, "utf8").trim(),
+      created_at: (0, import_fs8.statSync)(branchFile).birthtime.toISOString(),
       dir
     });
   }
   return out;
 }
 function readOutcomes(consortDir, featureId, storyId, slug) {
-  const file = (0, import_path2.join)(experimentDir(consortDir, featureId, storyId, slug), "outcomes.json");
-  if (!(0, import_fs2.existsSync)(file)) return null;
-  return JSON.parse((0, import_fs2.readFileSync)(file, "utf8"));
+  const file = (0, import_path8.join)(experimentDir(consortDir, featureId, storyId, slug), "outcomes.json");
+  if (!(0, import_fs8.existsSync)(file)) return null;
+  return JSON.parse((0, import_fs8.readFileSync)(file, "utf8"));
 }
 function writeOutcomes(consortDir, featureId, storyId, slug, outcomes) {
-  const file = (0, import_path2.join)(experimentDir(consortDir, featureId, storyId, slug), "outcomes.json");
-  (0, import_fs2.writeFileSync)(file, JSON.stringify(outcomes, null, 2) + "\n");
+  const file = (0, import_path8.join)(experimentDir(consortDir, featureId, storyId, slug), "outcomes.json");
+  (0, import_fs8.writeFileSync)(file, JSON.stringify(outcomes, null, 2) + "\n");
 }
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
 var import_node_child_process2 = require("child_process");
 var import_node_crypto = require("crypto");
-var import_node_fs2 = require("fs");
-var import_node_path3 = require("path");
+var import_node_fs3 = require("fs");
+var import_node_path4 = require("path");
 var import_lakebase6 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -7048,60 +8795,19 @@ var fs2 = __toESM(require("fs"), 1);
 
 // consort/smells/smells.ts
 init_cjs_shims();
-var import_fs6 = require("fs");
-var import_path6 = require("path");
+var import_fs11 = require("fs");
+var import_path11 = require("path");
 
 // consort/pipeline/run-cycle.ts
 init_cjs_shims();
-var import_fs5 = require("fs");
-var import_path5 = require("path");
+var import_fs10 = require("fs");
+var import_path10 = require("path");
 var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
 // consort/logging/agent-log.ts
 init_cjs_shims();
-var import_fs4 = require("fs");
-var import_path4 = require("path");
-
-// consort/orchestrator/validators/schema-loader.ts
-init_cjs_shims();
-var import_fs3 = require("fs");
-var import_path3 = require("path");
-var import_ajv = __toESM(require_ajv(), 1);
-function resolveSchemaDir() {
-  const direct = (0, import_path3.join)(__dirname, "..", "..", "config", "schemas");
-  if ((0, import_fs3.existsSync)(direct)) return direct;
-  let dir = __dirname;
-  for (let i = 0; i < 8; i++) {
-    const cand = (0, import_path3.join)(dir, "consort", "config", "schemas");
-    if ((0, import_fs3.existsSync)(cand)) return cand;
-    const parent = (0, import_path3.join)(dir, "..");
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return direct;
-}
-var SCHEMA_DIR = resolveSchemaDir();
-var ajv = new import_ajv.default({ allErrors: true, strict: false });
-ajv.addFormat("date-time", true);
-var validatorCache = /* @__PURE__ */ new Map();
-function loadSchema(name) {
-  return JSON.parse((0, import_fs3.readFileSync)((0, import_path3.join)(SCHEMA_DIR, name), "utf8"));
-}
-function getValidator(name) {
-  const cached = validatorCache.get(name);
-  if (cached) return cached;
-  const validate = ajv.compile(loadSchema(name));
-  validatorCache.set(name, validate);
-  return validate;
-}
-function formatSchemaErrors(validate) {
-  const errors = validate.errors ?? [];
-  if (errors.length === 0) return ["schema validation failed"];
-  return errors.map((e) => {
-    const where = e.instancePath && e.instancePath.length > 0 ? e.instancePath : "(root)";
-    return `${where}: ${e.message ?? "invalid"}`;
-  });
-}
+var import_fs9 = require("fs");
+var import_path9 = require("path");
 
 // consort/logging/agent-log-events.ts
 init_cjs_shims();
@@ -7179,15 +8885,15 @@ function renderEventMessage(event, slots = {}) {
 
 // consort/logging/agent-log.ts
 function logFilePath(consortDir) {
-  return (0, import_path4.join)(consortDir, "agent-log.jsonl");
+  return (0, import_path9.join)(consortDir, "agent-log.jsonl");
 }
 function mirrorToRecordDir(text) {
   const recordDir = consortEnv("RECORD_DIR")?.trim();
   if (!recordDir) return;
   try {
-    const dst = (0, import_path4.join)(recordDir, "agent-log.jsonl");
-    (0, import_fs4.mkdirSync)((0, import_path4.dirname)(dst), { recursive: true });
-    (0, import_fs4.appendFileSync)(dst, text, "utf8");
+    const dst = (0, import_path9.join)(recordDir, "agent-log.jsonl");
+    (0, import_fs9.mkdirSync)((0, import_path9.dirname)(dst), { recursive: true });
+    (0, import_fs9.appendFileSync)(dst, text, "utf8");
   } catch {
   }
 }
@@ -7231,7 +8937,7 @@ function emitAgentLogEvent(input, opts = {}) {
   const event = buildAgentLogEvent(input, now);
   const line = `${JSON.stringify(event)}
 `;
-  (0, import_fs4.appendFileSync)(logFilePath(consortDir), line, "utf8");
+  (0, import_fs9.appendFileSync)(logFilePath(consortDir), line, "utf8");
   mirrorToRecordDir(line);
   return event;
 }
@@ -7251,26 +8957,26 @@ function coveredTestIds(c) {
   return c.test_id ? [c.test_id] : [];
 }
 function cyclesDir(scope) {
-  return (0, import_path5.join)(scope.consortDir, "cycles", scope.feature_id, scope.story_id, scope.ac_id);
+  return (0, import_path10.join)(scope.consortDir, "cycles", scope.feature_id, scope.story_id, scope.ac_id);
 }
 function nextCycleId(scope) {
   const dir = cyclesDir(scope);
-  if (!(0, import_fs5.existsSync)(dir)) return "cycle-001";
-  const ids = (0, import_fs5.readdirSync)(dir).filter((f) => /^cycle-\d+\.json$/.test(f)).map((f) => parseInt(f.match(/cycle-(\d+)/)[1], 10)).sort((a, b) => a - b);
+  if (!(0, import_fs10.existsSync)(dir)) return "cycle-001";
+  const ids = (0, import_fs10.readdirSync)(dir).filter((f) => /^cycle-\d+\.json$/.test(f)).map((f) => parseInt(f.match(/cycle-(\d+)/)[1], 10)).sort((a, b) => a - b);
   const next = (ids.at(-1) ?? 0) + 1;
   return `cycle-${String(next).padStart(3, "0")}`;
 }
 function writeCycleArtifact(scope, artifact) {
   const dir = cyclesDir(scope);
-  (0, import_fs5.mkdirSync)(dir, { recursive: true });
-  const file = (0, import_path5.join)(dir, `${artifact.cycle_id}.json`);
-  (0, import_fs5.writeFileSync)(file, JSON.stringify(artifact, null, 2) + "\n");
+  (0, import_fs10.mkdirSync)(dir, { recursive: true });
+  const file = (0, import_path10.join)(dir, `${artifact.cycle_id}.json`);
+  (0, import_fs10.writeFileSync)(file, JSON.stringify(artifact, null, 2) + "\n");
   return file;
 }
 function readCycleArtifact(scope, cycleId) {
-  const file = (0, import_path5.join)(cyclesDir(scope), `${cycleId}.json`);
-  if (!(0, import_fs5.existsSync)(file)) return null;
-  return JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+  const file = (0, import_path10.join)(cyclesDir(scope), `${cycleId}.json`);
+  if (!(0, import_fs10.existsSync)(file)) return null;
+  return JSON.parse((0, import_fs10.readFileSync)(file, "utf8"));
 }
 function beginCycle(args) {
   const cycle_id = nextCycleId(args);
@@ -7380,18 +9086,18 @@ function hasOpenBuildRefactorRoutableSmell(consortDir, story_id) {
   );
 }
 function writeSmellsLog(consortDir, hits) {
-  const file = (0, import_path6.join)(consortDir, "smells.json");
-  const existing = (0, import_fs6.existsSync)(file) ? JSON.parse((0, import_fs6.readFileSync)(file, "utf8")) : { detected: [] };
+  const file = (0, import_path11.join)(consortDir, "smells.json");
+  const existing = (0, import_fs11.existsSync)(file) ? JSON.parse((0, import_fs11.readFileSync)(file, "utf8")) : { detected: [] };
   const ts = (/* @__PURE__ */ new Date()).toISOString();
   const newEntries = hits.map((h) => ({ ...h, detected_at: ts }));
   const merged = { ...existing, detected: [...existing.detected, ...newEntries] };
-  (0, import_fs6.writeFileSync)(file, JSON.stringify(merged, null, 2) + "\n");
+  (0, import_fs11.writeFileSync)(file, JSON.stringify(merged, null, 2) + "\n");
   return merged;
 }
 function readSmellsLog(consortDir) {
-  const file = (0, import_path6.join)(consortDir, "smells.json");
-  if (!(0, import_fs6.existsSync)(file)) return { detected: [] };
-  return JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+  const file = (0, import_path11.join)(consortDir, "smells.json");
+  if (!(0, import_fs11.existsSync)(file)) return { detected: [] };
+  return JSON.parse((0, import_fs11.readFileSync)(file, "utf8"));
 }
 function smellMatches(entry, smell, story_id) {
   if (entry.smell !== smell) return false;
@@ -7402,20 +9108,20 @@ function hasOpenSmell(consortDir, smell, story_id) {
   return readSmellsLog(consortDir).detected.some((d) => !d.resolution && smellMatches(d, smell, story_id));
 }
 function markSmellResolved(consortDir, smell, opts) {
-  const file = (0, import_path6.join)(consortDir, "smells.json");
-  if (!(0, import_fs6.existsSync)(file)) return false;
-  const log = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+  const file = (0, import_path11.join)(consortDir, "smells.json");
+  if (!(0, import_fs11.existsSync)(file)) return false;
+  const log = JSON.parse((0, import_fs11.readFileSync)(file, "utf8"));
   const entry = log.detected.find((d) => !d.resolution && smellMatches(d, smell, opts.story_id));
   if (!entry) return false;
   entry.resolution = opts.note ?? `${opts.kind} by PO`;
   entry.resolution_kind = opts.kind;
-  (0, import_fs6.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  (0, import_fs11.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return true;
 }
 function resolveOpenSmells(consortDir, smell, opts) {
-  const file = (0, import_path6.join)(consortDir, "smells.json");
-  if (!(0, import_fs6.existsSync)(file)) return 0;
-  const log = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+  const file = (0, import_path11.join)(consortDir, "smells.json");
+  if (!(0, import_fs11.existsSync)(file)) return 0;
+  const log = JSON.parse((0, import_fs11.readFileSync)(file, "utf8"));
   let n = 0;
   for (const d of log.detected) {
     if (!d.resolution && smellMatches(d, smell, opts.story_id)) {
@@ -7424,7 +9130,7 @@ function resolveOpenSmells(consortDir, smell, opts) {
       n++;
     }
   }
-  if (n) (0, import_fs6.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
+  if (n) (0, import_fs11.writeFileSync)(file, JSON.stringify(log, null, 2) + "\n");
   return n;
 }
 
@@ -7511,8 +9217,8 @@ function markDeployVerifyRefactored(consortDir, featureId, storyId) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs = require("fs");
-var import_node_path2 = require("path");
+var import_node_fs2 = require("fs");
+var import_node_path3 = require("path");
 var INLINE_FLAG_RE = /\(\?[aiLmsux]*[-]?[aiLmsux]+\)/;
 var RE_COMPILE_RE = /re\.compile\(\s*[rRbuf]*(["'])((?:\\.|(?!\1).)*)\1/g;
 var E2E_REGEX_REMEDIATION = `A Playwright matcher uses a Python regex with inline flags (e.g. re.compile(r"(?i)summary")). Playwright forwards the pattern verbatim to the browser's JavaScript engine, which does not support inline-flag syntax \u2013 the assertion can never match. Pass the flag as a kwarg instead: re.compile("summary", re.IGNORECASE). See the E2E rule in the Navigator role + the e2e-inline-regex-flag bad smell.`;
@@ -7532,16 +9238,16 @@ function pythonFilesUnder(dir, rootForRel) {
   const out = [];
   let entries;
   try {
-    entries = (0, import_node_fs.readdirSync)(dir);
+    entries = (0, import_node_fs2.readdirSync)(dir);
   } catch {
     return out;
   }
   for (const name of entries) {
     if (name === "__pycache__" || name === ".pytest_cache") continue;
-    const abs = (0, import_node_path2.join)(dir, name);
+    const abs = (0, import_node_path3.join)(dir, name);
     let st;
     try {
-      st = (0, import_node_fs.statSync)(abs);
+      st = (0, import_node_fs2.statSync)(abs);
     } catch {
       continue;
     }
@@ -7554,13 +9260,13 @@ function pythonFilesUnder(dir, rootForRel) {
   return out;
 }
 function checkE2eRegexClean(args) {
-  const e2eRoot = (0, import_node_path2.join)(args.projectDir, args.e2eDir ?? (0, import_node_path2.join)("tests", "e2e"));
+  const e2eRoot = (0, import_node_path3.join)(args.projectDir, args.e2eDir ?? (0, import_node_path3.join)("tests", "e2e"));
   const files = pythonFilesUnder(e2eRoot, args.projectDir);
   const violations = [];
   for (const f of files) {
     let src;
     try {
-      src = (0, import_node_fs.readFileSync)(f.abs, "utf8");
+      src = (0, import_node_fs2.readFileSync)(f.abs, "utf8");
     } catch {
       continue;
     }
@@ -7615,7 +9321,7 @@ function ephemeralVerifyBranchName(experimentBranch, nonce) {
 // consort/deploy/deploy.ts
 function readProjectInstance(projectDir) {
   try {
-    const m = (0, import_node_fs2.readFileSync)((0, import_node_path3.join)(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
+    const m = (0, import_node_fs3.readFileSync)((0, import_node_path4.join)(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
     return m ? m[1].replace(/^["']|["']$/g, "").trim() : void 0;
   } catch {
     return void 0;
@@ -7624,7 +9330,7 @@ function readProjectInstance(projectDir) {
 function readAppDatabaseName(projectDir) {
   let env;
   try {
-    env = (0, import_node_fs2.readFileSync)((0, import_node_path3.join)(projectDir, ".env"), "utf8");
+    env = (0, import_node_fs3.readFileSync)((0, import_node_path4.join)(projectDir, ".env"), "utf8");
   } catch {
     return void 0;
   }
@@ -7692,13 +9398,13 @@ async function probeReachable(url) {
   }
 }
 function pidFile(projectDir, target) {
-  return (0, import_node_path3.join)(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
+  return (0, import_node_path4.join)(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
 }
 function normalizeVerifyRun(raw) {
   return typeof raw === "boolean" ? { passed: raw, output: "" } : { passed: raw.passed, output: raw.output ?? "" };
 }
 function hasClientWorkspace(projectDir) {
-  return (0, import_node_fs2.existsSync)((0, import_node_path3.join)(projectDir, "client", "package.json"));
+  return (0, import_node_fs3.existsSync)((0, import_node_path4.join)(projectDir, "client", "package.json"));
 }
 function verifyTimeoutMs() {
   return Math.max(1, Number(process.env.LAKEBASE_VERIFY_TIMEOUT_MS) || 9e5);
@@ -7763,8 +9469,8 @@ async function ensureDeployedAndVerify(args) {
   };
   const pid = start(cfg.run, args.projectDir, env);
   const pf = pidFile(args.projectDir, targetName);
-  (0, import_node_fs2.mkdirSync)((0, import_node_path3.dirname)(pf), { recursive: true });
-  (0, import_node_fs2.writeFileSync)(pf, String(pid));
+  (0, import_node_fs3.mkdirSync)((0, import_node_path4.dirname)(pf), { recursive: true });
+  (0, import_node_fs3.writeFileSync)(pf, String(pid));
   const poll = await (0, import_util2.pollUntil)({
     probe: async () => await reachable(url) ? { done: true, value: true } : { done: false },
     timeoutMs: cfg.readyTimeoutSeconds * 1e3,
@@ -7781,7 +9487,7 @@ async function ensureDeployedAndVerify(args) {
     };
   }
   const nowFn = args.now ?? (() => /* @__PURE__ */ new Date());
-  const isPython = (0, import_node_fs2.existsSync)((0, import_node_path3.join)(args.projectDir, "pyproject.toml")) || (0, import_node_fs2.existsSync)((0, import_node_path3.join)(args.projectDir, "requirements.txt"));
+  const isPython = (0, import_node_fs3.existsSync)((0, import_node_path4.join)(args.projectDir, "pyproject.toml")) || (0, import_node_fs3.existsSync)((0, import_node_path4.join)(args.projectDir, "requirements.txt"));
   let passed;
   let migrationFailed = false;
   let clientFailed = false;
@@ -7852,8 +9558,8 @@ async function ensureDeployedAndVerify(args) {
 }
 function stopLocal(projectDir, targetName) {
   const pf = pidFile(projectDir, targetName);
-  if (!(0, import_node_fs2.existsSync)(pf)) return { stopped: false };
-  const pid = Number((0, import_node_fs2.readFileSync)(pf, "utf8").trim());
+  if (!(0, import_node_fs3.existsSync)(pf)) return { stopped: false };
+  const pid = Number((0, import_node_fs3.readFileSync)(pf, "utf8").trim());
   if (Number.isFinite(pid) && pid > 0) {
     try {
       process.kill(-pid);
@@ -7864,19 +9570,19 @@ function stopLocal(projectDir, targetName) {
       }
     }
   }
-  (0, import_node_fs2.rmSync)(pf, { force: true });
+  (0, import_node_fs3.rmSync)(pf, { force: true });
   return { stopped: true };
 }
 
 // consort/architecture/design-adherence.ts
 init_cjs_shims();
-var import_node_fs3 = require("fs");
-var import_node_path4 = require("path");
+var import_node_fs4 = require("fs");
+var import_node_path5 = require("path");
 function readAppIconFromGuide(consortDir) {
   try {
     const gp = designGuideJson(consortDir);
-    if (!(0, import_node_fs3.existsSync)(gp)) return void 0;
-    const guide = JSON.parse((0, import_node_fs3.readFileSync)(gp, "utf8"));
+    if (!(0, import_node_fs4.existsSync)(gp)) return void 0;
+    const guide = JSON.parse((0, import_node_fs4.readFileSync)(gp, "utf8"));
     const icon = guide.app_icon;
     return icon && typeof icon.source === "string" && typeof icon.install_to === "string" ? { source: icon.source, install_to: icon.install_to } : void 0;
   } catch {
@@ -7885,35 +9591,35 @@ function readAppIconFromGuide(consortDir) {
 }
 function installBrandAsset(projectDir, consortDir, appIcon) {
   try {
-    const base = (0, import_node_path4.basename)(appIcon.install_to);
+    const base = (0, import_node_path5.basename)(appIcon.install_to);
     const src = [
-      (0, import_node_path4.join)(designAssetsDir(consortDir), base),
-      (0, import_node_path4.join)(projectDir, appIcon.source),
-      (0, import_node_path4.join)(consortDir, appIcon.source)
-    ].find((p) => (0, import_node_fs3.existsSync)(p));
+      (0, import_node_path5.join)(designAssetsDir(consortDir), base),
+      (0, import_node_path5.join)(projectDir, appIcon.source),
+      (0, import_node_path5.join)(consortDir, appIcon.source)
+    ].find((p) => (0, import_node_fs4.existsSync)(p));
     if (!src) return false;
-    const dest = (0, import_node_path4.join)(projectDir, appIcon.install_to);
-    (0, import_node_fs3.mkdirSync)((0, import_node_path4.dirname)(dest), { recursive: true });
-    (0, import_node_fs3.copyFileSync)(src, dest);
+    const dest = (0, import_node_path5.join)(projectDir, appIcon.install_to);
+    (0, import_node_fs4.mkdirSync)((0, import_node_path5.dirname)(dest), { recursive: true });
+    (0, import_node_fs4.copyFileSync)(src, dest);
     return true;
   } catch {
     return false;
   }
 }
 function applyBrandIconReference(projectDir, installTo) {
-  const indexHtml = (0, import_node_path4.join)(projectDir, "client", "index.html");
-  if (!(0, import_node_fs3.existsSync)(indexHtml)) return false;
+  const indexHtml = (0, import_node_path5.join)(projectDir, "client", "index.html");
+  if (!(0, import_node_fs4.existsSync)(indexHtml)) return false;
   try {
-    const href = `/${(0, import_node_path4.basename)(installTo)}`;
-    const src = (0, import_node_fs3.readFileSync)(indexHtml, "utf8");
+    const href = `/${(0, import_node_path5.basename)(installTo)}`;
+    const src = (0, import_node_fs4.readFileSync)(indexHtml, "utf8");
     const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
     if (linkRe.test(src)) {
       const next = src.replace(linkRe, `<link rel="icon"$1href="${href}"$2>`);
-      if (next !== src) (0, import_node_fs3.writeFileSync)(indexHtml, next);
+      if (next !== src) (0, import_node_fs4.writeFileSync)(indexHtml, next);
       return true;
     }
     if (/<\/head>/i.test(src)) {
-      (0, import_node_fs3.writeFileSync)(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />
+      (0, import_node_fs4.writeFileSync)(indexHtml, src.replace(/<\/head>/i, `  <link rel="icon" href="${href}" />
 </head>`));
       return true;
     }
@@ -8005,16 +9711,16 @@ function checkUxClean(args) {
   const okIcon = { ok: true, violations: [] };
   const okVocab = { ok: true, missing: [] };
   const clean0 = { clean: true, reachability: { ok: true, unreachable: [] }, tokens: { ok: true, bare: [] }, appIcon: okIcon, vocabulary: okVocab };
-  const srcDir = args.clientSrcDir ?? (0, import_node_path4.join)(args.projectDir, "client", "src");
-  const appTsx = (0, import_node_path4.join)(srcDir, "App.tsx");
-  const pagesDir = (0, import_node_path4.join)(srcDir, "pages");
-  if (!(0, import_node_fs3.existsSync)(appTsx) || !(0, import_node_fs3.existsSync)(pagesDir)) return clean0;
-  const appSource = (0, import_node_fs3.readFileSync)(appTsx, "utf8");
+  const srcDir = args.clientSrcDir ?? (0, import_node_path5.join)(args.projectDir, "client", "src");
+  const appTsx = (0, import_node_path5.join)(srcDir, "App.tsx");
+  const pagesDir = (0, import_node_path5.join)(srcDir, "pages");
+  if (!(0, import_node_fs4.existsSync)(appTsx) || !(0, import_node_fs4.existsSync)(pagesDir)) return clean0;
+  const appSource = (0, import_node_fs4.readFileSync)(appTsx, "utf8");
   const pageSources = {};
   const pageComponents = [];
-  for (const name of (0, import_node_fs3.readdirSync)(pagesDir)) {
+  for (const name of (0, import_node_fs4.readdirSync)(pagesDir)) {
     if (!name.endsWith(".tsx") || name.endsWith(".test.tsx")) continue;
-    const src = (0, import_node_fs3.readFileSync)((0, import_node_path4.join)(pagesDir, name), "utf8");
+    const src = (0, import_node_fs4.readFileSync)((0, import_node_path5.join)(pagesDir, name), "utf8");
     pageSources[name] = src;
     for (const re of [/export\s+function\s+([A-Z][A-Za-z0-9_]*)/g, /export\s+const\s+([A-Z][A-Za-z0-9_]*)/g]) {
       re.lastIndex = 0;
@@ -8024,19 +9730,19 @@ function checkUxClean(args) {
   }
   const reachability = checkRouteReachability({ appSource, pageComponents });
   const tokens = checkTokenConsumption({ pageSources, designClasses: args.designClasses });
-  const globalCssPath = (0, import_node_path4.join)(srcDir, "styles", "global.css");
-  const vocabulary = args.designClasses && args.designClasses.length > 0 && (0, import_node_fs3.existsSync)(globalCssPath) ? checkComponentVocabularyDefined(args.designClasses, (0, import_node_fs3.readFileSync)(globalCssPath, "utf8")) : okVocab;
+  const globalCssPath = (0, import_node_path5.join)(srcDir, "styles", "global.css");
+  const vocabulary = args.designClasses && args.designClasses.length > 0 && (0, import_node_fs4.existsSync)(globalCssPath) ? checkComponentVocabularyDefined(args.designClasses, (0, import_node_fs4.readFileSync)(globalCssPath, "utf8")) : okVocab;
   let appIcon = okIcon;
   if (args.appIcon) {
-    const clientDir = (0, import_node_path4.join)(srcDir, "..");
-    const indexHtmlPath = (0, import_node_path4.join)(clientDir, "index.html");
-    const installToPath = (0, import_node_path4.join)(args.projectDir, args.appIcon.install_to);
+    const clientDir = (0, import_node_path5.join)(srcDir, "..");
+    const indexHtmlPath = (0, import_node_path5.join)(clientDir, "index.html");
+    const installToPath = (0, import_node_path5.join)(args.projectDir, args.appIcon.install_to);
     const installedBasename = args.appIcon.install_to.split("/").pop() ?? args.appIcon.install_to;
     appIcon = checkAppIcon({
       appIcon: args.appIcon,
-      installedExists: (0, import_node_fs3.existsSync)(installToPath),
+      installedExists: (0, import_node_fs4.existsSync)(installToPath),
       installedBasename,
-      indexHtml: (0, import_node_fs3.existsSync)(indexHtmlPath) ? (0, import_node_fs3.readFileSync)(indexHtmlPath, "utf8") : "",
+      indexHtml: (0, import_node_fs4.existsSync)(indexHtmlPath) ? (0, import_node_fs4.readFileSync)(indexHtmlPath, "utf8") : "",
       appShell: appSource
     });
   }
@@ -8049,9 +9755,9 @@ init_cjs_shims();
 var fs4 = __toESM(require("fs"), 1);
 var import_node_child_process3 = require("child_process");
 var import_node_crypto2 = require("crypto");
-var import_node_path5 = require("path");
+var import_node_path6 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
-  return (0, import_node_path5.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return (0, import_node_path6.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -8084,7 +9790,7 @@ function readSupersededTests(tdd, feature, story, ac) {
 }
 function writeSupersededTests(tdd, feature, story, ac, value) {
   const file = supersededTestsJson(tdd, feature, story, ac);
-  fs4.mkdirSync((0, import_node_path5.join)(cycleDir(tdd, feature, story, ac)), { recursive: true });
+  fs4.mkdirSync((0, import_node_path6.join)(cycleDir(tdd, feature, story, ac)), { recursive: true });
   fs4.writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
 }
 function markSupersessionRefactored(tdd, feature, story, ac) {
@@ -8094,7 +9800,7 @@ function markSupersessionRefactored(tdd, feature, story, ac) {
 }
 var MAX_REGRESSION_FIX_ATTEMPTS = 3;
 function greenFailureJson(tdd, feature, story, ac) {
-  return (0, import_node_path5.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return (0, import_node_path6.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -8122,7 +9828,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs4.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState((0, import_node_path5.dirname)(tdd));
+      const cur = computeTreeState((0, import_node_path6.dirname)(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs4.rmSync(file, { force: true });
         return void 0;
@@ -8136,7 +9842,7 @@ function readGreenFailure(tdd, feature, story, ac) {
 function writeGreenFailure(tdd, feature, story, ac, value) {
   let stamped = value;
   if (stamped.treeState === void 0) {
-    const ts = computeTreeState((0, import_node_path5.dirname)(tdd));
+    const ts = computeTreeState((0, import_node_path6.dirname)(tdd));
     if (ts) stamped = { ...stamped, treeState: ts };
   }
   fs4.mkdirSync(cycleDir(tdd, feature, story, ac), { recursive: true });
@@ -8184,14 +9890,14 @@ function rearmRegressionFix(tdd, feature, story, ac, fresh) {
   fs4.rmSync(supersededTestsJson(tdd, feature, story, ac), { force: true });
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return (0, import_node_path5.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return (0, import_node_path6.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
 function readRegressionAssessment(tdd, feature, story, ac) {
   const dir = cycleDir(tdd, feature, story, ac);
   const candidates = [
     regressionAssessmentJson(tdd, feature, story, ac),
     // canonical: regression-assessment.json
-    (0, import_node_path5.join)(dir, "assess-regression.json")
+    (0, import_node_path6.join)(dir, "assess-regression.json")
     // agent-natural filename (mirrors the CLI verb)
   ];
   for (const file of candidates) {
@@ -8223,8 +9929,8 @@ function writeRegressionAssessment(tdd, feature, story, ac, value) {
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs4 = require("fs");
-var import_node_path6 = require("path");
+var import_node_fs5 = require("fs");
+var import_node_path7 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var DEFAULT_CODE_DIRS = ["app", "src", "lib", "templates"];
@@ -8244,15 +9950,15 @@ var ADD_COLUMN_SQL = /add\s+column\s+(?:if\s+not\s+exists\s+)?["'`]?([a-zA-Z_][a
 function walk(dir, keep, out = [], excludeDir = EXCLUDE_DIR) {
   let entries;
   try {
-    entries = (0, import_node_fs4.readdirSync)(dir);
+    entries = (0, import_node_fs5.readdirSync)(dir);
   } catch {
     return out;
   }
   for (const e of entries) {
-    const abs = (0, import_node_path6.join)(dir, e);
+    const abs = (0, import_node_path7.join)(dir, e);
     let st;
     try {
-      st = (0, import_node_fs4.statSync)(abs);
+      st = (0, import_node_fs5.statSync)(abs);
     } catch {
       continue;
     }
@@ -8291,8 +9997,8 @@ function forwardMigrationBody(src, ext) {
 function netDroppedSymbols(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
   const files = [];
   for (const md of migrationDirs) {
-    const abs = (0, import_node_path6.join)(projectDir, md);
-    if ((0, import_node_fs4.existsSync)(abs)) {
+    const abs = (0, import_node_path7.join)(projectDir, md);
+    if ((0, import_node_fs5.existsSync)(abs)) {
       for (const f of walk(abs, (p) => /\.(py|sql|js|ts)$/.test(p))) files.push(f);
     }
   }
@@ -8301,11 +10007,11 @@ function netDroppedSymbols(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
   for (const f of files) {
     let src;
     try {
-      src = (0, import_node_fs4.readFileSync)(f, "utf8");
+      src = (0, import_node_fs5.readFileSync)(f, "utf8");
     } catch {
       continue;
     }
-    const ext = (0, import_node_path6.extname)(f);
+    const ext = (0, import_node_path7.extname)(f);
     const isPy = ext === ".py";
     const body = forwardMigrationBody(src, ext);
     const drops = isPy ? collectAll(DROP_COLUMN_PY, body) : collectAll(DROP_COLUMN_SQL, body);
@@ -8322,19 +10028,19 @@ function scanSymbolRefs(projectDir, dirs, dropped, excludeDir = EXCLUDE_DIR) {
   const matchers = dropped.map((s) => ({ symbol: s, re: symbolRefRegex(s) }));
   const hits = [];
   for (const cd of dirs) {
-    const abs = (0, import_node_path6.join)(projectDir, cd);
-    if (!(0, import_node_fs4.existsSync)(abs)) continue;
-    for (const file of walk(abs, (p) => CODE_EXTS.has((0, import_node_path6.extname)(p)), [], excludeDir)) {
+    const abs = (0, import_node_path7.join)(projectDir, cd);
+    if (!(0, import_node_fs5.existsSync)(abs)) continue;
+    for (const file of walk(abs, (p) => CODE_EXTS.has((0, import_node_path7.extname)(p)), [], excludeDir)) {
       let lines;
       try {
-        lines = (0, import_node_fs4.readFileSync)(file, "utf8").split("\n");
+        lines = (0, import_node_fs5.readFileSync)(file, "utf8").split("\n");
       } catch {
         continue;
       }
       lines.forEach((text, i) => {
         for (const { symbol, re } of matchers) {
           if (re.test(text)) {
-            hits.push({ file: (0, import_node_path6.relative)(projectDir, file), line: i + 1, symbol, text: text.trim().slice(0, 200) });
+            hits.push({ file: (0, import_node_path7.relative)(projectDir, file), line: i + 1, symbol, text: text.trim().slice(0, 200) });
           }
         }
       });
@@ -8365,19 +10071,19 @@ function scanClientSupersededRefs(projectDir, dropped) {
   const matchers = dropped.flatMap((s) => clientCaseVariants(s).map((v) => ({ symbol: s, re: symbolRefRegex(v) })));
   const hits = [];
   for (const cd of CLIENT_TEST_DIRS) {
-    const abs = (0, import_node_path6.join)(projectDir, cd);
-    if (!(0, import_node_fs4.existsSync)(abs)) continue;
-    for (const file of walk(abs, (p) => CODE_EXTS.has((0, import_node_path6.extname)(p)), [], EXCLUDE_DIR_JUNK)) {
+    const abs = (0, import_node_path7.join)(projectDir, cd);
+    if (!(0, import_node_fs5.existsSync)(abs)) continue;
+    for (const file of walk(abs, (p) => CODE_EXTS.has((0, import_node_path7.extname)(p)), [], EXCLUDE_DIR_JUNK)) {
       let lines;
       try {
-        lines = (0, import_node_fs4.readFileSync)(file, "utf8").split("\n");
+        lines = (0, import_node_fs5.readFileSync)(file, "utf8").split("\n");
       } catch {
         continue;
       }
       lines.forEach((text, i) => {
         for (const { symbol, re } of matchers) {
           if (re.test(text)) {
-            hits.push({ file: (0, import_node_path6.relative)(projectDir, file), line: i + 1, symbol, text: text.trim().slice(0, 200) });
+            hits.push({ file: (0, import_node_path7.relative)(projectDir, file), line: i + 1, symbol, text: text.trim().slice(0, 200) });
           }
         }
       });
@@ -8458,23 +10164,23 @@ function clearRefactorVerifyAssessMarker(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs5 = require("fs");
-var import_node_path7 = require("path");
+var import_node_fs6 = require("fs");
+var import_node_path8 = require("path");
 var DEFAULT_MIGRATION_DIRS2 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var EXCLUDE_DIR2 = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__)(\/|$)/;
 var MODULE_SCOPE_APP_IMPORT = /^(from\s+app\b|import\s+app\b)/;
 function walk2(dir, keep, out = []) {
   let entries;
   try {
-    entries = (0, import_node_fs5.readdirSync)(dir);
+    entries = (0, import_node_fs6.readdirSync)(dir);
   } catch {
     return out;
   }
   for (const e of entries) {
-    const abs = (0, import_node_path7.join)(dir, e);
+    const abs = (0, import_node_path8.join)(dir, e);
     let st;
     try {
-      st = (0, import_node_fs5.statSync)(abs);
+      st = (0, import_node_fs6.statSync)(abs);
     } catch {
       continue;
     }
@@ -8490,18 +10196,18 @@ function checkMigrationAppClean(args) {
   const migrationDirs = args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2;
   const violations = [];
   for (const md of migrationDirs) {
-    const abs = (0, import_node_path7.join)(args.projectDir, md);
-    if (!(0, import_node_fs5.existsSync)(abs)) continue;
-    for (const file of walk2(abs, (p) => (0, import_node_path7.extname)(p) === ".py")) {
+    const abs = (0, import_node_path8.join)(args.projectDir, md);
+    if (!(0, import_node_fs6.existsSync)(abs)) continue;
+    for (const file of walk2(abs, (p) => (0, import_node_path8.extname)(p) === ".py")) {
       let lines;
       try {
-        lines = (0, import_node_fs5.readFileSync)(file, "utf8").split("\n");
+        lines = (0, import_node_fs6.readFileSync)(file, "utf8").split("\n");
       } catch {
         continue;
       }
       lines.forEach((text, i) => {
         if (MODULE_SCOPE_APP_IMPORT.test(text)) {
-          violations.push({ file: (0, import_node_path7.relative)(args.projectDir, file), line: i + 1, text: text.trim().slice(0, 200) });
+          violations.push({ file: (0, import_node_path8.relative)(args.projectDir, file), line: i + 1, text: text.trim().slice(0, 200) });
         }
       });
     }
@@ -8516,8 +10222,8 @@ ${list}`;
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process4 = require("child_process");
-var import_node_fs6 = require("fs");
-var import_node_path8 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path9 = require("path");
 var DEFAULT_MIGRATION_DIRS3 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var PARENT_CANDIDATES = [
   "origin/staging",
@@ -8548,7 +10254,7 @@ function resolveParentRef(projectDir, explicit) {
 }
 function checkShippedMigrationImmutable(args) {
   const { projectDir } = args;
-  if (!(0, import_node_fs6.existsSync)((0, import_node_path8.join)(projectDir, ".git"))) {
+  if (!(0, import_node_fs7.existsSync)((0, import_node_path9.join)(projectDir, ".git"))) {
     return { clean: true, violations: [], skippedReason: "not a git repo" };
   }
   const parentRef = resolveParentRef(projectDir, args.parentRef);
@@ -8564,7 +10270,7 @@ function checkShippedMigrationImmutable(args) {
   if (!base) {
     return { clean: true, violations: [], skippedReason: `no common ancestor with ${parentRef}` };
   }
-  const migrationDirs = (args.migrationDirs ?? DEFAULT_MIGRATION_DIRS3).filter((d) => (0, import_node_fs6.existsSync)((0, import_node_path8.join)(projectDir, d)));
+  const migrationDirs = (args.migrationDirs ?? DEFAULT_MIGRATION_DIRS3).filter((d) => (0, import_node_fs7.existsSync)((0, import_node_path9.join)(projectDir, d)));
   if (migrationDirs.length === 0) {
     return { clean: true, violations: [], skippedReason: "no migration dirs present" };
   }
@@ -8594,8 +10300,8 @@ ${reverts}
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path9 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path10 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 var DEFAULT_TEST_DIRS2 = ["tests", "client/tests"];
 var DEFAULT_MIGRATION_DIRS4 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
@@ -8604,15 +10310,15 @@ var TEST_FILE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs)$|\.py$/;
 function walk3(dir, keep, out = []) {
   let entries;
   try {
-    entries = (0, import_node_fs7.readdirSync)(dir);
+    entries = (0, import_node_fs8.readdirSync)(dir);
   } catch {
     return out;
   }
   for (const e of entries) {
-    const abs = (0, import_node_path9.join)(dir, e);
+    const abs = (0, import_node_path10.join)(dir, e);
     let st;
     try {
-      st = (0, import_node_fs7.statSync)(abs);
+      st = (0, import_node_fs8.statSync)(abs);
     } catch {
       continue;
     }
@@ -8637,12 +10343,12 @@ function collectKnownTables(projectDir, migrationDirs) {
     // Knex
   ];
   for (const md of migrationDirs) {
-    const abs = (0, import_node_path9.join)(projectDir, md);
-    if (!(0, import_node_fs7.existsSync)(abs)) continue;
-    for (const file of walk3(abs, (p) => [".py", ".sql", ".js", ".ts"].includes((0, import_node_path9.extname)(p)))) {
+    const abs = (0, import_node_path10.join)(projectDir, md);
+    if (!(0, import_node_fs8.existsSync)(abs)) continue;
+    for (const file of walk3(abs, (p) => [".py", ".sql", ".js", ".ts"].includes((0, import_node_path10.extname)(p)))) {
       let body;
       try {
-        body = (0, import_node_fs7.readFileSync)(file, "utf8");
+        body = (0, import_node_fs8.readFileSync)(file, "utf8");
       } catch {
         continue;
       }
@@ -8674,9 +10380,9 @@ function forwardMigrationRegion(body) {
 function collectDroppedColumns(projectDir, migrationDirs) {
   const files = [];
   for (const md of migrationDirs) {
-    const abs = (0, import_node_path9.join)(projectDir, md);
-    if (!(0, import_node_fs7.existsSync)(abs)) continue;
-    for (const f of walk3(abs, (p) => [".py", ".sql"].includes((0, import_node_path9.extname)(p)))) files.push(f);
+    const abs = (0, import_node_path10.join)(projectDir, md);
+    if (!(0, import_node_fs8.existsSync)(abs)) continue;
+    for (const f of walk3(abs, (p) => [".py", ".sql"].includes((0, import_node_path10.extname)(p)))) files.push(f);
   }
   files.sort();
   const GENERIC = /* @__PURE__ */ new Set(["id", "name", "type", "value", "data", "status", "key", "code", "text"]);
@@ -8684,7 +10390,7 @@ function collectDroppedColumns(projectDir, migrationDirs) {
   for (const f of files) {
     let body;
     try {
-      body = (0, import_node_fs7.readFileSync)(f, "utf8");
+      body = (0, import_node_fs8.readFileSync)(f, "utf8");
     } catch {
       continue;
     }
@@ -8737,18 +10443,18 @@ function checkDroppedColumnDanglingRef(projectDir, migrationDirs) {
   const dropped = collectDroppedColumns(projectDir, migrationDirs);
   if (dropped.size === 0) return [];
   const out = [];
-  const migAbs = migrationDirs.map((d) => (0, import_node_path9.join)(projectDir, d));
+  const migAbs = migrationDirs.map((d) => (0, import_node_path10.join)(projectDir, d));
   const SRC_EXCLUDE = new RegExp(`(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|dist|build|${ARTIFACT_ROOTS_RE2}|client|tests?|__tests__|e2e)(/|$)`);
   const isSrc = (p) => /\.(py|sql)$/.test(p) && !migAbs.some((m) => p.startsWith(m));
   const srcFiles = walk3(projectDir, (p) => isSrc(p) && !SRC_EXCLUDE.test(p));
   for (const f of srcFiles) {
     let body;
     try {
-      body = (0, import_node_fs7.readFileSync)(f, "utf8");
+      body = (0, import_node_fs8.readFileSync)(f, "utf8");
     } catch {
       continue;
     }
-    const rel = (0, import_node_path9.relative)(projectDir, f);
+    const rel = (0, import_node_path10.relative)(projectDir, f);
     for (const col of dropped) {
       if (!body.includes(col)) continue;
       for (const line of liveReferenceLines(body, col)) {
@@ -8768,13 +10474,13 @@ function checkReversibleInvariantRoundTrip(projectDir) {
   const tdd = resolveConsortDir(projectDir);
   const featsDir = featuresDir(tdd);
   const out = [];
-  if (!(0, import_node_fs7.existsSync)(featsDir)) return out;
-  for (const feature of (0, import_node_fs7.readdirSync)(featsDir)) {
+  if (!(0, import_node_fs8.existsSync)(featsDir)) return out;
+  for (const feature of (0, import_node_fs8.readdirSync)(featsDir)) {
     const archPath = architectureJson(tdd, feature);
-    if (!(0, import_node_fs7.existsSync)(archPath)) continue;
+    if (!(0, import_node_fs8.existsSync)(archPath)) continue;
     let arch;
     try {
-      arch = JSON.parse((0, import_node_fs7.readFileSync)(archPath, "utf8"));
+      arch = JSON.parse((0, import_node_fs8.readFileSync)(archPath, "utf8"));
     } catch {
       continue;
     }
@@ -8782,18 +10488,18 @@ function checkReversibleInvariantRoundTrip(projectDir) {
       (pi) => typeof pi?.id === "string" && typeof pi?.type === "string" && /reversib/i.test(pi.type)
     );
     if (reversible.length === 0) continue;
-    const itemSources = [(0, import_node_path9.join)(featureDir(tdd, feature), "test-list.json")];
+    const itemSources = [(0, import_node_path10.join)(featureDir(tdd, feature), "test-list.json")];
     const stDir = storiesDir(tdd, feature);
-    if ((0, import_node_fs7.existsSync)(stDir)) {
-      for (const s of (0, import_node_fs7.readdirSync)(stDir)) {
+    if ((0, import_node_fs8.existsSync)(stDir)) {
+      for (const s of (0, import_node_fs8.readdirSync)(stDir)) {
         const p = storyTestListJson(tdd, feature, s);
-        if ((0, import_node_fs7.existsSync)(p)) itemSources.push(p);
+        if ((0, import_node_fs8.existsSync)(p)) itemSources.push(p);
       }
     }
     const items = [];
     for (const src of itemSources) {
       try {
-        const tl = JSON.parse((0, import_node_fs7.readFileSync)(src, "utf8"));
+        const tl = JSON.parse((0, import_node_fs8.readFileSync)(src, "utf8"));
         items.push(...tl.items ?? []);
       } catch {
       }
@@ -8807,7 +10513,7 @@ function checkReversibleInvariantRoundTrip(projectDir) {
       if (!hasRoundTrip) {
         out.push({
           smell: "reversible-invariant-round-trip",
-          file: (0, import_node_path9.relative)(projectDir, featureDir(tdd, feature)),
+          file: (0, import_node_path10.relative)(projectDir, featureDir(tdd, feature)),
           line: 1,
           text: `invariant ${pi.id} (migration_reversible) covered only by forward-only test(s)`,
           detail: SMELL_FIX["reversible-invariant-round-trip"]
@@ -8823,16 +10529,16 @@ function checkTestSmells(args) {
   const violations = [];
   const push = (smell, file, line, text, extra) => violations.push({ smell, file, line, text: text.trim().slice(0, 200), detail: SMELL_FIX[smell] + (extra ? ` (${extra})` : "") });
   for (const td of testDirs) {
-    const abs = (0, import_node_path9.join)(args.projectDir, td);
-    if (!(0, import_node_fs7.existsSync)(abs)) continue;
+    const abs = (0, import_node_path10.join)(args.projectDir, td);
+    if (!(0, import_node_fs8.existsSync)(abs)) continue;
     for (const file of walk3(abs, (p) => TEST_FILE.test(p))) {
       let lines;
       try {
-        lines = (0, import_node_fs7.readFileSync)(file, "utf8").split("\n");
+        lines = (0, import_node_fs8.readFileSync)(file, "utf8").split("\n");
       } catch {
         continue;
       }
-      const rel = (0, import_node_path9.relative)(args.projectDir, file);
+      const rel = (0, import_node_path10.relative)(args.projectDir, file);
       const body = lines.join("\n");
       const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
       const isPy = file.endsWith(".py");
@@ -8949,7 +10655,7 @@ async function commitExperimentCode(projectDir, message) {
 }
 async function commitCycleWork(consortDir, message) {
   try {
-    await commitExperimentCode((0, import_path7.dirname)(consortDir), message);
+    await commitExperimentCode((0, import_path12.dirname)(consortDir), message);
   } catch (e) {
     if (e instanceof import_lakebase7.ProtectedBranchCommitError) throw e;
   }
@@ -8962,10 +10668,10 @@ function logCycleEvent2(consortDir, event) {
 }
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!(0, import_fs7.existsSync)(file)) {
+  if (!(0, import_fs12.existsSync)(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse((0, import_fs7.readFileSync)(file, "utf8"));
+  const data = JSON.parse((0, import_fs12.readFileSync)(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyExperiment(consortDir, featureId, story) {
@@ -8974,20 +10680,20 @@ function storyExperiment(consortDir, featureId, story) {
   return { slug: e?.experiment_slug, branch: e?.branch_id };
 }
 function storyCycles(consortDir, featureId, story) {
-  const base = (0, import_path7.join)(cyclesRootDir(consortDir), featureId, story);
-  if (!(0, import_fs7.existsSync)(base)) return [];
+  const base = (0, import_path12.join)(cyclesRootDir(consortDir), featureId, story);
+  if (!(0, import_fs12.existsSync)(base)) return [];
   const out = [];
-  for (const acDir of (0, import_fs7.readdirSync)(base)) {
-    const dir = (0, import_path7.join)(base, acDir);
+  for (const acDir of (0, import_fs12.readdirSync)(base)) {
+    const dir = (0, import_path12.join)(base, acDir);
     try {
-      if (!(0, import_fs7.statSync)(dir).isDirectory()) continue;
+      if (!(0, import_fs12.statSync)(dir).isDirectory()) continue;
     } catch {
       continue;
     }
-    for (const f of (0, import_fs7.readdirSync)(dir)) {
+    for (const f of (0, import_fs12.readdirSync)(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse((0, import_fs7.readFileSync)((0, import_path7.join)(dir, f), "utf8")));
+        out.push(JSON.parse((0, import_fs12.readFileSync)((0, import_path12.join)(dir, f), "utf8")));
       } catch {
       }
     }
@@ -9013,6 +10719,7 @@ function beginNextPendingCycle(args) {
   const { consortDir, featureId, story } = args;
   const pending = storyTestProgress(consortDir, featureId, story).pending[0];
   if (!pending) return { recorded: false };
+  flagTestListGateDriftIfAny(consortDir, featureId, story);
   const exp = storyExperiment(consortDir, featureId, story);
   const art = beginCycle({
     consortDir,
@@ -9040,6 +10747,7 @@ function beginNextPendingBatch(args, opts) {
   const cap = opts?.cap && opts.cap > 0 ? opts.cap : DEFAULT_BATCH_CAP;
   const batch = nextPendingBatch(consortDir, featureId, story, cap);
   if (batch.length === 0) return { recorded: false };
+  flagTestListGateDriftIfAny(consortDir, featureId, story);
   const headLayer = readAcLayer2(consortDir, featureId, batch[0].ac_id) ?? "_nolayer";
   const head = batch[0];
   const exp = storyExperiment(consortDir, featureId, story);
@@ -9097,10 +10805,10 @@ async function greenOpenCycle(args) {
     branch_id: open.branch_id
   };
   const verify = args.verify ?? defaultGreenVerifier;
-  let result = await verify({ projectDir: (0, import_path7.dirname)(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+  let result = await verify({ projectDir: (0, import_path12.dirname)(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
   let testSmellRemediation;
   if (!result.passed && !consortEnv("REPLAY_BUILD_DIR") && isProvisioningFaultSummary(result.summary)) {
-    const retry = await verify({ projectDir: (0, import_path7.dirname)(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+    const retry = await verify({ projectDir: (0, import_path12.dirname)(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
     if (retry.passed) {
       result = retry;
     } else if (isProvisioningFaultSummary(retry.summary)) {
@@ -9118,20 +10826,20 @@ async function greenOpenCycle(args) {
   }
   if (result.passed && !consortEnv("REPLAY_BUILD_DIR")) {
     try {
-      const mig = checkMigrationAppClean({ projectDir: (0, import_path7.dirname)(consortDir) });
+      const mig = checkMigrationAppClean({ projectDir: (0, import_path12.dirname)(consortDir) });
       if (!mig.clean && mig.remediation) result = { passed: false, summary: mig.remediation };
     } catch {
     }
     if (result.passed) {
       try {
-        const hist = checkShippedMigrationImmutable({ projectDir: (0, import_path7.dirname)(consortDir) });
+        const hist = checkShippedMigrationImmutable({ projectDir: (0, import_path12.dirname)(consortDir) });
         if (!hist.clean && hist.remediation) result = { passed: false, summary: hist.remediation };
       } catch {
       }
     }
     if (result.passed) {
       try {
-        const smells = checkTestSmells({ projectDir: (0, import_path7.dirname)(consortDir) });
+        const smells = checkTestSmells({ projectDir: (0, import_path12.dirname)(consortDir) });
         if (!smells.clean && smells.remediation) {
           result = { passed: false, summary: smells.remediation };
           testSmellRemediation = smells.remediation;
@@ -9172,9 +10880,9 @@ async function greenOpenCycle(args) {
       let contractRefs;
       let supersededTestRefs;
       try {
-        const contract = checkContractClean({ projectDir: (0, import_path7.dirname)(consortDir) });
+        const contract = checkContractClean({ projectDir: (0, import_path12.dirname)(consortDir) });
         if (!contract.clean && contract.remediation) contractRefs = contract.remediation;
-        const superseded = supersededTestCandidates({ projectDir: (0, import_path7.dirname)(consortDir) });
+        const superseded = supersededTestCandidates({ projectDir: (0, import_path12.dirname)(consortDir) });
         if (superseded.advisory) supersededTestRefs = superseded.advisory;
       } catch {
       }
@@ -9227,9 +10935,9 @@ async function greenOpenCycle(args) {
 }
 function readReview(consortDir, featureId, story, acId) {
   const f = acReviewJson(consortDir, featureId, story, acId);
-  if (!(0, import_fs7.existsSync)(f)) return {};
+  if (!(0, import_fs12.existsSync)(f)) return {};
   try {
-    return JSON.parse((0, import_fs7.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs12.readFileSync)(f, "utf8"));
   } catch {
     return {};
   }
@@ -9277,14 +10985,32 @@ function firstRefactorPendingAc(consortDir, featureId, story) {
   }
   return null;
 }
+function flagTestListGateDriftIfAny(consortDir, featureId, story) {
+  try {
+    if (hasOpenSmell(consortDir, "test-list-drift", story)) return;
+    const resolved = resolveArtifactInputs("test_list", featureResolved(consortDir, featureId), void 0, consortDir, featureId);
+    if (!("inputs" in resolved)) return;
+    let detail;
+    try {
+      const res = verifyGateIntegrity({ consortDir, featureId, gate: "test_list", currentInputs: resolved.inputs });
+      if (res.status === "drift") {
+        detail = `the approved test_list gate's artifact(s) changed on disk since approval: ${res.drifts.map((d) => d.artifact).join(", ")} , the frozen test-list was mutated in-build. Reconcile via the design lane (consort-reopen-story), do not edit the gated list under the build.`;
+      }
+    } catch (e) {
+      detail = `the approved test_list gate's artifact SET changed since approval (${e instanceof Error ? e.message : String(e)}) , the frozen test-list was mutated in-build.`;
+    }
+    if (detail) writeSmellsLog(consortDir, [{ smell: "test-list-drift", cycle_ids: [], detail, story_id: story }]);
+  } catch {
+  }
+}
 function flagUxAdherenceIfDirty(consortDir, story) {
   try {
     let designClasses;
     let appIcon;
     try {
       const gp = designGuideJson(consortDir);
-      if ((0, import_fs7.existsSync)(gp)) {
-        const guide = JSON.parse((0, import_fs7.readFileSync)(gp, "utf8"));
+      if ((0, import_fs12.existsSync)(gp)) {
+        const guide = JSON.parse((0, import_fs12.readFileSync)(gp, "utf8"));
         const classes = Object.values(guide.components ?? {}).map((c) => typeof c?.class === "string" ? c.class : void 0).filter((c) => !!c);
         if (classes.length) designClasses = classes;
       }
@@ -9292,10 +11018,10 @@ function flagUxAdherenceIfDirty(consortDir, story) {
     } catch {
     }
     if (appIcon) {
-      installBrandAsset((0, import_path7.dirname)(consortDir), consortDir, appIcon);
-      applyBrandIconReference((0, import_path7.dirname)(consortDir), appIcon.install_to);
+      installBrandAsset((0, import_path12.dirname)(consortDir), consortDir, appIcon);
+      applyBrandIconReference((0, import_path12.dirname)(consortDir), appIcon.install_to);
     }
-    const ux = checkUxClean({ projectDir: (0, import_path7.dirname)(consortDir), designClasses, appIcon });
+    const ux = checkUxClean({ projectDir: (0, import_path12.dirname)(consortDir), designClasses, appIcon });
     if (!ux.clean && !hasOpenSmell(consortDir, "ux-adherence", story)) {
       writeSmellsLog(consortDir, [{ smell: "ux-adherence", cycle_ids: [], detail: summarizeUxViolations(ux), story_id: story }]);
     }
@@ -9305,9 +11031,9 @@ function flagUxAdherenceIfDirty(consortDir, story) {
 function reviewAc(consortDir, featureId, story, acId) {
   let verdict = {};
   const vf = acReviewVerdictJson(consortDir, featureId, story, acId);
-  if ((0, import_fs7.existsSync)(vf)) {
+  if ((0, import_fs12.existsSync)(vf)) {
     try {
-      verdict = JSON.parse((0, import_fs7.readFileSync)(vf, "utf8"));
+      verdict = JSON.parse((0, import_fs12.readFileSync)(vf, "utf8"));
     } catch {
       verdict = {};
     }
@@ -9315,8 +11041,8 @@ function reviewAc(consortDir, featureId, story, acId) {
   const refactorRequested = verdict.refactor === true;
   const file = acReviewJson(consortDir, featureId, story, acId);
   const prior = readReview(consortDir, featureId, story, acId);
-  (0, import_fs7.mkdirSync)((0, import_path7.dirname)(file), { recursive: true });
-  (0, import_fs7.writeFileSync)(
+  (0, import_fs12.mkdirSync)((0, import_path12.dirname)(file), { recursive: true });
+  (0, import_fs12.writeFileSync)(
     file,
     JSON.stringify(
       { ...prior, reviewed_at: (/* @__PURE__ */ new Date()).toISOString(), refactor_requested: refactorRequested, ...verdict.notes ? { refactor_notes: verdict.notes } : {} },
@@ -9342,7 +11068,7 @@ function reviewAc(consortDir, featureId, story, acId) {
 async function refactorAc(consortDir, featureId, story, acId, opts) {
   const exp = storyExperiment(consortDir, featureId, story);
   const verify = opts?.verify ?? defaultGreenVerifier;
-  const result = await verify({ projectDir: (0, import_path7.dirname)(consortDir), consortDir, featureId, story, branchId: exp.branch });
+  const result = await verify({ projectDir: (0, import_path12.dirname)(consortDir), consortDir, featureId, story, branchId: exp.branch });
   if (!result.passed) {
     const escalation = writeEscalation(consortDir, {
       source: "driver-refactor",
@@ -9355,8 +11081,8 @@ async function refactorAc(consortDir, featureId, story, acId, opts) {
   }
   const file = acReviewJson(consortDir, featureId, story, acId);
   const prior = readReview(consortDir, featureId, story, acId);
-  (0, import_fs7.mkdirSync)((0, import_path7.dirname)(file), { recursive: true });
-  (0, import_fs7.writeFileSync)(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
+  (0, import_fs12.mkdirSync)((0, import_path12.dirname)(file), { recursive: true });
+  (0, import_fs12.writeFileSync)(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
   for (const d of readSmellsLog(consortDir).detected) {
     if (!d.resolution && isBuildRefactorRoutableSmell(d.smell) && (d.story_id === void 0 || d.story_id === story)) {
       markSmellResolved(consortDir, d.smell, { story_id: d.story_id, kind: "accepted", note: `refactored: ${acId}` });
@@ -9375,9 +11101,9 @@ async function refactorAc(consortDir, featureId, story, acId, opts) {
 }
 function readStoryReview(consortDir, featureId, story) {
   const f = storyReviewJson(consortDir, featureId, story);
-  if (!(0, import_fs7.existsSync)(f)) return {};
+  if (!(0, import_fs12.existsSync)(f)) return {};
   try {
-    return JSON.parse((0, import_fs7.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs12.readFileSync)(f, "utf8"));
   } catch {
     return {};
   }
@@ -9385,9 +11111,9 @@ function readStoryReview(consortDir, featureId, story) {
 function reviewStory(consortDir, featureId, story) {
   let verdict = {};
   const vf = storyReviewVerdictJson(consortDir, featureId, story);
-  if ((0, import_fs7.existsSync)(vf)) {
+  if ((0, import_fs12.existsSync)(vf)) {
     try {
-      verdict = JSON.parse((0, import_fs7.readFileSync)(vf, "utf8"));
+      verdict = JSON.parse((0, import_fs12.readFileSync)(vf, "utf8"));
     } catch {
       verdict = {};
     }
@@ -9395,8 +11121,8 @@ function reviewStory(consortDir, featureId, story) {
   const refactorRequested = verdict.refactor === true;
   const file = storyReviewJson(consortDir, featureId, story);
   const prior = readStoryReview(consortDir, featureId, story);
-  (0, import_fs7.mkdirSync)((0, import_path7.dirname)(file), { recursive: true });
-  (0, import_fs7.writeFileSync)(
+  (0, import_fs12.mkdirSync)((0, import_path12.dirname)(file), { recursive: true });
+  (0, import_fs12.writeFileSync)(
     file,
     JSON.stringify(
       { ...prior, reviewed_at: (/* @__PURE__ */ new Date()).toISOString(), refactor_requested: refactorRequested, ...verdict.notes ? { refactor_notes: verdict.notes } : {} },
@@ -9422,13 +11148,13 @@ function reviewStory(consortDir, featureId, story) {
 async function refactorStory(consortDir, featureId, story, opts) {
   const exp = storyExperiment(consortDir, featureId, story);
   const verify = opts?.verify ?? defaultGreenVerifier;
-  const result = await verify({ projectDir: (0, import_path7.dirname)(consortDir), consortDir, featureId, story, branchId: exp.branch });
+  const result = await verify({ projectDir: (0, import_path12.dirname)(consortDir), consortDir, featureId, story, branchId: exp.branch });
   if (!result.passed) {
     const rf = readRefactorVerifyAssessMarker(consortDir, featureId, story);
     if (!rf?.assessed) {
       let supersededAdvisory;
       try {
-        const superseded = supersededTestCandidates({ projectDir: (0, import_path7.dirname)(consortDir) });
+        const superseded = supersededTestCandidates({ projectDir: (0, import_path12.dirname)(consortDir) });
         if (superseded.advisory) supersededAdvisory = superseded.advisory;
       } catch {
       }
@@ -9449,12 +11175,12 @@ async function refactorStory(consortDir, featureId, story, opts) {
   clearRefactorVerifyAssessMarker(consortDir, featureId, story);
   const file = storyReviewJson(consortDir, featureId, story);
   const prior = readStoryReview(consortDir, featureId, story);
-  (0, import_fs7.mkdirSync)((0, import_path7.dirname)(file), { recursive: true });
-  (0, import_fs7.writeFileSync)(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
+  (0, import_fs12.mkdirSync)((0, import_path12.dirname)(file), { recursive: true });
+  (0, import_fs12.writeFileSync)(file, JSON.stringify({ ...prior, refactored_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
   for (const d of readSmellsLog(consortDir).detected) {
     if (!d.resolution && isBuildRefactorRoutableSmell(d.smell) && (d.story_id === void 0 || d.story_id === story)) {
       if (d.smell === "ux-adherence") {
-        const ux = checkUxClean({ projectDir: (0, import_path7.dirname)(consortDir), appIcon: readAppIconFromGuide(consortDir) });
+        const ux = checkUxClean({ projectDir: (0, import_path12.dirname)(consortDir), appIcon: readAppIconFromGuide(consortDir) });
         if (!ux.clean) continue;
       }
       markSmellResolved(consortDir, d.smell, { story_id: d.story_id, kind: "accepted", note: `refactored story: ${story}` });
@@ -9474,16 +11200,16 @@ async function refactorStory(consortDir, featureId, story, opts) {
 
 // consort/smells/reflection.ts
 init_cjs_shims();
-var import_fs8 = require("fs");
+var import_fs13 = require("fs");
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
-  if (!(0, import_fs8.existsSync)(p)) return void 0;
+  if (!(0, import_fs13.existsSync)(p)) return void 0;
   try {
-    return JSON.parse((0, import_fs8.readFileSync)(p, "utf8"));
+    return JSON.parse((0, import_fs13.readFileSync)(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -9524,79 +11250,16 @@ function recordReflectionGate(consortDir, feature, story) {
 
 // consort/smells/testlist-conformance.ts
 init_cjs_shims();
-var import_fs9 = require("fs");
-
-// consort/orchestrator/validators/conformance/artifact-conformance.ts
-init_cjs_shims();
-function checkJsdomBrowserAssertion(testListJson) {
-  let tl;
-  try {
-    tl = JSON.parse(testListJson);
-  } catch (err) {
-    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
-  }
-  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
-  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
-  const violations = [];
-  for (const it of tl.items ?? []) {
-    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
-      violations.push(
-        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
-      );
-    }
-  }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
-}
-function checkTestlistWholeTableAggregate(testListJson) {
-  let tl;
-  try {
-    tl = JSON.parse(testListJson);
-  } catch (err) {
-    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
-  }
-  const wholeTableCount = /\bcount\s*\(\s*\*\s*\)|\b(?:count|number|total|tally)\s+of\s+(?:all\s+)?(?:the\s+)?rows\b|\brow\s+count\b|\btotal\s+(?:number\s+of\s+)?rows\b|\breturns?\s+(?:exactly\s+)?the\s+count\b/i;
-  const scopedOrDelta = /\bseed(?:s|ed|ing)?\b|\bdelta\b|\bbefore\b.*\bafter\b|\bafter\b.*\bbefore\b|count_before|count_after|probe_before|\bsubtract|\bminus\b|\bits own rows\b|\bthe (?:test'?s?|rows? it) (?:own|seed)|\bscoped to\b|\bmarker\b|\buuid\b|\bunique (?:sku|key)\b|\bper-test\b/i;
-  const violations = [];
-  for (const it of tl.items ?? []) {
-    const desc = it.description ?? "";
-    if (wholeTableCount.test(desc) && !scopedOrDelta.test(desc)) {
-      violations.push(
-        `test item ${it.id ?? "?"} asserts an ABSOLUTE whole-table aggregate ("${desc.slice(0, 90)}\u2026") with no own-row scoping and no delta \u2014 it passes on the isolated experiment branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total`
-      );
-    }
-  }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
-}
-function checkClientKindLayerCoherence(testListJson, acLayerById) {
-  let tl;
-  try {
-    tl = JSON.parse(testListJson);
-  } catch (err) {
-    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
-  }
-  const violations = [];
-  for (const it of tl.items ?? []) {
-    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
-    const layer = acLayerById[it.ac_id];
-    if (layer !== void 0 && layer !== "E2E") {
-      violations.push(
-        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
-      );
-    }
-  }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
-}
-
-// consort/smells/testlist-conformance.ts
+var import_fs14 = require("fs");
 var TESTLIST_SMELL = "reflect-testlist-defect";
 function storyAcLayers(consortDir, featureId, story) {
   const acLayerById = {};
   const dir = acsDir(consortDir, featureId, story);
-  if ((0, import_fs9.existsSync)(dir)) {
-    for (const f of (0, import_fs9.readdirSync)(dir)) {
+  if ((0, import_fs14.existsSync)(dir)) {
+    for (const f of (0, import_fs14.readdirSync)(dir)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse((0, import_fs9.readFileSync)(`${dir}/${f}`, "utf8")).layer;
+        const layer = JSON.parse((0, import_fs14.readFileSync)(`${dir}/${f}`, "utf8")).layer;
         if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
       } catch {
       }
@@ -9606,10 +11269,10 @@ function storyAcLayers(consortDir, featureId, story) {
 }
 function testlistConformanceReason(consortDir, featureId, story) {
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (!(0, import_fs9.existsSync)(tlPath)) return null;
+  if (!(0, import_fs14.existsSync)(tlPath)) return null;
   let testListJson;
   try {
-    testListJson = (0, import_fs9.readFileSync)(tlPath, "utf8");
+    testListJson = (0, import_fs14.readFileSync)(tlPath, "utf8");
   } catch {
     return null;
   }

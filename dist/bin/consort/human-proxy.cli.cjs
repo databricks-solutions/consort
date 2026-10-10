@@ -9263,6 +9263,9 @@ init_cjs_shims();
 var import_fs14 = require("fs");
 var import_path13 = require("path");
 
+// consort/gates/verify-gate-integrity.ts
+init_cjs_shims();
+
 // consort/deploy/deploy.ts
 init_cjs_shims();
 var import_node_child_process2 = require("child_process");

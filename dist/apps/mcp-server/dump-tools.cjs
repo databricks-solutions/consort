@@ -7146,167 +7146,16 @@ var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
 
-// consort/test-list/test-list.ts
+// consort/gates/verify-gate-integrity.ts
 init_cjs_shims();
-var import_fs4 = require("fs");
-function readMasterTestList(tddDir, featureId) {
-  requireFeatureDir(tddDir, featureId);
-  const file = featureTestListJson(tddDir, featureId);
-  if (!(0, import_fs4.existsSync)(file)) {
-    throw new Error(`master test-list.json not found for ${featureId} at ${file}`);
-  }
-  const parsed = JSON.parse((0, import_fs4.readFileSync)(file, "utf8"));
-  return { ...parsed, items: Array.isArray(parsed.items) ? parsed.items : [] };
-}
 
-// consort/deploy/deploy.ts
+// consort/gates/gate-hash.ts
 init_cjs_shims();
-var import_node_child_process3 = require("child_process");
-var import_node_crypto = require("crypto");
-var import_node_fs4 = require("fs");
-var import_node_path5 = require("path");
-var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
-
-// consort/gates/escalation.ts
-init_cjs_shims();
-var fs7 = __toESM(require("fs"), 1);
-
-// consort/smells/smells.ts
-init_cjs_shims();
-var import_fs5 = require("fs");
-var import_path5 = require("path");
-function readSmellsLog(consortDir) {
-  const file = (0, import_path5.join)(consortDir, "smells.json");
-  if (!(0, import_fs5.existsSync)(file)) return { detected: [] };
-  return JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
-}
-
-// consort/smells/deploy-verify-assess.ts
-init_cjs_shims();
-var fs8 = __toESM(require("fs"), 1);
-var path6 = __toESM(require("path"), 1);
-function markerPath(consortDir, featureId, storyId) {
-  const fdir = findFeatureDir(consortDir, featureId);
-  if (!fdir) return void 0;
-  return storyId ? path6.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path6.join(fdir, "deploy-verify-assess.json");
-}
-function readDeployVerifyAssessMarker(consortDir, featureId, storyId) {
-  const file = markerPath(consortDir, featureId, storyId);
-  if (!file || !fs8.existsSync(file)) return void 0;
-  try {
-    return JSON.parse(fs8.readFileSync(file, "utf8"));
-  } catch {
-    return void 0;
-  }
-}
-function deployVerifyRefactorPending(consortDir, featureId, storyId) {
-  const m = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
-  return !!m && m.assessed === true && (m.flagged_tests?.length ?? 0) > 0 && m.refactored !== true;
-}
-function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
-  const m = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
-  return !!m && !m.assessed && m.attempts < 1;
-}
-
-// consort/architecture/e2e-regex-clean.ts
-init_cjs_shims();
-var import_node_fs3 = require("fs");
-var import_node_path4 = require("path");
-
-// consort/smells/ephemeral-verify.ts
-init_cjs_shims();
-var import_util = require("@databricks-solutions/lakebase-scm-utils/util");
-var import_lakebase5 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-var import_lakebase6 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-
-// consort/architecture/design-adherence.ts
-init_cjs_shims();
-var import_node_fs5 = require("fs");
-var import_node_path6 = require("path");
-
-// consort/smells/supersession.ts
-init_cjs_shims();
-var fs9 = __toESM(require("fs"), 1);
-var import_node_child_process4 = require("child_process");
-var import_node_crypto2 = require("crypto");
-var import_node_path7 = require("path");
-var TREE_STATE_EXCLUDE_PREFIXES = [
-  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
-  ".lakebase/",
-  ".claude/agent-memory/",
-  "node_modules/",
-  "dist/",
-  ".venv/",
-  "coverage/"
-];
-
-// consort/architecture/contract-clean.ts
-init_cjs_shims();
-var import_node_fs6 = require("fs");
-var import_node_path8 = require("path");
-var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
-var EXCLUDE_DIR = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
-);
-var EXCLUDE_DIR_JUNK = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
-);
-
-// consort/smells/refactor-verify-assess.ts
-init_cjs_shims();
-var fs10 = __toESM(require("fs"), 1);
-var path7 = __toESM(require("path"), 1);
-
-// consort/architecture/migration-app-clean.ts
-init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path9 = require("path");
-
-// consort/architecture/migration-history-clean.ts
-init_cjs_shims();
-var import_node_child_process5 = require("child_process");
-var import_node_fs8 = require("fs");
-var import_node_path10 = require("path");
-
-// consort/architecture/test-smell-clean.ts
-init_cjs_shims();
-var import_node_fs9 = require("fs");
-var import_node_path11 = require("path");
-var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
-
-// consort/pipeline/cycle-record.ts
-var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
-var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-
-// consort/orchestrator/state/orchestrator-derive.ts
-init_cjs_shims();
-function driverPhaseForTdd(tddPhase) {
-  switch (tddPhase) {
-    case "planning":
-      return "planning";
-    case "deploy":
-      return "deploy";
-    case "promote":
-      return "promote";
-    case "shipped":
-    case "done":
-      return "done";
-    default:
-      return "feature";
-  }
-}
-
-// consort/pipeline/design-fingerprint.ts
-init_cjs_shims();
-var import_node_crypto3 = require("crypto");
-var import_node_fs10 = require("fs");
 
 // consort/gates/gates.ts
 init_cjs_shims();
-var import_fs6 = require("fs");
-var import_path6 = require("path");
+var import_fs4 = require("fs");
+var import_path5 = require("path");
 var GATES_SCHEMA_VERSION = 1;
 var GATE_NAMES = ["spec", "plan", "test_list", "promote", "deploy"];
 var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
@@ -7326,10 +7175,10 @@ function defaultGatesState(featureId) {
 function readGates(featureId, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = gatesFilePath(consortDir, featureId);
-  if (!(0, import_fs6.existsSync)(file)) {
+  if (!(0, import_fs4.existsSync)(file)) {
     return defaultGatesState(featureId);
   }
-  const raw = (0, import_fs6.readFileSync)(file, "utf8");
+  const raw = (0, import_fs4.readFileSync)(file, "utf8");
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -7340,7 +7189,7 @@ function readGates(featureId, opts = {}) {
   return validateGatesState(parsed, file);
 }
 function gatesFilePath(consortDir, featureId) {
-  return (0, import_path6.join)(requireFeatureDir(consortDir, featureId), "gates.json");
+  return (0, import_path5.join)(requireFeatureDir(consortDir, featureId), "gates.json");
 }
 function validateGatesState(parsed, file) {
   if (typeof parsed !== "object" || parsed === null) {
@@ -7398,6 +7247,177 @@ function validateGateRecord(parsed, gateName, file) {
   };
 }
 
+// consort/gates/gate-conformance-guard.ts
+init_cjs_shims();
+var import_node_fs3 = require("fs");
+var import_node_path4 = require("path");
+
+// consort/orchestrator/validators/conformance/artifact-conformance.ts
+init_cjs_shims();
+
+// consort/test-list/test-list.ts
+init_cjs_shims();
+var import_fs5 = require("fs");
+function readMasterTestList(tddDir, featureId) {
+  requireFeatureDir(tddDir, featureId);
+  const file = featureTestListJson(tddDir, featureId);
+  if (!(0, import_fs5.existsSync)(file)) {
+    throw new Error(`master test-list.json not found for ${featureId} at ${file}`);
+  }
+  const parsed = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+  return { ...parsed, items: Array.isArray(parsed.items) ? parsed.items : [] };
+}
+
+// consort/architecture/architecture-conventions.ts
+init_cjs_shims();
+
+// consort/gates/registered-breakdown.ts
+init_cjs_shims();
+
+// consort/deploy/deploy.ts
+init_cjs_shims();
+var import_node_child_process3 = require("child_process");
+var import_node_crypto = require("crypto");
+var import_node_fs5 = require("fs");
+var import_node_path6 = require("path");
+var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
+
+// consort/gates/escalation.ts
+init_cjs_shims();
+var fs7 = __toESM(require("fs"), 1);
+
+// consort/smells/smells.ts
+init_cjs_shims();
+var import_fs6 = require("fs");
+var import_path6 = require("path");
+function readSmellsLog(consortDir) {
+  const file = (0, import_path6.join)(consortDir, "smells.json");
+  if (!(0, import_fs6.existsSync)(file)) return { detected: [] };
+  return JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+}
+
+// consort/smells/deploy-verify-assess.ts
+init_cjs_shims();
+var fs8 = __toESM(require("fs"), 1);
+var path6 = __toESM(require("path"), 1);
+function markerPath(consortDir, featureId, storyId) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return storyId ? path6.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path6.join(fdir, "deploy-verify-assess.json");
+}
+function readDeployVerifyAssessMarker(consortDir, featureId, storyId) {
+  const file = markerPath(consortDir, featureId, storyId);
+  if (!file || !fs8.existsSync(file)) return void 0;
+  try {
+    return JSON.parse(fs8.readFileSync(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function deployVerifyRefactorPending(consortDir, featureId, storyId) {
+  const m = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
+  return !!m && m.assessed === true && (m.flagged_tests?.length ?? 0) > 0 && m.refactored !== true;
+}
+function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
+  const m = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
+  return !!m && !m.assessed && m.attempts < 1;
+}
+
+// consort/architecture/e2e-regex-clean.ts
+init_cjs_shims();
+var import_node_fs4 = require("fs");
+var import_node_path5 = require("path");
+
+// consort/smells/ephemeral-verify.ts
+init_cjs_shims();
+var import_util = require("@databricks-solutions/lakebase-scm-utils/util");
+var import_lakebase5 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_lakebase6 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+
+// consort/architecture/design-adherence.ts
+init_cjs_shims();
+var import_node_fs6 = require("fs");
+var import_node_path7 = require("path");
+
+// consort/smells/supersession.ts
+init_cjs_shims();
+var fs9 = __toESM(require("fs"), 1);
+var import_node_child_process4 = require("child_process");
+var import_node_crypto2 = require("crypto");
+var import_node_path8 = require("path");
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+
+// consort/architecture/contract-clean.ts
+init_cjs_shims();
+var import_node_fs7 = require("fs");
+var import_node_path9 = require("path");
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+var EXCLUDE_DIR = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
+);
+var EXCLUDE_DIR_JUNK = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
+);
+
+// consort/smells/refactor-verify-assess.ts
+init_cjs_shims();
+var fs10 = __toESM(require("fs"), 1);
+var path7 = __toESM(require("path"), 1);
+
+// consort/architecture/migration-app-clean.ts
+init_cjs_shims();
+var import_node_fs8 = require("fs");
+var import_node_path10 = require("path");
+
+// consort/architecture/migration-history-clean.ts
+init_cjs_shims();
+var import_node_child_process5 = require("child_process");
+var import_node_fs9 = require("fs");
+var import_node_path11 = require("path");
+
+// consort/architecture/test-smell-clean.ts
+init_cjs_shims();
+var import_node_fs10 = require("fs");
+var import_node_path12 = require("path");
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+
+// consort/pipeline/cycle-record.ts
+var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
+var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+
+// consort/orchestrator/state/orchestrator-derive.ts
+init_cjs_shims();
+function driverPhaseForTdd(tddPhase) {
+  switch (tddPhase) {
+    case "planning":
+      return "planning";
+    case "deploy":
+      return "deploy";
+    case "promote":
+      return "promote";
+    case "shipped":
+    case "done":
+      return "done";
+    default:
+      return "feature";
+  }
+}
+
+// consort/pipeline/design-fingerprint.ts
+init_cjs_shims();
+var import_node_crypto3 = require("crypto");
+var import_node_fs11 = require("fs");
+
 // consort/gates/workflow-phase.ts
 init_cjs_shims();
 var fs11 = __toESM(require("fs"), 1);
@@ -7415,9 +7435,6 @@ var SMELL_FOR_OWNER = {
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
 // consort/smells/testlist-conformance.ts
-init_cjs_shims();
-
-// consort/orchestrator/validators/conformance/artifact-conformance.ts
 init_cjs_shims();
 
 // consort/architecture/architecture-canon.ts
@@ -7499,9 +7516,6 @@ function readGateApproved(featureId, consortDir, gate) {
 init_cjs_shims();
 var import_fs7 = require("fs");
 
-// consort/gates/registered-breakdown.ts
-init_cjs_shims();
-
 // consort/experiment/spike-carryforward.ts
 init_cjs_shims();
 
@@ -7515,14 +7529,6 @@ function readPlan(consortDir, featureId, storyId) {
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
 var import_fs8 = require("fs");
-
-// consort/gates/gate-conformance-guard.ts
-init_cjs_shims();
-var import_node_fs11 = require("fs");
-var import_node_path12 = require("path");
-
-// consort/architecture/architecture-conventions.ts
-init_cjs_shims();
 
 // consort/logging/gate-decision-log.ts
 init_cjs_shims();

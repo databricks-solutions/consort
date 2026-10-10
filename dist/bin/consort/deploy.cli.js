@@ -6654,8 +6654,8 @@ import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 init_esm_shims();
 import { execSync, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync13, mkdirSync as mkdirSync8, readFileSync as readFileSync13, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "fs";
-import { dirname as dirname6, join as join13 } from "path";
+import { existsSync as existsSync14, mkdirSync as mkdirSync8, readFileSync as readFileSync14, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "fs";
+import { dirname as dirname9, join as join16 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -6922,20 +6922,71 @@ function emitAgentLogEvent(input, opts = {}) {
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
 
+// consort/gates/verify-gate-integrity.ts
+init_esm_shims();
+
+// consort/gates/gate-hash.ts
+init_esm_shims();
+
+// consort/gates/gates.ts
+init_esm_shims();
+
+// consort/gates/gate-conformance-guard.ts
+init_esm_shims();
+import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync2, statSync as statSync2 } from "fs";
+import { join as join6, dirname as dirname4 } from "path";
+
+// consort/config/consort-config-file.ts
+init_esm_shims();
+import { dirname as dirname3, join as join5 } from "path";
+
+// consort/config/agent-models.ts
+init_esm_shims();
+import { dirname as dirname2, join as join4 } from "path";
+var RECOMMENDED_MODELS = {
+  "spec-author": "opus",
+  "architect-reviewer": "opus",
+  dba: "opus",
+  "test-strategist": "sonnet",
+  "ux-designer": "sonnet",
+  navigator: "sonnet",
+  driver: "sonnet",
+  "product-owner": "opus"
+};
+var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
+var AGENT_CONFIG_REL = join4(".lakebase", "agent-config.json");
+
+// consort/config/consort-config-file.ts
+var CONSORT_CONFIG_REL = join5(".lakebase", "consort-config.json");
+var LEGACY_CONFIG_RELS = [
+  join5(".lakebase", "sftdd-config.json"),
+  join5(".lakebase", "tdd-config.json")
+];
+var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
+
+// consort/orchestrator/validators/conformance/artifact-conformance.ts
+init_esm_shims();
+
 // consort/test-list/test-list.ts
+init_esm_shims();
+
+// consort/architecture/architecture-conventions.ts
+init_esm_shims();
+
+// consort/gates/registered-breakdown.ts
 init_esm_shims();
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync2, writeFileSync as writeFileSync2, mkdirSync as mkdirSync3, copyFileSync } from "fs";
-import { join as join4, dirname as dirname2, basename } from "path";
+import { existsSync as existsSync5, readFileSync as readFileSync5, readdirSync as readdirSync3, writeFileSync as writeFileSync2, mkdirSync as mkdirSync3, copyFileSync } from "fs";
+import { join as join7, dirname as dirname5, basename } from "path";
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs2 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname3, join as join5 } from "path";
+import { dirname as dirname6, join as join8 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -6948,8 +6999,8 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync6, readFileSync as readFileSync6, readdirSync as readdirSync3, statSync as statSync2 } from "fs";
-import { join as join6, relative, extname } from "path";
+import { existsSync as existsSync7, readFileSync as readFileSync7, readdirSync as readdirSync4, statSync as statSync3 } from "fs";
+import { join as join9, relative, extname } from "path";
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -6965,19 +7016,19 @@ import * as path2 from "path";
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync4, statSync as statSync3 } from "fs";
-import { join as join8, relative as relative2, extname as extname2 } from "path";
+import { existsSync as existsSync9, readFileSync as readFileSync9, readdirSync as readdirSync5, statSync as statSync4 } from "fs";
+import { join as join11, relative as relative2, extname as extname2 } from "path";
 
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
 import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync as existsSync9 } from "fs";
-import { join as join9 } from "path";
+import { existsSync as existsSync10 } from "fs";
+import { join as join12 } from "path";
 
 // consort/architecture/test-smell-clean.ts
 init_esm_shims();
-import { existsSync as existsSync10, readFileSync as readFileSync9, readdirSync as readdirSync5, statSync as statSync4 } from "fs";
-import { join as join10, relative as relative3, extname as extname3 } from "path";
+import { existsSync as existsSync11, readFileSync as readFileSync10, readdirSync as readdirSync6, statSync as statSync5 } from "fs";
+import { join as join13, relative as relative3, extname as extname3 } from "path";
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
@@ -7073,8 +7124,8 @@ async function classifyDeployVerifyFailure(failingNodeIds, runIsolated) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync7, readFileSync as readFileSync12, statSync as statSync5 } from "fs";
-import { join as join12 } from "path";
+import { readdirSync as readdirSync8, readFileSync as readFileSync13, statSync as statSync6 } from "fs";
+import { join as join15 } from "path";
 
 // consort/smells/ephemeral-verify.ts
 init_esm_shims();
@@ -7118,7 +7169,7 @@ function ephemeralVerifyBranchName(experimentBranch, nonce) {
 // consort/deploy/deploy.ts
 function readProjectInstance(projectDir) {
   try {
-    const m = readFileSync13(join13(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
+    const m = readFileSync14(join16(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
     return m ? m[1].replace(/^["']|["']$/g, "").trim() : void 0;
   } catch {
     return void 0;
@@ -7127,7 +7178,7 @@ function readProjectInstance(projectDir) {
 function readAppDatabaseName(projectDir) {
   let env;
   try {
-    env = readFileSync13(join13(projectDir, ".env"), "utf8");
+    env = readFileSync14(join16(projectDir, ".env"), "utf8");
   } catch {
     return void 0;
   }
@@ -7270,7 +7321,7 @@ function logReleaseEngineerDeployOutcome(ctx, result) {
   }
 }
 function pidFile(projectDir, target) {
-  return join13(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
+  return join16(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
 }
 function normalizeVerifyRun(raw) {
   return typeof raw === "boolean" ? { passed: raw, output: "" } : { passed: raw.passed, output: raw.output ?? "" };
@@ -7299,9 +7350,9 @@ ${tail}
 function writeDeployEvidence(consortDir, evidence) {
   const fdir = findFeatureDir(consortDir, evidence.feature_id);
   if (!fdir) return void 0;
-  const dir = evidence.story_id ? join13(fdir, "stories", evidence.story_id) : fdir;
+  const dir = evidence.story_id ? join16(fdir, "stories", evidence.story_id) : fdir;
   mkdirSync8(dir, { recursive: true });
-  const file = join13(dir, "deploy-evidence.json");
+  const file = join16(dir, "deploy-evidence.json");
   writeFileSync7(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
   return file;
 }
@@ -7433,7 +7484,7 @@ async function deployToTarget(args) {
   }
   const pid = start(cfg.run, args.projectDir, env);
   const pf = pidFile(args.projectDir, args.targetName);
-  mkdirSync8(dirname6(pf), { recursive: true });
+  mkdirSync8(dirname9(pf), { recursive: true });
   writeFileSync7(pf, String(pid));
   const servingOk = args.servingOk ?? args.reachable ?? probeServingOk;
   const readyProbe = args.rejectForeignPort ? servingOk : reachable;
@@ -7551,8 +7602,8 @@ async function deployToTarget(args) {
 }
 function stopLocal(projectDir, targetName) {
   const pf = pidFile(projectDir, targetName);
-  if (!existsSync13(pf)) return { stopped: false };
-  const pid = Number(readFileSync13(pf, "utf8").trim());
+  if (!existsSync14(pf)) return { stopped: false };
+  const pid = Number(readFileSync14(pf, "utf8").trim());
   if (Number.isFinite(pid) && pid > 0) {
     try {
       process.kill(-pid);

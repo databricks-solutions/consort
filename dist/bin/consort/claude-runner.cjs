@@ -7590,6 +7590,9 @@ var architect_reviewer_default = {
     { id: "acs", source: "story:acs", description: "The story's acceptance criteria the Architect annotates with per-AC architectural_notes." },
     { id: "nfrs", source: "feature:nfrs.md", description: "The PO's non-functional requirements the architecture must cover (nfrs.md)." }
   ],
+  preconditions: [
+    { id: "cross-story", kind: "cross-story-context", position: "append", description: "The feature's OTHER stories' ACs + existing open_decisions + mandated not-null fields, injected so the Architect records/reconciles open_decisions against the siblings deterministically , NOT a shell-out to consort-cross-story-context. Empty for a lone-story feature." }
+  ],
   outputs: [
     { id: "architecture", filename: "architecture.json", channel: "artifact", validator: "nonEmptyFile", description: "The feature architecture (service_backed, layers, persistence_invariants). The post-turn verify-artifact asserts architecture.json exists under the resolved root." },
     { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "architectReviewerLoggedAuthoring", description: "The Architect Reviewer's structured log of the per-AC notes + architecture.json it authored." }
@@ -7818,6 +7821,9 @@ var navigator_reflect_default = {
   match: { kind: "invoke-role", role: "navigator", buildMode: "reflect" },
   inputs: [
     { id: "acs", source: "story:acs", description: "The story's acceptance criteria (acs/ dir) , the core design artifact the reflect turn critiques for a spec-level blocking smell before build. story:acs resolves to storyResolved/acs, always present by reflect time (spec-author authors it before the architect/dba/test-strategist/reflect sequence); the prior 'story:design' had no writer/resolver and failed loud." }
+  ],
+  preconditions: [
+    { id: "cross-story", kind: "cross-story-context", position: "append", description: "The feature's OTHER stories' ACs + the architecture's open_decisions + its mandated not-null persistence fields, injected so the reflect turn's cross-story checks (#8 contradiction with a gated sibling AC; #9 a mandated field no sibling submit AC supplies) ride the prompt deterministically , NOT a shell-out to consort-cross-story-context. Empty for a lone-story feature." }
   ],
   outputs: [],
   routing: {

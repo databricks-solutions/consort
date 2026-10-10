@@ -7398,15 +7398,63 @@ function hasOpenSmell(consortDir, smell, story_id) {
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
 
+// consort/gates/verify-gate-integrity.ts
+init_esm_shims();
+
+// consort/gates/gate-hash.ts
+init_esm_shims();
+
+// consort/gates/gates.ts
+init_esm_shims();
+
+// consort/gates/gate-conformance-guard.ts
+init_esm_shims();
+import { existsSync as existsSync10, readFileSync as readFileSync9, readdirSync as readdirSync5, statSync as statSync4 } from "fs";
+import { join as join10, dirname as dirname7 } from "path";
+
+// consort/config/consort-config-file.ts
+init_esm_shims();
+import { dirname as dirname6, join as join9 } from "path";
+
+// consort/config/agent-models.ts
+init_esm_shims();
+import { dirname as dirname5, join as join8 } from "path";
+var RECOMMENDED_MODELS = {
+  "spec-author": "opus",
+  "architect-reviewer": "opus",
+  dba: "opus",
+  "test-strategist": "sonnet",
+  "ux-designer": "sonnet",
+  navigator: "sonnet",
+  driver: "sonnet",
+  "product-owner": "opus"
+};
+var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
+var AGENT_CONFIG_REL = join8(".lakebase", "agent-config.json");
+
+// consort/config/consort-config-file.ts
+var CONSORT_CONFIG_REL = join9(".lakebase", "consort-config.json");
+var LEGACY_CONFIG_RELS = [
+  join9(".lakebase", "sftdd-config.json"),
+  join9(".lakebase", "tdd-config.json")
+];
+var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
+
+// consort/orchestrator/validators/conformance/artifact-conformance.ts
+init_esm_shims();
+
 // consort/test-list/test-list.ts
+init_esm_shims();
+
+// consort/gates/registered-breakdown.ts
 init_esm_shims();
 
 // consort/deploy/deploy.ts
 init_esm_shims();
 import { execSync, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync11, mkdirSync as mkdirSync6, readFileSync as readFileSync11, rmSync as rmSync2, writeFileSync as writeFileSync8 } from "fs";
-import { dirname as dirname6, join as join10 } from "path";
+import { existsSync as existsSync12, mkdirSync as mkdirSync6, readFileSync as readFileSync12, rmSync as rmSync2, writeFileSync as writeFileSync8 } from "fs";
+import { dirname as dirname9, join as join13 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -7417,8 +7465,8 @@ import * as path2 from "path";
 
 // consort/architecture/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync5, readFileSync as readFileSync10, statSync as statSync4 } from "fs";
-import { join as join9 } from "path";
+import { readdirSync as readdirSync6, readFileSync as readFileSync11, statSync as statSync5 } from "fs";
+import { join as join12 } from "path";
 
 // consort/smells/ephemeral-verify.ts
 init_esm_shims();
@@ -7429,15 +7477,15 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync12, readFileSync as readFileSync12, readdirSync as readdirSync7, writeFileSync as writeFileSync9, mkdirSync as mkdirSync7, copyFileSync } from "fs";
-import { join as join11, dirname as dirname7, basename as basename2 } from "path";
+import { existsSync as existsSync13, readFileSync as readFileSync13, readdirSync as readdirSync8, writeFileSync as writeFileSync9, mkdirSync as mkdirSync7, copyFileSync } from "fs";
+import { join as join14, dirname as dirname10, basename as basename2 } from "path";
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs3 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname8, join as join12 } from "path";
+import { dirname as dirname11, join as join15 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7450,8 +7498,8 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync14, readFileSync as readFileSync14, readdirSync as readdirSync8, statSync as statSync5 } from "fs";
-import { join as join13, relative as relative2, extname } from "path";
+import { existsSync as existsSync15, readFileSync as readFileSync15, readdirSync as readdirSync9, statSync as statSync6 } from "fs";
+import { join as join16, relative as relative2, extname } from "path";
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -7467,19 +7515,19 @@ import * as path3 from "path";
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync16, readFileSync as readFileSync16, readdirSync as readdirSync9, statSync as statSync6 } from "fs";
-import { join as join15, relative as relative3, extname as extname2 } from "path";
+import { existsSync as existsSync17, readFileSync as readFileSync17, readdirSync as readdirSync10, statSync as statSync7 } from "fs";
+import { join as join18, relative as relative3, extname as extname2 } from "path";
 
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
 import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync as existsSync17 } from "fs";
-import { join as join16 } from "path";
+import { existsSync as existsSync18 } from "fs";
+import { join as join19 } from "path";
 
 // consort/architecture/test-smell-clean.ts
 init_esm_shims();
-import { existsSync as existsSync18, readFileSync as readFileSync17, readdirSync as readdirSync10, statSync as statSync7 } from "fs";
-import { join as join17, relative as relative4, extname as extname3 } from "path";
+import { existsSync as existsSync19, readFileSync as readFileSync18, readdirSync as readdirSync11, statSync as statSync8 } from "fs";
+import { join as join20, relative as relative4, extname as extname3 } from "path";
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts

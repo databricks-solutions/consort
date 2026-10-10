@@ -6880,167 +6880,16 @@ var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
 
-// consort/test-list/test-list.ts
+// consort/gates/verify-gate-integrity.ts
 init_esm_shims();
-import { readFileSync as readFileSync4, writeFileSync as writeFileSync3, existsSync as existsSync4, mkdirSync as mkdirSync3, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
-function readMasterTestList(tddDir, featureId) {
-  requireFeatureDir(tddDir, featureId);
-  const file = featureTestListJson(tddDir, featureId);
-  if (!existsSync4(file)) {
-    throw new Error(`master test-list.json not found for ${featureId} at ${file}`);
-  }
-  const parsed = JSON.parse(readFileSync4(file, "utf8"));
-  return { ...parsed, items: Array.isArray(parsed.items) ? parsed.items : [] };
-}
 
-// consort/deploy/deploy.ts
+// consort/gates/gate-hash.ts
 init_esm_shims();
-import { execSync, spawn } from "child_process";
-import { randomBytes } from "crypto";
-import { existsSync as existsSync8, mkdirSync as mkdirSync6, readFileSync as readFileSync9, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "fs";
-import { dirname as dirname2, join as join7 } from "path";
-import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
-
-// consort/gates/escalation.ts
-init_esm_shims();
-import * as fs2 from "fs";
-
-// consort/smells/smells.ts
-init_esm_shims();
-import { existsSync as existsSync5, readFileSync as readFileSync5, writeFileSync as writeFileSync4 } from "fs";
-import { join as join4 } from "path";
-function readSmellsLog(consortDir) {
-  const file = join4(consortDir, "smells.json");
-  if (!existsSync5(file)) return { detected: [] };
-  return JSON.parse(readFileSync5(file, "utf8"));
-}
-
-// consort/smells/deploy-verify-assess.ts
-init_esm_shims();
-import * as fs3 from "fs";
-import * as path2 from "path";
-function markerPath(consortDir, featureId, storyId) {
-  const fdir = findFeatureDir(consortDir, featureId);
-  if (!fdir) return void 0;
-  return storyId ? path2.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path2.join(fdir, "deploy-verify-assess.json");
-}
-function readDeployVerifyAssessMarker(consortDir, featureId, storyId) {
-  const file = markerPath(consortDir, featureId, storyId);
-  if (!file || !fs3.existsSync(file)) return void 0;
-  try {
-    return JSON.parse(fs3.readFileSync(file, "utf8"));
-  } catch {
-    return void 0;
-  }
-}
-function deployVerifyRefactorPending(consortDir, featureId, storyId) {
-  const m = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
-  return !!m && m.assessed === true && (m.flagged_tests?.length ?? 0) > 0 && m.refactored !== true;
-}
-function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
-  const m = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
-  return !!m && !m.assessed && m.attempts < 1;
-}
-
-// consort/architecture/e2e-regex-clean.ts
-init_esm_shims();
-import { readdirSync as readdirSync5, readFileSync as readFileSync8, statSync as statSync4 } from "fs";
-import { join as join6 } from "path";
-
-// consort/smells/ephemeral-verify.ts
-init_esm_shims();
-import { LAKEBASE_BRANCH_NAME_MAX } from "@databricks-solutions/lakebase-scm-utils/util";
-import { createBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { deleteBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-import { getConnection as getConnection2, waitForBranchAuthReady } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-
-// consort/architecture/design-adherence.ts
-init_esm_shims();
-import { existsSync as existsSync9, readFileSync as readFileSync10, readdirSync as readdirSync7, writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, copyFileSync } from "fs";
-import { join as join8, dirname as dirname3, basename } from "path";
-
-// consort/smells/supersession.ts
-init_esm_shims();
-import * as fs4 from "fs";
-import { execFileSync as execFileSync2 } from "child_process";
-import { createHash } from "crypto";
-import { dirname as dirname4, join as join9 } from "path";
-var TREE_STATE_EXCLUDE_PREFIXES = [
-  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
-  ".lakebase/",
-  ".claude/agent-memory/",
-  "node_modules/",
-  "dist/",
-  ".venv/",
-  "coverage/"
-];
-
-// consort/architecture/contract-clean.ts
-init_esm_shims();
-import { existsSync as existsSync11, readFileSync as readFileSync12, readdirSync as readdirSync8, statSync as statSync5 } from "fs";
-import { join as join10, relative, extname } from "path";
-var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
-var EXCLUDE_DIR = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
-);
-var EXCLUDE_DIR_JUNK = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
-);
-
-// consort/smells/refactor-verify-assess.ts
-init_esm_shims();
-import * as fs5 from "fs";
-import * as path3 from "path";
-
-// consort/architecture/migration-app-clean.ts
-init_esm_shims();
-import { existsSync as existsSync13, readFileSync as readFileSync14, readdirSync as readdirSync9, statSync as statSync6 } from "fs";
-import { join as join12, relative as relative2, extname as extname2 } from "path";
-
-// consort/architecture/migration-history-clean.ts
-init_esm_shims();
-import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync as existsSync14 } from "fs";
-import { join as join13 } from "path";
-
-// consort/architecture/test-smell-clean.ts
-init_esm_shims();
-import { existsSync as existsSync15, readFileSync as readFileSync15, readdirSync as readdirSync10, statSync as statSync7 } from "fs";
-import { join as join14, relative as relative3, extname as extname3 } from "path";
-var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
-
-// consort/pipeline/cycle-record.ts
-import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
-import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-
-// consort/orchestrator/state/orchestrator-derive.ts
-init_esm_shims();
-function driverPhaseForTdd(tddPhase) {
-  switch (tddPhase) {
-    case "planning":
-      return "planning";
-    case "deploy":
-      return "deploy";
-    case "promote":
-      return "promote";
-    case "shipped":
-    case "done":
-      return "done";
-    default:
-      return "feature";
-  }
-}
-
-// consort/pipeline/design-fingerprint.ts
-init_esm_shims();
-import { createHash as createHash2 } from "crypto";
-import { readFileSync as readFileSync16 } from "fs";
 
 // consort/gates/gates.ts
 init_esm_shims();
-import { existsSync as existsSync16, readFileSync as readFileSync17, renameSync, unlinkSync, writeFileSync as writeFileSync11 } from "fs";
-import { join as join15 } from "path";
+import { existsSync as existsSync4, readFileSync as readFileSync4, renameSync, unlinkSync, writeFileSync as writeFileSync3 } from "fs";
+import { join as join4 } from "path";
 var GATES_SCHEMA_VERSION = 1;
 var GATE_NAMES = ["spec", "plan", "test_list", "promote", "deploy"];
 var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
@@ -7060,10 +6909,10 @@ function defaultGatesState(featureId) {
 function readGates(featureId, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = gatesFilePath(consortDir, featureId);
-  if (!existsSync16(file)) {
+  if (!existsSync4(file)) {
     return defaultGatesState(featureId);
   }
-  const raw = readFileSync17(file, "utf8");
+  const raw = readFileSync4(file, "utf8");
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -7074,7 +6923,7 @@ function readGates(featureId, opts = {}) {
   return validateGatesState(parsed, file);
 }
 function gatesFilePath(consortDir, featureId) {
-  return join15(requireFeatureDir(consortDir, featureId), "gates.json");
+  return join4(requireFeatureDir(consortDir, featureId), "gates.json");
 }
 function validateGatesState(parsed, file) {
   if (typeof parsed !== "object" || parsed === null) {
@@ -7132,19 +6981,19 @@ function validateGateRecord(parsed, gateName, file) {
   };
 }
 
-// consort/gates/workflow-phase.ts
+// consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import * as fs6 from "fs";
-var PHASE_OWNER_KEY = "phase_feature_id";
+import { existsSync as existsSync7, readFileSync as readFileSync7, readdirSync as readdirSync5, statSync as statSync4 } from "fs";
+import { join as join7, dirname as dirname3 } from "path";
 
 // consort/config/consort-config-file.ts
 init_esm_shims();
-import { existsSync as existsSync18, readFileSync as readFileSync19, mkdirSync as mkdirSync11, writeFileSync as writeFileSync13 } from "fs";
-import { dirname as dirname7, join as join17 } from "path";
+import { existsSync as existsSync5, readFileSync as readFileSync5, mkdirSync as mkdirSync3, writeFileSync as writeFileSync4 } from "fs";
+import { dirname as dirname2, join as join6 } from "path";
 
 // consort/config/agent-models.ts
 init_esm_shims();
-import { dirname as dirname6, join as join16 } from "path";
+import { dirname, join as join5 } from "path";
 var RECOMMENDED_MODELS = {
   "spec-author": "opus",
   "architect-reviewer": "opus",
@@ -7156,21 +7005,21 @@ var RECOMMENDED_MODELS = {
   "product-owner": "opus"
 };
 var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
-var AGENT_CONFIG_REL = join16(".lakebase", "agent-config.json");
+var AGENT_CONFIG_REL = join5(".lakebase", "agent-config.json");
 
 // consort/config/consort-config-file.ts
-var CONSORT_CONFIG_REL = join17(".lakebase", "consort-config.json");
+var CONSORT_CONFIG_REL = join6(".lakebase", "consort-config.json");
 var LEGACY_CONFIG_RELS = [
-  join17(".lakebase", "sftdd-config.json"),
-  join17(".lakebase", "tdd-config.json")
+  join6(".lakebase", "sftdd-config.json"),
+  join6(".lakebase", "tdd-config.json")
 ];
 var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
 function loadConsortConfig(projectDir) {
   for (const rel of [CONSORT_CONFIG_REL, ...LEGACY_CONFIG_RELS]) {
-    const f = join17(projectDir, rel);
-    if (!existsSync18(f)) continue;
+    const f = join6(projectDir, rel);
+    if (!existsSync5(f)) continue;
     try {
-      return JSON.parse(readFileSync19(f, "utf8"));
+      return JSON.parse(readFileSync5(f, "utf8"));
     } catch {
       return void 0;
     }
@@ -7202,6 +7051,177 @@ function resolveProjectSettings(projectDir) {
   return { build, plan, project };
 }
 
+// consort/orchestrator/validators/conformance/artifact-conformance.ts
+init_esm_shims();
+
+// consort/test-list/test-list.ts
+init_esm_shims();
+import { readFileSync as readFileSync6, writeFileSync as writeFileSync5, existsSync as existsSync6, mkdirSync as mkdirSync4, readdirSync as readdirSync4, statSync as statSync3 } from "fs";
+function readMasterTestList(tddDir, featureId) {
+  requireFeatureDir(tddDir, featureId);
+  const file = featureTestListJson(tddDir, featureId);
+  if (!existsSync6(file)) {
+    throw new Error(`master test-list.json not found for ${featureId} at ${file}`);
+  }
+  const parsed = JSON.parse(readFileSync6(file, "utf8"));
+  return { ...parsed, items: Array.isArray(parsed.items) ? parsed.items : [] };
+}
+
+// consort/architecture/architecture-conventions.ts
+init_esm_shims();
+
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+
+// consort/deploy/deploy.ts
+init_esm_shims();
+import { execSync, spawn } from "child_process";
+import { randomBytes } from "crypto";
+import { existsSync as existsSync11, mkdirSync as mkdirSync7, readFileSync as readFileSync12, rmSync as rmSync2, writeFileSync as writeFileSync9 } from "fs";
+import { dirname as dirname5, join as join11 } from "path";
+import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
+
+// consort/gates/escalation.ts
+init_esm_shims();
+import * as fs2 from "fs";
+
+// consort/smells/smells.ts
+init_esm_shims();
+import { existsSync as existsSync8, readFileSync as readFileSync8, writeFileSync as writeFileSync6 } from "fs";
+import { join as join8 } from "path";
+function readSmellsLog(consortDir) {
+  const file = join8(consortDir, "smells.json");
+  if (!existsSync8(file)) return { detected: [] };
+  return JSON.parse(readFileSync8(file, "utf8"));
+}
+
+// consort/smells/deploy-verify-assess.ts
+init_esm_shims();
+import * as fs3 from "fs";
+import * as path2 from "path";
+function markerPath(consortDir, featureId, storyId) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return storyId ? path2.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path2.join(fdir, "deploy-verify-assess.json");
+}
+function readDeployVerifyAssessMarker(consortDir, featureId, storyId) {
+  const file = markerPath(consortDir, featureId, storyId);
+  if (!file || !fs3.existsSync(file)) return void 0;
+  try {
+    return JSON.parse(fs3.readFileSync(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function deployVerifyRefactorPending(consortDir, featureId, storyId) {
+  const m = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
+  return !!m && m.assessed === true && (m.flagged_tests?.length ?? 0) > 0 && m.refactored !== true;
+}
+function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
+  const m = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
+  return !!m && !m.assessed && m.attempts < 1;
+}
+
+// consort/architecture/e2e-regex-clean.ts
+init_esm_shims();
+import { readdirSync as readdirSync7, readFileSync as readFileSync11, statSync as statSync5 } from "fs";
+import { join as join10 } from "path";
+
+// consort/smells/ephemeral-verify.ts
+init_esm_shims();
+import { LAKEBASE_BRANCH_NAME_MAX } from "@databricks-solutions/lakebase-scm-utils/util";
+import { createBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { deleteBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { getConnection as getConnection2, waitForBranchAuthReady } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/architecture/design-adherence.ts
+init_esm_shims();
+import { existsSync as existsSync12, readFileSync as readFileSync13, readdirSync as readdirSync9, writeFileSync as writeFileSync10, mkdirSync as mkdirSync8, copyFileSync } from "fs";
+import { join as join12, dirname as dirname6, basename } from "path";
+
+// consort/smells/supersession.ts
+init_esm_shims();
+import * as fs4 from "fs";
+import { execFileSync as execFileSync2 } from "child_process";
+import { createHash } from "crypto";
+import { dirname as dirname7, join as join13 } from "path";
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+
+// consort/architecture/contract-clean.ts
+init_esm_shims();
+import { existsSync as existsSync14, readFileSync as readFileSync15, readdirSync as readdirSync10, statSync as statSync6 } from "fs";
+import { join as join14, relative, extname } from "path";
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+var EXCLUDE_DIR = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
+);
+var EXCLUDE_DIR_JUNK = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
+);
+
+// consort/smells/refactor-verify-assess.ts
+init_esm_shims();
+import * as fs5 from "fs";
+import * as path3 from "path";
+
+// consort/architecture/migration-app-clean.ts
+init_esm_shims();
+import { existsSync as existsSync16, readFileSync as readFileSync17, readdirSync as readdirSync11, statSync as statSync7 } from "fs";
+import { join as join16, relative as relative2, extname as extname2 } from "path";
+
+// consort/architecture/migration-history-clean.ts
+init_esm_shims();
+import { execFileSync as execFileSync3 } from "child_process";
+import { existsSync as existsSync17 } from "fs";
+import { join as join17 } from "path";
+
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync12, statSync as statSync8 } from "fs";
+import { join as join18, relative as relative3, extname as extname3 } from "path";
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+
+// consort/pipeline/cycle-record.ts
+import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
+import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/orchestrator/state/orchestrator-derive.ts
+init_esm_shims();
+function driverPhaseForTdd(tddPhase) {
+  switch (tddPhase) {
+    case "planning":
+      return "planning";
+    case "deploy":
+      return "deploy";
+    case "promote":
+      return "promote";
+    case "shipped":
+    case "done":
+      return "done";
+    default:
+      return "feature";
+  }
+}
+
+// consort/pipeline/design-fingerprint.ts
+init_esm_shims();
+import { createHash as createHash2 } from "crypto";
+import { readFileSync as readFileSync19 } from "fs";
+
+// consort/gates/workflow-phase.ts
+init_esm_shims();
+import * as fs6 from "fs";
+var PHASE_OWNER_KEY = "phase_feature_id";
+
 // consort/orchestrator/state/orchestrator-probe.ts
 import { readWorkflowState, SCM_STATES } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
@@ -7214,9 +7234,6 @@ var SMELL_FOR_OWNER = {
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
 // consort/smells/testlist-conformance.ts
-init_esm_shims();
-
-// consort/orchestrator/validators/conformance/artifact-conformance.ts
 init_esm_shims();
 
 // consort/architecture/architecture-canon.ts
@@ -7296,10 +7313,7 @@ function readGateApproved(featureId, consortDir, gate) {
 
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync20, readFileSync as readFileSync21, writeFileSync as writeFileSync14, mkdirSync as mkdirSync12 } from "fs";
-
-// consort/gates/registered-breakdown.ts
-init_esm_shims();
+import { appendFileSync, existsSync as existsSync21, readFileSync as readFileSync22, writeFileSync as writeFileSync14, mkdirSync as mkdirSync12 } from "fs";
 
 // consort/experiment/spike-carryforward.ts
 init_esm_shims();
@@ -7307,21 +7321,13 @@ init_esm_shims();
 // consort/gates/design-spec-gate.ts
 function readPlan(consortDir, featureId, storyId) {
   const planPath = storyPlanJson(consortDir, featureId, storyId);
-  if (!existsSync20(planPath)) return null;
-  return JSON.parse(readFileSync21(planPath, "utf8"));
+  if (!existsSync21(planPath)) return null;
+  return JSON.parse(readFileSync22(planPath, "utf8"));
 }
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
 import { existsSync as existsSync22, readFileSync as readFileSync23, writeFileSync as writeFileSync15, mkdirSync as mkdirSync13, readdirSync as readdirSync14, statSync as statSync10, rmSync as rmSync5 } from "fs";
-
-// consort/gates/gate-conformance-guard.ts
-init_esm_shims();
-import { existsSync as existsSync21, readFileSync as readFileSync22, readdirSync as readdirSync13, statSync as statSync9 } from "fs";
-import { join as join19, dirname as dirname9 } from "path";
-
-// consort/architecture/architecture-conventions.ts
-init_esm_shims();
 
 // consort/logging/gate-decision-log.ts
 init_esm_shims();

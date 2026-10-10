@@ -9255,6 +9255,9 @@ init_esm_shims();
 import { existsSync as existsSync27, readFileSync as readFileSync27, readdirSync as readdirSync17, statSync as statSync10, writeFileSync as writeFileSync18, mkdirSync as mkdirSync16, rmSync as rmSync7 } from "fs";
 import { join as join26, dirname as dirname14 } from "path";
 
+// consort/gates/verify-gate-integrity.ts
+init_esm_shims();
+
 // consort/deploy/deploy.ts
 init_esm_shims();
 import { execSync, spawn } from "child_process";

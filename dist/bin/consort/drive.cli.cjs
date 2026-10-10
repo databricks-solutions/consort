@@ -113,7 +113,7 @@ var require_code = __commonJS({
     }
     exports2._ = _;
     var plus = new _Code("+");
-    function str(strs, ...args) {
+    function str2(strs, ...args) {
       const expr = [safeStringify(strs[0])];
       let i = 0;
       while (i < args.length) {
@@ -124,7 +124,7 @@ var require_code = __commonJS({
       optimize(expr);
       return new _Code(expr);
     }
-    exports2.str = str;
+    exports2.str = str2;
     function addCodeArg(code, arg) {
       if (arg instanceof _Code)
         code.push(...arg._items);
@@ -167,7 +167,7 @@ var require_code = __commonJS({
       return;
     }
     function strConcat(c1, c2) {
-      return c2.emptyStr() ? c1 : c1.emptyStr() ? c2 : str`${c1}${c2}`;
+      return c2.emptyStr() ? c1 : c1.emptyStr() ? c2 : str2`${c1}${c2}`;
     }
     exports2.strConcat = strConcat;
     function interpolate(x) {
@@ -1132,22 +1132,22 @@ var require_util = __commonJS({
       return (0, codegen_1._)`${topSchemaRef}${schemaPath}${(0, codegen_1.getProperty)(keyword)}`;
     }
     exports2.schemaRefOrVal = schemaRefOrVal;
-    function unescapeFragment(str) {
-      return unescapeJsonPointer(decodeURIComponent(str));
+    function unescapeFragment(str2) {
+      return unescapeJsonPointer(decodeURIComponent(str2));
     }
     exports2.unescapeFragment = unescapeFragment;
-    function escapeFragment(str) {
-      return encodeURIComponent(escapeJsonPointer(str));
+    function escapeFragment(str2) {
+      return encodeURIComponent(escapeJsonPointer(str2));
     }
     exports2.escapeFragment = escapeFragment;
-    function escapeJsonPointer(str) {
-      if (typeof str == "number")
-        return `${str}`;
-      return str.replace(/~/g, "~0").replace(/\//g, "~1");
+    function escapeJsonPointer(str2) {
+      if (typeof str2 == "number")
+        return `${str2}`;
+      return str2.replace(/~/g, "~0").replace(/\//g, "~1");
     }
     exports2.escapeJsonPointer = escapeJsonPointer;
-    function unescapeJsonPointer(str) {
-      return str.replace(/~1/g, "/").replace(/~0/g, "~");
+    function unescapeJsonPointer(str2) {
+      return str2.replace(/~1/g, "/").replace(/~0/g, "~");
     }
     exports2.unescapeJsonPointer = unescapeJsonPointer;
     function eachItem(xs, f) {
@@ -2184,8 +2184,8 @@ var require_json_schema_traverse = __commonJS({
         post(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
       }
     }
-    function escapeJsonPtr(str) {
-      return str.replace(/~/g, "~0").replace(/\//g, "~1");
+    function escapeJsonPtr(str2) {
+      return str2.replace(/~/g, "~0").replace(/\//g, "~1");
     }
   }
 });
@@ -3255,10 +3255,10 @@ var require_utils = __commonJS({
         return { host, isIPV6: false };
       }
     }
-    function findToken(str, token) {
+    function findToken(str2, token) {
       let ind = 0;
-      for (let i = 0; i < str.length; i++) {
-        if (str[i] === token) ind++;
+      for (let i = 0; i < str2.length; i++) {
+        if (str2[i] === token) ind++;
       }
       return ind;
     }
@@ -3999,7 +3999,7 @@ var require_core = __commonJS({
     var util_1 = require_util();
     var $dataRefSchema = require_data();
     var uri_1 = require_uri();
-    var defaultRegExp = (str, flags) => new RegExp(str, flags);
+    var defaultRegExp = (str2, flags) => new RegExp(str2, flags);
     defaultRegExp.code = "new RegExp";
     var META_IGNORE_OPTIONS = ["removeAdditional", "useDefaults", "coerceTypes"];
     var EXT_SCOPE_NAMES = /* @__PURE__ */ new Set([
@@ -4800,16 +4800,16 @@ var require_ucs2length = __commonJS({
     "use strict";
     init_cjs_shims();
     Object.defineProperty(exports2, "__esModule", { value: true });
-    function ucs2length(str) {
-      const len = str.length;
+    function ucs2length(str2) {
+      const len = str2.length;
       let length = 0;
       let pos = 0;
       let value;
       while (pos < len) {
         length++;
-        value = str.charCodeAt(pos++);
+        value = str2.charCodeAt(pos++);
         if (value >= 55296 && value <= 56319 && pos < len) {
-          value = str.charCodeAt(pos);
+          value = str2.charCodeAt(pos);
           if ((value & 64512) === 56320)
             pos++;
         }
@@ -6959,7 +6959,7 @@ function migrateLegacyArtifactDir(projectDir = process.cwd()) {
 }
 
 // bin/consort/drive.cli.ts
-var fs22 = __toESM(require("fs"), 1);
+var fs23 = __toESM(require("fs"), 1);
 var path13 = __toESM(require("path"), 1);
 
 // consort/session/relaunch-detached.ts
@@ -8610,18 +8610,531 @@ function lastReflectReviseFingerprint(consortDir, story_id) {
 
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
+var import_fs10 = require("fs");
+var import_path10 = require("path");
+
+// consort/gates/verify-gate-integrity.ts
+init_cjs_shims();
+
+// consort/gates/gate-hash.ts
+init_cjs_shims();
+
+// consort/gates/gates.ts
+init_cjs_shims();
 var import_fs6 = require("fs");
 var import_path6 = require("path");
+var GATES_SCHEMA_VERSION = 1;
+var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
+function defaultGatesState(featureId) {
+  return {
+    feature_id: featureId,
+    schema_version: GATES_SCHEMA_VERSION,
+    gates: {
+      spec: { status: "open", history: [] },
+      plan: { status: "open", history: [] },
+      test_list: { status: "open", history: [] },
+      promote: { status: "open", history: [] },
+      deploy: { status: "open", history: [] }
+    }
+  };
+}
+function readGates(featureId, opts = {}) {
+  const consortDir = opts.consortDir ?? resolveConsortDir();
+  const file = gatesFilePath(consortDir, featureId);
+  if (!(0, import_fs6.existsSync)(file)) {
+    return defaultGatesState(featureId);
+  }
+  const raw = (0, import_fs6.readFileSync)(file, "utf8");
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    throw new Error(`gates.json at ${file} is not valid JSON: ${cause}`);
+  }
+  return validateGatesState(parsed, file);
+}
+function gatesFilePath(consortDir, featureId) {
+  return (0, import_path6.join)(requireFeatureDir(consortDir, featureId), "gates.json");
+}
+function validateGatesState(parsed, file) {
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(`gates.json at ${file} is not an object`);
+  }
+  const obj = parsed;
+  if (typeof obj.feature_id !== "string" || obj.feature_id.length === 0) {
+    throw new Error(`gates.json at ${file}: missing or invalid feature_id`);
+  }
+  if (typeof obj.schema_version !== "number") {
+    throw new Error(`gates.json at ${file}: missing or invalid schema_version`);
+  }
+  if (typeof obj.gates !== "object" || obj.gates === null) {
+    throw new Error(`gates.json at ${file}: missing or invalid gates`);
+  }
+  const gates = obj.gates;
+  const out = {
+    spec: validateGateRecord(gates.spec, "spec", file),
+    plan: validateGateRecord(gates.plan, "plan", file),
+    test_list: validateGateRecord(gates.test_list, "test_list", file),
+    promote: validateGateRecord(gates.promote, "promote", file),
+    // The deploy gate (working-software) was added after the original four.
+    // A gates.json written before it lacks the key, so backfill a default-open
+    // record rather than reject the file (forward-compatible read).
+    deploy: gates.deploy !== void 0 ? validateGateRecord(gates.deploy, "deploy", file) : { status: "open", history: [] }
+  };
+  return {
+    feature_id: obj.feature_id,
+    schema_version: obj.schema_version,
+    gates: out
+  };
+}
+function validateGateRecord(parsed, gateName, file) {
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(`gates.json at ${file}: gate ${gateName} is not an object`);
+  }
+  const obj = parsed;
+  const status = obj.status;
+  if (typeof status !== "string" || !GATE_STATUSES.includes(status)) {
+    throw new Error(
+      `gates.json at ${file}: gate ${gateName} has invalid status (${String(status)}); expected one of ${GATE_STATUSES.join(", ")}`
+    );
+  }
+  const history = obj.history;
+  if (history !== void 0 && !Array.isArray(history)) {
+    throw new Error(`gates.json at ${file}: gate ${gateName} history must be an array`);
+  }
+  return {
+    status,
+    approver: typeof obj.approver === "string" ? obj.approver : void 0,
+    approved_at: typeof obj.approved_at === "string" ? obj.approved_at : void 0,
+    artifact_hashes: obj.artifact_hashes && typeof obj.artifact_hashes === "object" ? obj.artifact_hashes : void 0,
+    withdrawal_reason: typeof obj.withdrawal_reason === "string" ? obj.withdrawal_reason : void 0,
+    history: history ?? []
+  };
+}
+
+// consort/gates/gate-conformance-guard.ts
+init_cjs_shims();
+var import_node_fs2 = require("fs");
+var import_node_path4 = require("path");
+
+// consort/config/consort-config-file.ts
+init_cjs_shims();
+var import_fs8 = require("fs");
+var import_path8 = require("path");
+
+// consort/config/agent-models.ts
+init_cjs_shims();
+var import_fs7 = require("fs");
+var import_path7 = require("path");
+var RECOMMENDED_MODELS = {
+  "spec-author": "opus",
+  "architect-reviewer": "opus",
+  dba: "opus",
+  "test-strategist": "sonnet",
+  "ux-designer": "sonnet",
+  navigator: "sonnet",
+  driver: "sonnet",
+  "product-owner": "opus"
+};
+var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
+var AGENT_CONFIG_REL = (0, import_path7.join)(".lakebase", "agent-config.json");
+function readAgentConfig(projectDir) {
+  const p = (0, import_path7.join)(projectDir, AGENT_CONFIG_REL);
+  if (!(0, import_fs7.existsSync)(p)) return void 0;
+  return JSON.parse((0, import_fs7.readFileSync)(p, "utf8"));
+}
+function resolveModelForRole(role, projectDir) {
+  const spawnable = role;
+  const entry = readAgentConfig(projectDir)?.roles?.[spawnable];
+  return entry?.override ?? entry?.recommended ?? RECOMMENDED_MODELS[spawnable] ?? "inherit";
+}
+
+// consort/config/consort-config-file.ts
+var CONSORT_CONFIG_REL = (0, import_path8.join)(".lakebase", "consort-config.json");
+var LEGACY_CONFIG_RELS = [
+  (0, import_path8.join)(".lakebase", "sftdd-config.json"),
+  (0, import_path8.join)(".lakebase", "tdd-config.json")
+];
+var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
+function loadConsortConfig(projectDir) {
+  for (const rel of [CONSORT_CONFIG_REL, ...LEGACY_CONFIG_RELS]) {
+    const f = (0, import_path8.join)(projectDir, rel);
+    if (!(0, import_fs8.existsSync)(f)) continue;
+    try {
+      return JSON.parse((0, import_fs8.readFileSync)(f, "utf8"));
+    } catch {
+      return void 0;
+    }
+  }
+  return void 0;
+}
+function resolveProjectSettings(projectDir) {
+  const file = loadConsortConfig(projectDir);
+  const build = {
+    loopGranularity: file?.build?.loopGranularity ?? "story",
+    batchCap: file?.build?.batchCap,
+    sessionScope: file?.build?.sessionScope ?? "story"
+  };
+  const project = {
+    uiTrack: file?.project?.uiTrack ?? true,
+    // HITL-first: the declared project policy defaults to interactive (a human
+    // approves each gate). Headless (proxy) is a deliberate opt-in, set in the
+    // file or as a RUN-SCOPED --gates override (never persisted by a flag).
+    gates: file?.project?.gates ?? "interactive",
+    deployTarget: file?.project?.deployTarget ?? "local",
+    clientFramework: file?.project?.clientFramework ?? "none",
+    // Legacy projects (scaffolded before language was persisted) resolve to "python" – the
+    // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
+    // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
+    // default only affects config-less/legacy trees.
+    language: file?.project?.language ?? "python"
+  };
+  const plan = { sizing: file?.plan?.sizing ?? true };
+  return { build, plan, project };
+}
+function productDirForLanguage(language) {
+  return language === "nodejs" ? "src" : "app";
+}
+function projectLanguage(projectDir) {
+  return resolveProjectSettings(projectDir).project.language;
+}
+function defaultConsortConfig() {
+  const roles = {};
+  for (const role of ALL_AGENT_ROLES) roles[role] = {};
+  return {
+    version: 1,
+    roles,
+    build: { loopGranularity: "story", batchCap: 3, sessionScope: "story" },
+    plan: { sizing: true },
+    project: { uiTrack: true, gates: "interactive", deployTarget: "local", clientFramework: "none", language: "java" }
+  };
+}
+function writeConsortConfig(projectDir, config, opts) {
+  const f = (0, import_path8.join)(projectDir, CONSORT_CONFIG_REL);
+  if ((0, import_fs8.existsSync)(f) && !opts?.force) return false;
+  (0, import_fs8.mkdirSync)((0, import_path8.dirname)(f), { recursive: true });
+  (0, import_fs8.writeFileSync)(f, JSON.stringify(config, null, 2) + "\n");
+  return true;
+}
+function applyProjectOverrides(projectDir, over) {
+  if (over.deployTarget === void 0 && over.sizing === void 0) return;
+  const cfg = loadConsortConfig(projectDir) ?? defaultConsortConfig();
+  cfg.project = cfg.project ?? {};
+  if (over.deployTarget !== void 0) cfg.project.deployTarget = over.deployTarget;
+  cfg.plan = cfg.plan ?? {};
+  if (over.sizing !== void 0) cfg.plan.sizing = over.sizing;
+  writeConsortConfig(projectDir, cfg, { force: true });
+}
+
+// consort/orchestrator/validators/conformance/artifact-conformance.ts
+init_cjs_shims();
+var import_path9 = require("path");
+var ARTIFACT_FORMATS = {
+  "feature-spec.json": { kind: "json-schema", schema: "feature.schema.json" },
+  "story.json": { kind: "json-schema", schema: "story.schema.json" },
+  "ac.json": { kind: "json-schema", schema: "ac.schema.json" },
+  "test-list.json": { kind: "json-schema", schema: "test-list.schema.json" },
+  "plan.json": { kind: "json-schema", schema: "plan.schema.json" },
+  "architecture.json": { kind: "json-schema", schema: "architecture.schema.json" },
+  // DBA's physical schema (tables/DDL + per-story migration plan) that realizes
+  // the architect's persistence_invariants.
+  "db-design.json": { kind: "json-schema", schema: "db-design.schema.json" },
+  "workflow-state.json": { kind: "json-schema", schema: "workflow-state.schema.json" },
+  // Release Engineer's deploy-gate evidence (reachability + feature-verify).
+  "deploy-evidence.json": { kind: "json-schema", schema: "deploy-evidence.schema.json" },
+  // UX Designer (UI projects only): the machine-checkable design tokens.
+  "design-guide.json": { kind: "json-schema", schema: "design-guide.schema.json" },
+  // Architect Reviewer's section 6 + Gate 2 adjudication surface.
+  "architecture.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Architectural Concerns Mapping", match: "architectural concerns mapping" },
+      { label: "Pattern proposals", match: "pattern proposal" },
+      { label: "Risks", match: "risk" },
+      { label: "Gate decisions", match: "decision" },
+      { label: "Sign-off", match: "sign-off" }
+    ]
+  },
+  // Spec Author's draft-spec narrative.
+  "feature-spec.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Summary", match: "summary" },
+      { label: "Stories", match: "stories" },
+      { label: "Out of scope", match: "out of scope" },
+      { label: "Open questions", match: "open question" }
+    ]
+  },
+  // Feature Requester's original ask: the Spec Author's INPUT. Free-form
+  // narrative; only H1 + non-empty body required. Never overwritten.
+  "feature-request.md": { kind: "md-narrative" },
+  // Spec Author's sprint backlog proposal: the artifact the sprint PLAN gate
+  // locks. Free-form narrative; H1 + non-empty body required.
+  "feature-proposals.md": { kind: "md-narrative" },
+  // Product Owner's project-level overview (replaces the old spec.md).
+  "product-overview.md": { kind: "md-narrative" },
+  // HIL non-functional-requirements brief (the Architect's intake). The HIL
+  // states required NFRs (each with a stable R<n> id), preferences, and
+  // out-of-bounds items. The Architect must carry every Required item into
+  // architecture.json via a matching brief_ref (see checkNfrCoverage). Project
+  // -level (.tdd/nfrs.md) or per-feature (.tdd/features/<F>/nfrs.md).
+  "nfrs.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Required", match: "required" },
+      { label: "Preferences", match: "preference" },
+      { label: "Out of bounds", match: "out of bounds" }
+    ]
+  },
+  // HIL design brief (UI projects): the human's reference sites + what to take
+  // from each. The design analogue of product-overview.md, the source the UX
+  // Designer teases the design out of. A brief with no references is
+  // meaningless, so a
+  // References section is the one hard requirement.
+  "design-brief.md": {
+    kind: "md-sections",
+    sections: [{ label: "References", match: "reference" }]
+  },
+  // UX Designer narrative artifacts (UI projects only). design-guide.md
+  // sections are grounded in a real shipped guide (partner-asset-tracker
+  // STYLE_GUIDE.md); design-guide.json carries the machine-checkable tokens.
+  "design-guide.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Design Philosophy", match: "philosophy" },
+      { label: "UI Framework", match: "framework" },
+      { label: "Typography", match: "typography" },
+      { label: "Color Palette", match: "color" },
+      { label: "Spacing", match: "spacing" },
+      { label: "Components", match: "components" },
+      { label: "User Feedback Principles", match: "feedback" }
+    ]
+  },
+  "ia.md": {
+    kind: "md-sections",
+    sections: [
+      { label: "Screens", match: "screens" },
+      { label: "Navigation", match: "navigation" },
+      { label: "User flows", match: "flow" }
+    ]
+  },
+  // Beck-style ordered list rendered from test-list.json.
+  "test-list.md": { kind: "test-list-md" }
+};
+function checkArtifactConformance(name, content) {
+  const spec = ARTIFACT_FORMATS[name];
+  if (spec === void 0) return { ok: true };
+  switch (spec.kind) {
+    case "json-schema":
+      return checkJsonSchema(name, content, spec.schema);
+    case "md-narrative":
+      return finalize(checkMdNarrative(name, content));
+    case "md-sections":
+      return finalize(checkMdSections(name, content, spec.sections));
+    case "test-list-md":
+      return finalize(checkTestListMd(content));
+  }
+}
+function finalize(violations) {
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkJsonSchema(name, content, schemaFile) {
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    return { ok: false, violations: [`${name} is not valid JSON: ${cause}`] };
+  }
+  const validate = getValidator(schemaFile);
+  if (validate(parsed)) return { ok: true };
+  return { ok: false, violations: formatSchemaErrors(validate).map((e) => `${name} ${e}`) };
+}
+var HEADING_RE = /^(#{1,6})\s+(.*\S)\s*$/;
+function parseHeadings(content) {
+  const out = [];
+  for (const line of content.split("\n")) {
+    const m = HEADING_RE.exec(line);
+    if (m) out.push({ level: m[1].length, text: m[2] });
+  }
+  return out;
+}
+function hasH1(headings) {
+  return headings.some((h) => h.level === 1);
+}
+function hasBody(content) {
+  return content.split("\n").some((line) => {
+    const t = line.trim();
+    return t.length > 0 && !HEADING_RE.test(line);
+  });
+}
+function checkMdNarrative(name, content) {
+  const violations = [];
+  const headings = parseHeadings(content);
+  if (!hasH1(headings)) violations.push(`${name} has no H1 title`);
+  if (!hasBody(content)) violations.push(`${name} has an empty body (title only)`);
+  return violations;
+}
+function checkMdSections(name, content, sections) {
+  const violations = [];
+  const headings = parseHeadings(content);
+  if (!hasH1(headings)) violations.push(`${name} has no H1 title`);
+  const headingText = headings.map((h) => h.text.toLowerCase());
+  for (const section of sections) {
+    if (!headingText.some((t) => t.includes(section.match))) {
+      violations.push(`${name} missing required section: ${section.label}`);
+    }
+  }
+  return violations;
+}
+var TEST_ITEM_RE = /^\s*[-*]\s*\[[ xX]?\]\s*T\d/;
+var AC_REF_RE = /\bAC\s*\d/i;
+function checkTestListMd(content) {
+  const violations = [];
+  const headings = parseHeadings(content);
+  if (!hasH1(headings)) violations.push("test-list.md has no H1 title");
+  if (!/ordered for\s*:/i.test(content)) {
+    violations.push('test-list.md missing "Ordered for:" ordering rationale');
+  }
+  if (!headings.some((h) => h.text.toLowerCase().includes("deferred"))) {
+    violations.push("test-list.md missing required section: Deferred / skipped");
+  }
+  for (const line of content.split("\n")) {
+    if (TEST_ITEM_RE.test(line) && !AC_REF_RE.test(line)) {
+      violations.push(`test-list.md has a test item with no AC reference (orphan): ${line.trim()}`);
+    }
+  }
+  return violations;
+}
+function checkJsdomBrowserAssertion(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
+  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkTestlistWholeTableAggregate(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const wholeTableCount = /\bcount\s*\(\s*\*\s*\)|\b(?:count|number|total|tally)\s+of\s+(?:all\s+)?(?:the\s+)?rows\b|\brow\s+count\b|\btotal\s+(?:number\s+of\s+)?rows\b|\breturns?\s+(?:exactly\s+)?the\s+count\b/i;
+  const scopedOrDelta = /\bseed(?:s|ed|ing)?\b|\bdelta\b|\bbefore\b.*\bafter\b|\bafter\b.*\bbefore\b|count_before|count_after|probe_before|\bsubtract|\bminus\b|\bits own rows\b|\bthe (?:test'?s?|rows? it) (?:own|seed)|\bscoped to\b|\bmarker\b|\buuid\b|\bunique (?:sku|key)\b|\bper-test\b/i;
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (wholeTableCount.test(desc) && !scopedOrDelta.test(desc)) {
+      violations.push(
+        `test item ${it.id ?? "?"} asserts an ABSOLUTE whole-table aggregate ("${desc.slice(0, 90)}\u2026") with no own-row scoping and no delta \u2014 it passes on the isolated experiment branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
+function checkDbDesign(dbDesignJson2, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0).map((i) => i.id);
+  if (invariants.length === 0) return { ok: true };
+  if (dbDesignJson2 === void 0) {
+    return {
+      ok: false,
+      violations: [
+        `feature declares persistence_invariants but has no db-design.json (the DBA runs after the architect and before the test-strategist to realize the schema; declare >=1 table and realize every persistence_invariant; see db-design.schema.json + agents/dba.md)`
+      ]
+    };
+  }
+  let db;
+  try {
+    db = JSON.parse(dbDesignJson2);
+  } catch (err) {
+    return { ok: false, violations: [`db-design.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  if (!Array.isArray(db.tables) || db.tables.length === 0) {
+    violations.push(
+      `db-design.json declares no tables[] but the feature declares persistence_invariants (it persists data, so it has >=1 table; see agents/dba.md)`
+    );
+  }
+  const realized = new Set((db.realizes_invariants ?? []).filter((x) => typeof x === "string" && x.length > 0));
+  const uncovered = invariants.filter((id) => !realized.has(id));
+  if (uncovered.length > 0) {
+    violations.push(
+      `persistence_invariant(s) not realized by db-design.json realizes_invariants[]: ${uncovered.join(", ")} (the DBA must physically realize every invariant the architect declared \u2013 a table/column/constraint/index \u2013 and list its id here; see agents/dba.md)`
+    );
+  }
+  return violations.length > 0 ? { ok: false, violations } : { ok: true };
+}
+function canonicalArtifactName(path14) {
+  const base = (0, import_path9.basename)(path14);
+  if ((0, import_path9.basename)((0, import_path9.dirname)(path14)) === "acs" && base.endsWith(".json")) return "ac.json";
+  return base;
+}
+function checkClientKindLayerCoherence(testListJson, acLayerById) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    const layer = acLayerById[it.ac_id];
+    if (layer !== void 0 && layer !== "E2E") {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
 
 // consort/test-list/test-list.ts
+init_cjs_shims();
+
+// consort/architecture/architecture-conventions.ts
+init_cjs_shims();
+var import_fs9 = require("fs");
+function readConventions(consortDir) {
+  const f = architectureConventionsJson(consortDir);
+  if (!(0, import_fs9.existsSync)(f)) return void 0;
+  try {
+    return JSON.parse((0, import_fs9.readFileSync)(f, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+
+// consort/gates/registered-breakdown.ts
 init_cjs_shims();
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
 var import_node_child_process4 = require("child_process");
 var import_node_crypto2 = require("crypto");
-var import_node_fs3 = require("fs");
-var import_node_path5 = require("path");
+var import_node_fs4 = require("fs");
+var import_node_path6 = require("path");
 var import_lakebase6 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -8668,8 +9181,8 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs2 = require("fs");
-var import_node_path4 = require("path");
+var import_node_fs3 = require("fs");
+var import_node_path5 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
@@ -8683,9 +9196,9 @@ function deployEvidencePasses(e) {
   return e !== void 0 && e.reachable === true && e.verify?.passed === true;
 }
 function readDeployEvidence(file) {
-  if (!(0, import_node_fs3.existsSync)(file)) return void 0;
+  if (!(0, import_node_fs4.existsSync)(file)) return void 0;
   try {
-    return JSON.parse((0, import_node_fs3.readFileSync)(file, "utf8"));
+    return JSON.parse((0, import_node_fs4.readFileSync)(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -8693,22 +9206,22 @@ function readDeployEvidence(file) {
 function storyDeployVerified(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return false;
-  return deployEvidencePasses(readDeployEvidence((0, import_node_path5.join)(fdir, "stories", storyId, "deploy-evidence.json")));
+  return deployEvidencePasses(readDeployEvidence((0, import_node_path6.join)(fdir, "stories", storyId, "deploy-evidence.json")));
 }
 
 // consort/architecture/design-adherence.ts
 init_cjs_shims();
-var import_node_fs4 = require("fs");
-var import_node_path6 = require("path");
+var import_node_fs5 = require("fs");
+var import_node_path7 = require("path");
 
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs4 = __toESM(require("fs"), 1);
 var import_node_child_process5 = require("child_process");
 var import_node_crypto3 = require("crypto");
-var import_node_path7 = require("path");
+var import_node_path8 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
-  return (0, import_node_path7.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -8744,7 +9257,7 @@ function hasPendingSupersession(tdd, feature, story, ac) {
   return s !== void 0 && s.refactored !== true;
 }
 function greenFailureJson(tdd, feature, story, ac) {
-  return (0, import_node_path7.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -8772,7 +9285,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs4.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState((0, import_node_path7.dirname)(tdd));
+      const cur = computeTreeState((0, import_node_path8.dirname)(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs4.rmSync(file, { force: true });
         return void 0;
@@ -8804,13 +9317,13 @@ function specDefectFromRole(tdd, feature, story, ac) {
   return gf?.specDefect?.fromRole ?? "test-strategist";
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return (0, import_node_path7.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs5 = require("fs");
-var import_node_path8 = require("path");
+var import_node_fs6 = require("fs");
+var import_node_path9 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -8848,19 +9361,19 @@ function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs6 = require("fs");
-var import_node_path9 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path10 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process6 = require("child_process");
-var import_node_fs7 = require("fs");
-var import_node_path10 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path11 = require("path");
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs8 = require("fs");
-var import_node_path11 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path12 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
@@ -8868,27 +9381,27 @@ var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!(0, import_fs6.existsSync)(file)) {
+  if (!(0, import_fs10.existsSync)(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
+  const data = JSON.parse((0, import_fs10.readFileSync)(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyCycles(consortDir, featureId, story) {
-  const base = (0, import_path6.join)(cyclesRootDir(consortDir), featureId, story);
-  if (!(0, import_fs6.existsSync)(base)) return [];
+  const base = (0, import_path10.join)(cyclesRootDir(consortDir), featureId, story);
+  if (!(0, import_fs10.existsSync)(base)) return [];
   const out = [];
-  for (const acDir of (0, import_fs6.readdirSync)(base)) {
-    const dir = (0, import_path6.join)(base, acDir);
+  for (const acDir of (0, import_fs10.readdirSync)(base)) {
+    const dir = (0, import_path10.join)(base, acDir);
     try {
-      if (!(0, import_fs6.statSync)(dir).isDirectory()) continue;
+      if (!(0, import_fs10.statSync)(dir).isDirectory()) continue;
     } catch {
       continue;
     }
-    for (const f of (0, import_fs6.readdirSync)(dir)) {
+    for (const f of (0, import_fs10.readdirSync)(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse((0, import_fs6.readFileSync)((0, import_path6.join)(dir, f), "utf8")));
+        out.push(JSON.parse((0, import_fs10.readFileSync)((0, import_path10.join)(dir, f), "utf8")));
       } catch {
       }
     }
@@ -8924,9 +9437,9 @@ function nextPendingBatch(consortDir, featureId, story, cap = DEFAULT_BATCH_CAP)
 }
 function readReview(consortDir, featureId, story, acId) {
   const f = acReviewJson(consortDir, featureId, story, acId);
-  if (!(0, import_fs6.existsSync)(f)) return {};
+  if (!(0, import_fs10.existsSync)(f)) return {};
   try {
-    return JSON.parse((0, import_fs6.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs10.readFileSync)(f, "utf8"));
   } catch {
     return {};
   }
@@ -8976,9 +9489,9 @@ function firstRefactorPendingAc(consortDir, featureId, story) {
 }
 function readStoryReview(consortDir, featureId, story) {
   const f = storyReviewJson(consortDir, featureId, story);
-  if (!(0, import_fs6.existsSync)(f)) return {};
+  if (!(0, import_fs10.existsSync)(f)) return {};
   try {
-    return JSON.parse((0, import_fs6.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs10.readFileSync)(f, "utf8"));
   } catch {
     return {};
   }
@@ -9120,8 +9633,8 @@ function firstPendingEscalation(consortDir, featureId) {
 
 // consort/orchestrator/steps/assert-route-satisfiable.ts
 init_cjs_shims();
-var import_node_fs9 = require("fs");
-var import_node_path12 = require("path");
+var import_node_fs10 = require("fs");
+var import_node_path13 = require("path");
 
 // consort/orchestrator/steps/turn-events.ts
 init_cjs_shims();
@@ -9178,17 +9691,17 @@ function eventArtifactPath(event, action, ctx) {
   const f = ctx.featureId;
   switch (scope) {
     case "feature":
-      return (0, import_node_path12.join)(featuresDir(ctx.consortDir), f, spec.filename);
+      return (0, import_node_path13.join)(featuresDir(ctx.consortDir), f, spec.filename);
     case "story":
-      if (!story) return (0, import_node_path12.join)(ctx.consortDir, spec.filename);
-      return (0, import_node_path12.join)(cyclesRootDir(ctx.consortDir), f, story, spec.filename);
+      if (!story) return (0, import_node_path13.join)(ctx.consortDir, spec.filename);
+      return (0, import_node_path13.join)(cyclesRootDir(ctx.consortDir), f, story, spec.filename);
     case "ac":
     case "cycle":
-      if (!story || !ac) return (0, import_node_path12.join)(ctx.consortDir, spec.filename);
-      return (0, import_node_path12.join)(cycleDir(ctx.consortDir, f, story, ac), spec.filename);
+      if (!story || !ac) return (0, import_node_path13.join)(ctx.consortDir, spec.filename);
+      return (0, import_node_path13.join)(cycleDir(ctx.consortDir, f, story, ac), spec.filename);
   }
 }
-function assertRouteSatisfiable(action, step, ctx, exists = import_node_fs9.existsSync) {
+function assertRouteSatisfiable(action, step, ctx, exists = import_node_fs10.existsSync) {
   for (const event of step.requiresEvents(action)) {
     const p = eventArtifactPath(event, action, ctx);
     if (!exists(p)) throw new RouteContractError(action, event, p);
@@ -9197,7 +9710,7 @@ function assertRouteSatisfiable(action, step, ctx, exists = import_node_fs9.exis
 
 // consort/orchestrator/status/next.ts
 init_cjs_shims();
-var fs19 = __toESM(require("fs"), 1);
+var fs20 = __toESM(require("fs"), 1);
 var path11 = __toESM(require("path"), 1);
 
 // consort/logging/orchestrator-logging.ts
@@ -9504,7 +10017,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto4 = require("crypto");
-var import_node_fs10 = require("fs");
+var import_node_fs11 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -9523,7 +10036,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs10.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs11.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
@@ -9531,100 +10044,6 @@ function storyDesignFingerprint(consortDir, feature, story) {
   } catch {
     return void 0;
   }
-}
-
-// consort/gates/gates.ts
-init_cjs_shims();
-var import_fs7 = require("fs");
-var import_path7 = require("path");
-var GATES_SCHEMA_VERSION = 1;
-var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
-function defaultGatesState(featureId) {
-  return {
-    feature_id: featureId,
-    schema_version: GATES_SCHEMA_VERSION,
-    gates: {
-      spec: { status: "open", history: [] },
-      plan: { status: "open", history: [] },
-      test_list: { status: "open", history: [] },
-      promote: { status: "open", history: [] },
-      deploy: { status: "open", history: [] }
-    }
-  };
-}
-function readGates(featureId, opts = {}) {
-  const consortDir = opts.consortDir ?? resolveConsortDir();
-  const file = gatesFilePath(consortDir, featureId);
-  if (!(0, import_fs7.existsSync)(file)) {
-    return defaultGatesState(featureId);
-  }
-  const raw = (0, import_fs7.readFileSync)(file, "utf8");
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    const cause = err instanceof Error ? err.message : String(err);
-    throw new Error(`gates.json at ${file} is not valid JSON: ${cause}`);
-  }
-  return validateGatesState(parsed, file);
-}
-function gatesFilePath(consortDir, featureId) {
-  return (0, import_path7.join)(requireFeatureDir(consortDir, featureId), "gates.json");
-}
-function validateGatesState(parsed, file) {
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error(`gates.json at ${file} is not an object`);
-  }
-  const obj = parsed;
-  if (typeof obj.feature_id !== "string" || obj.feature_id.length === 0) {
-    throw new Error(`gates.json at ${file}: missing or invalid feature_id`);
-  }
-  if (typeof obj.schema_version !== "number") {
-    throw new Error(`gates.json at ${file}: missing or invalid schema_version`);
-  }
-  if (typeof obj.gates !== "object" || obj.gates === null) {
-    throw new Error(`gates.json at ${file}: missing or invalid gates`);
-  }
-  const gates = obj.gates;
-  const out = {
-    spec: validateGateRecord(gates.spec, "spec", file),
-    plan: validateGateRecord(gates.plan, "plan", file),
-    test_list: validateGateRecord(gates.test_list, "test_list", file),
-    promote: validateGateRecord(gates.promote, "promote", file),
-    // The deploy gate (working-software) was added after the original four.
-    // A gates.json written before it lacks the key, so backfill a default-open
-    // record rather than reject the file (forward-compatible read).
-    deploy: gates.deploy !== void 0 ? validateGateRecord(gates.deploy, "deploy", file) : { status: "open", history: [] }
-  };
-  return {
-    feature_id: obj.feature_id,
-    schema_version: obj.schema_version,
-    gates: out
-  };
-}
-function validateGateRecord(parsed, gateName, file) {
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error(`gates.json at ${file}: gate ${gateName} is not an object`);
-  }
-  const obj = parsed;
-  const status = obj.status;
-  if (typeof status !== "string" || !GATE_STATUSES.includes(status)) {
-    throw new Error(
-      `gates.json at ${file}: gate ${gateName} has invalid status (${String(status)}); expected one of ${GATE_STATUSES.join(", ")}`
-    );
-  }
-  const history = obj.history;
-  if (history !== void 0 && !Array.isArray(history)) {
-    throw new Error(`gates.json at ${file}: gate ${gateName} history must be an array`);
-  }
-  return {
-    status,
-    approver: typeof obj.approver === "string" ? obj.approver : void 0,
-    approved_at: typeof obj.approved_at === "string" ? obj.approved_at : void 0,
-    artifact_hashes: obj.artifact_hashes && typeof obj.artifact_hashes === "object" ? obj.artifact_hashes : void 0,
-    withdrawal_reason: typeof obj.withdrawal_reason === "string" ? obj.withdrawal_reason : void 0,
-    history: history ?? []
-  };
 }
 
 // consort/gates/workflow-phase.ts
@@ -9664,130 +10083,21 @@ function resetStaleTerminalPhase(consortDir) {
   return false;
 }
 
-// consort/config/consort-config-file.ts
-init_cjs_shims();
-var import_fs9 = require("fs");
-var import_path9 = require("path");
-
-// consort/config/agent-models.ts
-init_cjs_shims();
-var import_fs8 = require("fs");
-var import_path8 = require("path");
-var RECOMMENDED_MODELS = {
-  "spec-author": "opus",
-  "architect-reviewer": "opus",
-  dba: "opus",
-  "test-strategist": "sonnet",
-  "ux-designer": "sonnet",
-  navigator: "sonnet",
-  driver: "sonnet",
-  "product-owner": "opus"
-};
-var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
-var AGENT_CONFIG_REL = (0, import_path8.join)(".lakebase", "agent-config.json");
-function readAgentConfig(projectDir) {
-  const p = (0, import_path8.join)(projectDir, AGENT_CONFIG_REL);
-  if (!(0, import_fs8.existsSync)(p)) return void 0;
-  return JSON.parse((0, import_fs8.readFileSync)(p, "utf8"));
-}
-function resolveModelForRole(role, projectDir) {
-  const spawnable = role;
-  const entry = readAgentConfig(projectDir)?.roles?.[spawnable];
-  return entry?.override ?? entry?.recommended ?? RECOMMENDED_MODELS[spawnable] ?? "inherit";
-}
-
-// consort/config/consort-config-file.ts
-var CONSORT_CONFIG_REL = (0, import_path9.join)(".lakebase", "consort-config.json");
-var LEGACY_CONFIG_RELS = [
-  (0, import_path9.join)(".lakebase", "sftdd-config.json"),
-  (0, import_path9.join)(".lakebase", "tdd-config.json")
-];
-var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
-function loadConsortConfig(projectDir) {
-  for (const rel of [CONSORT_CONFIG_REL, ...LEGACY_CONFIG_RELS]) {
-    const f = (0, import_path9.join)(projectDir, rel);
-    if (!(0, import_fs9.existsSync)(f)) continue;
-    try {
-      return JSON.parse((0, import_fs9.readFileSync)(f, "utf8"));
-    } catch {
-      return void 0;
-    }
-  }
-  return void 0;
-}
-function resolveProjectSettings(projectDir) {
-  const file = loadConsortConfig(projectDir);
-  const build = {
-    loopGranularity: file?.build?.loopGranularity ?? "story",
-    batchCap: file?.build?.batchCap,
-    sessionScope: file?.build?.sessionScope ?? "story"
-  };
-  const project = {
-    uiTrack: file?.project?.uiTrack ?? true,
-    // HITL-first: the declared project policy defaults to interactive (a human
-    // approves each gate). Headless (proxy) is a deliberate opt-in, set in the
-    // file or as a RUN-SCOPED --gates override (never persisted by a flag).
-    gates: file?.project?.gates ?? "interactive",
-    deployTarget: file?.project?.deployTarget ?? "local",
-    clientFramework: file?.project?.clientFramework ?? "none",
-    // Legacy projects (scaffolded before language was persisted) resolve to "python" – the
-    // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
-    // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
-    // default only affects config-less/legacy trees.
-    language: file?.project?.language ?? "python"
-  };
-  const plan = { sizing: file?.plan?.sizing ?? true };
-  return { build, plan, project };
-}
-function productDirForLanguage(language) {
-  return language === "nodejs" ? "src" : "app";
-}
-function projectLanguage(projectDir) {
-  return resolveProjectSettings(projectDir).project.language;
-}
-function defaultConsortConfig() {
-  const roles = {};
-  for (const role of ALL_AGENT_ROLES) roles[role] = {};
-  return {
-    version: 1,
-    roles,
-    build: { loopGranularity: "story", batchCap: 3, sessionScope: "story" },
-    plan: { sizing: true },
-    project: { uiTrack: true, gates: "interactive", deployTarget: "local", clientFramework: "none", language: "java" }
-  };
-}
-function writeConsortConfig(projectDir, config, opts) {
-  const f = (0, import_path9.join)(projectDir, CONSORT_CONFIG_REL);
-  if ((0, import_fs9.existsSync)(f) && !opts?.force) return false;
-  (0, import_fs9.mkdirSync)((0, import_path9.dirname)(f), { recursive: true });
-  (0, import_fs9.writeFileSync)(f, JSON.stringify(config, null, 2) + "\n");
-  return true;
-}
-function applyProjectOverrides(projectDir, over) {
-  if (over.deployTarget === void 0 && over.sizing === void 0) return;
-  const cfg = loadConsortConfig(projectDir) ?? defaultConsortConfig();
-  cfg.project = cfg.project ?? {};
-  if (over.deployTarget !== void 0) cfg.project.deployTarget = over.deployTarget;
-  cfg.plan = cfg.plan ?? {};
-  if (over.sizing !== void 0) cfg.plan.sizing = over.sizing;
-  writeConsortConfig(projectDir, cfg, { force: true });
-}
-
 // consort/orchestrator/state/orchestrator-probe.ts
 var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
 // consort/smells/reflection.ts
 init_cjs_shims();
-var import_fs10 = require("fs");
+var import_fs11 = require("fs");
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect"
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
-  if (!(0, import_fs10.existsSync)(p)) return void 0;
+  if (!(0, import_fs11.existsSync)(p)) return void 0;
   try {
-    return JSON.parse((0, import_fs10.readFileSync)(p, "utf8"));
+    return JSON.parse((0, import_fs11.readFileSync)(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -9802,300 +10112,15 @@ var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
 // consort/smells/testlist-conformance.ts
 init_cjs_shims();
-var import_fs11 = require("fs");
-
-// consort/orchestrator/validators/conformance/artifact-conformance.ts
-init_cjs_shims();
-var import_path10 = require("path");
-var ARTIFACT_FORMATS = {
-  "feature-spec.json": { kind: "json-schema", schema: "feature.schema.json" },
-  "story.json": { kind: "json-schema", schema: "story.schema.json" },
-  "ac.json": { kind: "json-schema", schema: "ac.schema.json" },
-  "test-list.json": { kind: "json-schema", schema: "test-list.schema.json" },
-  "plan.json": { kind: "json-schema", schema: "plan.schema.json" },
-  "architecture.json": { kind: "json-schema", schema: "architecture.schema.json" },
-  // DBA's physical schema (tables/DDL + per-story migration plan) that realizes
-  // the architect's persistence_invariants.
-  "db-design.json": { kind: "json-schema", schema: "db-design.schema.json" },
-  "workflow-state.json": { kind: "json-schema", schema: "workflow-state.schema.json" },
-  // Release Engineer's deploy-gate evidence (reachability + feature-verify).
-  "deploy-evidence.json": { kind: "json-schema", schema: "deploy-evidence.schema.json" },
-  // UX Designer (UI projects only): the machine-checkable design tokens.
-  "design-guide.json": { kind: "json-schema", schema: "design-guide.schema.json" },
-  // Architect Reviewer's section 6 + Gate 2 adjudication surface.
-  "architecture.md": {
-    kind: "md-sections",
-    sections: [
-      { label: "Architectural Concerns Mapping", match: "architectural concerns mapping" },
-      { label: "Pattern proposals", match: "pattern proposal" },
-      { label: "Risks", match: "risk" },
-      { label: "Gate decisions", match: "decision" },
-      { label: "Sign-off", match: "sign-off" }
-    ]
-  },
-  // Spec Author's draft-spec narrative.
-  "feature-spec.md": {
-    kind: "md-sections",
-    sections: [
-      { label: "Summary", match: "summary" },
-      { label: "Stories", match: "stories" },
-      { label: "Out of scope", match: "out of scope" },
-      { label: "Open questions", match: "open question" }
-    ]
-  },
-  // Feature Requester's original ask: the Spec Author's INPUT. Free-form
-  // narrative; only H1 + non-empty body required. Never overwritten.
-  "feature-request.md": { kind: "md-narrative" },
-  // Spec Author's sprint backlog proposal: the artifact the sprint PLAN gate
-  // locks. Free-form narrative; H1 + non-empty body required.
-  "feature-proposals.md": { kind: "md-narrative" },
-  // Product Owner's project-level overview (replaces the old spec.md).
-  "product-overview.md": { kind: "md-narrative" },
-  // HIL non-functional-requirements brief (the Architect's intake). The HIL
-  // states required NFRs (each with a stable R<n> id), preferences, and
-  // out-of-bounds items. The Architect must carry every Required item into
-  // architecture.json via a matching brief_ref (see checkNfrCoverage). Project
-  // -level (.tdd/nfrs.md) or per-feature (.tdd/features/<F>/nfrs.md).
-  "nfrs.md": {
-    kind: "md-sections",
-    sections: [
-      { label: "Required", match: "required" },
-      { label: "Preferences", match: "preference" },
-      { label: "Out of bounds", match: "out of bounds" }
-    ]
-  },
-  // HIL design brief (UI projects): the human's reference sites + what to take
-  // from each. The design analogue of product-overview.md, the source the UX
-  // Designer teases the design out of. A brief with no references is
-  // meaningless, so a
-  // References section is the one hard requirement.
-  "design-brief.md": {
-    kind: "md-sections",
-    sections: [{ label: "References", match: "reference" }]
-  },
-  // UX Designer narrative artifacts (UI projects only). design-guide.md
-  // sections are grounded in a real shipped guide (partner-asset-tracker
-  // STYLE_GUIDE.md); design-guide.json carries the machine-checkable tokens.
-  "design-guide.md": {
-    kind: "md-sections",
-    sections: [
-      { label: "Design Philosophy", match: "philosophy" },
-      { label: "UI Framework", match: "framework" },
-      { label: "Typography", match: "typography" },
-      { label: "Color Palette", match: "color" },
-      { label: "Spacing", match: "spacing" },
-      { label: "Components", match: "components" },
-      { label: "User Feedback Principles", match: "feedback" }
-    ]
-  },
-  "ia.md": {
-    kind: "md-sections",
-    sections: [
-      { label: "Screens", match: "screens" },
-      { label: "Navigation", match: "navigation" },
-      { label: "User flows", match: "flow" }
-    ]
-  },
-  // Beck-style ordered list rendered from test-list.json.
-  "test-list.md": { kind: "test-list-md" }
-};
-function checkArtifactConformance(name, content) {
-  const spec = ARTIFACT_FORMATS[name];
-  if (spec === void 0) return { ok: true };
-  switch (spec.kind) {
-    case "json-schema":
-      return checkJsonSchema(name, content, spec.schema);
-    case "md-narrative":
-      return finalize(checkMdNarrative(name, content));
-    case "md-sections":
-      return finalize(checkMdSections(name, content, spec.sections));
-    case "test-list-md":
-      return finalize(checkTestListMd(content));
-  }
-}
-function finalize(violations) {
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
-}
-function checkJsonSchema(name, content, schemaFile) {
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch (err) {
-    const cause = err instanceof Error ? err.message : String(err);
-    return { ok: false, violations: [`${name} is not valid JSON: ${cause}`] };
-  }
-  const validate = getValidator(schemaFile);
-  if (validate(parsed)) return { ok: true };
-  return { ok: false, violations: formatSchemaErrors(validate).map((e) => `${name} ${e}`) };
-}
-var HEADING_RE = /^(#{1,6})\s+(.*\S)\s*$/;
-function parseHeadings(content) {
-  const out = [];
-  for (const line of content.split("\n")) {
-    const m = HEADING_RE.exec(line);
-    if (m) out.push({ level: m[1].length, text: m[2] });
-  }
-  return out;
-}
-function hasH1(headings) {
-  return headings.some((h) => h.level === 1);
-}
-function hasBody(content) {
-  return content.split("\n").some((line) => {
-    const t = line.trim();
-    return t.length > 0 && !HEADING_RE.test(line);
-  });
-}
-function checkMdNarrative(name, content) {
-  const violations = [];
-  const headings = parseHeadings(content);
-  if (!hasH1(headings)) violations.push(`${name} has no H1 title`);
-  if (!hasBody(content)) violations.push(`${name} has an empty body (title only)`);
-  return violations;
-}
-function checkMdSections(name, content, sections) {
-  const violations = [];
-  const headings = parseHeadings(content);
-  if (!hasH1(headings)) violations.push(`${name} has no H1 title`);
-  const headingText = headings.map((h) => h.text.toLowerCase());
-  for (const section of sections) {
-    if (!headingText.some((t) => t.includes(section.match))) {
-      violations.push(`${name} missing required section: ${section.label}`);
-    }
-  }
-  return violations;
-}
-var TEST_ITEM_RE = /^\s*[-*]\s*\[[ xX]?\]\s*T\d/;
-var AC_REF_RE = /\bAC\s*\d/i;
-function checkTestListMd(content) {
-  const violations = [];
-  const headings = parseHeadings(content);
-  if (!hasH1(headings)) violations.push("test-list.md has no H1 title");
-  if (!/ordered for\s*:/i.test(content)) {
-    violations.push('test-list.md missing "Ordered for:" ordering rationale');
-  }
-  if (!headings.some((h) => h.text.toLowerCase().includes("deferred"))) {
-    violations.push("test-list.md missing required section: Deferred / skipped");
-  }
-  for (const line of content.split("\n")) {
-    if (TEST_ITEM_RE.test(line) && !AC_REF_RE.test(line)) {
-      violations.push(`test-list.md has a test item with no AC reference (orphan): ${line.trim()}`);
-    }
-  }
-  return violations;
-}
-function checkJsdomBrowserAssertion(testListJson) {
-  let tl;
-  try {
-    tl = JSON.parse(testListJson);
-  } catch (err) {
-    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
-  }
-  const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
-  const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
-  const violations = [];
-  for (const it of tl.items ?? []) {
-    if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
-      violations.push(
-        `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
-      );
-    }
-  }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
-}
-function checkTestlistWholeTableAggregate(testListJson) {
-  let tl;
-  try {
-    tl = JSON.parse(testListJson);
-  } catch (err) {
-    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
-  }
-  const wholeTableCount = /\bcount\s*\(\s*\*\s*\)|\b(?:count|number|total|tally)\s+of\s+(?:all\s+)?(?:the\s+)?rows\b|\brow\s+count\b|\btotal\s+(?:number\s+of\s+)?rows\b|\breturns?\s+(?:exactly\s+)?the\s+count\b/i;
-  const scopedOrDelta = /\bseed(?:s|ed|ing)?\b|\bdelta\b|\bbefore\b.*\bafter\b|\bafter\b.*\bbefore\b|count_before|count_after|probe_before|\bsubtract|\bminus\b|\bits own rows\b|\bthe (?:test'?s?|rows? it) (?:own|seed)|\bscoped to\b|\bmarker\b|\buuid\b|\bunique (?:sku|key)\b|\bper-test\b/i;
-  const violations = [];
-  for (const it of tl.items ?? []) {
-    const desc = it.description ?? "";
-    if (wholeTableCount.test(desc) && !scopedOrDelta.test(desc)) {
-      violations.push(
-        `test item ${it.id ?? "?"} asserts an ABSOLUTE whole-table aggregate ("${desc.slice(0, 90)}\u2026") with no own-row scoping and no delta \u2014 it passes on the isolated experiment branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total`
-      );
-    }
-  }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
-}
-function checkDbDesign(dbDesignJson2, architectureJson2) {
-  let arch;
-  try {
-    arch = JSON.parse(architectureJson2);
-  } catch {
-    return { ok: true };
-  }
-  if (arch.service_backed !== true) return { ok: true };
-  const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0).map((i) => i.id);
-  if (invariants.length === 0) return { ok: true };
-  if (dbDesignJson2 === void 0) {
-    return {
-      ok: false,
-      violations: [
-        `feature declares persistence_invariants but has no db-design.json (the DBA runs after the architect and before the test-strategist to realize the schema; declare >=1 table and realize every persistence_invariant; see db-design.schema.json + agents/dba.md)`
-      ]
-    };
-  }
-  let db;
-  try {
-    db = JSON.parse(dbDesignJson2);
-  } catch (err) {
-    return { ok: false, violations: [`db-design.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
-  }
-  const violations = [];
-  if (!Array.isArray(db.tables) || db.tables.length === 0) {
-    violations.push(
-      `db-design.json declares no tables[] but the feature declares persistence_invariants (it persists data, so it has >=1 table; see agents/dba.md)`
-    );
-  }
-  const realized = new Set((db.realizes_invariants ?? []).filter((x) => typeof x === "string" && x.length > 0));
-  const uncovered = invariants.filter((id) => !realized.has(id));
-  if (uncovered.length > 0) {
-    violations.push(
-      `persistence_invariant(s) not realized by db-design.json realizes_invariants[]: ${uncovered.join(", ")} (the DBA must physically realize every invariant the architect declared \u2013 a table/column/constraint/index \u2013 and list its id here; see agents/dba.md)`
-    );
-  }
-  return violations.length > 0 ? { ok: false, violations } : { ok: true };
-}
-function canonicalArtifactName(path14) {
-  const base = (0, import_path10.basename)(path14);
-  if ((0, import_path10.basename)((0, import_path10.dirname)(path14)) === "acs" && base.endsWith(".json")) return "ac.json";
-  return base;
-}
-function checkClientKindLayerCoherence(testListJson, acLayerById) {
-  let tl;
-  try {
-    tl = JSON.parse(testListJson);
-  } catch (err) {
-    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
-  }
-  const violations = [];
-  for (const it of tl.items ?? []) {
-    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
-    const layer = acLayerById[it.ac_id];
-    if (layer !== void 0 && layer !== "E2E") {
-      violations.push(
-        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
-      );
-    }
-  }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
-}
-
-// consort/smells/testlist-conformance.ts
+var import_fs12 = require("fs");
 function storyAcLayers(consortDir, featureId, story) {
   const acLayerById = {};
   const dir = acsDir(consortDir, featureId, story);
-  if ((0, import_fs11.existsSync)(dir)) {
-    for (const f of (0, import_fs11.readdirSync)(dir)) {
+  if ((0, import_fs12.existsSync)(dir)) {
+    for (const f of (0, import_fs12.readdirSync)(dir)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse((0, import_fs11.readFileSync)(`${dir}/${f}`, "utf8")).layer;
+        const layer = JSON.parse((0, import_fs12.readFileSync)(`${dir}/${f}`, "utf8")).layer;
         if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
       } catch {
       }
@@ -10105,10 +10130,10 @@ function storyAcLayers(consortDir, featureId, story) {
 }
 function testlistConformanceReason(consortDir, featureId, story) {
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (!(0, import_fs11.existsSync)(tlPath)) return null;
+  if (!(0, import_fs12.existsSync)(tlPath)) return null;
   let testListJson;
   try {
-    testListJson = (0, import_fs11.readFileSync)(tlPath, "utf8");
+    testListJson = (0, import_fs12.readFileSync)(tlPath, "utf8");
   } catch {
     return null;
   }
@@ -10129,15 +10154,15 @@ function testListConforms(consortDir, featureId, story) {
 
 // consort/architecture/architecture-canon.ts
 init_cjs_shims();
-var import_fs12 = require("fs");
+var import_fs13 = require("fs");
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
 function readCanon(consortDir) {
   const f = architectureCanonJson(consortDir);
-  if (!(0, import_fs12.existsSync)(f)) return void 0;
+  if (!(0, import_fs13.existsSync)(f)) return void 0;
   try {
-    return JSON.parse((0, import_fs12.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs13.readFileSync)(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -10496,33 +10521,12 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
 // consort/gates/design-spec-gate.ts
 init_cjs_shims();
 
-// consort/gates/registered-breakdown.ts
-init_cjs_shims();
-
 // consort/experiment/spike-carryforward.ts
 init_cjs_shims();
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
 var import_fs14 = require("fs");
-
-// consort/gates/gate-conformance-guard.ts
-init_cjs_shims();
-var import_node_fs11 = require("fs");
-var import_node_path13 = require("path");
-
-// consort/architecture/architecture-conventions.ts
-init_cjs_shims();
-var import_fs13 = require("fs");
-function readConventions(consortDir) {
-  const f = architectureConventionsJson(consortDir);
-  if (!(0, import_fs13.existsSync)(f)) return void 0;
-  try {
-    return JSON.parse((0, import_fs13.readFileSync)(f, "utf8"));
-  } catch {
-    return void 0;
-  }
-}
 
 // consort/logging/gate-decision-log.ts
 init_cjs_shims();
@@ -10596,8 +10600,8 @@ function deliveredFeatures(consortDir) {
 
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
-var fs18 = __toESM(require("fs"), 1);
-var import_node_path27 = require("path");
+var fs19 = __toESM(require("fs"), 1);
+var import_node_path28 = require("path");
 
 // consort/orchestrator/steps/manifest.ts
 init_cjs_shims();
@@ -10766,6 +10770,9 @@ var architect_reviewer_default = {
   inputs: [
     { id: "acs", source: "story:acs", description: "The story's acceptance criteria the Architect annotates with per-AC architectural_notes." },
     { id: "nfrs", source: "feature:nfrs.md", description: "The PO's non-functional requirements the architecture must cover (nfrs.md)." }
+  ],
+  preconditions: [
+    { id: "cross-story", kind: "cross-story-context", position: "append", description: "The feature's OTHER stories' ACs + existing open_decisions + mandated not-null fields, injected so the Architect records/reconciles open_decisions against the siblings deterministically , NOT a shell-out to consort-cross-story-context. Empty for a lone-story feature." }
   ],
   outputs: [
     { id: "architecture", filename: "architecture.json", channel: "artifact", validator: "nonEmptyFile", description: "The feature architecture (service_backed, layers, persistence_invariants). The post-turn verify-artifact asserts architecture.json exists under the resolved root." },
@@ -10995,6 +11002,9 @@ var navigator_reflect_default = {
   match: { kind: "invoke-role", role: "navigator", buildMode: "reflect" },
   inputs: [
     { id: "acs", source: "story:acs", description: "The story's acceptance criteria (acs/ dir) , the core design artifact the reflect turn critiques for a spec-level blocking smell before build. story:acs resolves to storyResolved/acs, always present by reflect time (spec-author authors it before the architect/dba/test-strategist/reflect sequence); the prior 'story:design' had no writer/resolver and failed loud." }
+  ],
+  preconditions: [
+    { id: "cross-story", kind: "cross-story-context", position: "append", description: "The feature's OTHER stories' ACs + the architecture's open_decisions + its mandated not-null persistence fields, injected so the reflect turn's cross-story checks (#8 contradiction with a gated sibling AC; #9 a mandated field no sibling submit AC supplies) ride the prompt deterministically , NOT a shell-out to consort-cross-story-context. Empty for a lone-story feature." }
   ],
   outputs: [],
   routing: {
@@ -14145,6 +14155,74 @@ function renderTestAnalystRoster(ctx, opts = {}) {
 `;
 }
 
+// consort/orchestrator/steps/cross-story-context.ts
+init_cjs_shims();
+var fs18 = __toESM(require("fs"), 1);
+var import_node_path27 = require("path");
+var str = (v) => typeof v === "string" && v.length > 0 ? v : void 0;
+function buildCrossStoryContext(consortDir, feature, currentStory) {
+  const ctx = { current_story: currentStory, sibling_stories: [], open_decisions: [], required_persistence_fields: [] };
+  const currentDir = (() => {
+    try {
+      return (0, import_node_path27.basename)(storyResolved(consortDir, feature, currentStory));
+    } catch {
+      return currentStory;
+    }
+  })();
+  let dirs = [];
+  try {
+    dirs = fs18.readdirSync(storiesDir(consortDir, feature));
+  } catch {
+    dirs = [];
+  }
+  for (const dir of dirs.sort()) {
+    if (dir === currentDir) continue;
+    const acs = [];
+    for (const acId of storyAcIds(consortDir, feature, dir)) {
+      try {
+        const ac = JSON.parse(fs18.readFileSync(acJson(consortDir, feature, dir, acId), "utf8"));
+        acs.push({
+          ac_id: acId,
+          status: str(ac.status),
+          layer: str(ac.layer),
+          given: str(ac.given),
+          when: str(ac.when),
+          then: str(ac.then),
+          architectural_notes: str(ac.architectural_notes)
+        });
+      } catch {
+      }
+    }
+    if (acs.length) ctx.sibling_stories.push({ story: dir, acs });
+  }
+  try {
+    const arch = JSON.parse(fs18.readFileSync(architectureJson(consortDir, feature), "utf8"));
+    if (Array.isArray(arch.open_decisions)) {
+      ctx.open_decisions = arch.open_decisions.filter((d) => !!d && typeof d.id === "string").map((d) => ({
+        id: String(d.id),
+        question: str(d.question),
+        decision_status: str(d.decision_status),
+        resolved_by_story: str(d.resolved_by_story),
+        resolution: str(d.resolution)
+      }));
+    }
+    if (Array.isArray(arch.persistence_invariants)) {
+      ctx.required_persistence_fields = arch.persistence_invariants.filter(
+        (p) => !!p && typeof p.id === "string" && p.type === "not_null"
+      ).map((p) => ({ invariant_id: String(p.id), table: str(p.table), brief: str(p.brief) }));
+    }
+  } catch {
+  }
+  return ctx;
+}
+function renderCrossStoryContextBlock(consortDir, feature, story) {
+  const ctx = buildCrossStoryContext(consortDir, feature, story);
+  if (ctx.sibling_stories.length === 0 && ctx.open_decisions.length === 0 && ctx.required_persistence_fields.length === 0) {
+    return "";
+  }
+  return "CROSS-STORY CONTEXT \u2014 this story is NOT reviewed in isolation. The feature's OTHER stories' ACs, the architecture's open_decisions, and its mandated (not-null) persistence fields are below; use them for the cross-story checks (an AC contradicting a gated sibling AC; a mandated field no sibling submit AC supplies). This IS that context \u2014 do not run `consort-cross-story-context` yourself.\n\n" + JSON.stringify(ctx, null, 2);
+}
+
 // consort/orchestrator/build/preconditions.ts
 function buildGreenFailureAdvisory(consortDir, featureId, story, ac) {
   const gfAssess = ac ? readGreenFailure(consortDir, featureId, story, ac) : void 0;
@@ -14172,6 +14250,11 @@ var PRECONDITION_PREPARERS = {
     skipTestLoop: !!(ctx.options && ctx.options.skipTestLoop)
   }),
   "green-failure-advisory": (ctx) => buildGreenFailureAdvisory(ctx.consortDir, ctx.featureId, ctx.story, ctx.ac),
+  // Cross-story review context (sibling ACs + open_decisions + mandated not-null fields), injected
+  // into the design-lane reviewers (navigator reflect, architect-reviewer) so the cross-story checks
+  // ride the prompt deterministically instead of depending on the agent shelling out to
+  // `consort-cross-story-context`. Empty for a lone-story feature.
+  "cross-story-context": (ctx) => renderCrossStoryContextBlock(ctx.consortDir, ctx.featureId, ctx.story),
   // The test-analyst roster: project the ENABLED test-analyst catalogue (client gated on the
   // project's uiTrack) into the test-strategist supervisor's turn so it Task-spawns one analyst
   // subagent per enabled kind. Reads project.uiTrack from projectDir; absent => true.
@@ -14207,7 +14290,7 @@ function uiTrackBuild(root) {
 var AGENT_TERSE_SUFFIX = ` Be terse: produce ONLY the required artifact file(s) on disk, then stop with at most a one-line confirmation. Do NOT print a plan, a summary of what you did, rationale, tables, or restate the artifacts to stdout, that output is wasted latency. The files on disk are the deliverable, not your prose.`;
 function storyStubScope(consortDir, featureId, storyId) {
   try {
-    const stub = JSON.parse(fs18.readFileSync(storyJson(consortDir, featureId, storyId), "utf8"));
+    const stub = JSON.parse(fs19.readFileSync(storyJson(consortDir, featureId, storyId), "utf8"));
     const parts = [
       stub.asA ? `As a ${stub.asA}` : "",
       stub.iWantTo ? `I want to ${stub.iWantTo}` : "",
@@ -14296,11 +14379,11 @@ Apply that fix to the PRODUCTION code. Do NOT edit prior tests to force this reg
 function consumeHandback(action, featureId, consortDir) {
   const story = "story" in action ? action.story : void 0;
   const file = handbackFile(consortDir, featureId, action.role, story);
-  if (!fs18.existsSync(file)) return "";
+  if (!fs19.existsSync(file)) return "";
   let note = "";
   try {
-    note = fs18.readFileSync(file, "utf8").trim();
-    fs18.rmSync(file, { force: true });
+    note = fs19.readFileSync(file, "utf8").trim();
+    fs19.rmSync(file, { force: true });
   } catch {
     return "";
   }
@@ -14336,8 +14419,8 @@ function roleTaskBody(action, featureId, uiTrack, consortDir, build, omit) {
       case "estimate-committed":
         return `Estimate the sprint's COMMITTED feature(s) with a t-shirt size (XS/S/M/L/XL). Read each committed feature's request at ${root}/features/<F>/feature-request.md, then ADD one entry per committed feature to ${root}/planning/estimates.json keyed by its REAL feature id (e.g. "F1-stock-visibility", not a "FP" candidate id), each {"feature_id":"<F>","size":"<XS|S|M|L|XL>","rationale":"<why>"}. KEEP every existing estimate already in the file (merge, do not overwrite the candidate sizes). This is the size sync-backlog stamps into the per-sprint backlog, so the committed backlog shows real sizing.`;
       case "intake": {
-        const seedIntakeDir = (0, import_node_path27.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
-        const groundingClause = fs18.existsSync(seedIntakeDir) ? `Ground the shape in the canon above and the StockFlow worked example at ${seedIntakeDir} (READ the files there to learn the format + level of detail; never copy it verbatim).` : `Ground the shape in the canon above (the StockFlow worked example under the kit's examples/first-project/stockflow-seed/intake/ is unavailable here \u2013 rely on the canon).`;
+        const seedIntakeDir = (0, import_node_path28.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
+        const groundingClause = fs19.existsSync(seedIntakeDir) ? `Ground the shape in the canon above and the StockFlow worked example at ${seedIntakeDir} (READ the files there to learn the format + level of detail; never copy it verbatim).` : `Ground the shape in the canon above (the StockFlow worked example under the kit's examples/first-project/stockflow-seed/intake/ is unavailable here \u2013 rely on the canon).`;
         return `Author the project intake for the Product Owner, DRAFTING each artifact FRESH from the human's answers at ${root}/intake/answers.md (the interview responses; if absent or thin, draft only what the stated intent supports \u2013 never invent). WRITE:
   - ${root}/product-overview.md \u2013 who it's for, its purpose, how it grows, what to see after each sprint (H1 + body, no implementation detail).
   - ${root}/nfrs.md \u2013 apply @software-design-principles + @architectural-design-principles: walk architecture layering / performance / scalability / security / observability / operability / resilience; record each as a '## Required' item with a stable R<n> id, plus '## Preferences' and '## Out of bounds'.
@@ -14367,7 +14450,7 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
       const dbaAcScope = dbaAcIds.length ? ` Story ${s}'s ACs are: ${dbaAcIds.join(", ")}.` : "";
       let contract = "";
       try {
-        const arch = JSON.parse(fs18.readFileSync(architectureJson(consortDir, featureId), "utf8"));
+        const arch = JSON.parse(fs19.readFileSync(architectureJson(consortDir, featureId), "utf8"));
         if (arch.service_backed === true) {
           const inv = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string");
           const invList = inv.length ? ` Realize EVERY declared persistence_invariant and list its id in realizes_invariants[]: ${inv.map((i) => `${i.id}${i.type ? ` [${i.type}${i.table ? ` on ${i.table}` : ""}]` : ""}${i.brief ? ` (${i.brief})` : ""}`).join("; ")}.` : "";
@@ -14387,7 +14470,7 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
       const acScope = acIds.length ? ` The story's ACs are: ${acIds.join(", ")}. Map every test's ac_id to one of these EXACT ids (verbatim, never a bare slug or an invented id), and cover each AC at least once.` : "";
       let dbScope = "";
       try {
-        const arch = JSON.parse(fs18.readFileSync(architectureJson(consortDir, featureId), "utf8"));
+        const arch = JSON.parse(fs19.readFileSync(architectureJson(consortDir, featureId), "utf8"));
         if (arch.service_backed === true) {
           const inv = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string");
           const list = inv.length ? ` The declared persistence invariants are: ${inv.map((i) => `${i.id}${i.brief ? ` (${i.brief})` : ""}`).join("; ")}.` : "";
@@ -14411,11 +14494,11 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
 `;
         return advisory + `ASSESS a failed honest-GREEN verify for AC ${action.ac} in story ${s}. The Driver made the current test pass, but the full-suite verify against the running app FAILED, some OTHER test(s) now fail.
 ` + scanDirective + `   ./scripts/lk consort-cycle flag-superseded --feature ${featureId} --story ${s} --ac ${action.ac} --reason "<new AC + what changed>" --test <path_or_nodeid> [--test ...] --tdd-dir ${consortDir}
-   The flag-superseded command writes ${(0, import_node_path27.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
+   The flag-superseded command writes ${(0, import_node_path28.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
 (b) If instead the failure is a GENUINE REGRESSION (the AC does NOT intend to change that behavior; the Driver's code is wrong), record your ROOT-CAUSE diagnosis so it travels to the Driver / the human instead of being lost. When the Driver can fix it, ALSO give a concrete repair directive (this routes a bounded Driver repair turn):
    ./scripts/lk consort-cycle assess-regression --feature ${featureId} --story ${s} --ac ${action.ac} --diagnosis "<the WHY: which behavior broke + the root cause>" [--fix "<what the Driver should change>"] --tdd-dir ${consortDir}
    Include --fix ONLY when the fix is clear + within the Driver's reach (e.g. a wrong default, a missing filter, an off-by-one); OMIT --fix when it needs a human / a design or spec change (the orchestration then escalates carrying your diagnosis).
-CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path27.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
+CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path28.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
 Flag ONLY tests the new AC truly supersedes; never flag a test just to make a red go away. For a regression, always record a diagnosis (+ fix when driver-fixable) \u2013 never nothing.`;
       }
       if (action.buildMode === "assess-deploy") {
@@ -14873,8 +14956,8 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
       return deployGateCmds(f, cfg, deployTarget);
     case "deploy-verify-reverify":
       const markerFile = featureDeployReverifyMarkerJson(cfg.consortDir, f);
-      fs18.mkdirSync((0, import_node_path27.dirname)(markerFile), { recursive: true });
-      fs18.writeFileSync(markerFile, JSON.stringify({ routed_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
+      fs19.mkdirSync((0, import_node_path28.dirname)(markerFile), { recursive: true });
+      fs19.writeFileSync(markerFile, JSON.stringify({ routed_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
       return deployGateCmds(f, cfg, deployTarget);
     case "approve-deploy-gate":
       return [
@@ -15060,8 +15143,8 @@ function buildDriveEffects(cfg) {
     onHandback(handoff, detail) {
       const file = handbackFile(cfg.consortDir, cfg.featureId, handoff.responder, handoff.story);
       try {
-        fs18.mkdirSync((0, import_node_path27.dirname)(file), { recursive: true });
-        fs18.writeFileSync(file, `${detail}
+        fs19.mkdirSync((0, import_node_path28.dirname)(file), { recursive: true });
+        fs19.writeFileSync(file, `${detail}
 `, "utf8");
       } catch {
       }
@@ -15341,7 +15424,7 @@ function buildStoryReview(consortDir, featureId) {
   const storiesDir2 = path11.join(fdir, "stories");
   let ids;
   try {
-    ids = fs19.readdirSync(storiesDir2, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+    ids = fs20.readdirSync(storiesDir2, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
   } catch {
     return {};
   }
@@ -15350,7 +15433,7 @@ function buildStoryReview(consortDir, featureId) {
     const sdir = path11.join(storiesDir2, story);
     let items = [];
     try {
-      items = JSON.parse(fs19.readFileSync(path11.join(sdir, "test-list-per-story.json"), "utf8")).items ?? [];
+      items = JSON.parse(fs20.readFileSync(path11.join(sdir, "test-list-per-story.json"), "utf8")).items ?? [];
     } catch {
     }
     const apiOnly = items.length > 0 && !items.some((i) => typeof i.kind === "string" && UI_TEST_KINDS.has(i.kind));
@@ -15372,8 +15455,8 @@ function readFeatureNextSnapshot(consortDir, featureId, projectDir, ctx = {}) {
 function emitNextJson(consortDir, featureId, projectDir, ctx = {}) {
   try {
     const snap = readFeatureNextSnapshot(consortDir, featureId, projectDir, ctx);
-    fs19.mkdirSync(consortDir, { recursive: true });
-    fs19.writeFileSync(path11.join(consortDir, "next.json"), JSON.stringify(snap, null, 2) + "\n", "utf8");
+    fs20.mkdirSync(consortDir, { recursive: true });
+    fs20.writeFileSync(path11.join(consortDir, "next.json"), JSON.stringify(snap, null, 2) + "\n", "utf8");
   } catch {
   }
 }
@@ -15384,11 +15467,6 @@ init_cjs_shims();
 // consort/gates/sprint-gates.ts
 init_cjs_shims();
 var import_node_fs23 = require("fs");
-
-// consort/gates/gate-hash.ts
-init_cjs_shims();
-
-// consort/gates/sprint-gates.ts
 var SPRINT_GATES_SCHEMA_VERSION = 1;
 function defaultSprintGatesState(sprint) {
   return {
@@ -15420,9 +15498,9 @@ function readSprintGates(sprint, opts = {}) {
 }
 
 // consort/intake/orchestrator-sprint.ts
-var fs20 = __toESM(require("fs"), 1);
+var fs21 = __toESM(require("fs"), 1);
 function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
-  const proposed = fs20.existsSync(featureProposalsMd(consortDir));
+  const proposed = fs21.existsSync(featureProposalsMd(consortDir));
   const estimated = hasEstimates(consortDir);
   const backlog = readBacklog(consortDir, sprint).features;
   const requested = readRequested(consortDir, sprint);
@@ -15760,7 +15838,7 @@ init_cjs_shims();
 var import_node_child_process12 = require("child_process");
 var import_node_fs24 = require("fs");
 var import_node_os = require("os");
-var import_node_path28 = require("path");
+var import_node_path29 = require("path");
 var import_node_crypto8 = require("crypto");
 
 // consort/telemetry/spans.ts
@@ -15827,7 +15905,7 @@ function detachedHttpSink(opts) {
     deliver(payload) {
       try {
         const body = payload.spans.map((s) => JSON.stringify(wireLine(s, payload))).join("\n") + "\n";
-        const file = (0, import_node_path28.join)(dir, `consort-telemetry-${(0, import_node_crypto8.randomUUID)()}.ndjson`);
+        const file = (0, import_node_path29.join)(dir, `consort-telemetry-${(0, import_node_crypto8.randomUUID)()}.ndjson`);
         (0, import_node_fs24.writeFileSync)(file, body);
         const child = spawnImpl(process.execPath, [opts.senderJs, file, url, opts.token ?? ""], {
           detached: true,
@@ -15915,7 +15993,7 @@ var TelemetryEmitter = class {
 
 // consort/telemetry/home-config.ts
 init_cjs_shims();
-var fs21 = __toESM(require("fs"), 1);
+var fs22 = __toESM(require("fs"), 1);
 var os = __toESM(require("os"), 1);
 var path12 = __toESM(require("path"), 1);
 var import_node_crypto9 = require("crypto");
@@ -15941,7 +16019,7 @@ function telemetryConfigFile(deps = {}) {
 function readStoredConfig(deps = {}) {
   let raw;
   try {
-    raw = fs21.readFileSync(telemetryConfigFile(deps), "utf8");
+    raw = fs22.readFileSync(telemetryConfigFile(deps), "utf8");
   } catch {
     return null;
   }
@@ -15961,8 +16039,8 @@ function readStoredConfig(deps = {}) {
 function writeStoredConfig(cfg, deps = {}) {
   try {
     const dir = telemetryConfigDir(deps);
-    fs21.mkdirSync(dir, { recursive: true });
-    fs21.writeFileSync(telemetryConfigFile(deps), JSON.stringify(cfg, null, 2) + "\n", "utf8");
+    fs22.mkdirSync(dir, { recursive: true });
+    fs22.writeFileSync(telemetryConfigFile(deps), JSON.stringify(cfg, null, 2) + "\n", "utf8");
     return { cfg, persisted: true };
   } catch (err) {
     telemetryDebug("could not persist telemetry config (degrading to an ephemeral id for this run)", err);
@@ -16538,14 +16616,14 @@ function makeConfirmContinue() {
       const poll = setInterval(() => {
         let raw;
         try {
-          raw = fs22.readFileSync(answerFile, "utf8");
+          raw = fs23.readFileSync(answerFile, "utf8");
         } catch {
           return;
         }
         const a = raw.trim().toLowerCase();
         if (a === "") return;
         try {
-          fs22.rmSync(answerFile, { force: true });
+          fs23.rmSync(answerFile, { force: true });
         } catch {
         }
         if (a === "y" || a === "yes") {
@@ -16765,14 +16843,14 @@ function reportGate(gate, ctx = {}) {
 }
 function featuresWithAuthoredRequest(consortDir) {
   try {
-    return fs22.readdirSync(featuresDir(consortDir), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).filter((id) => hasFeatureRequest(consortDir, id)).sort();
+    return fs23.readdirSync(featuresDir(consortDir), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).filter((id) => hasFeatureRequest(consortDir, id)).sort();
   } catch {
     return [];
   }
 }
 function proposedFeatureIds(consortDir) {
   try {
-    const md = fs22.readFileSync(featureProposalsMd(consortDir), "utf8");
+    const md = fs23.readFileSync(featureProposalsMd(consortDir), "utf8");
     return [...md.matchAll(/^##\s+(F\S+)/gm)].map((m) => m[1]);
   } catch {
     return [];
@@ -16858,11 +16936,11 @@ Place each under the project's \`.consort/\`; I will read them as the proposal +
       outcome: { validated: true }
     });
     const intakeCopyDir = path13.join(recordDirForKickoff, "intake");
-    const submitted = resolved.filter((c) => fs22.existsSync(c.abs)).map((c) => {
+    const submitted = resolved.filter((c) => fs23.existsSync(c.abs)).map((c) => {
       const dest = path13.join(intakeCopyDir, c.rel);
       try {
-        fs22.mkdirSync(path13.dirname(dest), { recursive: true });
-        fs22.copyFileSync(c.abs, dest);
+        fs23.mkdirSync(path13.dirname(dest), { recursive: true });
+        fs23.copyFileSync(c.abs, dest);
       } catch {
       }
       return { artifact: c.artifact, contentRef: path13.join("intake", c.rel), ...c.binary ? { binary: true } : {} };
@@ -17028,8 +17106,8 @@ Place each under the project's \`.consort/\`; I will read them as the proposal +
             deriveSprintPlanningState(consortDir, sprint, { skipSizing }),
             { sprint, version: kitVersion2() }
           );
-          fs22.mkdirSync(consortDir, { recursive: true });
-          fs22.writeFileSync(path13.join(consortDir, "next.json"), JSON.stringify(snap, null, 2) + "\n", "utf8");
+          fs23.mkdirSync(consortDir, { recursive: true });
+          fs23.writeFileSync(path13.join(consortDir, "next.json"), JSON.stringify(snap, null, 2) + "\n", "utf8");
         }
       } catch {
       }
@@ -17069,7 +17147,7 @@ function drivePidPath(consortDir) {
 }
 function writeDrivePid(consortDir) {
   try {
-    fs22.writeFileSync(
+    fs23.writeFileSync(
       drivePidPath(consortDir),
       JSON.stringify({ pid: process.pid, started_at: (/* @__PURE__ */ new Date()).toISOString() }) + "\n"
     );
@@ -17086,23 +17164,23 @@ function pidAlive(pid) {
 }
 async function stopDrive(consortDir) {
   const file = drivePidPath(consortDir);
-  if (!fs22.existsSync(file)) {
+  if (!fs23.existsSync(file)) {
     process.stderr.write("consort-drive: no drive.pid found (no drive running here, or it predates pid recording).\n");
     return 1;
   }
   let pid;
   try {
-    pid = JSON.parse(fs22.readFileSync(file, "utf8")).pid;
+    pid = JSON.parse(fs23.readFileSync(file, "utf8")).pid;
   } catch {
     pid = void 0;
   }
   if (typeof pid !== "number" || !pidAlive(pid)) {
-    fs22.rmSync(file, { force: true });
+    fs23.rmSync(file, { force: true });
     process.stdout.write("consort-drive: no live drive (stale drive.pid removed).\n");
     return 0;
   }
   await new Promise((resolve4) => (0, import_tree_kill.default)(pid, "SIGTERM", () => resolve4()));
-  fs22.rmSync(file, { force: true });
+  fs23.rmSync(file, { force: true });
   process.stdout.write(`consort-drive: stopped the drive at pid ${pid} (whole process tree, executor children included).
 `);
   return 0;
@@ -17129,12 +17207,12 @@ function relaunchDetached2(rawArgv, consortDir) {
 }
 function teeStderrToDriveLog(consortDir) {
   try {
-    fs22.mkdirSync(consortDir, { recursive: true });
-    const fd = fs22.openSync(path13.join(consortDir, "drive-live.log"), "w");
+    fs23.mkdirSync(consortDir, { recursive: true });
+    const fd = fs23.openSync(path13.join(consortDir, "drive-live.log"), "w");
     const orig = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk, enc, cb) => {
       try {
-        fs22.writeSync(fd, chunk);
+        fs23.writeSync(fd, chunk);
       } catch {
       }
       return orig(chunk, enc, cb);

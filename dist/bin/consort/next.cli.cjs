@@ -7121,6 +7121,9 @@ var architect_reviewer_default = {
     { id: "acs", source: "story:acs", description: "The story's acceptance criteria the Architect annotates with per-AC architectural_notes." },
     { id: "nfrs", source: "feature:nfrs.md", description: "The PO's non-functional requirements the architecture must cover (nfrs.md)." }
   ],
+  preconditions: [
+    { id: "cross-story", kind: "cross-story-context", position: "append", description: "The feature's OTHER stories' ACs + existing open_decisions + mandated not-null fields, injected so the Architect records/reconciles open_decisions against the siblings deterministically , NOT a shell-out to consort-cross-story-context. Empty for a lone-story feature." }
+  ],
   outputs: [
     { id: "architecture", filename: "architecture.json", channel: "artifact", validator: "nonEmptyFile", description: "The feature architecture (service_backed, layers, persistence_invariants). The post-turn verify-artifact asserts architecture.json exists under the resolved root." },
     { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "architectReviewerLoggedAuthoring", description: "The Architect Reviewer's structured log of the per-AC notes + architecture.json it authored." }
@@ -7349,6 +7352,9 @@ var navigator_reflect_default = {
   match: { kind: "invoke-role", role: "navigator", buildMode: "reflect" },
   inputs: [
     { id: "acs", source: "story:acs", description: "The story's acceptance criteria (acs/ dir) , the core design artifact the reflect turn critiques for a spec-level blocking smell before build. story:acs resolves to storyResolved/acs, always present by reflect time (spec-author authors it before the architect/dba/test-strategist/reflect sequence); the prior 'story:design' had no writer/resolver and failed loud." }
+  ],
+  preconditions: [
+    { id: "cross-story", kind: "cross-story-context", position: "append", description: "The feature's OTHER stories' ACs + the architecture's open_decisions + its mandated not-null persistence fields, injected so the reflect turn's cross-story checks (#8 contradiction with a gated sibling AC; #9 a mandated field no sibling submit AC supplies) ride the prompt deterministically , NOT a shell-out to consort-cross-story-context. Empty for a lone-story feature." }
   ],
   outputs: [],
   routing: {
@@ -7772,8 +7778,8 @@ function resolveConsortSettings(inputs) {
 
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
-var fs17 = __toESM(require("fs"), 1);
-var import_node_path26 = require("path");
+var fs18 = __toESM(require("fs"), 1);
+var import_node_path27 = require("path");
 
 // consort/orchestrator/drive/orchestrator-drive.ts
 init_cjs_shims();
@@ -8798,18 +8804,129 @@ function coveredTestIds(c) {
 
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
-var import_fs5 = require("fs");
-var import_path6 = require("path");
+var import_fs6 = require("fs");
+var import_path7 = require("path");
+
+// consort/gates/verify-gate-integrity.ts
+init_cjs_shims();
+
+// consort/gates/gate-hash.ts
+init_cjs_shims();
+
+// consort/gates/gates.ts
+init_cjs_shims();
+var import_fs4 = require("fs");
+var import_path5 = require("path");
+var GATES_SCHEMA_VERSION = 1;
+var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
+function defaultGatesState(featureId) {
+  return {
+    feature_id: featureId,
+    schema_version: GATES_SCHEMA_VERSION,
+    gates: {
+      spec: { status: "open", history: [] },
+      plan: { status: "open", history: [] },
+      test_list: { status: "open", history: [] },
+      promote: { status: "open", history: [] },
+      deploy: { status: "open", history: [] }
+    }
+  };
+}
+function readGates(featureId, opts = {}) {
+  const consortDir = opts.consortDir ?? resolveConsortDir();
+  const file = gatesFilePath(consortDir, featureId);
+  if (!(0, import_fs4.existsSync)(file)) {
+    return defaultGatesState(featureId);
+  }
+  const raw = (0, import_fs4.readFileSync)(file, "utf8");
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    throw new Error(`gates.json at ${file} is not valid JSON: ${cause}`);
+  }
+  return validateGatesState(parsed, file);
+}
+function gatesFilePath(consortDir, featureId) {
+  return (0, import_path5.join)(requireFeatureDir(consortDir, featureId), "gates.json");
+}
+function validateGatesState(parsed, file) {
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(`gates.json at ${file} is not an object`);
+  }
+  const obj = parsed;
+  if (typeof obj.feature_id !== "string" || obj.feature_id.length === 0) {
+    throw new Error(`gates.json at ${file}: missing or invalid feature_id`);
+  }
+  if (typeof obj.schema_version !== "number") {
+    throw new Error(`gates.json at ${file}: missing or invalid schema_version`);
+  }
+  if (typeof obj.gates !== "object" || obj.gates === null) {
+    throw new Error(`gates.json at ${file}: missing or invalid gates`);
+  }
+  const gates = obj.gates;
+  const out = {
+    spec: validateGateRecord(gates.spec, "spec", file),
+    plan: validateGateRecord(gates.plan, "plan", file),
+    test_list: validateGateRecord(gates.test_list, "test_list", file),
+    promote: validateGateRecord(gates.promote, "promote", file),
+    // The deploy gate (working-software) was added after the original four.
+    // A gates.json written before it lacks the key, so backfill a default-open
+    // record rather than reject the file (forward-compatible read).
+    deploy: gates.deploy !== void 0 ? validateGateRecord(gates.deploy, "deploy", file) : { status: "open", history: [] }
+  };
+  return {
+    feature_id: obj.feature_id,
+    schema_version: obj.schema_version,
+    gates: out
+  };
+}
+function validateGateRecord(parsed, gateName, file) {
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(`gates.json at ${file}: gate ${gateName} is not an object`);
+  }
+  const obj = parsed;
+  const status = obj.status;
+  if (typeof status !== "string" || !GATE_STATUSES.includes(status)) {
+    throw new Error(
+      `gates.json at ${file}: gate ${gateName} has invalid status (${String(status)}); expected one of ${GATE_STATUSES.join(", ")}`
+    );
+  }
+  const history = obj.history;
+  if (history !== void 0 && !Array.isArray(history)) {
+    throw new Error(`gates.json at ${file}: gate ${gateName} history must be an array`);
+  }
+  return {
+    status,
+    approver: typeof obj.approver === "string" ? obj.approver : void 0,
+    approved_at: typeof obj.approved_at === "string" ? obj.approved_at : void 0,
+    artifact_hashes: obj.artifact_hashes && typeof obj.artifact_hashes === "object" ? obj.artifact_hashes : void 0,
+    withdrawal_reason: typeof obj.withdrawal_reason === "string" ? obj.withdrawal_reason : void 0,
+    history: history ?? []
+  };
+}
+
+// consort/gates/gate-conformance-guard.ts
+init_cjs_shims();
+var import_node_fs12 = require("fs");
+var import_node_path14 = require("path");
 
 // consort/test-list/test-list.ts
+init_cjs_shims();
+
+// consort/architecture/architecture-conventions.ts
+init_cjs_shims();
+
+// consort/gates/registered-breakdown.ts
 init_cjs_shims();
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
 var import_node_child_process5 = require("child_process");
 var import_node_crypto4 = require("crypto");
-var import_node_fs13 = require("fs");
-var import_node_path15 = require("path");
+var import_node_fs14 = require("fs");
+var import_node_path16 = require("path");
 var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -8819,9 +8936,9 @@ var fs11 = __toESM(require("fs"), 1);
 
 // consort/smells/smells.ts
 init_cjs_shims();
-var import_fs4 = require("fs");
+var import_fs5 = require("fs");
 var import_crypto = require("crypto");
-var import_path5 = require("path");
+var import_path6 = require("path");
 var SMELL_CATALOG = [
   {
     name: "test-list-drift",
@@ -8999,9 +9116,9 @@ function hasOpenBuildRefactorRoutableSmell(consortDir, story_id) {
   );
 }
 function readSmellsLog(consortDir) {
-  const file = (0, import_path5.join)(consortDir, "smells.json");
-  if (!(0, import_fs4.existsSync)(file)) return { detected: [] };
-  return JSON.parse((0, import_fs4.readFileSync)(file, "utf8"));
+  const file = (0, import_path6.join)(consortDir, "smells.json");
+  if (!(0, import_fs5.existsSync)(file)) return { detected: [] };
+  return JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
 }
 function smellMatches(entry, smell, story_id) {
   if (entry.smell !== smell) return false;
@@ -9031,9 +9148,9 @@ function priorReflectReviseCount(consortDir, story_id) {
 }
 function storyTestListFingerprint(consortDir, featureId, story_id) {
   const f = storyTestListJson(consortDir, featureId, story_id);
-  if (!(0, import_fs4.existsSync)(f)) return "";
+  if (!(0, import_fs5.existsSync)(f)) return "";
   try {
-    return (0, import_crypto.createHash)("sha1").update((0, import_fs4.readFileSync)(f)).digest("hex");
+    return (0, import_crypto.createHash)("sha1").update((0, import_fs5.readFileSync)(f)).digest("hex");
   } catch {
     return "";
   }
@@ -9164,8 +9281,8 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs12 = require("fs");
-var import_node_path14 = require("path");
+var import_node_fs13 = require("fs");
+var import_node_path15 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
@@ -9179,9 +9296,9 @@ function deployEvidencePasses(e) {
   return e !== void 0 && e.reachable === true && e.verify?.passed === true;
 }
 function readDeployEvidence(file) {
-  if (!(0, import_node_fs13.existsSync)(file)) return void 0;
+  if (!(0, import_node_fs14.existsSync)(file)) return void 0;
   try {
-    return JSON.parse((0, import_node_fs13.readFileSync)(file, "utf8"));
+    return JSON.parse((0, import_node_fs14.readFileSync)(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9189,22 +9306,22 @@ function readDeployEvidence(file) {
 function storyDeployVerified(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return false;
-  return deployEvidencePasses(readDeployEvidence((0, import_node_path15.join)(fdir, "stories", storyId, "deploy-evidence.json")));
+  return deployEvidencePasses(readDeployEvidence((0, import_node_path16.join)(fdir, "stories", storyId, "deploy-evidence.json")));
 }
 
 // consort/architecture/design-adherence.ts
 init_cjs_shims();
-var import_node_fs14 = require("fs");
-var import_node_path16 = require("path");
+var import_node_fs15 = require("fs");
+var import_node_path17 = require("path");
 
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs13 = __toESM(require("fs"), 1);
 var import_node_child_process6 = require("child_process");
 var import_node_crypto5 = require("crypto");
-var import_node_path17 = require("path");
+var import_node_path18 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
-  return (0, import_node_path17.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return (0, import_node_path18.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -9240,7 +9357,7 @@ function hasPendingSupersession(tdd, feature, story, ac) {
   return s !== void 0 && s.refactored !== true;
 }
 function greenFailureJson(tdd, feature, story, ac) {
-  return (0, import_node_path17.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return (0, import_node_path18.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -9268,7 +9385,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs13.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState((0, import_node_path17.dirname)(tdd));
+      const cur = computeTreeState((0, import_node_path18.dirname)(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs13.rmSync(file, { force: true });
         return void 0;
@@ -9300,13 +9417,13 @@ function specDefectFromRole(tdd, feature, story, ac) {
   return gf?.specDefect?.fromRole ?? "test-strategist";
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return (0, import_node_path17.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return (0, import_node_path18.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs15 = require("fs");
-var import_node_path18 = require("path");
+var import_node_fs16 = require("fs");
+var import_node_path19 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -9344,19 +9461,19 @@ function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs16 = require("fs");
-var import_node_path19 = require("path");
+var import_node_fs17 = require("fs");
+var import_node_path20 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process7 = require("child_process");
-var import_node_fs17 = require("fs");
-var import_node_path20 = require("path");
+var import_node_fs18 = require("fs");
+var import_node_path21 = require("path");
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs18 = require("fs");
-var import_node_path21 = require("path");
+var import_node_fs19 = require("fs");
+var import_node_path22 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
@@ -9364,27 +9481,27 @@ var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!(0, import_fs5.existsSync)(file)) {
+  if (!(0, import_fs6.existsSync)(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse((0, import_fs5.readFileSync)(file, "utf8"));
+  const data = JSON.parse((0, import_fs6.readFileSync)(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyCycles(consortDir, featureId, story) {
-  const base = (0, import_path6.join)(cyclesRootDir(consortDir), featureId, story);
-  if (!(0, import_fs5.existsSync)(base)) return [];
+  const base = (0, import_path7.join)(cyclesRootDir(consortDir), featureId, story);
+  if (!(0, import_fs6.existsSync)(base)) return [];
   const out = [];
-  for (const acDir of (0, import_fs5.readdirSync)(base)) {
-    const dir = (0, import_path6.join)(base, acDir);
+  for (const acDir of (0, import_fs6.readdirSync)(base)) {
+    const dir = (0, import_path7.join)(base, acDir);
     try {
-      if (!(0, import_fs5.statSync)(dir).isDirectory()) continue;
+      if (!(0, import_fs6.statSync)(dir).isDirectory()) continue;
     } catch {
       continue;
     }
-    for (const f of (0, import_fs5.readdirSync)(dir)) {
+    for (const f of (0, import_fs6.readdirSync)(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse((0, import_fs5.readFileSync)((0, import_path6.join)(dir, f), "utf8")));
+        out.push(JSON.parse((0, import_fs6.readFileSync)((0, import_path7.join)(dir, f), "utf8")));
       } catch {
       }
     }
@@ -9411,9 +9528,9 @@ function pendingItemKind(consortDir, featureId, story) {
 }
 function readReview(consortDir, featureId, story, acId) {
   const f = acReviewJson(consortDir, featureId, story, acId);
-  if (!(0, import_fs5.existsSync)(f)) return {};
+  if (!(0, import_fs6.existsSync)(f)) return {};
   try {
-    return JSON.parse((0, import_fs5.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs6.readFileSync)(f, "utf8"));
   } catch {
     return {};
   }
@@ -9463,9 +9580,9 @@ function firstRefactorPendingAc(consortDir, featureId, story) {
 }
 function readStoryReview(consortDir, featureId, story) {
   const f = storyReviewJson(consortDir, featureId, story);
-  if (!(0, import_fs5.existsSync)(f)) return {};
+  if (!(0, import_fs6.existsSync)(f)) return {};
   try {
-    return JSON.parse((0, import_fs5.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs6.readFileSync)(f, "utf8"));
   } catch {
     return {};
   }
@@ -9501,7 +9618,7 @@ function refactorPending(consortDir, featureId, story) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto6 = require("crypto");
-var import_node_fs19 = require("fs");
+var import_node_fs20 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -9520,7 +9637,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs19.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs20.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
@@ -9528,100 +9645,6 @@ function storyDesignFingerprint(consortDir, feature, story) {
   } catch {
     return void 0;
   }
-}
-
-// consort/gates/gates.ts
-init_cjs_shims();
-var import_fs6 = require("fs");
-var import_path7 = require("path");
-var GATES_SCHEMA_VERSION = 1;
-var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
-function defaultGatesState(featureId) {
-  return {
-    feature_id: featureId,
-    schema_version: GATES_SCHEMA_VERSION,
-    gates: {
-      spec: { status: "open", history: [] },
-      plan: { status: "open", history: [] },
-      test_list: { status: "open", history: [] },
-      promote: { status: "open", history: [] },
-      deploy: { status: "open", history: [] }
-    }
-  };
-}
-function readGates(featureId, opts = {}) {
-  const consortDir = opts.consortDir ?? resolveConsortDir();
-  const file = gatesFilePath(consortDir, featureId);
-  if (!(0, import_fs6.existsSync)(file)) {
-    return defaultGatesState(featureId);
-  }
-  const raw = (0, import_fs6.readFileSync)(file, "utf8");
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    const cause = err instanceof Error ? err.message : String(err);
-    throw new Error(`gates.json at ${file} is not valid JSON: ${cause}`);
-  }
-  return validateGatesState(parsed, file);
-}
-function gatesFilePath(consortDir, featureId) {
-  return (0, import_path7.join)(requireFeatureDir(consortDir, featureId), "gates.json");
-}
-function validateGatesState(parsed, file) {
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error(`gates.json at ${file} is not an object`);
-  }
-  const obj = parsed;
-  if (typeof obj.feature_id !== "string" || obj.feature_id.length === 0) {
-    throw new Error(`gates.json at ${file}: missing or invalid feature_id`);
-  }
-  if (typeof obj.schema_version !== "number") {
-    throw new Error(`gates.json at ${file}: missing or invalid schema_version`);
-  }
-  if (typeof obj.gates !== "object" || obj.gates === null) {
-    throw new Error(`gates.json at ${file}: missing or invalid gates`);
-  }
-  const gates = obj.gates;
-  const out = {
-    spec: validateGateRecord(gates.spec, "spec", file),
-    plan: validateGateRecord(gates.plan, "plan", file),
-    test_list: validateGateRecord(gates.test_list, "test_list", file),
-    promote: validateGateRecord(gates.promote, "promote", file),
-    // The deploy gate (working-software) was added after the original four.
-    // A gates.json written before it lacks the key, so backfill a default-open
-    // record rather than reject the file (forward-compatible read).
-    deploy: gates.deploy !== void 0 ? validateGateRecord(gates.deploy, "deploy", file) : { status: "open", history: [] }
-  };
-  return {
-    feature_id: obj.feature_id,
-    schema_version: obj.schema_version,
-    gates: out
-  };
-}
-function validateGateRecord(parsed, gateName, file) {
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error(`gates.json at ${file}: gate ${gateName} is not an object`);
-  }
-  const obj = parsed;
-  const status = obj.status;
-  if (typeof status !== "string" || !GATE_STATUSES.includes(status)) {
-    throw new Error(
-      `gates.json at ${file}: gate ${gateName} has invalid status (${String(status)}); expected one of ${GATE_STATUSES.join(", ")}`
-    );
-  }
-  const history = obj.history;
-  if (history !== void 0 && !Array.isArray(history)) {
-    throw new Error(`gates.json at ${file}: gate ${gateName} history must be an array`);
-  }
-  return {
-    status,
-    approver: typeof obj.approver === "string" ? obj.approver : void 0,
-    approved_at: typeof obj.approved_at === "string" ? obj.approved_at : void 0,
-    artifact_hashes: obj.artifact_hashes && typeof obj.artifact_hashes === "object" ? obj.artifact_hashes : void 0,
-    withdrawal_reason: typeof obj.withdrawal_reason === "string" ? obj.withdrawal_reason : void 0,
-    history: history ?? []
-  };
 }
 
 // consort/orchestrator/state/orchestrator-probe.ts
@@ -10063,17 +10086,6 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
 init_cjs_shims();
 var import_fs10 = require("fs");
 
-// consort/gates/gate-conformance-guard.ts
-init_cjs_shims();
-var import_node_fs20 = require("fs");
-var import_node_path22 = require("path");
-
-// consort/architecture/architecture-conventions.ts
-init_cjs_shims();
-
-// consort/gates/registered-breakdown.ts
-init_cjs_shims();
-
 // consort/logging/gate-decision-log.ts
 init_cjs_shims();
 
@@ -10202,6 +10214,11 @@ var TEST_ANALYST_CATALOGUE = {
   }
 };
 
+// consort/orchestrator/steps/cross-story-context.ts
+init_cjs_shims();
+var fs17 = __toESM(require("fs"), 1);
+var import_node_path26 = require("path");
+
 // consort/orchestrator/drive/orchestrator-effects.ts
 var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
 function readDriveStateFromDisk(consortDir, featureId, projectDir, opts = {}) {
@@ -10223,11 +10240,6 @@ init_cjs_shims();
 // consort/gates/sprint-gates.ts
 init_cjs_shims();
 var import_node_fs23 = require("fs");
-
-// consort/gates/gate-hash.ts
-init_cjs_shims();
-
-// consort/gates/sprint-gates.ts
 var SPRINT_GATES_SCHEMA_VERSION = 1;
 function defaultSprintGatesState(sprint) {
   return {
@@ -10259,9 +10271,9 @@ function readSprintGates(sprint, opts = {}) {
 }
 
 // consort/intake/orchestrator-sprint.ts
-var fs18 = __toESM(require("fs"), 1);
+var fs19 = __toESM(require("fs"), 1);
 function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
-  const proposed = fs18.existsSync(featureProposalsMd(consortDir));
+  const proposed = fs19.existsSync(featureProposalsMd(consortDir));
   const estimated = hasEstimates(consortDir);
   const backlog = readBacklog(consortDir, sprint).features;
   const requested = readRequested(consortDir, sprint);
@@ -10287,7 +10299,7 @@ function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
 
 // consort/orchestrator/status/next.ts
 init_cjs_shims();
-var fs19 = __toESM(require("fs"), 1);
+var fs20 = __toESM(require("fs"), 1);
 var path11 = __toESM(require("path"), 1);
 function resumeCommand(ctx) {
   return ctx.sprint && !ctx.featureId ? { bin: "consort-drive", args: ["--sprint", ctx.sprint] } : { bin: "consort-drive", args: ["--feature", ctx.featureId ?? "<feature-id>"] };
@@ -10560,7 +10572,7 @@ function buildStoryReview(consortDir, featureId) {
   const storiesDir2 = path11.join(fdir, "stories");
   let ids;
   try {
-    ids = fs19.readdirSync(storiesDir2, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+    ids = fs20.readdirSync(storiesDir2, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
   } catch {
     return {};
   }
@@ -10569,7 +10581,7 @@ function buildStoryReview(consortDir, featureId) {
     const sdir = path11.join(storiesDir2, story);
     let items = [];
     try {
-      items = JSON.parse(fs19.readFileSync(path11.join(sdir, "test-list-per-story.json"), "utf8")).items ?? [];
+      items = JSON.parse(fs20.readFileSync(path11.join(sdir, "test-list-per-story.json"), "utf8")).items ?? [];
     } catch {
     }
     const apiOnly = items.length > 0 && !items.some((i) => typeof i.kind === "string" && UI_TEST_KINDS.has(i.kind));

@@ -8180,6 +8180,15 @@ init_esm_shims();
 import { existsSync as existsSync21, readFileSync as readFileSync22, readdirSync as readdirSync14, statSync as statSync9, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12, rmSync as rmSync7 } from "fs";
 import { join as join23, dirname as dirname12 } from "path";
 
+// consort/gates/verify-gate-integrity.ts
+init_esm_shims();
+
+// consort/gates/gate-hash.ts
+init_esm_shims();
+
+// consort/gates/gates.ts
+init_esm_shims();
+
 // consort/deploy/deploy.ts
 init_esm_shims();
 import { execSync, spawn } from "child_process";
