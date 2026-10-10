@@ -19,6 +19,7 @@
 import { buildContextPack } from "./build-context.js";
 import { readGreenFailure } from "../../smells/supersession.js";
 import { renderTestAnalystRoster } from "../../test-list/test-analyst-roster.js";
+import { renderCrossStoryContextBlock } from "../steps/cross-story-context.js";
 import { resolveProjectSettings } from "../../config/consort-config-file.js";
 
 /** The scope a preparer projects against (a pure read of on-disk `.consort`). */
@@ -106,6 +107,11 @@ export const PRECONDITION_PREPARERS: Record<string, PreconditionPreparer> = {
       skipTestLoop: !!(ctx.options && (ctx.options as { skipTestLoop?: boolean }).skipTestLoop),
     }),
   "green-failure-advisory": (ctx) => buildGreenFailureAdvisory(ctx.consortDir, ctx.featureId, ctx.story, ctx.ac),
+  // Cross-story review context (sibling ACs + open_decisions + mandated not-null fields), injected
+  // into the design-lane reviewers (navigator reflect, architect-reviewer) so the cross-story checks
+  // ride the prompt deterministically instead of depending on the agent shelling out to
+  // `consort-cross-story-context`. Empty for a lone-story feature.
+  "cross-story-context": (ctx) => renderCrossStoryContextBlock(ctx.consortDir, ctx.featureId, ctx.story),
   // The test-analyst roster: project the ENABLED test-analyst catalogue (client gated on the
   // project's uiTrack) into the test-strategist supervisor's turn so it Task-spawns one analyst
   // subagent per enabled kind. Reads project.uiTrack from projectDir; absent => true.

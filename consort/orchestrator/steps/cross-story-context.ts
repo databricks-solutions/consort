@@ -140,3 +140,31 @@ export function buildCrossStoryContext(consortDir: string, feature: string, curr
 export function crossStoryContextJson(consortDir: string, feature: string, story: string): string {
   return JSON.stringify(buildCrossStoryContext(consortDir, feature, story), null, 2);
 }
+
+/**
+ * The cross-story review context as a prompt BLOCK, for the orchestrator to INJECT into the
+ * design-lane reviewers (navigator reflect, architect-reviewer) as a precondition. This is the
+ * kit-owned delivery the reviewers can rely on: it rides the prompt deterministically, so the
+ * cross-story checks never depend on the agent shelling out to `consort-cross-story-context`
+ * (a spawned agent's `./scripts/lk` can fail to resolve the bin from its kit cache, which
+ * silently skipped the review). Empty string when there is nothing cross-story to review — no
+ * sibling stories AND no open decisions AND no mandated fields — so a lone-story feature injects
+ * nothing (the preparer contract's "" degrade).
+ */
+export function renderCrossStoryContextBlock(consortDir: string, feature: string, story: string): string {
+  const ctx = buildCrossStoryContext(consortDir, feature, story);
+  if (
+    ctx.sibling_stories.length === 0 &&
+    ctx.open_decisions.length === 0 &&
+    ctx.required_persistence_fields.length === 0
+  ) {
+    return "";
+  }
+  return (
+    "CROSS-STORY CONTEXT — this story is NOT reviewed in isolation. The feature's OTHER stories' ACs, " +
+    "the architecture's open_decisions, and its mandated (not-null) persistence fields are below; use them for " +
+    "the cross-story checks (an AC contradicting a gated sibling AC; a mandated field no sibling submit AC supplies). " +
+    "This IS that context — do not run `consort-cross-story-context` yourself.\n\n" +
+    JSON.stringify(ctx, null, 2)
+  );
+}

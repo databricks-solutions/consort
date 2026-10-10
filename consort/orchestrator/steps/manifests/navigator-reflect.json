@@ -6,6 +6,9 @@
   "inputs": [
     { "id": "acs", "source": "story:acs", "description": "The story's acceptance criteria (acs/ dir) , the core design artifact the reflect turn critiques for a spec-level blocking smell before build. story:acs resolves to storyResolved/acs, always present by reflect time (spec-author authors it before the architect/dba/test-strategist/reflect sequence); the prior 'story:design' had no writer/resolver and failed loud." }
   ],
+  "preconditions": [
+    { "id": "cross-story", "kind": "cross-story-context", "position": "append", "description": "The feature's OTHER stories' ACs + the architecture's open_decisions + its mandated not-null persistence fields, injected so the reflect turn's cross-story checks (#8 contradiction with a gated sibling AC; #9 a mandated field no sibling submit AC supplies) ride the prompt deterministically , NOT a shell-out to consort-cross-story-context. Empty for a lone-story feature." }
+  ],
   "outputs": [],
   "routing": {
     "produced": { "next": "state-derived" }

@@ -170,6 +170,16 @@ describe("every agent manifest dispatches through the executor (A-full #649)", (
             supersededTestRefs: "tests/test_prior.py::test_legacy_shape asserts the dropped `legacy_code`",
           } as never);
         }
+        // The cross-story-context preparer reads the feature's OTHER stories' ACs. Seed a sibling
+        // story with one AC so the block projects non-empty for a turn that declares it.
+        if ((manifest.preconditions ?? []).some((p) => p.kind === "cross-story-context")) {
+          const sibAcs = join(dirname(storyResolved(consortDir, FEATURE, STORY)), "S2-stock-by-location-table", "acs");
+          mkdirSync(sibAcs, { recursive: true });
+          writeFileSync(
+            join(sibAcs, "AC1-table-lists-stock.json"),
+            JSON.stringify({ id: "AC1-table-lists-stock", status: "gated", layer: "api", given: "stock exists at locations", when: "the home table renders", then: "it lists SKU, location, quantity" }) + "\n",
+          );
+        }
 
         const outPaths = outputPathsForAction(action, consortDir, FEATURE);
         const claudeTasks: string[] = [];

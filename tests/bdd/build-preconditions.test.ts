@@ -43,9 +43,11 @@ afterEach(() => rmSync(tdd, { recursive: true, force: true }));
 describe("resolvePreparer / PRECONDITION_PREPARERS", () => {
   it("registers exactly the shipped preparers", () => {
     // context-pack + green-failure-advisory (build self-heal turns) + test-analyst-roster (the
-    // test-strategist supervisor's per-kind analyst roster, gated on the project's uiTrack).
+    // test-strategist supervisor's per-kind analyst roster, gated on the project's uiTrack) +
+    // cross-story-context (design-lane reviewers: navigator reflect + architect-reviewer).
     expect(Object.keys(PRECONDITION_PREPARERS).sort()).toEqual([
       "context-pack",
+      "cross-story-context",
       "green-failure-advisory",
       "test-analyst-roster",
     ]);
