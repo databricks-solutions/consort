@@ -30,7 +30,10 @@ import {
   storyReviewVerdictJson,
   ALL_ARTIFACT_ROOTS,
   designGuideJson,
+  featureResolved,
 } from "../../consort/config/consort-paths.js";
+import { verifyGateIntegrity } from "../../consort/gates/verify-gate-integrity.js";
+import { resolveArtifactInputs } from "../../consort/gates/gate-conformance-guard.js";
 import { markTestItemGreen } from "../test-list/test-list.js";
 import { listExperiments } from "../../consort/experiment/experiment.js";
 import { ensureDeployedAndVerify } from "../deploy/deploy.js";
@@ -376,6 +379,7 @@ export function beginNextPendingCycle(args: CycleRecordArgs): BeginResult {
   const { consortDir, featureId, story } = args;
   const pending = storyTestProgress(consortDir, featureId, story).pending[0];
   if (!pending) return { recorded: false };
+  flagTestListGateDriftIfAny(consortDir, featureId, story); // RED-start gate-integrity backstop
 
   const exp = storyExperiment(consortDir, featureId, story);
   const art = beginCycle({
@@ -430,6 +434,7 @@ export function beginNextPendingBatch(args: CycleRecordArgs, opts?: { cap?: numb
   const cap = opts?.cap && opts.cap > 0 ? opts.cap : DEFAULT_BATCH_CAP;
   const batch = nextPendingBatch(consortDir, featureId, story, cap);
   if (batch.length === 0) return { recorded: false }; // nothing pending / empty-batch guard
+  flagTestListGateDriftIfAny(consortDir, featureId, story); // RED-start gate-integrity backstop
 
   const headLayer = readAcLayer(consortDir, featureId, batch[0].ac_id) ?? "_nolayer";
   const head = batch[0];
@@ -921,6 +926,38 @@ export function firstRefactorPendingAc(consortDir: string, featureId: string, st
  * reviewed_at + refactor_requested. No verdict present => refactor_requested
  * false ("looks good"), so a Navigator that finds nothing to fix never stalls.
  */
+/**
+ * Deterministic gate-integrity backstop, run at RED cycle start. A gated `test_list` is approved
+ * with captured artifact hashes (approve-gate / ADR-0004); if its `test-list.json`/`.md` has been
+ * MUTATED on disk since approval, the build is about to run on a frozen-but-changed list. Verify the
+ * stored hashes against the CURRENT artifacts — reusing the gate's own `resolveArtifactInputs` so the
+ * artifact-name set matches by construction — and on drift flag the blocking `test-list-drift` smell
+ * (idempotent via hasOpenSmell). Skips cleanly when the gate is not approved or the artifacts are not
+ * yet present/conformant. Best-effort: never throws into the cycle-record path. This completes the
+ * previously-inert hash capture (verifyGateIntegrity had no production caller).
+ */
+export function flagTestListGateDriftIfAny(consortDir: string, featureId: string, story: string): void {
+  try {
+    if (hasOpenSmell(consortDir, "test-list-drift", story)) return;
+    const resolved = resolveArtifactInputs("test_list", featureResolved(consortDir, featureId), undefined, consortDir, featureId);
+    if (!("inputs" in resolved)) return; // artifacts absent / non-conformant -> nothing to verify yet
+    let detail: string | undefined;
+    try {
+      const res = verifyGateIntegrity({ consortDir, featureId, gate: "test_list", currentInputs: resolved.inputs });
+      if (res.status === "drift") {
+        detail = `the approved test_list gate's artifact(s) changed on disk since approval: ${res.drifts.map((d) => d.artifact).join(", ")} , the frozen test-list was mutated in-build. Reconcile via the design lane (consort-reopen-story), do not edit the gated list under the build.`;
+      }
+    } catch (e) {
+      // verifyGateIntegrity throws on an artifact-NAME mismatch (an artifact added/removed since
+      // approval) , also post-approval drift of the frozen list.
+      detail = `the approved test_list gate's artifact SET changed since approval (${e instanceof Error ? e.message : String(e)}) , the frozen test-list was mutated in-build.`;
+    }
+    if (detail) writeSmellsLog(consortDir, [{ smell: "test-list-drift", cycle_ids: [], detail, story_id: story }]);
+  } catch {
+    /* best-effort: a gate-integrity scan error must not block recording the RED cycle */
+  }
+}
+
 /**
  * Deterministic UI-track backstop, run at REVIEW (no model cooperation). Scans the
  * project's client/ for a feature page that is unreachable (not routed in App.tsx)

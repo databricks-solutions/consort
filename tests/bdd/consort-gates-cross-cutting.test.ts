@@ -44,6 +44,8 @@ import {
   viewsForAllAcs,
   type TestList,
 } from "../../consort/test-list/test-list";
+import { flagTestListGateDriftIfAny } from "../../consort/pipeline/cycle-record";
+import { featureResolved } from "../../consort/config/consort-paths";
 
 let tdd: string;
 const FEATURE_ID = "F1-checkout";
@@ -308,5 +310,80 @@ describe("gates cross-cutting: test_list gate integrity catches test mutations",
         writeSelectionLog: false,
       })
     ).toThrow(/not open/);
+  });
+});
+
+describe("gates cross-cutting: flagTestListGateDriftIfAny (RED-start gate-integrity backstop)", () => {
+  // Seed the feature so resolveArtifactInputs('test_list') returns {inputs} (not {reason}):
+  // AC1 must exist for the test-list items' ac_id refs to resolve.
+  function seedApprovedTestList(): Record<string, string> {
+    makeFeatureDir();
+    makeAcDir("S1", "AC1");
+    writeMasterTestList(tdd, BASELINE_TEST_LIST);
+    const resolved = resolveArtifactInputs(
+      "test_list",
+      featureResolved(tdd, FEATURE_ID),
+      undefined,
+      tdd,
+      FEATURE_ID
+    );
+    if (!("inputs" in resolved)) {
+      throw new Error(`fixture: resolveArtifactInputs returned non-conformant: ${resolved.reason}`);
+    }
+    approveGate({
+      featureId: FEATURE_ID,
+      gate: "test_list",
+      approver: APPROVER,
+      hitlApproved: true,
+      // Capture the SAME inputs the backstop later re-resolves, so the hashes match at approval.
+      artifactInputs: resolved.inputs,
+      consortDir: tdd,
+      now: FIXED_NOW,
+      writeSelectionLog: false,
+    });
+    return resolved.inputs;
+  }
+
+  it("no-op on an unchanged, approved test_list (no drift smell)", () => {
+    seedApprovedTestList();
+    flagTestListGateDriftIfAny(tdd, FEATURE_ID, "S1");
+    const log = readSmellsLog(tdd);
+    expect(log.detected.some((d) => d.smell === "test-list-drift")).toBe(false);
+  });
+
+  it("flags test-list-drift when the frozen test-list was mutated on disk since approval", () => {
+    seedApprovedTestList();
+    // Mutate the gated list in-build (T2 removed) -> hashes diverge.
+    writeMasterTestList(tdd, {
+      ...BASELINE_TEST_LIST,
+      items: BASELINE_TEST_LIST.items.filter((it) => it.id !== "T2"),
+    });
+    flagTestListGateDriftIfAny(tdd, FEATURE_ID, "S1");
+    const log = readSmellsLog(tdd);
+    const hit = log.detected.find((d) => d.smell === "test-list-drift");
+    expect(hit).toBeDefined();
+    expect(hit?.story_id).toBe("S1");
+  });
+
+  it("is idempotent: a second scan does not re-append the drift smell", () => {
+    seedApprovedTestList();
+    writeMasterTestList(tdd, {
+      ...BASELINE_TEST_LIST,
+      items: BASELINE_TEST_LIST.items.filter((it) => it.id !== "T2"),
+    });
+    flagTestListGateDriftIfAny(tdd, FEATURE_ID, "S1");
+    flagTestListGateDriftIfAny(tdd, FEATURE_ID, "S1");
+    const log = readSmellsLog(tdd);
+    expect(log.detected.filter((d) => d.smell === "test-list-drift")).toHaveLength(1);
+  });
+
+  it("no-op when the test_list gate was never approved (nothing to verify)", () => {
+    makeFeatureDir();
+    makeAcDir("S1", "AC1");
+    writeMasterTestList(tdd, BASELINE_TEST_LIST);
+    // No approveGate call -> no captured hashes.
+    flagTestListGateDriftIfAny(tdd, FEATURE_ID, "S1");
+    const log = readSmellsLog(tdd);
+    expect(log.detected.some((d) => d.smell === "test-list-drift")).toBe(false);
   });
 });
