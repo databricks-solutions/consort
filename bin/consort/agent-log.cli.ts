@@ -275,6 +275,8 @@ export function runAgentLogCli(argv: string[]): number {
       emitAgentLogEvents(inputs, { consortDir: a.consortDir });
       // Mirror any BLOCKING smell in the batch to smells.json, same as single emit.
       for (const inp of inputs) mirrorBlockingSmell(a.consortDir ?? resolveConsortDir(), inp.event, inp.slots ?? {});
+      // Confirm on stderr (stdout clean for piped consumers), same as the single-emit path.
+      process.stderr.write(`logged: ${inputs.length} event(s)\n`);
       return 0;
     } catch (e) {
       process.stderr.write(`consort-log --events: ${(e as Error).message}\n`);
@@ -311,6 +313,10 @@ export function runAgentLogCli(argv: string[]): number {
   try {
     emitAgentLogEvent(input, { consortDir: a.consortDir });
     mirrorBlockingSmell(a.consortDir ?? resolveConsortDir(), input.event, slots);
+    // Confirm the write on stderr (stdout stays clean for `--json`/piped consumers) so a caller —
+    // agent or human — can tell the event recorded. A silent success had agents misread the quiet
+    // as a failed log and re-attempt or flag a false gap.
+    process.stderr.write(`logged: [${input.role}] ${input.event}\n`);
     return 0;
   } catch (e) {
     process.stderr.write(`consort-log: ${(e as Error).message}\n`);

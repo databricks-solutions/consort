@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync, writeFileSync, statSync } from "fs";
 import { join, basename } from "path";
 import type Ajv from "ajv";
-import { getValidator } from "../../consort/orchestrator/validators/schema-loader.js";
+import { getValidator, loadSchema } from "../../consort/orchestrator/validators/schema-loader.js";
 import { requireFeatureDir as findFeatureDir, featuresDir as featuresDirOf, storiesDir } from "../../consort/config/consort-paths.js";
 
 type Phase =
@@ -98,10 +98,15 @@ export function readFeature(consortDir: string, featureId: string): Feature {
   return JSON.parse(readFileSync(jsonPath, "utf8"));
 }
 
-// The properties story.schema.json allows (additionalProperties:false). Kept in
-// sync with the schema by a guard test. A story.json is under features/<F>/, so
-// feature_id is optional; `status` is pipeline runtime state, NOT spec.
-const STORY_ALLOWED_KEYS = new Set(["id", "asA", "iWantTo", "soThat", "acs", "feature_id", "independence", "external_ref"]);
+// The properties story.schema.json allows (additionalProperties:false). DERIVED from the
+// schema itself (single source of truth) so a valid field can never be silently stripped by
+// normalizeStoryJson again — the drift that dropped `requires_e2e` and quietly disabled the
+// E2E spec gate. The schema's `additionalProperties:false` makes its property set the exact
+// allow-list; a guard test asserts the two agree. (`status`, a stray pipeline runtime key, is
+// not a schema property, so it is still stripped — the normalizer's original intent.)
+const STORY_ALLOWED_KEYS = new Set(
+  Object.keys((loadSchema("story.schema.json") as { properties?: Record<string, unknown> }).properties ?? {}),
+);
 
 /**
  * Parse the "As a … / I want … / So that …" narrative out of a story.md. The

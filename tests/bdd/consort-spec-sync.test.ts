@@ -154,6 +154,38 @@ describe("normalizeStoryJson", () => {
     expect(validateSpec(tdd).find((r) => r.file.endsWith("story.json"))).toBeUndefined();
   });
 
+  it("PRESERVES requires_e2e (a valid schema field) — the drift that silently disabled the E2E spec gate", () => {
+    // requires_e2e is HUMAN/PO-authoritative + a real story.schema property; the hand-maintained
+    // allow-list used to omit it, so the normalizer deleted it and requiresE2eReason never fired.
+    writeFileSync(
+      join(storyDir(), "story.json"),
+      JSON.stringify({ id: "S1", asA: "u", iWantTo: "w", soThat: "s", feature_id: "F1", requires_e2e: true, status: "draft" })
+    );
+    normalizeStoryJson(tdd, "F1");
+    const obj = JSON.parse(readFileSync(join(storyDir(), "story.json"), "utf8"));
+    expect(obj.requires_e2e).toBe(true); // kept (schema property)
+    expect(obj.status).toBeUndefined(); // stripped (not a schema property)
+  });
+
+  it("keeps EVERY story.schema property (allow-list is DERIVED from the schema, cannot drift)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const schemaProps = Object.keys(
+      (require("../../consort/config/schemas/story.schema.json") as { properties: Record<string, unknown> }).properties,
+    );
+    const full: Record<string, unknown> = {
+      id: "S1", asA: "u", iWantTo: "w", soThat: "s", feature_id: "F1",
+      acs: ["AC1"], independence: { distinct_from_prior: true, rationale: "x" },
+      requires_e2e: true, external_ref: "JIRA-1",
+    };
+    // The fixture must exercise every schema property (guards against a new schema field going untested).
+    expect(Object.keys(full).sort()).toEqual([...schemaProps].sort());
+    writeFileSync(join(storyDir(), "story.json"), JSON.stringify({ ...full, bogus_runtime_key: "x" }));
+    normalizeStoryJson(tdd, "F1");
+    const obj = JSON.parse(readFileSync(join(storyDir(), "story.json"), "utf8"));
+    for (const k of schemaProps) expect(obj[k]).toBeDefined(); // every schema property survived
+    expect(obj.bogus_runtime_key).toBeUndefined(); // the non-schema key was stripped
+  });
+
   it("does not clobber an existing feature_id when both feature and feature_id are present", () => {
     writeFileSync(
       join(storyDir(), "story.json"),

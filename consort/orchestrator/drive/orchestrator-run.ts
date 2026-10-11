@@ -23,7 +23,7 @@ import {
   type DriveState,
   type WorkflowAction,
 } from "./orchestrator-drive.js";
-import { ExpectationLedger, expectationFor } from "../../gates/orchestrator-expect.js";
+import { ExpectationLedger, expectationFor, ProtocolViolationError, type Handoff } from "../../gates/orchestrator-expect.js";
 import { validateAndBound, type StepContract, type RouteProposal } from "../steps/step-contract.js";
 export { ProtocolViolationError, UnexpectedCallbackError } from "../../gates/orchestrator-expect.js";
 
@@ -245,11 +245,30 @@ export async function runDriver(
     // Reuse the EXISTING revise budget: escalationPreempt returns a revise-route only
     // while the budget has room (priorReviseCount / REFLECT_REVISE_CAP), else raise-to-hil.
     reviseBudgetAvailable: (_p: RouteProposal, s: DriveState) => escalationPreempt(s)?.kind === "revise-route",
-    recordRetry: (completed: WorkflowAction) => {
+    recordRetry: (completed: WorkflowAction, _state: DriveState, reason?: string) => {
       const key = JSON.stringify(completed);
       const attempt = (routerRetries.get(key) ?? 0) + 1;
       if (attempt > 1) {
-        throw new Error(`PROTOCOL VIOLATION: step ${key} emitted "blocked" past its retry budget. Aborting workflow.`);
+        // Budget exhausted. Surface a CLEAN HIL, not a bare abort: throw a ProtocolViolationError
+        // (what this path's own contract promises — see step-contract.ts:433) so drive.cli records an
+        // escalation (`protocol:<responder>`) and exits 3, instead of a plain Error that falls through
+        // to a silent exit-1 with NO escalation record. The detail carries the step's last block reason
+        // (the validator violations), so the operator sees WHY — e.g. the test-strategist authored the
+        // list without the analyst fan-out — and how to resolve it, rather than an unexplained abort.
+        const handoff: Handoff =
+          expectationFor(completed) ??
+          {
+            signature: key,
+            responder: (("role" in completed && typeof (completed as { role?: unknown }).role === "string"
+              ? (completed as { role: string }).role
+              : "orchestrator") as Handoff["responder"]),
+            expected: "a conformant result",
+            satisfiedBy: () => false,
+          };
+        throw new ProtocolViolationError(
+          handoff,
+          `it emitted "blocked" past its retry budget${reason ? ` (${reason})` : ""}`,
+        );
       }
       routerRetries.set(key, attempt);
       return { sanctioned: true };

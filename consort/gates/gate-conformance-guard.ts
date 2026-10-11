@@ -37,6 +37,7 @@ import {
   checkJsdomBrowserAssertion,
 } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { acsForStory } from "../test-list/test-list.js";
+import { enabledAnalysts } from "../test-list/test-analyst-catalogue.js";
 import { featureResolved, architectureJson, dbDesignJson, nfrsMd, featureNfrsMd } from "../../consort/config/consort-paths.js";
 import { readConventions, assertArchitectureConforms } from "../architecture/architecture-conventions.js";
 import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "./registered-breakdown.js";
@@ -426,6 +427,102 @@ function fitnessSingularCoverageReason(consortDir: string, featureId: string, te
   if (arch === undefined) return null;
   const r = checkFitnessSingularCoverage(testListJson, arch);
   return r.ok ? null : `singular fitness coverage failed: ${r.violations.join("; ")}`;
+}
+
+/**
+ * PURE fan-out check: given the raw agent-log text + the enabled analyst kinds, return the kinds that
+ * have NO `test-analyst:<kind>` dispatch reasoning event from the test-strategist anywhere in the log.
+ * Exported so it is directly runnable against a real run's `.consort/agent-log.jsonl` (live check) and
+ * unit-testable. Reads the WHOLE (accumulated, persisted) log, which is what makes it idempotent-safe:
+ * a proper fan-out logged at any point satisfies it forever, so a resume/no-op re-run never regresses
+ * it; only a test-list that was NEVER fanned out (solo-authored) leaves a kind unmatched.
+ */
+export function missingAnalystDispatchKinds(logText: string, enabledKinds: string[]): string[] {
+  const messages: string[] = [];
+  for (const line of logText.split("\n").map((l) => l.trim()).filter(Boolean)) {
+    try {
+      const o = JSON.parse(line) as { role?: string; message?: string };
+      if (o.role === "test-strategist" && typeof o.message === "string") messages.push(o.message);
+    } catch {
+      /* skip malformed */
+    }
+  }
+  return enabledKinds.filter((k) => !messages.some((m) => m.includes(`test-analyst:${k}`)));
+}
+
+/**
+ * test-strategist FAN-OUT provenance (spec-gate condition, reads the PERSISTED agent-log). The Test
+ * Strategist is a SUPERVISOR that must spawn one per-kind test-analyst subagent and reconcile their
+ * slices, NOT author the test list solo. The roster prompt mandates a `test-analyst:<kind>` dispatch
+ * reasoning event per analyst; this blocks the spec gate when the feature has a test-list but the log
+ * carries NO dispatch event for some ENABLED analyst (client only when uiTrack). Runs at the GATE (not
+ * as a meta-channel OUTPUT validator — those resolve to a path that is not the persisted log, so the
+ * executor skips them: the no-op that let a solo-authored S1 reach the gate). Null when no test-list
+ * yet (test-strategist has not run) or every enabled analyst was dispatched. NOTE: feature-level — one
+ * dispatch per kind across the feature satisfies it; perfect per-story accounting would need the
+ * dispatch token to carry the story (a follow-up), but this catches the proven failure (a test-list
+ * authored with ZERO fan-out).
+ */
+export function testStrategistFanOutReason(consortDir: string, featureId: string, testListJson: string): string | null {
+  // Only gate once the test-strategist has actually produced a non-empty list (items[] present).
+  try {
+    const items = (JSON.parse(testListJson) as { items?: unknown[] }).items;
+    if (!Array.isArray(items) || items.length === 0) return null;
+  } catch {
+    return null; // malformed test-list is caught by its own conformance check
+  }
+  const logPath = join(consortDir, "agent-log.jsonl");
+  if (!existsSync(logPath)) return null; // no log to attest fan-out (don't fabricate a block)
+  const uiTrack = resolveProjectSettings(dirname(consortDir)).project.uiTrack;
+  const kinds = enabledAnalysts({ projectDir: dirname(consortDir), uiTrack }).map((a) => a.kind);
+  const missing = missingAnalystDispatchKinds(readFileSync(logPath, "utf8"), kinds);
+  if (missing.length === 0) return null;
+  return (
+    `the test-strategist produced a test list but did not fan out to the ${missing.join(", ")} ` +
+    `analyst${missing.length > 1 ? "s" : ""} (no \`test-analyst:<kind>\` dispatch event in the agent-log). ` +
+    `The Test Strategist SUPERVISES: it must spawn one Task subagent per enabled roster analyst ` +
+    `(behavior / fitness / client) and reconcile their slices, never author the test list solo. ` +
+    `Re-run the test-strategist turn fanning out to each analyst and logging the mandated per-dispatch event.`
+  );
+}
+
+/**
+ * ux-designer BROWSE provenance (spec-gate condition, reads the PERSISTED agent-log). The UX Designer
+ * must GROUND the design guide in the brief's reference sites — navigate to them and derive tokens
+ * from what it SEES, not from the brief's wording alone. The role prompt mandates a `browsed:<site>`
+ * event per reference viewed (or `browse-gap:<site>` when one is unreachable). Blocks the spec gate
+ * when the feature has a design brief AND a design-guide but the log carries no browse provenance.
+ * Runs at the GATE for the same reason as the fan-out check (the meta-channel output validator never
+ * runs live). Null when there is no brief (nothing to browse) or no design-guide yet. Proportionate:
+ * requires evidence of browsing, not a per-URL cross-check against a parsed brief.
+ */
+export function uxDesignerBrowsedReason(consortDir: string, featureId: string): string | null {
+  const fdir = featureDir(consortDir, featureId);
+  const guide = join(fdir, "design", "design-guide.json");
+  const brief = join(fdir, "design", "design-brief.md");
+  if (!existsSync(guide) || !existsSync(brief)) return null; // no UI guide/brief → nothing to attest
+  const logPath = join(consortDir, "agent-log.jsonl");
+  if (!existsSync(logPath)) return null;
+  const browsed = readFileSync(logPath, "utf8")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .some((line) => {
+      try {
+        const o = JSON.parse(line) as { role?: string; message?: string };
+        return o.role === "ux-designer" && typeof o.message === "string" && (o.message.includes("browsed:") || o.message.includes("browse-gap:"));
+      } catch {
+        return false;
+      }
+    });
+  if (browsed) return null;
+  return (
+    `the ux-designer produced a design guide but logged no browse provenance (no \`browsed:<site>\` or ` +
+    `\`browse-gap:<site>\` event). The look must be GROUNDED in the brief's reference sites: navigate to ` +
+    `each with mcp__playwright / WebFetch, derive tokens from what you SEE, and log \`browsed:<site>\` per ` +
+    `reference viewed (or \`browse-gap:<site>\` naming any that could not be reached), not written from the ` +
+    `brief's wording alone.`
+  );
 }
 
 /**
@@ -859,6 +956,12 @@ export function resolveArtifactInputs(
       // carry an E2E AC. Bites per-story even when a sibling satisfies the feature-wide check.
       const requiresE2e = requiresE2eReason(consortDir, featureId);
       if (requiresE2e !== null) return { reason: requiresE2e };
+      // Browse provenance (design lane): a UI feature's design guide must be GROUNDED in the brief's
+      // reference sites, not written from the brief's wording alone. Reads the PERSISTED agent-log for
+      // a `browsed:`/`browse-gap:` event (the real door — the meta-channel output validator never runs
+      // live). Null when there is no brief/guide to attest.
+      const browsedReason = uxDesignerBrowsedReason(consortDir, featureId);
+      if (browsedReason !== null) return { reason: browsedReason };
       const layeringReason = layeringDeclaredReason(consortDir, featureId);
       if (layeringReason !== null) return { reason: layeringReason };
       // The DBA runs after the architect and before the test-strategist: a
@@ -960,6 +1063,12 @@ export function resolveArtifactInputs(
         // born-vacuous — route it to a Playwright e2e spec (the stockflow-3-100 T19 class).
         const jsdomReason = jsdomBrowserAssertionReason(tlJson);
         if (jsdomReason !== null) return { reason: jsdomReason };
+        // Fan-out provenance (Gate 3): the test-strategist is a SUPERVISOR that must dispatch one
+        // per-kind test-analyst and reconcile their slices, not author the list solo. Reads the
+        // PERSISTED agent-log for a `test-analyst:<kind>` dispatch per enabled analyst (the real door —
+        // the meta-channel output validator never runs live). A solo-authored list blocks here.
+        const fanOutReason = testStrategistFanOutReason(consortDir, featureId, tlJson);
+        if (fanOutReason !== null) return { reason: fanOutReason };
       }
       return conf;
     }

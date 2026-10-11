@@ -401,7 +401,7 @@ export class MockStepContract implements StepContract {
 export interface ValidateBoundDeps {
   allowed(state: DriveState): WorkflowAction;
   reviseBudgetAvailable(proposal: RouteProposal, state: DriveState): boolean;
-  recordRetry(completed: WorkflowAction, state: DriveState): { sanctioned: boolean };
+  recordRetry(completed: WorkflowAction, state: DriveState, reason?: string): { sanctioned: boolean };
 }
 
 /** The single decision `validateAndBound` returns for the loop to act on. */
@@ -472,7 +472,7 @@ export function validateAndBound(
       // throws once the retry budget is exhausted (ProtocolViolationError). A
       // sanctioned retry re-issues the SAME action and is flagged so the loop's stall
       // check skips it.
-      const { sanctioned } = deps.recordRetry(completed, state);
+      const { sanctioned } = deps.recordRetry(completed, state, proposal.reason);
       return { action: completed, sanctionedRetry: sanctioned };
     }
 

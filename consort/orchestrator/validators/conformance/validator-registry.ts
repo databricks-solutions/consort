@@ -10,12 +10,10 @@
 // that file now re-exports them so existing importers keep working.
 
 import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { checkArtifactConformance } from "./artifact-conformance.js";
 import { getValidator, formatSchemaErrors } from "../schema-loader.js";
 import type { OutputValidator, OutputValidationResult } from "../../steps/step-contract.js";
-import { enabledAnalysts } from "../../../test-list/test-analyst-catalogue.js";
-import { resolveConsortSettings } from "../../settings/project-settings.js";
 
 /**
  * feature-spec validator: the produced feature-spec.json must parse + conform to
@@ -82,59 +80,13 @@ export function agentLogHasRoleEvent(producedPath: string, role = "spec-author")
   return { ok: violations.length === 0, violations };
 }
 
-/**
- * test-strategist FAN-OUT provenance validator: the Test Strategist is a SUPERVISOR that must spawn one
- * per-kind test-analyst subagent (behavior / fitness / client) and reconcile their slices — it must NOT
- * author the test list solo. Nothing downstream can tell a fanned-out list from a solo-authored one (both
- * can be schema-conformant), so this gates on the PROCESS: the roster prompt mandates a reasoning event
- * whose message carries the token `test-analyst:<kind>` per analyst it dispatches, and this validator
- * requires one such event for EACH analyst ENABLED for the project (client only when uiTrack). A solo turn
- * logs no dispatch events and fails here. It also keeps the existing role-event requirement (the role must
- * have logged at all). Enablement is resolved from the project itself (the log lives at
- * `<consortDir>/agent-log.jsonl`, so projectDir = dirname(consortDir)), so the check needs only the path.
- */
-export function testStrategistDispatchedAnalysts(producedPath: string): OutputValidationResult {
-  // The role must have logged at all (shape + a test-strategist event) — subsumes the old check.
-  const base = agentLogHasRoleEvent(producedPath, "test-strategist");
-  if (!base.ok) return base;
-  const consortDir = dirname(producedPath);
-  const projectDir = dirname(consortDir);
-  let uiTrack = true; // fail SAFE: if settings can't resolve, demand the full roster (incl. client)
-  try {
-    uiTrack = resolveConsortSettings({ projectDir }).project.uiTrack;
-  } catch {
-    /* keep the conservative default */
-  }
-  const kinds = enabledAnalysts({ projectDir, uiTrack }).map((a) => a.kind);
-  let raw: string;
-  try {
-    raw = readFileSync(producedPath, "utf8");
-  } catch {
-    return { ok: false, violations: [`agent-log.jsonl not readable at ${producedPath}`] };
-  }
-  const messages: string[] = [];
-  for (const line of raw.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    try {
-      const obj = JSON.parse(line) as { role?: string; message?: string };
-      if (obj.role === "test-strategist" && typeof obj.message === "string") messages.push(obj.message);
-    } catch {
-      /* a malformed line is caught by agentLogHasRoleEvent above; ignore here */
-    }
-  }
-  const missing = kinds.filter((k) => !messages.some((m) => m.includes(`test-analyst:${k}`)));
-  if (missing.length > 0) {
-    return {
-      ok: false,
-      violations: [
-        `the test-strategist did not dispatch the ${missing.join(", ")} analyst${missing.length > 1 ? "s" : ""} ` +
-          `(no \`test-analyst:<kind>\` dispatch reasoning event found). The strategist SUPERVISES: it must spawn ` +
-          `one Task subagent per enabled roster analyst, not author the test list solo. Re-run the turn fanning ` +
-          `out to each analyst and logging the mandated per-dispatch event.`,
-      ],
-    };
-  }
-  return { ok: true, violations: [] };
-}
+// NOTE: the test-strategist FAN-OUT and ux-designer BROWSE provenance checks are NOT output validators.
+// A meta-channel agent-log output resolves to `<metaDir ?? workspaceDir>/agent-log.jsonl`, which is NOT
+// the persisted `<consortDir>/agent-log.jsonl` where the reconciled role events live, so Step.run finds
+// the output ABSENT at the resolved path and the executor skips the validator (a silent no-op — proven
+// live: a solo-authored S1 reached the spec gate). Those provenance checks run as DETERMINISTIC SPEC-GATE
+// conditions that read the PERSISTED log — testStrategistFanOutReason / uxDesignerBrowsedReason in
+// gate-conformance-guard.ts.
 
 /**
  * nonEmptyFile validator: the produced file exists and carries non-whitespace content. The
@@ -379,14 +331,13 @@ export const VALIDATOR_REGISTRY: Record<string, OutputValidator> = {
   agentLogHasRoleEvent: (p: string) => agentLogHasRoleEvent(p),
   // The PO's structured log event is authored as product-owner; bind that role.
   productOwnerLoggedAuthoring: (p: string) => agentLogHasRoleEvent(p, "product-owner"),
-  // The UX Designer's structured log event is authored as ux-designer; bind that role.
+  // The UX Designer's structured log event is authored as ux-designer; bind that role. (FAN-OUT and
+  // BROWSE provenance are enforced at the spec gate, not here — see the note above re: meta-channel.)
   uxDesignerLoggedAuthoring: (p: string) => agentLogHasRoleEvent(p, "ux-designer"),
   // The Test Strategist's + Architect Reviewer's + DBA's log events, role-bound (used by the
   // route-scenario manifests that exercise those roles' escalation/produced routes, and by the
   // shipped design-role manifests whose logged-authoring output is the role's agent-log line).
   testStrategistLoggedAuthoring: (p: string) => agentLogHasRoleEvent(p, "test-strategist"),
-  // The test-strategist's agent-log must prove it FANNED OUT to each enabled analyst (not authored solo).
-  testStrategistDispatchedAnalysts,
   architectReviewerLoggedAuthoring: (p: string) => agentLogHasRoleEvent(p, "architect-reviewer"),
   dbaLoggedAuthoring: (p: string) => agentLogHasRoleEvent(p, "dba"),
   // The Navigator's log event (build turns: RED / assess / review), role-bound.

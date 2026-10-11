@@ -9,7 +9,7 @@
   ],
   "outputs": [
     { "id": "design-guide", "filename": "design-guide.json", "channel": "artifact", "validator": "designGuideConformant", "description": "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + ia.md are authored alongside but the JSON is the gated artifact." },
-    { "id": "agent-log", "filename": "agent-log.jsonl", "channel": "meta", "validator": "uxDesignerLoggedAuthoring", "description": "The UX Designer's structured log of what it authored (shared agent-log script; agent-log-event.schema.json)." }
+    { "id": "agent-log", "filename": "agent-log.jsonl", "channel": "meta", "validator": "uxDesignerLoggedAuthoring", "description": "The UX Designer's structured log (shared agent-log script). BROWSE PROVENANCE (a `browsed:<site>` / `browse-gap:<site>` event) is enforced DETERMINISTICALLY at the spec gate (uxDesignerBrowsedReason reads the persisted agent-log), NOT as a meta-channel output validator — the executor skips those (the resolved meta path is not the persisted log)." }
   ],
   "routing": {
     "produced": { "next": "state-derived" }
