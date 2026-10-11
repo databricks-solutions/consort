@@ -36,23 +36,27 @@ describe("consort-drive wires the foreign-claim refusal (FEIP-8023)", () => {
   });
 });
 
-// Companion to the foreign-claim guard: driving a feature with NO claim at all
-// (consort-drive invoked directly, bypassing the command's un-skippable Step-0
-// claim) leaves the working tree on the tier parent, so the design/build lane
-// writes its artifacts onto staging with no paired branch. The driver must refuse
-// this too. Same static-source wiring check (drive.cli.ts is a self-invoking bin).
-describe("consort-drive refuses a feature drive when NO feature is claimed", () => {
-  it("guards the no-claim case (returns 2) and points at the claim, before running the driver", () => {
-    expect(DRIVE_SRC).toMatch(/no feature branch is claimed/i);
-    const region = DRIVE_SRC.slice(DRIVE_SRC.indexOf("no feature branch is claimed"), DRIVE_SRC.indexOf("no feature branch is claimed") + 700);
+// Companion to the foreign-claim guard: entering the feature lane with NO claim at all
+// (consort-drive invoked directly, or a phase-bound `--only design`) leaves the working
+// tree on the tier parent. The claim is an UN-SKIPPABLE precondition owned by the driver,
+// so no matter how the lane is entered it CLAIMS the paired branch itself (rather than
+// refusing + dead-ending). Same static-source wiring check (drive.cli.ts is a self-invoking bin).
+describe("consort-drive AUTO-CLAIMS the feature branch when none is claimed (any entry path)", () => {
+  it("runs lakebase-scm-claim-feature-branch itself rather than refusing", () => {
+    expect(DRIVE_SRC).toMatch(/no feature branch claimed/i);
+    const idx = DRIVE_SRC.indexOf("no feature branch claimed");
+    const region = DRIVE_SRC.slice(idx, idx + 900);
+    // It RUNS the claim (spawnCmd), not just names it in a refusal message.
+    expect(region).toMatch(/spawnCmd\(/);
     expect(region).toMatch(/lakebase-scm-claim-feature-branch/);
+    // return 2 appears only on the FAILURE path (claim errored / still unclaimed after), not the happy path.
     expect(region).toMatch(/return 2;/);
   });
 
-  it("places the no-claim guard after --dry-run and gates it on replay lanes (planning/replay stay unblocked)", () => {
-    const guardIdx = DRIVE_SRC.indexOf("no feature branch is claimed");
-    expect(guardIdx).toBeGreaterThan(DRIVE_SRC.indexOf("if (args.dryRun)"));
-    // The guard's own block is gated on !inReplayLane (replay has no live branch).
-    expect(DRIVE_SRC.slice(Math.max(0, guardIdx - 300), guardIdx)).toMatch(/inReplayLane/);
+  it("places the auto-claim after --dry-run and gates it on replay lanes (planning/replay stay unblocked)", () => {
+    const idx = DRIVE_SRC.indexOf("no feature branch claimed");
+    expect(idx).toBeGreaterThan(DRIVE_SRC.indexOf("if (args.dryRun)"));
+    // The auto-claim block is gated on !inReplayLane (replay has no live branch).
+    expect(DRIVE_SRC.slice(Math.max(0, idx - 400), idx)).toMatch(/inReplayLane/);
   });
 });
