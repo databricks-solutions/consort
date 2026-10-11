@@ -618,6 +618,15 @@ describe("checkArtifactConformance: UX Designer artifacts (UI projects)", () => 
     expect(checkArtifactConformance("design-guide.json", "{}").ok).toBe(false);
   });
 
+  it("accepts the optional motion token group + app_name, still rejects an unknown top-level key", () => {
+    const base = JSON.parse(GOOD_GUIDE_JSON) as Record<string, unknown>;
+    const withExtras = { ...base, motion: { "transition-base": "0.2s" }, app_name: "StockFlow" };
+    expect(checkArtifactConformance("design-guide.json", JSON.stringify(withExtras)).ok).toBe(true);
+    // additionalProperties:false still holds — an unknown top-level key fails.
+    const withUnknown = { ...base, not_a_real_group: { x: "y" } };
+    expect(checkArtifactConformance("design-guide.json", JSON.stringify(withUnknown)).ok).toBe(false);
+  });
+
   it("passes a section-complete design-guide.md", () => {
     expect(checkArtifactConformance("design-guide.md", GOOD_GUIDE_MD).ok).toBe(true);
   });

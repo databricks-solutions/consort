@@ -14,7 +14,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { renderThemeRootCss, installBrandAsset, applyBrandIconReference, type DesignGuide } from "./design-adherence.js";
+import { renderThemeRootCss, installBrandAsset, applyBrandIconReference, applyNavbarBranding, type DesignGuide } from "./design-adherence.js";
 import { resolveConsortDir, designGuideJson } from "../config/consort-paths.js";
 
 const THEME_HEADER = `/*
@@ -67,6 +67,16 @@ export function applyDesignGuideTheme(projectDir: string): ApplyThemeResult {
   if (guide.app_icon) {
     iconInstalled = installBrandAsset(projectDir, consortDir, guide.app_icon);
     applyBrandIconReference(projectDir, guide.app_icon.install_to);
+  }
+  // Wire the app shell's navbar (App.tsx) deterministically from the guide: the brand icon's
+  // src AND the brand title (app_name). Together with the index.html favicon above, this is BOTH
+  // shell references the ux-adherence gate (checkAppIcon) requires — so the UX Designer declares
+  // app_icon + app_name in the guide and never hand-edits App.tsx. Best-effort + idempotent.
+  if (guide.app_icon || guide.app_name) {
+    applyNavbarBranding(projectDir, {
+      ...(guide.app_icon ? { installTo: guide.app_icon.install_to } : {}),
+      ...(guide.app_name ? { appName: guide.app_name } : {}),
+    });
   }
   return { themePath, varCount: (css.match(/--[\w-]+:/g) ?? []).length, iconInstalled };
 }

@@ -109,6 +109,52 @@ export function applyBrandIconReference(projectDir: string, installTo: string): 
   }
 }
 
+/**
+ * Deterministically wire the APP SHELL's navbar from the guide: point the navbar icon
+ * `<img className="navbar__icon" src="…">` at the installed brand icon, and set the navbar
+ * brand TITLE text to the guide's `app_name`. This is the companion to applyBrandIconReference
+ * (which owns the index.html favicon): together they mean the design-apply step wires BOTH shell
+ * references the ux-adherence gate (checkAppIcon) demands — index.html AND App.tsx — so the UX
+ * Designer never hand-edits App.tsx (the "outside my lane" edit that recurred). Anchors on the
+ * scaffold's stable `navbar__icon` / `navbar__brand` classes. Idempotent (a correct src/title is a
+ * no-op); best-effort (no App.tsx, or neither arg given -> no-op). Returns true iff it wrote a change.
+ */
+export function applyNavbarBranding(
+  projectDir: string,
+  branding: { installTo?: string; appName?: string },
+): boolean {
+  const appTsx = join(projectDir, "client", "src", "App.tsx");
+  if (!existsSync(appTsx)) return false;
+  try {
+    const src = readFileSync(appTsx, "utf8");
+    let next = src;
+    // 1. Navbar icon src -> the installed brand icon basename (served from the public root).
+    if (branding.installTo) {
+      const href = `/${basename(branding.installTo)}`;
+      // Anchor on the scaffold's `navbar__icon` class; rewrite only its src attribute.
+      next = next.replace(
+        /(<img\b[^>]*\bclassName="navbar__icon"[^>]*\bsrc=")[^"]*(")/,
+        `$1${href}$2`,
+      );
+    }
+    // 2. Navbar brand TITLE text -> app_name. The brand <span> holds the icon <img/> then the
+    //    title text node; replace just that text node (anchor on navbar__brand, keep the img).
+    if (branding.appName) {
+      next = next.replace(
+        /(<span className="navbar__brand">[\s\S]*?\/>\s*)([^<]*?)(\s*<\/span>)/,
+        `$1${branding.appName}$3`,
+      );
+    }
+    if (next !== src) {
+      writeFileSync(appTsx, next);
+      return true;
+    }
+    return false; // already correct (idempotent) or anchors not found
+  } catch {
+    return false; // best-effort; a miss surfaces as the gate's App.tsx reference violation
+  }
+}
+
 export interface DesignGuide {
   typography: {
     font_family: string;
@@ -122,9 +168,15 @@ export interface DesignGuide {
   radius?: Record<string, string>;
   shadows?: Record<string, string>;
   breakpoints?: Record<string, string>;
+  /** Named motion/transition tokens (e.g. transition-base -> "0.2s"); each maps to --<name>,
+   *  so components reference var(--transition-*) instead of hardcoding timings in global.css. */
+  motion?: Record<string, string>;
   /** The product's brand icon, when the design brief provides one (an intake asset).
    *  Its presence turns the app icon into a checked contract (checkAppIcon). */
   app_icon?: { source: string; install_to: string };
+  /** The product/brand name wired into the app shell's navbar title at design-apply time
+   *  (so the UX Designer declares it here and never hand-edits App.tsx). */
+  app_name?: string;
 }
 
 /**
@@ -143,7 +195,9 @@ export interface DesignGuide {
  *   typography.font_weights[k]   -> --font-weight-<k>     (medium -> --font-weight-medium)
  *   colors[group][k]             -> --color-<k>           (brand-red -> --color-brand-red)
  *   spacing[k] / radius[k] /
- *   shadows[k] / breakpoints[k]  -> --<k>                 (space-4 -> --space-4)
+ *   shadows[k] / breakpoints[k] /
+ *   motion[k]                    -> --<k>                 (space-4 -> --space-4,
+ *                                                          transition-base -> --transition-base)
  * Token keys are stored WITHOUT the leading "--"; colors additionally drop the
  * group and gain a "color-" prefix on the leaf key.
  */
@@ -167,7 +221,7 @@ export function designGuideToCssVars(guide: DesignGuide): Record<string, string>
       vars[`--color-${k}`] = v;
     }
   }
-  for (const map of [guide.spacing, guide.radius, guide.shadows, guide.breakpoints]) {
+  for (const map of [guide.spacing, guide.radius, guide.shadows, guide.breakpoints, guide.motion]) {
     if (!map) continue;
     for (const [k, v] of Object.entries(map)) {
       vars[`--${k}`] = v;

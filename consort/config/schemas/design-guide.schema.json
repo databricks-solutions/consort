@@ -65,6 +65,16 @@
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
+    "motion": {
+      "type": "object",
+      "description": "Named motion/transition tokens (durations + timings as strings), e.g. `transition-base` -> \"0.2s\", `transition-fast` -> \"0.15s\", or `ease-standard` -> \"cubic-bezier(0.4,0,0.2,1)\". Each maps to `--<name>` on :root (same convention as spacing/radius/shadows), so component classes reference `var(--transition-base)` instead of hardcoding timings in global.css. Omit for a static design.",
+      "additionalProperties": { "type": "string" }
+    },
+    "app_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The product/brand name rendered as the app shell's navbar title (e.g. \"StockFlow\"). The design-apply step wires it into client/src/App.tsx's navbar brand, so the UX Designer declares it HERE and never hand-edits App.tsx. Omit to keep the scaffold's project-name title."
+    },
     "components": {
       "type": "object",
       "description": "Per-component standards (freeform per component). REQUIRED for a UI project (the ux-designer self-check enforces a non-empty object; the schema keeps it optional so older recorded corpora still validate). Each entry SHOULD name the CSS `class` the feature pages apply (page, card, button, form_input, table, status_badge, empty_state, toast, ...), which is the vocabulary the token-consumption gate looks for."

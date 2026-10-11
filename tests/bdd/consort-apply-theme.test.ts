@@ -18,6 +18,7 @@ const INDIGO_GUIDE = {
   spacing: { "space-5": "24px" },
   radius: { lg: "16px" },
   shadows: { md: "0 4px 16px rgba(0,0,0,0.08)" },
+  motion: { "transition-base": "0.2s", "transition-fast": "0.15s" },
 };
 
 const dirs: string[] = [];
@@ -59,6 +60,13 @@ describe("applyDesignGuideTheme: overwrites theme.css from the guide", () => {
     expect(varCount).toBeGreaterThan(0);
   });
 
+  it("emits the guide's motion tokens as --<name> vars (so transitions aren't hardcoded in global.css)", () => {
+    const dir = scaffold(INDIGO_GUIDE);
+    const css = readFileSync(applyDesignGuideTheme(dir).themePath, "utf8");
+    expect(css).toContain("--transition-base: 0.2s;");
+    expect(css).toContain("--transition-fast: 0.15s;");
+  });
+
   it("is idempotent (re-running yields byte-identical output)", () => {
     const dir = scaffold(INDIGO_GUIDE);
     const p = applyDesignGuideTheme(dir).themePath;
@@ -77,15 +85,31 @@ describe("applyDesignGuideTheme: installs the brand icon at design-apply time", 
   const ICON_GUIDE = {
     ...INDIGO_GUIDE,
     app_icon: { source: ".consort/design/assets/warehouse.png", install_to: "client/public/warehouse.png" },
+    app_name: "StockFlow",
   };
+
+  // The scaffold App.tsx navbar brand the apply step rewrites: the `navbar__icon` placeholder src
+  // and the brand title text node inside `navbar__brand`.
+  const SCAFFOLD_APP_TSX =
+    'export function App() {\n' +
+    '  return (\n' +
+    '    <nav className="navbar">\n' +
+    '      <span className="navbar__brand">\n' +
+    '        <img className="navbar__icon" src="/favicon.svg" alt="" />\n' +
+    '        my-project\n' +
+    '      </span>\n' +
+    '    </nav>\n' +
+    '  );\n' +
+    '}\n';
 
   function scaffoldWithIcon(declareIcon: boolean): string {
     const dir = scaffold(declareIcon ? ICON_GUIDE : INDIGO_GUIDE);
     // Stage the intake asset (real bytes a coding agent cannot copy via text) + a client
-    // index.html carrying the generic scaffold placeholder favicon.
+    // index.html carrying the generic scaffold placeholder favicon + the scaffold App.tsx navbar.
     mkdirSync(join(dir, ".consort", "design", "assets"), { recursive: true });
     writeFileSync(join(dir, ".consort", "design", "assets", "warehouse.png"), "PNG-BYTES");
     writeFileSync(join(dir, "client", "index.html"), '<!doctype html><html><head><link rel="icon" type="image/svg+xml" href="/favicon.svg" /></head><body></body></html>');
+    writeFileSync(join(dir, "client", "src", "App.tsx"), SCAFFOLD_APP_TSX);
     return dir;
   }
 
@@ -109,6 +133,29 @@ describe("applyDesignGuideTheme: installs the brand icon at design-apply time", 
     expect(res.iconInstalled).toBe(false);
     expect(existsSync(join(dir, "client", "public", "warehouse.png"))).toBe(false);
     expect(readFileSync(join(dir, "client", "index.html"), "utf8")).toContain("favicon.svg");
+  });
+
+  it("wires the App.tsx navbar icon src AND title from the guide (so the designer never hand-edits App.tsx)", () => {
+    const dir = scaffoldWithIcon(true);
+    applyDesignGuideTheme(dir);
+    const app = readFileSync(join(dir, "client", "src", "App.tsx"), "utf8");
+    // navbar icon points at the installed brand icon (not the scaffold placeholder)
+    expect(app).toContain('className="navbar__icon" src="/warehouse.png"');
+    expect(app).not.toContain("favicon.svg");
+    // brand title text is the guide's app_name (the scaffold "my-project" is replaced)
+    expect(app).toMatch(/navbar__brand">[\s\S]*\/>\s*StockFlow\s*<\/span>/);
+    expect(app).not.toContain("my-project");
+    // checkAppIcon's App.tsx requirement (it just needs the basename referenced) is satisfied
+    expect(app).toContain("warehouse.png");
+  });
+
+  it("navbar wiring is idempotent (re-running yields byte-identical App.tsx)", () => {
+    const dir = scaffoldWithIcon(true);
+    const appPath = join(dir, "client", "src", "App.tsx");
+    applyDesignGuideTheme(dir);
+    const once = readFileSync(appPath, "utf8");
+    applyDesignGuideTheme(dir);
+    expect(readFileSync(appPath, "utf8")).toBe(once);
   });
 });
 

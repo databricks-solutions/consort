@@ -7,7 +7,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { applyBrandIconReference } from "../../consort/architecture/design-adherence.js";
+import { applyBrandIconReference, applyNavbarBranding } from "../../consort/architecture/design-adherence.js";
 
 const tmpDirs: string[] = [];
 function mkProject(): string {
@@ -57,5 +57,52 @@ describe("applyBrandIconReference", () => {
     applyBrandIconReference(dir, INSTALL_TO);
     expect(fs.readFileSync(p, "utf8")).toBe(before);
     expect(applyBrandIconReference(mkProject(), INSTALL_TO)).toBe(false);
+  });
+});
+
+const SCAFFOLD_NAVBAR =
+  '<nav className="navbar">\n' +
+  '  <span className="navbar__brand">\n' +
+  '    <img className="navbar__icon" src="/favicon.svg" alt="" />\n' +
+  '    my-project\n' +
+  '  </span>\n' +
+  '</nav>\n';
+
+function writeAppTsx(dir: string, body: string): string {
+  const p = path.join(dir, "client", "src", "App.tsx");
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, body);
+  return p;
+}
+
+describe("applyNavbarBranding", () => {
+  it("rewrites the navbar icon src AND the brand title from the guide", () => {
+    const dir = mkProject();
+    const p = writeAppTsx(dir, SCAFFOLD_NAVBAR);
+    expect(applyNavbarBranding(dir, { installTo: INSTALL_TO, appName: "StockFlow" })).toBe(true);
+    const app = fs.readFileSync(p, "utf8");
+    expect(app).toContain('className="navbar__icon" src="/warehouse.png"');
+    expect(app).not.toContain("favicon.svg");
+    expect(app).toMatch(/navbar__brand">[\s\S]*\/>\s*StockFlow\s*<\/span>/);
+    expect(app).not.toContain("my-project");
+  });
+
+  it("wires only the icon when no app_name is given (title untouched)", () => {
+    const dir = mkProject();
+    const p = writeAppTsx(dir, SCAFFOLD_NAVBAR);
+    expect(applyNavbarBranding(dir, { installTo: INSTALL_TO })).toBe(true);
+    const app = fs.readFileSync(p, "utf8");
+    expect(app).toContain('src="/warehouse.png"');
+    expect(app).toContain("my-project"); // title untouched
+  });
+
+  it("is idempotent and returns false without an App.tsx", () => {
+    const dir = mkProject();
+    const p = writeAppTsx(dir, SCAFFOLD_NAVBAR);
+    applyNavbarBranding(dir, { installTo: INSTALL_TO, appName: "StockFlow" });
+    const once = fs.readFileSync(p, "utf8");
+    applyNavbarBranding(dir, { installTo: INSTALL_TO, appName: "StockFlow" });
+    expect(fs.readFileSync(p, "utf8")).toBe(once);
+    expect(applyNavbarBranding(mkProject(), { installTo: INSTALL_TO, appName: "StockFlow" })).toBe(false);
   });
 });
