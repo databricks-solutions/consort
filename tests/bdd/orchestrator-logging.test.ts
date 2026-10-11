@@ -189,6 +189,27 @@ describe("orchestratorLogEvents: pure action -> canonical log events", () => {
       expect(renderEventMessage(e.event, ctx).length, `event ${e.event} renders`).toBeGreaterThan(0);
     }
   });
+
+  it("revise-route records WHO re-runs WHICH gate + the triggering source + the verdict (not a bare note)", () => {
+    const action = {
+      kind: "revise-route",
+      story: "S1-file-stock",
+      role: "architect-reviewer",
+      gate: "architecture",
+      source: "smell:reflect-architecture-defect",
+      reason: "a NOT NULL column contradicts an AC that renders when the field is absent",
+    } as unknown as WorkflowAction;
+    const events = orchestratorLogEvents(action, { featureId: "F1-stock-visibility" });
+    const ev = events.find((e) => e.event === "reasoning");
+    expect(ev, "revise-route emits a reasoning event").toBeTruthy();
+    const note = String(ev!.slots?.note ?? "");
+    // The driving detail is all present — no more invisible re-do.
+    expect(note).toMatch(/architect-reviewer/);
+    expect(note).toMatch(/architecture gate/);
+    expect(note).toMatch(/reflect-architecture-defect/);
+    expect(note).toMatch(/contradicts an AC/);
+    expect(ev!.level).toBe("warn");
+  });
 });
 
 describe("parkedGateSurfacedEvent: surfacing a HITL gate the drive parks at", () => {

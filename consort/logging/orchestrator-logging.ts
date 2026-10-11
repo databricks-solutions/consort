@@ -158,6 +158,24 @@ export function orchestratorLogEvents(
           slots: { source: action.source, reason: action.reason, ...withStory },
         },
       ];
+    case "revise-route":
+      // A reflect/smell finding sent a story back to its owning author to re-run a gate. Previously
+      // logged as a bare "orchestrator: revise-route" with NO reason, so a material correction (e.g. a
+      // test-list re-authored, items dropped) happened invisibly. Record WHO re-runs WHICH gate, the
+      // triggering source, and the verdict text — so the revise is auditable, not a silent re-do.
+      return [
+        {
+          ...base,
+          level: "warn",
+          event: "reasoning",
+          slots: {
+            note:
+              `orchestrator: revise-route -> ${action.role} re-runs the ${action.gate} gate for ` +
+              `${action.story} (source: ${action.source}): ${action.reason}`,
+            ...withStory,
+          },
+        },
+      ];
     case "done":
       return [{ ...base, event: "phase.end", slots: { phase: "workflow", outcome: "complete" } }];
     default: {
