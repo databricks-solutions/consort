@@ -7291,7 +7291,9 @@ function scanFeatureConformance(consortDir, featureId) {
 init_esm_shims();
 import { readFileSync as readFileSync4, existsSync as existsSync4, readdirSync as readdirSync3, writeFileSync as writeFileSync2, statSync as statSync3 } from "fs";
 import { join as join4, basename as basename2 } from "path";
-var STORY_ALLOWED_KEYS = /* @__PURE__ */ new Set(["id", "asA", "iWantTo", "soThat", "acs", "feature_id", "independence", "external_ref"]);
+var STORY_ALLOWED_KEYS = new Set(
+  Object.keys(loadSchema("story.schema.json").properties ?? {})
+);
 function parseStoryNarrative(md) {
   const grab = (label) => {
     const m = md.match(label);

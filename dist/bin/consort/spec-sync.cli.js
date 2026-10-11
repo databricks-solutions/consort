@@ -6715,6 +6715,9 @@ function makeValidator() {
     workflowState: getValidator("workflow-state.schema.json")
   };
 }
+var STORY_ALLOWED_KEYS = new Set(
+  Object.keys(loadSchema("story.schema.json").properties ?? {})
+);
 function validateSpec(consortDir) {
   const reports = [];
   const v = makeValidator();

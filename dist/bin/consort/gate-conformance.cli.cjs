@@ -7299,7 +7299,9 @@ function scanFeatureConformance(consortDir, featureId) {
 init_cjs_shims();
 var import_fs3 = require("fs");
 var import_path3 = require("path");
-var STORY_ALLOWED_KEYS = /* @__PURE__ */ new Set(["id", "asA", "iWantTo", "soThat", "acs", "feature_id", "independence", "external_ref"]);
+var STORY_ALLOWED_KEYS = new Set(
+  Object.keys(loadSchema("story.schema.json").properties ?? {})
+);
 function parseStoryNarrative(md) {
   const grab = (label) => {
     const m = md.match(label);

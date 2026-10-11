@@ -6651,7 +6651,7 @@ init_esm_shims();
 import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import { mkdirSync as mkdirSync41, writeFileSync as writeFileSync37, readFileSync as readFileSync65, existsSync as existsSync69, readdirSync as readdirSync44, mkdtempSync as mkdtempSync3, rmSync as rmSync19 } from "fs";
 import { tmpdir as tmpdir3 } from "os";
-import { join as join69, dirname as dirname36, relative as relative11 } from "path";
+import { join as join69, dirname as dirname35, relative as relative11 } from "path";
 
 // consort/optimize/role-chains.ts
 init_esm_shims();
@@ -6965,8 +6965,8 @@ var test_strategist_default = {
       id: "agent-log",
       filename: "agent-log.jsonl",
       channel: "meta",
-      validator: "testStrategistDispatchedAnalysts",
-      description: "The Test Strategist's structured log. Validated for FAN-OUT PROVENANCE: must carry a `test-analyst:<kind>` dispatch reasoning event per enabled analyst (behavior/fitness, +client when uiTrack), proving it SUPERVISED rather than authored the list solo. A solo turn fails here and re-issues (bounded retry -> HIL at the cap)."
+      validator: "testStrategistLoggedAuthoring",
+      description: "The Test Strategist's structured log (shared agent-log script). FAN-OUT PROVENANCE (a `test-analyst:<kind>` dispatch per enabled analyst) is enforced DETERMINISTICALLY at the spec gate (testStrategistFanOutReason reads the persisted agent-log), NOT as a meta-channel output validator \u2014 the executor skips those (the resolved meta path is not the persisted log)."
     }
   ],
   routing: {
@@ -7033,7 +7033,7 @@ var ux_designer_default = {
   ],
   outputs: [
     { id: "design-guide", filename: "design-guide.json", channel: "artifact", validator: "designGuideConformant", description: "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + ia.md are authored alongside but the JSON is the gated artifact." },
-    { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "uxDesignerLoggedAuthoring", description: "The UX Designer's structured log of what it authored (shared agent-log script; agent-log-event.schema.json)." }
+    { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "uxDesignerLoggedAuthoring", description: "The UX Designer's structured log (shared agent-log script). BROWSE PROVENANCE (a `browsed:<site>` / `browse-gap:<site>` event) is enforced DETERMINISTICALLY at the spec gate (uxDesignerBrowsedReason reads the persisted agent-log), NOT as a meta-channel output validator \u2014 the executor skips those (the resolved meta path is not the persisted log)." }
   ],
   routing: {
     produced: { next: "state-derived" }
@@ -7497,13 +7497,13 @@ function manifestForAction(action, manifests = SHIPPED_MANIFESTS) {
 
 // consort/orchestrator/steps/step.ts
 init_esm_shims();
-import { join as join8 } from "path";
-import { existsSync as existsSync8 } from "fs";
+import { join as join6 } from "path";
+import { existsSync as existsSync6 } from "fs";
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
 init_esm_shims();
-import { readFileSync as readFileSync7, existsSync as existsSync7, statSync as statSync3, readdirSync as readdirSync4 } from "fs";
-import { join as join7, dirname as dirname4 } from "path";
+import { readFileSync as readFileSync5, existsSync as existsSync5, statSync as statSync3, readdirSync as readdirSync4 } from "fs";
+import { join as join5 } from "path";
 
 // consort/orchestrator/validators/conformance/artifact-conformance.ts
 init_esm_shims();
@@ -8540,229 +8540,11 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
-// consort/test-list/test-analyst-catalogue.ts
-init_esm_shims();
-var SLICE_CONTRACT = 'Return an UNORDERED JSON array of test-list items as the LAST thing in your reply, fenced as ```json ... ```. Each item is { "id": "<kind-local id, e.g. bhv-1>", "description": "<one observable behavior, no \'and\'>", "ac_id": "<EXACT id of an existing story AC file>", "status": "pending", "kind": "<your kind>" }. Do NOT order the items and do NOT set ordered_for \u2013 the supervisor orders the merged master and assigns the final T-ids. Map every item to a real story AC id (copy it verbatim, never re-slug).';
-var TEST_ANALYST_CATALOGUE = {
-  behavior: {
-    kind: "behavior",
-    description: "Backend behavior/API scenarios: one observable behavior per AC through the API boundary.",
-    configSummary: "Per AC: >=1 behavior item through the API boundary (pytest-bdd .feature).",
-    model: "sonnet",
-    effort: "default",
-    toolScope: ["Read"],
-    inputs: ["story-acs", "architecture-invariants"],
-    focusPrompt: "You are the BEHAVIOR test analyst. Cover every BACKEND-layer AC (API / service / data / INFRA) whose outcome is observable through the API boundary with at least one `kind:\"behavior\"` item \u2013 one observable behavior verified through the API boundary (for Python, a pytest-bdd scenario; set `scenario_file` to `tests/features/<story>.feature`). An `Infra`-layer AC (e.g. 'distinct (sku,location) coexist', 'refile updates in place') still has an observable API behavior \u2013 it is YOURS, do not skip it as 'DB-only'. ASSERT THE AC'S CORE PROMISED OUTCOME \u2013 the actual result the AC guarantees (a refile leaves the stored quantity == the NEW value AND exactly ONE row for the pair; filing the same SKU at two DIFFERENT locations yields TWO independently-retrievable coexisting rows), NOT merely a peripheral aspect (a preserved timestamp, atomicity). For a uniqueness / multi-key invariant, cover BOTH sides: the COLLISION (same key -> rejected / stays one row) AND the DISTINCT-keys-COEXIST positive (different keys -> independent rows). A test that checks only the peripheral aspect or only the collision lets a Driver go green without the real behavior \u2013 the recurring reflect-testlist-defect. **DO NOT author a behavior item for an E2E / UI-presentation AC** (e.g. a \"filing form\" / \"home screen\" AC whose `layer` is `E2E`): those are the CLIENT analyst's Playwright job, NOT a backend pytest-bdd test. Set each item's `ac_id` ONLY to an AC whose layer permits a backend test; anchoring a 2xx / response-shape check to a UI AC (instead of the API-layer AC) is the recurring mis-route the reflect gate rejects \u2013 if an AC's observable outcome is an HTTP response shape, it belongs on the API-layer AC, never the form/screen AC. Test at the OUTERMOST public boundary matching the AC's layer. One test per scenario, never an \"and\". EVERY write-bearing test (POST/insert/seed) MUST own its state \u2013 use a per-run-unique key suffixed with the platform's BUILT-IN UUID (Python `uuid.uuid4()` from the stdlib; JS/TS `crypto.randomUUID()`; Java `java.util.UUID`) OR delete/upsert the fixed key before writing, never assume an empty table. NEVER add a UUID dependency: in JS/TS do NOT `import ... from \"uuid\"` \u2013 the `uuid` npm package is not a scaffolded dependency and fails CI with \"Cannot find package 'uuid'\". Do NOT emit fitness or client items, and do NOT set `invariant_id` (the fitness analyst owns persistence invariants). COVER THE NEGATIVE/BOUNDARY-VALIDATION PATH a constraint implies on your ACs: you are given architecture.json (NFRs + persistence_invariants), so when an AC's field is required / NOT NULL (a `not_null` invariant or a field-named-validation NFR names it), emit a behavior item that OMITS (or sends invalid) that field through the API boundary and asserts a field-named rejection \u2013 this is the boundary guard, DISTINCT from the DB constraint the fitness analyst tests. Your `behavior` item asserts ONLY an API-OBSERVABLE outcome (an HTTP status + response body through the boundary). A SERVICE-INTERNAL assertion \u2014 the service raises/rejects BEFORE the DB, the repository is never reached, the guard fires 'at the service layer' \u2014 is NOT API-observable and is NOT a behavior/.feature scenario: authored as one it gets no bindable step def and STALLS the build lane (an unbound pytest-bdd scenario). That service-layer guard is the FITNESS analyst's (a direct service-level test), so cover the negative case here ONLY in its API-observable form (POST the invalid value \u2192 4xx naming the field), and leave the 'rejects-before-the-DB / repository-not-reached' assertion to fitness. A required-field/CHECK/overcommit rejection with only a happy-path test is the recurring reflect-testlist-defect. " + SLICE_CONTRACT
-  },
-  fitness: {
-    kind: "fitness",
-    description: "Architectural fitness tests + a real-branch test per declared persistence invariant.",
-    configSummary: "Per architectural constraint + per persistence_invariant: a fitness item (invariant_id).",
-    model: "sonnet",
-    effort: "high",
-    toolScope: ["Read"],
-    inputs: ["architecture-invariants", "db-design"],
-    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (single-step downgrade/upgrade, @pytest.mark.migration, NEVER downgrade base) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after downgrade-then-upgrade (NOT that data survives). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where single-step downgrade removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: single-step downgrade drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
-  },
-  client: {
-    kind: "client",
-    description: "SPA client-harness tests for UI-presentation ACs (React component / Playwright e2e).",
-    configSummary: "Per UI-presentation AC: a client item under client/tests/ (only when uiTrack).",
-    model: "sonnet",
-    effort: "default",
-    toolScope: ["Read"],
-    inputs: ["story-acs", "architecture-invariants", "design-guide"],
-    enabledWhen: (ctx) => ctx.uiTrack === true,
-    focusPrompt: "You are the CLIENT test analyst (this project HAS a frontend). For every UI-presentation AC the architecture routes to the SPA's own client harness, emit a `kind:\"client\"` item with `scenario_file` under `client/tests/` (e.g. `client/tests/pages/<Screen>.test.tsx`). Do NOT fold a presentation AC into the backend pytest-bdd suite \u2013 that mechanism mismatch is a defect. For an AC that OWNS a page/route, at least one client item MUST exercise the page THROUGH THE REAL `<App>` at the AC's route (a Playwright e2e that navigates the route, OR a component test rendering `<App>` in `<MemoryRouter initialEntries={[\"<the path>\"]}>`) \u2013 a bare `render(<ThePage/>)` does NOT prove the page is routed; name the route in the description. Test the design-guide SEAM (assert the element carries its design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS in the source. Do NOT set `invariant_id`. MATCH THE TEST TO THE AC's `layer`: an AC whose `layer` is **`E2E`** is verified END-TO-END against the REAL paired-branch DB \u2013 it REQUIRES a real Playwright e2e (scenario_file under `client/tests/e2e/\u2026`) that drives the DEPLOYED app in a browser against the live DB, with NO mocked/stubbed fetch and NO in-memory data. A mocked/stubbed COMPONENT test (rendering `<App>`/`<Page>` with fake data) is ONLY for a pure presentation/rendering AC, NEVER for an `E2E`-layer AC \u2013 drafting an E2E-layer AC as a mocked component test is the recurring reflect-testlist-defect (it cannot hit the DB the layer demands). One real e2e per E2E-layer AC. ALSO cover NFR CLIENT-RENDER fitness functions: for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (e.g. rendering a row with null/optional fields and asserting a 'not tracked' indicator, or an empty/loading/error state), emit a `kind:\"client\"` item that performs that render and asserts the stated outcome. These NFR-render fitness functions are YOURS, never the fitness analyst's (it owns service/DB guards, not the SPA); a stated client-render NFR with no client item is the recurring reflect-testlist-defect. " + SLICE_CONTRACT
-  }
-};
-function enabledAnalysts(ctx) {
-  return Object.values(TEST_ANALYST_CATALOGUE).filter((e) => e.enabledWhen ? e.enabledWhen(ctx) : true);
-}
-
-// consort/orchestrator/settings/project-settings.ts
-init_esm_shims();
-
-// consort/config/consort-config-file.ts
-init_esm_shims();
-import { existsSync as existsSync6, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync3 } from "fs";
-import { dirname as dirname3, join as join6 } from "path";
-
-// consort/config/agent-models.ts
-init_esm_shims();
-import { existsSync as existsSync5, readFileSync as readFileSync5, writeFileSync as writeFileSync2, mkdirSync as mkdirSync2 } from "fs";
-import { dirname as dirname2, join as join5 } from "path";
-var RECOMMENDED_MODELS = {
-  "spec-author": "opus",
-  "architect-reviewer": "opus",
-  dba: "opus",
-  "test-strategist": "sonnet",
-  "ux-designer": "sonnet",
-  navigator: "sonnet",
-  driver: "sonnet",
-  "product-owner": "opus"
-};
-var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
-var AGENT_CONFIG_REL = join5(".lakebase", "agent-config.json");
-function readAgentConfig(projectDir) {
-  const p = join5(projectDir, AGENT_CONFIG_REL);
-  if (!existsSync5(p)) return void 0;
-  return JSON.parse(readFileSync5(p, "utf8"));
-}
-
-// consort/config/consort-config-file.ts
-var CONSORT_CONFIG_REL = join6(".lakebase", "consort-config.json");
-var LEGACY_CONFIG_RELS = [
-  join6(".lakebase", "sftdd-config.json"),
-  join6(".lakebase", "tdd-config.json")
-];
-var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
-function loadConsortConfig(projectDir) {
-  for (const rel of [CONSORT_CONFIG_REL, ...LEGACY_CONFIG_RELS]) {
-    const f = join6(projectDir, rel);
-    if (!existsSync6(f)) continue;
-    try {
-      return JSON.parse(readFileSync6(f, "utf8"));
-    } catch {
-      return void 0;
-    }
-  }
-  return void 0;
-}
-function resolveProjectSettings(projectDir) {
-  const file = loadConsortConfig(projectDir);
-  const build = {
-    loopGranularity: file?.build?.loopGranularity ?? "story",
-    batchCap: file?.build?.batchCap,
-    sessionScope: file?.build?.sessionScope ?? "story"
-  };
-  const project = {
-    uiTrack: file?.project?.uiTrack ?? true,
-    // HITL-first: the declared project policy defaults to interactive (a human
-    // approves each gate). Headless (proxy) is a deliberate opt-in, set in the
-    // file or as a RUN-SCOPED --gates override (never persisted by a flag).
-    gates: file?.project?.gates ?? "interactive",
-    deployTarget: file?.project?.deployTarget ?? "local",
-    clientFramework: file?.project?.clientFramework ?? "none",
-    // Legacy projects (scaffolded before language was persisted) resolve to "python" – the
-    // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
-    // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
-    // default only affects config-less/legacy trees.
-    language: file?.project?.language ?? "python"
-  };
-  const plan = { sizing: file?.plan?.sizing ?? true };
-  return { build, plan, project };
-}
-function productDirForLanguage(language) {
-  return language === "nodejs" ? "src" : "app";
-}
-function projectLanguage(projectDir) {
-  return resolveProjectSettings(projectDir).project.language;
-}
-function defaultConsortConfig() {
-  const roles = {};
-  for (const role of ALL_AGENT_ROLES) roles[role] = {};
-  return {
-    version: 1,
-    roles,
-    build: { loopGranularity: "story", batchCap: 3, sessionScope: "story" },
-    plan: { sizing: true },
-    project: { uiTrack: true, gates: "interactive", deployTarget: "local", clientFramework: "none", language: "java" }
-  };
-}
-function writeConsortConfig(projectDir, config, opts) {
-  const f = join6(projectDir, CONSORT_CONFIG_REL);
-  if (existsSync6(f) && !opts?.force) return false;
-  mkdirSync3(dirname3(f), { recursive: true });
-  writeFileSync3(f, JSON.stringify(config, null, 2) + "\n");
-  return true;
-}
-
-// consort/orchestrator/drive/turn-key.ts
-init_esm_shims();
-function turnKeyForAction(action) {
-  if (action.kind !== "invoke-role") return void 0;
-  if ("buildMode" in action) {
-    switch (action.buildMode) {
-      case "reflect":
-        return "reflect";
-      // design-lane critic, tuned as its own turn (sweep: haiku+low)
-      case "review":
-        return "review";
-      case "refactor":
-      case "refactor-deploy":
-      case "refactor-superseded":
-        return "refactor";
-      case "assess":
-      case "assess-deploy":
-      case "assess-refactor":
-        return "assess";
-      case "repair":
-        return "repair";
-      case "green-superseded":
-        return "green";
-    }
-  }
-  if ("mode" in action) {
-    if (action.role === "spec-author" && action.mode === "breakdown") return "breakdown";
-    if (action.role === "spec-author" && action.mode === "propose") return "propose";
-    if (action.role === "architect-reviewer" && (action.mode === "estimate" || action.mode === "estimate-committed")) return "estimate";
-    return void 0;
-  }
-  if (action.role === "ux-designer") return "ux";
-  if ("story" in action && action.story) {
-    if (action.role === "spec-author") return "acs";
-    if (action.role === "architect-reviewer") return "architect";
-    if (action.role === "dba") return "dba";
-    if (action.role === "test-strategist") return "test-list";
-  }
-  if (action.role === "navigator") return "red";
-  if (action.role === "driver") return "green";
-  return void 0;
-}
-
-// consort/orchestrator/settings/project-settings.ts
-function resolveConsortSettings(inputs) {
-  const file = loadConsortConfig(inputs.projectDir);
-  const legacy = readAgentConfig(inputs.projectDir);
-  const models = {};
-  const fallbackModels = {};
-  const budgets = {};
-  const mcpConfigs = {};
-  for (const role of ALL_AGENT_ROLES) {
-    const rc = file?.roles?.[role];
-    const legacyEntry = legacy?.roles?.[role];
-    const scalarModel = typeof rc?.model === "string" ? rc.model : void 0;
-    models[role] = scalarModel ?? legacyEntry?.override ?? legacyEntry?.recommended ?? RECOMMENDED_MODELS[role] ?? "inherit";
-    fallbackModels[role] = rc?.fallbackModel;
-    budgets[role] = typeof rc?.maxBudgetUsd === "number" ? rc.maxBudgetUsd : void 0;
-    mcpConfigs[role] = rc?.mcpConfig;
-  }
-  const manifestStep = (role, turn) => turn ? agentOptionsForStep(role, turn, turnKeyForAction) : void 0;
-  const modelFor = (role, turn) => {
-    const m = file?.roles?.[role]?.model;
-    if (m && typeof m !== "string" && turn && m[turn]) return m[turn];
-    if (typeof m === "string") return m;
-    const declared = manifestStep(role, turn)?.model;
-    if (declared) return declared;
-    return models[role] ?? "inherit";
-  };
-  const effortFor = (role, turn) => {
-    const rc = file?.roles?.[role];
-    const e = rc?.effort;
-    if (typeof e === "string") return e;
-    if (e && turn && e[turn]) return e[turn];
-    return manifestStep(role, turn)?.effort ?? "default";
-  };
-  const { build, plan, project } = resolveProjectSettings(inputs.projectDir);
-  return { models, modelFor, fallbackModels, budgets, mcpConfigs, effortFor, build, plan, project };
-}
-
 // consort/orchestrator/validators/conformance/validator-registry.ts
 function featureSpecNonEmptyStories(producedPath) {
   let content;
   try {
-    content = readFileSync7(producedPath, "utf8");
+    content = readFileSync5(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`feature-spec.json not readable at ${producedPath}`] };
   }
@@ -8781,7 +8563,7 @@ function featureSpecNonEmptyStories(producedPath) {
 function agentLogHasRoleEvent(producedPath, role = "spec-author") {
   let raw;
   try {
-    raw = readFileSync7(producedPath, "utf8");
+    raw = readFileSync5(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`agent-log.jsonl not readable at ${producedPath} (the agent must log what it did via the shared agent-log script)`] };
   }
@@ -8811,46 +8593,10 @@ function agentLogHasRoleEvent(producedPath, role = "spec-author") {
   }
   return { ok: violations.length === 0, violations };
 }
-function testStrategistDispatchedAnalysts(producedPath) {
-  const base = agentLogHasRoleEvent(producedPath, "test-strategist");
-  if (!base.ok) return base;
-  const consortDir = dirname4(producedPath);
-  const projectDir = dirname4(consortDir);
-  let uiTrack = true;
-  try {
-    uiTrack = resolveConsortSettings({ projectDir }).project.uiTrack;
-  } catch {
-  }
-  const kinds = enabledAnalysts({ projectDir, uiTrack }).map((a) => a.kind);
-  let raw;
-  try {
-    raw = readFileSync7(producedPath, "utf8");
-  } catch {
-    return { ok: false, violations: [`agent-log.jsonl not readable at ${producedPath}`] };
-  }
-  const messages = [];
-  for (const line of raw.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    try {
-      const obj = JSON.parse(line);
-      if (obj.role === "test-strategist" && typeof obj.message === "string") messages.push(obj.message);
-    } catch {
-    }
-  }
-  const missing = kinds.filter((k) => !messages.some((m) => m.includes(`test-analyst:${k}`)));
-  if (missing.length > 0) {
-    return {
-      ok: false,
-      violations: [
-        `the test-strategist did not dispatch the ${missing.join(", ")} analyst${missing.length > 1 ? "s" : ""} (no \`test-analyst:<kind>\` dispatch reasoning event found). The strategist SUPERVISES: it must spawn one Task subagent per enabled roster analyst, not author the test list solo. Re-run the turn fanning out to each analyst and logging the mandated per-dispatch event.`
-      ]
-    };
-  }
-  return { ok: true, violations: [] };
-}
 function nonEmptyFile(producedPath) {
   let content;
   try {
-    content = readFileSync7(producedPath, "utf8");
+    content = readFileSync5(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`file not readable at ${producedPath}`] };
   }
@@ -8862,7 +8608,7 @@ function nonEmptyFile(producedPath) {
 function designGuideConformant(producedPath) {
   let content;
   try {
-    content = readFileSync7(producedPath, "utf8");
+    content = readFileSync5(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`design-guide.json not readable at ${producedPath}`] };
   }
@@ -8873,7 +8619,7 @@ function conformsTo(artifactName) {
   return (producedPath) => {
     let content;
     try {
-      content = readFileSync7(producedPath, "utf8");
+      content = readFileSync5(producedPath, "utf8");
     } catch {
       return { ok: false, violations: [`${artifactName} not readable at ${producedPath}`] };
     }
@@ -8882,13 +8628,13 @@ function conformsTo(artifactName) {
   };
 }
 function navigatorTestsAuthored(producedPath) {
-  if (!existsSync7(producedPath) || !statSync3(producedPath).isDirectory()) {
+  if (!existsSync5(producedPath) || !statSync3(producedPath).isDirectory()) {
     return { ok: false, violations: [`navigator RED wrote no tests/ tree at ${producedPath}`] };
   }
   const isTest = (n) => /\.(py|ts|tsx|js|jsx)$/.test(n);
   const walk2 = (dir) => {
     for (const e of readdirSync4(dir, { withFileTypes: true })) {
-      const abs = join7(dir, e.name);
+      const abs = join5(dir, e.name);
       if (e.isDirectory()) {
         if (walk2(abs)) return true;
       } else if (isTest(e.name)) {
@@ -8900,13 +8646,13 @@ function navigatorTestsAuthored(producedPath) {
   return walk2(producedPath) ? { ok: true, violations: [] } : { ok: false, violations: [`navigator RED tests/ tree at ${producedPath} has no test file (.py/.ts/.tsx/.js/.jsx)`] };
 }
 function driverCodePresent(producedPath) {
-  if (!existsSync7(producedPath) || !statSync3(producedPath).isDirectory()) {
+  if (!existsSync5(producedPath) || !statSync3(producedPath).isDirectory()) {
     return { ok: false, violations: [`driver GREEN wrote no product tree (app/ or src/) at ${producedPath}`] };
   }
   const isSource = (n) => /\.(py|ts|tsx|js|jsx)$/.test(n);
   const walk2 = (dir) => {
     for (const e of readdirSync4(dir, { withFileTypes: true })) {
-      const abs = join7(dir, e.name);
+      const abs = join5(dir, e.name);
       if (e.isDirectory()) {
         if (walk2(abs)) return true;
       } else if (isSource(e.name)) {
@@ -8918,16 +8664,16 @@ function driverCodePresent(producedPath) {
   return walk2(producedPath) ? { ok: true, violations: [] } : { ok: false, violations: [`driver GREEN product tree at ${producedPath} has no source file (.py/.ts/.tsx/.js/.jsx)`] };
 }
 function assessMarkerWritten(producedPath) {
-  const sup = join7(producedPath, "superseded-tests.json");
-  const reg = join7(producedPath, "regression-assessment.json");
-  const hasSup = existsSync7(sup);
-  const hasReg = existsSync7(reg);
+  const sup = join5(producedPath, "superseded-tests.json");
+  const reg = join5(producedPath, "regression-assessment.json");
+  const hasSup = existsSync5(sup);
+  const hasReg = existsSync5(reg);
   if (!hasSup && !hasReg) {
     return { ok: false, violations: [`assess wrote no marker (expected superseded-tests.json OR regression-assessment.json) in ${producedPath}`] };
   }
   if (hasSup) {
     try {
-      const j = JSON.parse(readFileSync7(sup, "utf8"));
+      const j = JSON.parse(readFileSync5(sup, "utf8"));
       if (!Array.isArray(j.tests) || j.tests.length === 0 || typeof j.reason !== "string" || !j.reason.trim()) {
         return { ok: false, violations: [`superseded-tests.json malformed (need non-empty tests[] + a reason) in ${producedPath}`] };
       }
@@ -8937,7 +8683,7 @@ function assessMarkerWritten(producedPath) {
   }
   if (hasReg) {
     try {
-      const j = JSON.parse(readFileSync7(reg, "utf8"));
+      const j = JSON.parse(readFileSync5(reg, "utf8"));
       if (typeof j.diagnosis !== "string" || !j.diagnosis.trim()) {
         return { ok: false, violations: [`regression-assessment.json malformed (need a non-empty diagnosis) in ${producedPath}`] };
       }
@@ -8948,7 +8694,7 @@ function assessMarkerWritten(producedPath) {
   return { ok: true, violations: [] };
 }
 function acsDirConformant(producedPath) {
-  if (!existsSync7(producedPath) || !statSync3(producedPath).isDirectory()) {
+  if (!existsSync5(producedPath) || !statSync3(producedPath).isDirectory()) {
     return { ok: false, violations: [`spec-author wrote no acs/ dir at ${producedPath} (expected >=1 acs/<AC>.json)`] };
   }
   const acFiles = readdirSync4(producedPath).filter((n) => n.endsWith(".json"));
@@ -8959,7 +8705,7 @@ function acsDirConformant(producedPath) {
   for (const name of acFiles) {
     let content;
     try {
-      content = readFileSync7(join7(producedPath, name), "utf8");
+      content = readFileSync5(join5(producedPath, name), "utf8");
     } catch {
       violations.push(`acs/${name} not readable`);
       continue;
@@ -8972,7 +8718,7 @@ function acsDirConformant(producedPath) {
 function deployVerifyScopeConformant(producedPath) {
   let content;
   try {
-    content = readFileSync7(producedPath, "utf8");
+    content = readFileSync5(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`deploy-verify-scope.json not readable at ${producedPath}`] };
   }
@@ -9007,14 +8753,13 @@ var VALIDATOR_REGISTRY = {
   agentLogHasRoleEvent: (p) => agentLogHasRoleEvent(p),
   // The PO's structured log event is authored as product-owner; bind that role.
   productOwnerLoggedAuthoring: (p) => agentLogHasRoleEvent(p, "product-owner"),
-  // The UX Designer's structured log event is authored as ux-designer; bind that role.
+  // The UX Designer's structured log event is authored as ux-designer; bind that role. (FAN-OUT and
+  // BROWSE provenance are enforced at the spec gate, not here — see the note above re: meta-channel.)
   uxDesignerLoggedAuthoring: (p) => agentLogHasRoleEvent(p, "ux-designer"),
   // The Test Strategist's + Architect Reviewer's + DBA's log events, role-bound (used by the
   // route-scenario manifests that exercise those roles' escalation/produced routes, and by the
   // shipped design-role manifests whose logged-authoring output is the role's agent-log line).
   testStrategistLoggedAuthoring: (p) => agentLogHasRoleEvent(p, "test-strategist"),
-  // The test-strategist's agent-log must prove it FANNED OUT to each enabled analyst (not authored solo).
-  testStrategistDispatchedAnalysts,
   architectReviewerLoggedAuthoring: (p) => agentLogHasRoleEvent(p, "architect-reviewer"),
   dbaLoggedAuthoring: (p) => agentLogHasRoleEvent(p, "dba"),
   // The Navigator's log event (build turns: RED / assess / review), role-bound.
@@ -9119,7 +8864,7 @@ var Step = class {
   constructor(manifest, agent, exists) {
     this.manifest = manifest;
     this.agent = agent;
-    this.exists = exists ?? existsSync8;
+    this.exists = exists ?? existsSync6;
   }
   manifest;
   agent;
@@ -9225,7 +8970,7 @@ var Step = class {
     let primaryPresent = false;
     for (const spec of specs) {
       const rel = provided.outputPaths?.[spec.id] ?? spec.filename;
-      const p = join8(rootFor(spec.channel), rel);
+      const p = join6(rootFor(spec.channel), rel);
       if (this.exists(p)) {
         producedPaths.push(p);
         if (spec.id === primary) primaryPresent = true;
@@ -9300,19 +9045,19 @@ init_esm_shims();
 init_esm_shims();
 import { execSync } from "child_process";
 import * as fs2 from "fs";
-import { dirname as dirname5, join as join9 } from "path";
+import { dirname as dirname4, join as join9 } from "path";
 
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
-import { existsSync as existsSync9, readFileSync as readFileSync8, writeFileSync as writeFileSync4, mkdirSync as mkdirSync4 } from "fs";
+import { existsSync as existsSync7, readFileSync as readFileSync6, writeFileSync as writeFileSync2, mkdirSync as mkdirSync2 } from "fs";
 function normModule(m) {
   return m.replace(/\/+$/, "");
 }
 function readConventions(consortDir) {
   const f = architectureConventionsJson(consortDir);
-  if (!existsSync9(f)) return void 0;
+  if (!existsSync7(f)) return void 0;
   try {
-    return JSON.parse(readFileSync8(f, "utf8"));
+    return JSON.parse(readFileSync6(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -9379,6 +9124,101 @@ function warnLegacyEnv(legacyName, suffix) {
     );
   } catch {
   }
+}
+
+// consort/config/consort-config-file.ts
+init_esm_shims();
+import { existsSync as existsSync9, readFileSync as readFileSync8, mkdirSync as mkdirSync4, writeFileSync as writeFileSync4 } from "fs";
+import { dirname as dirname3, join as join8 } from "path";
+
+// consort/config/agent-models.ts
+init_esm_shims();
+import { existsSync as existsSync8, readFileSync as readFileSync7, writeFileSync as writeFileSync3, mkdirSync as mkdirSync3 } from "fs";
+import { dirname as dirname2, join as join7 } from "path";
+var RECOMMENDED_MODELS = {
+  "spec-author": "opus",
+  "architect-reviewer": "opus",
+  dba: "opus",
+  "test-strategist": "sonnet",
+  "ux-designer": "sonnet",
+  navigator: "sonnet",
+  driver: "sonnet",
+  "product-owner": "opus"
+};
+var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
+var AGENT_CONFIG_REL = join7(".lakebase", "agent-config.json");
+function readAgentConfig(projectDir) {
+  const p = join7(projectDir, AGENT_CONFIG_REL);
+  if (!existsSync8(p)) return void 0;
+  return JSON.parse(readFileSync7(p, "utf8"));
+}
+
+// consort/config/consort-config-file.ts
+var CONSORT_CONFIG_REL = join8(".lakebase", "consort-config.json");
+var LEGACY_CONFIG_RELS = [
+  join8(".lakebase", "sftdd-config.json"),
+  join8(".lakebase", "tdd-config.json")
+];
+var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
+function loadConsortConfig(projectDir) {
+  for (const rel of [CONSORT_CONFIG_REL, ...LEGACY_CONFIG_RELS]) {
+    const f = join8(projectDir, rel);
+    if (!existsSync9(f)) continue;
+    try {
+      return JSON.parse(readFileSync8(f, "utf8"));
+    } catch {
+      return void 0;
+    }
+  }
+  return void 0;
+}
+function resolveProjectSettings(projectDir) {
+  const file = loadConsortConfig(projectDir);
+  const build = {
+    loopGranularity: file?.build?.loopGranularity ?? "story",
+    batchCap: file?.build?.batchCap,
+    sessionScope: file?.build?.sessionScope ?? "story"
+  };
+  const project = {
+    uiTrack: file?.project?.uiTrack ?? true,
+    // HITL-first: the declared project policy defaults to interactive (a human
+    // approves each gate). Headless (proxy) is a deliberate opt-in, set in the
+    // file or as a RUN-SCOPED --gates override (never persisted by a flag).
+    gates: file?.project?.gates ?? "interactive",
+    deployTarget: file?.project?.deployTarget ?? "local",
+    clientFramework: file?.project?.clientFramework ?? "none",
+    // Legacy projects (scaffolded before language was persisted) resolve to "python" – the
+    // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
+    // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
+    // default only affects config-less/legacy trees.
+    language: file?.project?.language ?? "python"
+  };
+  const plan = { sizing: file?.plan?.sizing ?? true };
+  return { build, plan, project };
+}
+function productDirForLanguage(language) {
+  return language === "nodejs" ? "src" : "app";
+}
+function projectLanguage(projectDir) {
+  return resolveProjectSettings(projectDir).project.language;
+}
+function defaultConsortConfig() {
+  const roles = {};
+  for (const role of ALL_AGENT_ROLES) roles[role] = {};
+  return {
+    version: 1,
+    roles,
+    build: { loopGranularity: "story", batchCap: 3, sessionScope: "story" },
+    plan: { sizing: true },
+    project: { uiTrack: true, gates: "interactive", deployTarget: "local", clientFramework: "none", language: "java" }
+  };
+}
+function writeConsortConfig(projectDir, config, opts) {
+  const f = join8(projectDir, CONSORT_CONFIG_REL);
+  if (existsSync9(f) && !opts?.force) return false;
+  mkdirSync4(dirname3(f), { recursive: true });
+  writeFileSync4(f, JSON.stringify(config, null, 2) + "\n");
+  return true;
 }
 
 // consort/orchestrator/build/build-context.ts
@@ -9455,7 +9295,7 @@ function readCtxLeverMarker(consortDir) {
   }
 }
 function failingTestBlock(consortDir, story, reader = defaultFailingTestReader) {
-  const body = reader(dirname5(consortDir), story);
+  const body = reader(dirname4(consortDir), story);
   return body ? ` FAILING TEST (make THIS pass; do NOT search for it) ::
 \`\`\`python
 ${body}
@@ -9487,7 +9327,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
     parts.push(` LAYOUT (place/judge code at THESE paths, do not scan for them) :: ${layout}.`);
   }
   {
-    const language = projectLanguage(dirname5(consortDir));
+    const language = projectLanguage(dirname4(consortDir));
     const runHint = language === "nodejs" ? ` RUN/REACHABILITY :: node project \u2013 source under src/ (there is NO app/). To confirm the app boots or is reachable, run the project's OWN start (the package.json start/dev script, e.g. \`node src/index.js\`) and GET the health path over HTTP \u2013 do NOT assume Python or run \`python -c "import app.main"\` (it will false-fail here).` : language === "java" || language === "kotlin" ? ` RUN/REACHABILITY :: ${language} project. To confirm the app boots or is reachable, run \`./mvnw spring-boot:run\` and GET the health path over HTTP \u2013 do NOT assume Python (\`python -c "import app.main"\` false-fails here).` : ` RUN/REACHABILITY :: python project \u2013 source under app/. To confirm the app boots or is reachable, run \`uv run uvicorn app.main:app\` and GET the health path over HTTP. Reachability is an HTTP response, never just an import succeeding.`;
     parts.push(runHint);
   }
@@ -9499,7 +9339,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   const marker = readCtxLeverMarker(consortDir);
   const dbOn = opts.dbState ?? marker.dbState ?? consortEnv("CTX_DBSTATE") === "1";
   if (dbOn) {
-    const st = (opts.dbStateReader ?? defaultDbStateReader)(dirname5(consortDir));
+    const st = (opts.dbStateReader ?? defaultDbStateReader)(dirname4(consortDir));
     if (st && (st.current || st.heads)) {
       parts.push(
         ` DB STATE (already probed, do NOT re-run alembic current/heads) ::${st.current ? ` current=${st.current.replace(/\s+/g, " ")}` : ""}${st.heads ? ` head=${st.heads.replace(/\s+/g, " ")}` : ""}. The branch is migrated to head; iterate with \`uv run --env-file .env pytest <path>\` (no re-migrate).`
@@ -9515,7 +9355,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   if (scopeOn) parts.push(scopeNoteBlock());
   const migrationOn = opts.migration ?? marker.migration ?? consortEnv("CTX_MIGRATION") === "1";
   if (migrationOn) {
-    const language = projectLanguage(dirname5(consortDir));
+    const language = projectLanguage(dirname4(consortDir));
     const migrationGuide = language === "nodejs" ? ` MIGRATION :: knex migrations live in migrations/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Source/models live under src/; apply with \`npm run migrate\`.` : language === "java" || language === "kotlin" ? ` MIGRATION :: flyway migrations live in src/main/resources/db/migration/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Apply with \`./mvnw -q flyway:migrate\`.` : ` MIGRATION :: alembic migrations live in alembic/versions/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author the revision file or grep scripts/lk to find the command). ORM models are in app/models.py; apply with \`uv run --env-file .env alembic upgrade head\`.`;
     parts.push(migrationGuide);
   }
@@ -9527,7 +9367,7 @@ init_esm_shims();
 import * as fs3 from "fs";
 import { execFileSync } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname6, join as join10 } from "path";
+import { dirname as dirname5, join as join10 } from "path";
 function supersededTestsJson(tdd, feature, story, ac) {
   return join10(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
@@ -9593,7 +9433,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs3.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState(dirname6(tdd));
+      const cur = computeTreeState(dirname5(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs3.rmSync(file, { force: true });
         return void 0;
@@ -9630,6 +9470,48 @@ function regressionAssessmentJson(tdd, feature, story, ac) {
 
 // consort/test-list/test-analyst-roster.ts
 init_esm_shims();
+
+// consort/test-list/test-analyst-catalogue.ts
+init_esm_shims();
+var SLICE_CONTRACT = 'Return an UNORDERED JSON array of test-list items as the LAST thing in your reply, fenced as ```json ... ```. Each item is { "id": "<kind-local id, e.g. bhv-1>", "description": "<one observable behavior, no \'and\'>", "ac_id": "<EXACT id of an existing story AC file>", "status": "pending", "kind": "<your kind>" }. Do NOT order the items and do NOT set ordered_for \u2013 the supervisor orders the merged master and assigns the final T-ids. Map every item to a real story AC id (copy it verbatim, never re-slug).';
+var TEST_ANALYST_CATALOGUE = {
+  behavior: {
+    kind: "behavior",
+    description: "Backend behavior/API scenarios: one observable behavior per AC through the API boundary.",
+    configSummary: "Per AC: >=1 behavior item through the API boundary (pytest-bdd .feature).",
+    model: "sonnet",
+    effort: "default",
+    toolScope: ["Read"],
+    inputs: ["story-acs", "architecture-invariants"],
+    focusPrompt: "You are the BEHAVIOR test analyst. Cover every BACKEND-layer AC (API / service / data / INFRA) whose outcome is observable through the API boundary with at least one `kind:\"behavior\"` item \u2013 one observable behavior verified through the API boundary (for Python, a pytest-bdd scenario; set `scenario_file` to `tests/features/<story>.feature`). An `Infra`-layer AC (e.g. 'distinct (sku,location) coexist', 'refile updates in place') still has an observable API behavior \u2013 it is YOURS, do not skip it as 'DB-only'. ASSERT THE AC'S CORE PROMISED OUTCOME \u2013 the actual result the AC guarantees (a refile leaves the stored quantity == the NEW value AND exactly ONE row for the pair; filing the same SKU at two DIFFERENT locations yields TWO independently-retrievable coexisting rows), NOT merely a peripheral aspect (a preserved timestamp, atomicity). For a uniqueness / multi-key invariant, cover BOTH sides: the COLLISION (same key -> rejected / stays one row) AND the DISTINCT-keys-COEXIST positive (different keys -> independent rows). A test that checks only the peripheral aspect or only the collision lets a Driver go green without the real behavior \u2013 the recurring reflect-testlist-defect. **DO NOT author a behavior item for an E2E / UI-presentation AC** (e.g. a \"filing form\" / \"home screen\" AC whose `layer` is `E2E`): those are the CLIENT analyst's Playwright job, NOT a backend pytest-bdd test. Set each item's `ac_id` ONLY to an AC whose layer permits a backend test; anchoring a 2xx / response-shape check to a UI AC (instead of the API-layer AC) is the recurring mis-route the reflect gate rejects \u2013 if an AC's observable outcome is an HTTP response shape, it belongs on the API-layer AC, never the form/screen AC. Test at the OUTERMOST public boundary matching the AC's layer. One test per scenario, never an \"and\". EVERY write-bearing test (POST/insert/seed) MUST own its state \u2013 use a per-run-unique key suffixed with the platform's BUILT-IN UUID (Python `uuid.uuid4()` from the stdlib; JS/TS `crypto.randomUUID()`; Java `java.util.UUID`) OR delete/upsert the fixed key before writing, never assume an empty table. NEVER add a UUID dependency: in JS/TS do NOT `import ... from \"uuid\"` \u2013 the `uuid` npm package is not a scaffolded dependency and fails CI with \"Cannot find package 'uuid'\". Do NOT emit fitness or client items, and do NOT set `invariant_id` (the fitness analyst owns persistence invariants). COVER THE NEGATIVE/BOUNDARY-VALIDATION PATH a constraint implies on your ACs: you are given architecture.json (NFRs + persistence_invariants), so when an AC's field is required / NOT NULL (a `not_null` invariant or a field-named-validation NFR names it), emit a behavior item that OMITS (or sends invalid) that field through the API boundary and asserts a field-named rejection \u2013 this is the boundary guard, DISTINCT from the DB constraint the fitness analyst tests. Your `behavior` item asserts ONLY an API-OBSERVABLE outcome (an HTTP status + response body through the boundary). A SERVICE-INTERNAL assertion \u2014 the service raises/rejects BEFORE the DB, the repository is never reached, the guard fires 'at the service layer' \u2014 is NOT API-observable and is NOT a behavior/.feature scenario: authored as one it gets no bindable step def and STALLS the build lane (an unbound pytest-bdd scenario). That service-layer guard is the FITNESS analyst's (a direct service-level test), so cover the negative case here ONLY in its API-observable form (POST the invalid value \u2192 4xx naming the field), and leave the 'rejects-before-the-DB / repository-not-reached' assertion to fitness. A required-field/CHECK/overcommit rejection with only a happy-path test is the recurring reflect-testlist-defect. " + SLICE_CONTRACT
+  },
+  fitness: {
+    kind: "fitness",
+    description: "Architectural fitness tests + a real-branch test per declared persistence invariant.",
+    configSummary: "Per architectural constraint + per persistence_invariant: a fitness item (invariant_id).",
+    model: "sonnet",
+    effort: "high",
+    toolScope: ["Read"],
+    inputs: ["architecture-invariants", "db-design"],
+    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (single-step downgrade/upgrade, @pytest.mark.migration, NEVER downgrade base) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after downgrade-then-upgrade (NOT that data survives). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where single-step downgrade removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: single-step downgrade drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
+  },
+  client: {
+    kind: "client",
+    description: "SPA client-harness tests for UI-presentation ACs (React component / Playwright e2e).",
+    configSummary: "Per UI-presentation AC: a client item under client/tests/ (only when uiTrack).",
+    model: "sonnet",
+    effort: "default",
+    toolScope: ["Read"],
+    inputs: ["story-acs", "architecture-invariants", "design-guide"],
+    enabledWhen: (ctx) => ctx.uiTrack === true,
+    focusPrompt: "You are the CLIENT test analyst (this project HAS a frontend). For every UI-presentation AC the architecture routes to the SPA's own client harness, emit a `kind:\"client\"` item with `scenario_file` under `client/tests/` (e.g. `client/tests/pages/<Screen>.test.tsx`). Do NOT fold a presentation AC into the backend pytest-bdd suite \u2013 that mechanism mismatch is a defect. For an AC that OWNS a page/route, at least one client item MUST exercise the page THROUGH THE REAL `<App>` at the AC's route (a Playwright e2e that navigates the route, OR a component test rendering `<App>` in `<MemoryRouter initialEntries={[\"<the path>\"]}>`) \u2013 a bare `render(<ThePage/>)` does NOT prove the page is routed; name the route in the description. Test the design-guide SEAM (assert the element carries its design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS in the source. Do NOT set `invariant_id`. MATCH THE TEST TO THE AC's `layer`: an AC whose `layer` is **`E2E`** is verified END-TO-END against the REAL paired-branch DB \u2013 it REQUIRES a real Playwright e2e (scenario_file under `client/tests/e2e/\u2026`) that drives the DEPLOYED app in a browser against the live DB, with NO mocked/stubbed fetch and NO in-memory data. A mocked/stubbed COMPONENT test (rendering `<App>`/`<Page>` with fake data) is ONLY for a pure presentation/rendering AC, NEVER for an `E2E`-layer AC \u2013 drafting an E2E-layer AC as a mocked component test is the recurring reflect-testlist-defect (it cannot hit the DB the layer demands). One real e2e per E2E-layer AC. ALSO cover NFR CLIENT-RENDER fitness functions: for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (e.g. rendering a row with null/optional fields and asserting a 'not tracked' indicator, or an empty/loading/error state), emit a `kind:\"client\"` item that performs that render and asserts the stated outcome. These NFR-render fitness functions are YOURS, never the fitness analyst's (it owns service/DB guards, not the SPA); a stated client-render NFR with no client item is the recurring reflect-testlist-defect. " + SLICE_CONTRACT
+  }
+};
+function enabledAnalysts(ctx) {
+  return Object.values(TEST_ANALYST_CATALOGUE).filter((e) => e.enabledWhen ? e.enabledWhen(ctx) : true);
+}
+
+// consort/test-list/test-analyst-roster.ts
 function renderTestAnalystRoster(ctx, opts = {}) {
   const overrides = opts.overrides ?? {};
   const analysts = enabledAnalysts(ctx).map((e) => {
@@ -9817,7 +9699,7 @@ import { spawnSync } from "child_process";
 // consort/config/kit-ref.ts
 init_esm_shims();
 import { existsSync as existsSync13, readFileSync as readFileSync14, writeFileSync as writeFileSync7, mkdirSync as mkdirSync8 } from "fs";
-import { dirname as dirname9, join as join13 } from "path";
+import { dirname as dirname8, join as join13 } from "path";
 
 // consort/lakebase/update-commands.ts
 init_esm_shims();
@@ -9827,7 +9709,7 @@ import * as path4 from "path";
 // consort/lakebase/kit-ref-pin.ts
 init_esm_shims();
 import { fileURLToPath as fileURLToPath3 } from "url";
-import { dirname as dirname11, join as join15, resolve } from "path";
+import { dirname as dirname10, join as join15, resolve } from "path";
 import { readFileSync as readFileSync16, existsSync as existsSync15, mkdirSync as mkdirSync10, writeFileSync as writeFileSync9 } from "fs";
 
 // consort/lakebase/upgrade.ts
@@ -9963,7 +9845,7 @@ import * as readline from "readline";
 // consort/logging/replay-artifacts.ts
 init_esm_shims();
 import { existsSync as existsSync18, mkdirSync as mkdirSync13, readdirSync as readdirSync11, copyFileSync as copyFileSync3, statSync as statSync5 } from "fs";
-import { join as join18, dirname as dirname14 } from "path";
+import { join as join18, dirname as dirname13 } from "path";
 var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
   "spec-author",
   "architect-reviewer",
@@ -9974,7 +9856,7 @@ var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
 ]);
 function cp(src, dst) {
   if (!existsSync18(src)) return false;
-  mkdirSync13(dirname14(dst), { recursive: true });
+  mkdirSync13(dirname13(dst), { recursive: true });
   copyFileSync3(src, dst);
   return true;
 }
@@ -10204,7 +10086,7 @@ function assertReplayBuildVerdictMatch(args) {
 // consort/logging/agent-log.ts
 init_esm_shims();
 import { appendFileSync, existsSync as existsSync20, mkdirSync as mkdirSync14, readFileSync as readFileSync20 } from "fs";
-import { dirname as dirname15, join as join20 } from "path";
+import { dirname as dirname14, join as join20 } from "path";
 
 // consort/logging/agent-log-events.ts
 init_esm_shims();
@@ -10289,7 +10171,7 @@ function mirrorToRecordDir(text) {
   if (!recordDir) return;
   try {
     const dst = join20(recordDir, "agent-log.jsonl");
-    mkdirSync14(dirname15(dst), { recursive: true });
+    mkdirSync14(dirname14(dst), { recursive: true });
     appendFileSync(dst, text, "utf8");
   } catch {
   }
@@ -10357,6 +10239,89 @@ function writeWorkflowPhase(consortDir, phase, featureId) {
   if (featureId) state[PHASE_OWNER_KEY] = featureId;
   fs10.mkdirSync(consortDir, { recursive: true });
   fs10.writeFileSync(file, JSON.stringify(state, null, 2) + "\n");
+}
+
+// consort/orchestrator/settings/project-settings.ts
+init_esm_shims();
+
+// consort/orchestrator/drive/turn-key.ts
+init_esm_shims();
+function turnKeyForAction(action) {
+  if (action.kind !== "invoke-role") return void 0;
+  if ("buildMode" in action) {
+    switch (action.buildMode) {
+      case "reflect":
+        return "reflect";
+      // design-lane critic, tuned as its own turn (sweep: haiku+low)
+      case "review":
+        return "review";
+      case "refactor":
+      case "refactor-deploy":
+      case "refactor-superseded":
+        return "refactor";
+      case "assess":
+      case "assess-deploy":
+      case "assess-refactor":
+        return "assess";
+      case "repair":
+        return "repair";
+      case "green-superseded":
+        return "green";
+    }
+  }
+  if ("mode" in action) {
+    if (action.role === "spec-author" && action.mode === "breakdown") return "breakdown";
+    if (action.role === "spec-author" && action.mode === "propose") return "propose";
+    if (action.role === "architect-reviewer" && (action.mode === "estimate" || action.mode === "estimate-committed")) return "estimate";
+    return void 0;
+  }
+  if (action.role === "ux-designer") return "ux";
+  if ("story" in action && action.story) {
+    if (action.role === "spec-author") return "acs";
+    if (action.role === "architect-reviewer") return "architect";
+    if (action.role === "dba") return "dba";
+    if (action.role === "test-strategist") return "test-list";
+  }
+  if (action.role === "navigator") return "red";
+  if (action.role === "driver") return "green";
+  return void 0;
+}
+
+// consort/orchestrator/settings/project-settings.ts
+function resolveConsortSettings(inputs) {
+  const file = loadConsortConfig(inputs.projectDir);
+  const legacy = readAgentConfig(inputs.projectDir);
+  const models = {};
+  const fallbackModels = {};
+  const budgets = {};
+  const mcpConfigs = {};
+  for (const role of ALL_AGENT_ROLES) {
+    const rc = file?.roles?.[role];
+    const legacyEntry = legacy?.roles?.[role];
+    const scalarModel = typeof rc?.model === "string" ? rc.model : void 0;
+    models[role] = scalarModel ?? legacyEntry?.override ?? legacyEntry?.recommended ?? RECOMMENDED_MODELS[role] ?? "inherit";
+    fallbackModels[role] = rc?.fallbackModel;
+    budgets[role] = typeof rc?.maxBudgetUsd === "number" ? rc.maxBudgetUsd : void 0;
+    mcpConfigs[role] = rc?.mcpConfig;
+  }
+  const manifestStep = (role, turn) => turn ? agentOptionsForStep(role, turn, turnKeyForAction) : void 0;
+  const modelFor = (role, turn) => {
+    const m = file?.roles?.[role]?.model;
+    if (m && typeof m !== "string" && turn && m[turn]) return m[turn];
+    if (typeof m === "string") return m;
+    const declared = manifestStep(role, turn)?.model;
+    if (declared) return declared;
+    return models[role] ?? "inherit";
+  };
+  const effortFor = (role, turn) => {
+    const rc = file?.roles?.[role];
+    const e = rc?.effort;
+    if (typeof e === "string") return e;
+    if (e && turn && e[turn]) return e[turn];
+    return manifestStep(role, turn)?.effort ?? "default";
+  };
+  const { build, plan, project } = resolveProjectSettings(inputs.projectDir);
+  return { models, modelFor, fallbackModels, budgets, mcpConfigs, effortFor, build, plan, project };
 }
 
 // consort/session/claude-usage.ts
@@ -10549,10 +10514,10 @@ import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lake
 // consort/setup/stray-artifact-recovery.ts
 init_esm_shims();
 import { existsSync as existsSync23, mkdirSync as mkdirSync16, cpSync as cpSync4, rmSync as rmSync4, readdirSync as readdirSync13, statSync as statSync7 } from "fs";
-import { join as join22, dirname as dirname17, basename as basename3 } from "path";
+import { join as join22, dirname as dirname16, basename as basename3 } from "path";
 function malformedSiblingRoot(projectDir) {
   const p = projectDir.replace(/\/+$/, "");
-  return `${dirname17(p)}-${basename3(p)}`;
+  return `${dirname16(p)}-${basename3(p)}`;
 }
 function listFilesRel(dir) {
   const out = [];
@@ -11260,7 +11225,7 @@ ${instructions.guidelines.map((g) => `- ${g}`).join("\n")}` : "";
 // consort/orchestrator/agents/mock-replay-agent.ts
 init_esm_shims();
 import { readFileSync as readFileSync23, writeFileSync as writeFileSync13, existsSync as existsSync24, mkdirSync as mkdirSync18, cpSync as cpSync5, readdirSync as readdirSync15, statSync as statSync9 } from "fs";
-import { join as join24, dirname as dirname18, relative as relative2, sep } from "path";
+import { join as join24, dirname as dirname17, relative as relative2, sep } from "path";
 function makeMockReplayAgent(opts) {
   const role = opts.role ?? "product-owner";
   return {
@@ -11278,7 +11243,7 @@ function makeMockReplayAgent(opts) {
           mkdirSync18(dst, { recursive: true });
           cpSync5(src, dst, { recursive: true, force: true, filter: codeTreeFilter(src) });
         } else {
-          mkdirSync18(dirname18(dst), { recursive: true });
+          mkdirSync18(dirname17(dst), { recursive: true });
           writeFileSync13(dst, readFileSync23(src, "utf8"));
         }
         materialized.push(seed.to);
@@ -11304,7 +11269,7 @@ function actionSignature(a) {
 function resolveTurnsDir(corpusRoot) {
   const here = join24(corpusRoot, "turns");
   if (existsSync24(here)) return here;
-  const parent = join24(dirname18(corpusRoot), "turns");
+  const parent = join24(dirname17(corpusRoot), "turns");
   if (existsSync24(parent)) return parent;
   return void 0;
 }
@@ -11357,7 +11322,7 @@ function materializeFiles(filesDir, workspaceDir) {
       }
       const rel = remapArtifactRoot(relative2(filesDir, src));
       const dst = join24(workspaceDir, rel);
-      mkdirSync18(dirname18(dst), { recursive: true });
+      mkdirSync18(dirname17(dst), { recursive: true });
       writeFileSync13(dst, readFileSync23(src));
       out.push(rel);
     }
@@ -11765,7 +11730,7 @@ function beginCycle(args) {
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
 import { existsSync as existsSync42, readFileSync as readFileSync41, readdirSync as readdirSync29, statSync as statSync18, writeFileSync as writeFileSync25, mkdirSync as mkdirSync27, rmSync as rmSync8 } from "fs";
-import { join as join42, dirname as dirname25 } from "path";
+import { join as join42, dirname as dirname24 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -11919,12 +11884,12 @@ function verifyGateIntegrity(args) {
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
 import { existsSync as existsSync31, readFileSync as readFileSync30, readdirSync as readdirSync21, statSync as statSync13 } from "fs";
-import { join as join31, dirname as dirname20 } from "path";
+import { join as join31, dirname as dirname19 } from "path";
 
 // consort/test-list/test-list.ts
 init_esm_shims();
 import { readFileSync as readFileSync28, writeFileSync as writeFileSync18, existsSync as existsSync29, mkdirSync as mkdirSync21, readdirSync as readdirSync19, statSync as statSync12 } from "fs";
-import { join as join29, dirname as dirname19 } from "path";
+import { join as join29, dirname as dirname18 } from "path";
 function acIdsInStoryDir(storyDir2) {
   const dir = join29(storyDir2, "acs");
   if (!existsSync29(dir)) return [];
@@ -12205,6 +12170,50 @@ function fitnessSingularCoverageReason(consortDir, featureId, testListJson) {
   const r = checkFitnessSingularCoverage(testListJson, arch);
   return r.ok ? null : `singular fitness coverage failed: ${r.violations.join("; ")}`;
 }
+function missingAnalystDispatchKinds(logText, enabledKinds) {
+  const messages = [];
+  for (const line of logText.split("\n").map((l) => l.trim()).filter(Boolean)) {
+    try {
+      const o = JSON.parse(line);
+      if (o.role === "test-strategist" && typeof o.message === "string") messages.push(o.message);
+    } catch {
+    }
+  }
+  return enabledKinds.filter((k) => !messages.some((m) => m.includes(`test-analyst:${k}`)));
+}
+function testStrategistFanOutReason(consortDir, featureId, testListJson) {
+  try {
+    const items = JSON.parse(testListJson).items;
+    if (!Array.isArray(items) || items.length === 0) return null;
+  } catch {
+    return null;
+  }
+  const logPath = join31(consortDir, "agent-log.jsonl");
+  if (!existsSync31(logPath)) return null;
+  const uiTrack = resolveProjectSettings(dirname19(consortDir)).project.uiTrack;
+  const kinds = enabledAnalysts({ projectDir: dirname19(consortDir), uiTrack }).map((a) => a.kind);
+  const missing = missingAnalystDispatchKinds(readFileSync30(logPath, "utf8"), kinds);
+  if (missing.length === 0) return null;
+  return `the test-strategist produced a test list but did not fan out to the ${missing.join(", ")} analyst${missing.length > 1 ? "s" : ""} (no \`test-analyst:<kind>\` dispatch event in the agent-log). The Test Strategist SUPERVISES: it must spawn one Task subagent per enabled roster analyst (behavior / fitness / client) and reconcile their slices, never author the test list solo. Re-run the test-strategist turn fanning out to each analyst and logging the mandated per-dispatch event.`;
+}
+function uxDesignerBrowsedReason(consortDir, featureId) {
+  const fdir = featureDir2(consortDir, featureId);
+  const guide = join31(fdir, "design", "design-guide.json");
+  const brief = join31(fdir, "design", "design-brief.md");
+  if (!existsSync31(guide) || !existsSync31(brief)) return null;
+  const logPath = join31(consortDir, "agent-log.jsonl");
+  if (!existsSync31(logPath)) return null;
+  const browsed = readFileSync30(logPath, "utf8").split("\n").map((l) => l.trim()).filter(Boolean).some((line) => {
+    try {
+      const o = JSON.parse(line);
+      return o.role === "ux-designer" && typeof o.message === "string" && (o.message.includes("browsed:") || o.message.includes("browse-gap:"));
+    } catch {
+      return false;
+    }
+  });
+  if (browsed) return null;
+  return `the ux-designer produced a design guide but logged no browse provenance (no \`browsed:<site>\` or \`browse-gap:<site>\` event). The look must be GROUNDED in the brief's reference sites: navigate to each with mcp__playwright / WebFetch, derive tokens from what you SEE, and log \`browsed:<site>\` per reference viewed (or \`browse-gap:<site>\` naming any that could not be reached), not written from the brief's wording alone.`;
+}
 function clientKindLayerReason(consortDir, featureId, testListJson) {
   const fdir = featureDir2(consortDir, featureId);
   const storiesDir2 = join31(fdir, "stories");
@@ -12377,7 +12386,7 @@ function e2eLayerPresentReason(consortDir, featureId) {
   }
   let uiReact = false;
   try {
-    const proj = resolveProjectSettings(dirname20(consortDir)).project;
+    const proj = resolveProjectSettings(dirname19(consortDir)).project;
     uiReact = proj.uiTrack === true && proj.clientFramework === "react";
   } catch {
   }
@@ -12458,6 +12467,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (e2eLayerReason !== null) return { reason: e2eLayerReason };
       const requiresE2e = requiresE2eReason(consortDir, featureId);
       if (requiresE2e !== null) return { reason: requiresE2e };
+      const browsedReason = uxDesignerBrowsedReason(consortDir, featureId);
+      if (browsedReason !== null) return { reason: browsedReason };
       const layeringReason = layeringDeclaredReason(consortDir, featureId);
       if (layeringReason !== null) return { reason: layeringReason };
       const dbReason = dbDesignReason(consortDir, featureId);
@@ -12510,6 +12521,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (e2eReason !== null) return { reason: e2eReason };
         const jsdomReason = jsdomBrowserAssertionReason(tlJson);
         if (jsdomReason !== null) return { reason: jsdomReason };
+        const fanOutReason = testStrategistFanOutReason(consortDir, featureId, tlJson);
+        if (fanOutReason !== null) return { reason: fanOutReason };
       }
       return conf;
     }
@@ -12548,7 +12561,7 @@ init_esm_shims();
 import { execSync as execSync2, spawn as spawn2 } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync35, mkdirSync as mkdirSync24, readFileSync as readFileSync35, rmSync as rmSync6, writeFileSync as writeFileSync22 } from "fs";
-import { dirname as dirname22, join as join35 } from "path";
+import { dirname as dirname21, join as join35 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -12993,7 +13006,7 @@ function storyDeployVerified(consortDir, featureId, storyId) {
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync36, readFileSync as readFileSync36, readdirSync as readdirSync25, writeFileSync as writeFileSync23, mkdirSync as mkdirSync25, copyFileSync as copyFileSync4 } from "fs";
-import { join as join36, dirname as dirname23, basename as basename5 } from "path";
+import { join as join36, dirname as dirname22, basename as basename5 } from "path";
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
@@ -13872,7 +13885,7 @@ function validateAndBound(proposal, completed, state, deps) {
       };
     }
     case "blocked": {
-      const { sanctioned } = deps.recordRetry(completed, state);
+      const { sanctioned } = deps.recordRetry(completed, state, proposal.reason);
       return { action: completed, sanctionedRetry: sanctioned };
     }
     case "produced":
@@ -13971,7 +13984,7 @@ async function execute(step, ctx, deps) {
 // consort/orchestrator/turns/agent-report-formatter.ts
 init_esm_shims();
 import { readFileSync as readFileSync47, writeFileSync as writeFileSync28, existsSync as existsSync48, appendFileSync as appendFileSync2, mkdirSync as mkdirSync30 } from "fs";
-import { join as join45, dirname as dirname27 } from "path";
+import { join as join45, dirname as dirname26 } from "path";
 function extractReportBlock(text) {
   const labeled = text.match(/```agent-report\s*\n([\s\S]*?)```/);
   if (labeled) return labeled[1].trim();
@@ -14032,7 +14045,7 @@ function formatAgentReport(args) {
   if (existsSync48(logPath)) {
     appendFileSync2(logPath, payload);
   } else {
-    mkdirSync30(dirname27(logPath), { recursive: true });
+    mkdirSync30(dirname26(logPath), { recursive: true });
     writeFileSync28(logPath, payload);
   }
   return { ok: true, entries: formatted.length };
@@ -14188,7 +14201,7 @@ async function runManifestChain(start, manifests, deps, options = {}) {
 // consort/orchestrator/provisioning/bundle.ts
 init_esm_shims();
 import { mkdirSync as mkdirSync31, cpSync as cpSync6, existsSync as existsSync50 } from "fs";
-import { join as join47, dirname as dirname28 } from "path";
+import { join as join47, dirname as dirname27 } from "path";
 function layDownKitAgents(workspaceDir, kitDir = process.cwd()) {
   const src = join47(kitDir, "skills", "consort", "agents");
   if (!existsSync50(src)) throw new Error(`layDownKitAgents: kit agents dir not found at ${src}`);
@@ -14202,7 +14215,7 @@ function overlayBundle(destRoot, overlay) {
   }
   for (const f of overlay.files ?? []) {
     const dst = join47(destRoot, f.to);
-    mkdirSync31(dirname28(dst), { recursive: true });
+    mkdirSync31(dirname27(dst), { recursive: true });
     cpSync6(f.from, dst);
   }
 }
@@ -14598,7 +14611,7 @@ function driverGreenCandidates() {
 // tests/optimization/driver-green-enforcement.ts
 init_esm_shims();
 import { mkdirSync as mkdirSync33, readFileSync as readFileSync50, writeFileSync as writeFileSync29, existsSync as existsSync52, chmodSync } from "fs";
-import { dirname as dirname29, join as join51 } from "path";
+import { dirname as dirname28, join as join51 } from "path";
 
 // node_modules/js-yaml/dist/js-yaml.mjs
 init_esm_shims();
@@ -17308,7 +17321,7 @@ function applyDriverLevers(workspaceDir, levers, consortDir) {
   }
   if (needsHook) {
     const hookPath = join51(workspaceDir, GUARD_HOOK_REL);
-    mkdirSync33(dirname29(hookPath), { recursive: true });
+    mkdirSync33(dirname28(hookPath), { recursive: true });
     writeFileSync29(hookPath, guardHookScript({ suite: levers.guardSuite === true, scan: levers.guardScan === true }), "utf8");
     chmodSync(hookPath, 493);
     const hooks = settings.hooks ??= {};
@@ -17317,7 +17330,7 @@ function applyDriverLevers(workspaceDir, levers, consortDir) {
     if (!already) pre.push({ matcher: "Bash", hooks: [{ type: "command", command: hookPath }] });
     result.hookPath = hookPath;
   }
-  mkdirSync33(dirname29(settingsPath), { recursive: true });
+  mkdirSync33(dirname28(settingsPath), { recursive: true });
   writeFileSync29(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
   result.settingsPath = settingsPath;
   return result;
@@ -17713,7 +17726,7 @@ function resolveTestEnv() {
 // tests/integration/live/kit-resolution.ts
 init_esm_shims();
 import { existsSync as existsSync53, mkdirSync as mkdirSync34, writeFileSync as writeFileSync31, rmSync as rmSync11, symlinkSync, realpathSync } from "fs";
-import { join as join53, dirname as dirname30 } from "path";
+import { join as join53, dirname as dirname29 } from "path";
 import { homedir } from "os";
 var LOCAL_KIT_REF_DEFAULT = "sftdd-livetest-local";
 function localKitCacheLink(ref = LOCAL_KIT_REF_DEFAULT) {
@@ -17725,7 +17738,7 @@ function pinLocalKitCache(kitRoot2, ref = LOCAL_KIT_REF_DEFAULT) {
     throw new Error(`kit-resolution: kit dist missing at ${kitRoot2}/dist \u2013 run 'npm run build' in the kit first.`);
   }
   const link = localKitCacheLink(ref);
-  mkdirSync34(dirname30(link), { recursive: true });
+  mkdirSync34(dirname29(link), { recursive: true });
   rmSync11(link, { recursive: true, force: true });
   symlinkSync(kitRoot2, link);
 }
@@ -18413,11 +18426,20 @@ async function runDriver(effects, options = {}) {
     // Reuse the EXISTING revise budget: escalationPreempt returns a revise-route only
     // while the budget has room (priorReviseCount / REFLECT_REVISE_CAP), else raise-to-hil.
     reviseBudgetAvailable: (_p, s) => escalationPreempt(s)?.kind === "revise-route",
-    recordRetry: (completed) => {
+    recordRetry: (completed, _state, reason) => {
       const key = JSON.stringify(completed);
       const attempt = (routerRetries.get(key) ?? 0) + 1;
       if (attempt > 1) {
-        throw new Error(`PROTOCOL VIOLATION: step ${key} emitted "blocked" past its retry budget. Aborting workflow.`);
+        const handoff = expectationFor(completed) ?? {
+          signature: key,
+          responder: "role" in completed && typeof completed.role === "string" ? completed.role : "orchestrator",
+          expected: "a conformant result",
+          satisfiedBy: () => false
+        };
+        throw new ProtocolViolationError(
+          handoff,
+          `it emitted "blocked" past its retry budget${reason ? ` (${reason})` : ""}`
+        );
       }
       routerRetries.set(key, attempt);
       return { sanctioned: true };
@@ -18506,7 +18528,7 @@ function featureOf(state) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_esm_shims();
 import * as fs18 from "fs";
-import { dirname as dirname35, join as join64 } from "path";
+import { dirname as dirname34, join as join64 } from "path";
 
 // consort/orchestrator/drive/executor-dispatch.ts
 init_esm_shims();
@@ -18530,7 +18552,7 @@ import {
   statSync as statSync21,
   writeFileSync as writeFileSync32
 } from "fs";
-import { dirname as dirname31, join as join57, relative as relative7 } from "path";
+import { dirname as dirname30, join as join57, relative as relative7 } from "path";
 var PROJECT_ROOT_TOKEN = "<PROJECT_ROOT>";
 function relativizeProjectPaths(text, projectDir) {
   if (!text || !projectDir) return text;
@@ -18556,14 +18578,14 @@ function recordReplaySet(args) {
   for (const abs of walk(projectDir, keep)) {
     const rel = relative7(projectDir, abs);
     const dst = join57(preDir, rel);
-    mkdirSync35(dirname31(dst), { recursive: true });
+    mkdirSync35(dirname30(dst), { recursive: true });
     cpSync8(abs, dst);
   }
   const preConsortDir = join57(setDir, "pre-consort");
   for (const abs of walk(consortDir, preConsortKeep)) {
     const rel = relative7(consortDir, abs);
     const dst = join57(preConsortDir, rel);
-    mkdirSync35(dirname31(dst), { recursive: true });
+    mkdirSync35(dirname30(dst), { recursive: true });
     cpSync8(abs, dst);
   }
   const inDir = join57(setDir, "inputs");
@@ -18737,11 +18759,11 @@ function recordTurn(args) {
     for (const rel of produced) {
       const f = cur.get(rel);
       const dst = join57(turnDir, "files", rel);
-      mkdirSync35(dirname31(dst), { recursive: true });
+      mkdirSync35(dirname30(dst), { recursive: true });
       cpSync8(f.abs, dst);
       if (f.underConsort) {
         const mirror = join57(artifactsDir, relative7(consortDir, f.abs));
-        mkdirSync35(dirname31(mirror), { recursive: true });
+        mkdirSync35(dirname30(mirror), { recursive: true });
         cpSync8(f.abs, mirror);
       }
     }
@@ -19265,7 +19287,7 @@ function assertRouteSatisfiable(action, step, ctx, exists = existsSync59) {
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
 import { existsSync as existsSync60, readFileSync as readFileSync55, writeFileSync as writeFileSync33, mkdirSync as mkdirSync37, readdirSync as readdirSync37, statSync as statSync23, rmSync as rmSync16 } from "fs";
-import { dirname as dirname32, join as join61 } from "path";
+import { dirname as dirname31, join as join61 } from "path";
 
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
@@ -19287,14 +19309,14 @@ function readPipeline(consortDir, featureId) {
 }
 function writePipeline(consortDir, pipeline) {
   const p = pipelinePath(consortDir, pipeline.feature_id);
-  mkdirSync37(dirname32(p), { recursive: true });
+  mkdirSync37(dirname31(p), { recursive: true });
   writeFileSync33(p, JSON.stringify(pipeline, null, 2) + "\n");
 }
 
 // consort/session/response-formatter.ts
 init_esm_shims();
 import { existsSync as existsSync62, readFileSync as readFileSync57, readdirSync as readdirSync39 } from "fs";
-import { dirname as dirname33 } from "path";
+import { dirname as dirname32 } from "path";
 
 // consort/architecture/e2e-route-adherence.ts
 init_esm_shims();
@@ -19322,7 +19344,7 @@ function designGuideConformance(consortDir) {
 // consort/orchestrator/status/feature-status.ts
 init_esm_shims();
 import { existsSync as existsSync63, readFileSync as readFileSync58, readdirSync as readdirSync40, statSync as statSync25 } from "fs";
-import { dirname as dirname34, join as join63 } from "path";
+import { dirname as dirname33, join as join63 } from "path";
 
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
@@ -20069,7 +20091,7 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
       return deployGateCmds(f, cfg, deployTarget);
     case "deploy-verify-reverify":
       const markerFile = featureDeployReverifyMarkerJson(cfg.consortDir, f);
-      fs18.mkdirSync(dirname35(markerFile), { recursive: true });
+      fs18.mkdirSync(dirname34(markerFile), { recursive: true });
       fs18.writeFileSync(markerFile, JSON.stringify({ routed_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
       return deployGateCmds(f, cfg, deployTarget);
     case "approve-deploy-gate":
@@ -20250,7 +20272,7 @@ function buildDriveEffects(cfg) {
     onHandback(handoff, detail) {
       const file = handbackFile(cfg.consortDir, cfg.featureId, handoff.responder, handoff.story);
       try {
-        fs18.mkdirSync(dirname35(file), { recursive: true });
+        fs18.mkdirSync(dirname34(file), { recursive: true });
         fs18.writeFileSync(file, `${detail}
 `, "utf8");
       } catch {
@@ -21993,7 +22015,7 @@ function persistTrial(runDir, chain, baseModel, trial) {
   if (trial.telemetry) writeFileSync37(join69(dir, "telemetry.json"), JSON.stringify(trial.telemetry, null, 2) + "\n");
   for (const [rel, contents] of Object.entries(trial.producedArtifacts ?? {})) {
     const dest = join69(dir, "artifacts", rel);
-    mkdirSync41(dirname36(dest), { recursive: true });
+    mkdirSync41(dirname35(dest), { recursive: true });
     writeFileSync37(dest, contents);
   }
   const navigatorEvalFiles = Object.keys(trial.producedArtifacts ?? {}).filter((k) => k.startsWith("navigator-eval/")).map((k) => k.slice("navigator-eval/".length));

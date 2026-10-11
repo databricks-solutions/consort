@@ -7678,8 +7678,8 @@ var test_strategist_default = {
       id: "agent-log",
       filename: "agent-log.jsonl",
       channel: "meta",
-      validator: "testStrategistDispatchedAnalysts",
-      description: "The Test Strategist's structured log. Validated for FAN-OUT PROVENANCE: must carry a `test-analyst:<kind>` dispatch reasoning event per enabled analyst (behavior/fitness, +client when uiTrack), proving it SUPERVISED rather than authored the list solo. A solo turn fails here and re-issues (bounded retry -> HIL at the cap)."
+      validator: "testStrategistLoggedAuthoring",
+      description: "The Test Strategist's structured log (shared agent-log script). FAN-OUT PROVENANCE (a `test-analyst:<kind>` dispatch per enabled analyst) is enforced DETERMINISTICALLY at the spec gate (testStrategistFanOutReason reads the persisted agent-log), NOT as a meta-channel output validator \u2014 the executor skips those (the resolved meta path is not the persisted log)."
     }
   ],
   routing: {
@@ -7746,7 +7746,7 @@ var ux_designer_default = {
   ],
   outputs: [
     { id: "design-guide", filename: "design-guide.json", channel: "artifact", validator: "designGuideConformant", description: "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + ia.md are authored alongside but the JSON is the gated artifact." },
-    { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "uxDesignerLoggedAuthoring", description: "The UX Designer's structured log of what it authored (shared agent-log script; agent-log-event.schema.json)." }
+    { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "uxDesignerLoggedAuthoring", description: "The UX Designer's structured log (shared agent-log script). BROWSE PROVENANCE (a `browsed:<site>` / `browse-gap:<site>` event) is enforced DETERMINISTICALLY at the spec gate (uxDesignerBrowsedReason reads the persisted agent-log), NOT as a meta-channel output validator \u2014 the executor skips those (the resolved meta path is not the persisted log)." }
   ],
   routing: {
     produced: { next: "state-derived" }
