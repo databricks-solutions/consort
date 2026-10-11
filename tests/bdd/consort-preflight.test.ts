@@ -125,6 +125,55 @@ describe("buildPreflight: best-effort, never throws", () => {
   });
 });
 
+describe("buildPreflight: project.feature fallback (rehydrated project, no next.json)", () => {
+  // Seed a feature whose design has run (a pipeline.json) but NO next.json — the freshly
+  // cloned / rehydrated state. project.feature must still resolve so /start can scope
+  // consort-next instead of dead-ending on a scope-less call.
+  const seedFeature = (id: string) => {
+    const fdir = join(proj, ".consort", "features", id);
+    mkdirSync(fdir, { recursive: true });
+    writeFileSync(join(fdir, "pipeline.json"), JSON.stringify({ version: 1, feature_id: id, stories: {} }));
+  };
+
+  it("resolves feature from the current feature branch (branch-first) when next.json is absent", () => {
+    // No git in the tmp dir, so inject the branch via a next.json-less project + a stubbed
+    // branch: use a real git repo so scm.branch is read.
+    seedFeature("F1-stock-visibility");
+    seedFeature("F2-stock-adjustment"); // a second feature exists, so sole-pipeline is ambiguous
+    writeFileSync(join(proj, ".consort", "features", "F2-stock-adjustment", "pipeline.json"), "{}");
+    // make it a git repo on branch feature-f1-stock-visibility
+    const { execFileSync } = require("node:child_process");
+    const g = (...a: string[]) => execFileSync("git", a, { cwd: proj, stdio: "ignore" });
+    g("init", "-q");
+    g("config", "user.email", "t@t"); g("config", "user.name", "t");
+    g("checkout", "-q", "-b", "feature-f1-stock-visibility");
+    g("commit", "-q", "--allow-empty", "-m", "x");
+    const b = buildPreflight(proj, deps());
+    expect(b.scm.branch).toBe("feature-f1-stock-visibility");
+    expect(b.project.feature).toBe("F1-stock-visibility"); // branch wins over the ambiguous pipeline set
+  });
+
+  it("falls back to the SOLE feature with a pipeline.json when the branch doesn't name one", () => {
+    seedFeature("F1-stock-visibility");
+    const b = buildPreflight(proj, deps()); // no git repo -> scm.branch null -> sole-pipeline path
+    expect(b.project.feature).toBe("F1-stock-visibility");
+  });
+
+  it("stays null when ambiguous (multiple pipeline features, no feature branch)", () => {
+    seedFeature("F1-stock-visibility");
+    seedFeature("F2-stock-adjustment");
+    const b = buildPreflight(proj, deps());
+    expect(b.project.feature).toBeNull();
+  });
+
+  it("next.json still wins when present (fallback does not override it)", () => {
+    seedFeature("F1-stock-visibility");
+    writeFileSync(join(proj, ".consort", "next.json"), JSON.stringify({ feature: "F9-from-nextjson", awaiting_human: true }));
+    const b = buildPreflight(proj, deps());
+    expect(b.project.feature).toBe("F9-from-nextjson");
+  });
+});
+
 describe("isPreflightStale", () => {
   const now = Date.parse("2026-09-09T12:00:00.000Z");
   it("is fresh within the window and stale past it", () => {

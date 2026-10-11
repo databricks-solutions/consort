@@ -14,12 +14,12 @@
 // the session - a preflight must never gate startup on the network.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { kitVersion } from "../config/kit-bin.js";
-import { resolveConsortDir } from "../config/consort-paths.js";
+import { resolveConsortDir, featuresDir, featureDir } from "../config/consort-paths.js";
 import { readStoredConfig } from "../telemetry/home-config.js";
 
 export interface PreflightBlob {
@@ -34,7 +34,10 @@ export interface PreflightBlob {
     next_action: string | null;
     /** The SOLE gate signal from next.json: true => surface to the human; false => resume; null => unknown. */
     awaiting_human: boolean | null;
-    /** The feature the last stop was scoped to, or null. */
+    /** The feature the last stop was scoped to (from next.json). On a freshly cloned /
+     *  rehydrated project with no next.json, falls back to the current feature branch, else
+     *  the sole feature carrying a pipeline.json — so /start always has a scope. null when
+     *  undeterminable. */
     feature: string | null;
   };
   kit: {
@@ -103,6 +106,38 @@ function insideEditor(env: NodeJS.ProcessEnv): boolean {
     typeof env.CURSOR_TRACE_ID === "string" ||
     typeof env.VSCODE_PID === "string"
   );
+}
+
+/** Resolve the in-flight feature when the drive has not written next.json yet (a freshly
+ *  cloned / rehydrated project). Branch-first: a `feature-<slug>` / `feature/<slug>` branch
+ *  names the feature, matched case-insensitively to a `.consort/features/<dir>` (the exact
+ *  rule setup.sh uses). Returns null when the branch is not a feature branch or no dir matches. */
+function featureFromBranch(consortDir: string, branch: string | null): string | null {
+  const m = branch?.match(/^feature[-/](.+)$/);
+  if (!m) return null;
+  const slug = m[1].toLowerCase();
+  try {
+    for (const d of readdirSync(featuresDir(consortDir))) {
+      if (d.toLowerCase() === slug) return d;
+    }
+  } catch {
+    /* no features dir */
+  }
+  return null;
+}
+
+/** The SOLE feature whose design has run (carries a pipeline.json), or null when there is
+ *  not exactly one — the deterministic fallback when the branch name doesn't name a feature. */
+function soleFeatureWithPipeline(consortDir: string): string | null {
+  try {
+    const withPipeline = readdirSync(featuresDir(consortDir), { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .filter((name) => existsSync(join(featureDir(consortDir, name), "pipeline.json")));
+    return withPipeline.length === 1 ? withPipeline[0] : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface PreflightDeps {
@@ -177,6 +212,21 @@ export function buildPreflight(projectDir: string = process.cwd(), deps: Preflig
     scm.dirty = porcelain === null ? null : porcelain.length > 0;
   } else {
     warnings.push("scm: not a git repo or git unavailable");
+  }
+
+  // ── project.feature fallback: a freshly cloned / rehydrated project has no next.json yet,
+  //    so the block above left feature null and /start would dead-end calling consort-next
+  //    with no scope. Resolve it from durable signals — the current feature branch, else the
+  //    sole feature whose design has run (a pipeline.json). phase/next_action/awaiting_human
+  //    stay null (the session derives them live via `consort-next --feature <F>`); feature is
+  //    the one field /start needs to proceed. ──
+  if (project.is_consort && project.feature === null) {
+    try {
+      const consortDir = resolveConsortDir(projectDir);
+      project.feature = featureFromBranch(consortDir, scm.branch) ?? soleFeatureWithPipeline(consortDir);
+    } catch {
+      warnings.push("project: feature fallback (branch/pipeline) failed");
+    }
   }
 
   // ── first-project marker + editor env ──
