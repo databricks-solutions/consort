@@ -224,6 +224,63 @@ function requiresE2eReason(consortDir: string, featureId: string): string | null
 }
 
 /**
+ * uiTrack flatten guard (spec-gate condition). On a UI (`uiTrack:true`) project, a designed story
+ * whose ACs are ALL `layer:"API"` with NO UI-interaction (`layer:"E2E"`) AC AND `requires_e2e` LEFT
+ * UNSET is the silent-flatten anomaly: the design system the UX Designer built is never exercised and
+ * nothing catches it (`requiresE2eReason` only fires on an explicit `requires_e2e:true`; `checkE2ECoverage`
+ * only on an existing `layer:"E2E"` AC). This FORCES the per-story decision spec-author.md requires:
+ * a user-facing story must carry a client-submit AC (`layer:"E2E"` + `requires_e2e:true`); a genuinely
+ * backend-only story opts out explicitly with `requires_e2e:false`. Null when the project is backend-only,
+ * the story is not yet designed, already has an E2E AC, or has `requires_e2e` set either way (true is then
+ * enforced by requiresE2eReason; false is the honored backend opt-out). Feature-wide over designed stories.
+ */
+export function uiTrackFlattenReason(consortDir: string, featureId: string): string | null {
+  let uiTrack = false;
+  try {
+    uiTrack = resolveProjectSettings(dirname(consortDir)).project.uiTrack;
+  } catch {
+    return null; // settings unresolvable – do not fabricate a block
+  }
+  if (!uiTrack) return null; // backend-only project: no UI to exercise
+  const fdir = featureDir(consortDir, featureId);
+  const storiesDir = join(fdir, "stories");
+  if (!existsSync(storiesDir)) return null;
+  for (const s of readdirSync(storiesDir)) {
+    const acsDir = join(storiesDir, s, "acs");
+    if (!existsSync(acsDir)) continue; // not designed yet – defer
+    // Explicit decision already made? true -> requiresE2eReason enforces the E2E AC; false -> backend opt-out.
+    let requiresE2e: unknown;
+    try {
+      requiresE2e = (JSON.parse(readFileSync(join(storiesDir, s, "story.json"), "utf8")) as { requires_e2e?: unknown }).requires_e2e;
+    } catch {
+      /* malformed story.json – its own conformance check handles it */
+    }
+    if (requiresE2e === true || requiresE2e === false) continue;
+    const acFiles = readdirSync(acsDir).filter((f) => f.endsWith(".json"));
+    if (acFiles.length === 0) continue; // no ACs authored yet – defer
+    const layers = acFiles.map((f) => {
+      try {
+        return (JSON.parse(readFileSync(join(acsDir, f), "utf8")) as { layer?: string }).layer;
+      } catch {
+        return undefined;
+      }
+    });
+    const hasE2e = layers.some((l) => l === "E2E");
+    const allApi = layers.length > 0 && layers.every((l) => l === "API");
+    if (!hasE2e && allApi) {
+      return (
+        `story ${s} is on a UI (uiTrack) project but its acceptance criteria are ALL layer:"API" with no ` +
+        `UI-interaction (layer:"E2E") AC, and requires_e2e is left unset – the design system is never exercised ` +
+        `and this silently flattens a possibly user-facing story to a backend record. Decide explicitly: if the ` +
+        `story has a user interaction (a form submit + its rendered result), add a client-submit AC tagged ` +
+        `layer:"E2E" and set requires_e2e:true; if it is genuinely backend-only, set requires_e2e:false to confirm.`
+      );
+    }
+  }
+  return null;
+}
+
+/**
  * Architecture-conventions spec-gate condition: once the project canon is
  * established (.tdd/architecture/conventions.json, set by the first service-
  * backed feature), every LATER feature's architecture.json must reuse the same
@@ -956,6 +1013,11 @@ export function resolveArtifactInputs(
       // carry an E2E AC. Bites per-story even when a sibling satisfies the feature-wide check.
       const requiresE2e = requiresE2eReason(consortDir, featureId);
       if (requiresE2e !== null) return { reason: requiresE2e };
+      // uiTrack flatten guard: a UI project's story collapsed to all-API ACs with requires_e2e unset
+      // silently leaves the design system unexercised. Force the explicit decision (add a UI/E2E AC, or
+      // set requires_e2e:false to confirm backend-only). Null on a backend-only project.
+      const flattenReason = uiTrackFlattenReason(consortDir, featureId);
+      if (flattenReason !== null) return { reason: flattenReason };
       // Browse provenance (design lane): a UI feature's design guide must be GROUNDED in the brief's
       // reference sites, not written from the brief's wording alone. Reads the PERSISTED agent-log for
       // a `browsed:`/`browse-gap:` event (the real door — the meta-channel output validator never runs

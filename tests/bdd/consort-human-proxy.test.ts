@@ -157,6 +157,8 @@ describe("drainGatesAsHumanProxy: hard-blocks non-conformant artifacts (Layer 2)
     writeFileSync(join(fdir, "feature-spec.md"), FEATURE_MD);
     const acsDir = join(fdir, "stories", "S1-file-bug", "acs");
     mkdirSync(acsDir, { recursive: true });
+    // Backend-opt-out: this test isolates AC-id conformance, not the uiTrack-flatten gate.
+    writeFileSync(join(fdir, "stories", "S1-file-bug", "story.json"), JSON.stringify({ id: "S1-file-bug", asA: "operator", iWantTo: "file a bug", soThat: "it is tracked", requires_e2e: false }));
     const ac = (id: string) =>
       JSON.stringify({
         id,
@@ -195,6 +197,8 @@ describe("drainGatesAsHumanProxy: hard-blocks non-conformant artifacts (Layer 2)
       join(acsDir, "AC1-create.json"),
       JSON.stringify({ id: "AC1-create", layer: "API", given: "a reporter", when: "they submit", then: "it persists", status: "draft" }),
     );
+    // Backend-opt-out: this test isolates the conventions-divergence check, not the uiTrack-flatten gate.
+    writeFileSync(join(fdir, "stories", "S1-file-bug", "story.json"), JSON.stringify({ id: "S1-file-bug", asA: "operator", iWantTo: "file a bug", soThat: "it is tracked", requires_e2e: false }));
     // Established project conventions.
     mkdirSync(join(tdd, "architecture"), { recursive: true });
     writeFileSync(
@@ -255,6 +259,8 @@ describe("drainGatesAsHumanProxy: hard-blocks non-conformant artifacts (Layer 2)
       join(acsDir, "AC1-create.json"),
       JSON.stringify({ id: "AC1-create", layer: "API", given: "a reporter", when: "they submit", then: "it persists", status: "draft" }),
     );
+    // Backend-opt-out: this test isolates the service_backed-declaration check, not the uiTrack-flatten gate.
+    writeFileSync(join(fdir, "stories", "S1-file-bug", "story.json"), JSON.stringify({ id: "S1-file-bug", asA: "operator", iWantTo: "file a bug", soThat: "it is tracked", requires_e2e: false }));
     // service_backed:false BUT an NFR clearly about persistence -> contradiction.
     writeFileSync(
       join(fdir, "architecture.json"),

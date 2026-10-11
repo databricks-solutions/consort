@@ -13,7 +13,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkE2eLayerPresent } from "../../consort/orchestrator/validators/conformance/artifact-conformance";
-import { e2eLayerPresentReason, storyRequiresE2eReason, featureDir as fdirOf } from "../../consort/gates/gate-conformance-guard";
+import { e2eLayerPresentReason, storyRequiresE2eReason, uiTrackFlattenReason, featureDir as fdirOf } from "../../consort/gates/gate-conformance-guard";
 import { initPipeline, surfaceForGate, writePipeline, approveStoryGateFromDisk } from "../../consort/pipeline/story-pipeline";
 
 const REACT_BOUNDARY = JSON.stringify({
@@ -174,6 +174,61 @@ describe("storyRequiresE2eReason (human-authoritative per-story lever, flatten-p
     mkdirSync(join(p, ".."), { recursive: true });
     writeFileSync(p, "{ not json");
     expect(storyRequiresE2eReason(fdir(), S)).toBeNull();
+  });
+});
+
+// uiTrackFlattenReason: on a UI project, a story collapsed to all-API ACs with requires_e2e UNSET must
+// force an explicit decision (the silent-flatten anomaly). The live stockflow-demo S1 case verbatim.
+describe("uiTrackFlattenReason (UI project: all-API story with requires_e2e unset must decide)", () => {
+  const F = "F1-stock-visibility";
+  const S = "S1-file-stock";
+  let tmp: string;
+  let consortDir: string;
+  beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), "uitrack-flatten-")); consortDir = join(tmp, ".consort"); });
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
+
+  function uiTrack(on: boolean): void {
+    const p = join(tmp, ".lakebase", "consort-config.json");
+    mkdirSync(join(p, ".."), { recursive: true });
+    writeFileSync(p, JSON.stringify({ project: { uiTrack: on, clientFramework: on ? "react" : "none" } }));
+  }
+  function story(obj: Record<string, unknown>): void {
+    const p = join(consortDir, "features", F, "stories", S, "story.json");
+    mkdirSync(join(p, ".."), { recursive: true });
+    writeFileSync(p, JSON.stringify({ id: S, asA: "operator", iWantTo: "file stock", soThat: "it is tracked", ...obj }));
+  }
+  function ac(id: string, layer: "API" | "E2E"): void {
+    const p = join(consortDir, "features", F, "stories", S, "acs", `${id}.json`);
+    mkdirSync(join(p, ".."), { recursive: true });
+    writeFileSync(p, JSON.stringify({ id, layer, given: "g", when: "w", then: "t", status: "draft", architectural_notes: "n" }));
+  }
+
+  it("uiTrack + all-API + requires_e2e unset => BLOCK (the live stockflow-demo S1 flatten)", () => {
+    uiTrack(true); story({}); ac("AC1-file-stock-record", "API"); ac("AC2-retrieve", "API");
+    const r = uiTrackFlattenReason(consortDir, F);
+    expect(r).not.toBeNull();
+    expect(r).toMatch(/ALL layer:"API"/i);
+    expect(r).toMatch(/requires_e2e:false to confirm/);
+  });
+
+  it("uiTrack + a client-submit E2E AC present => ok (UI is exercised)", () => {
+    uiTrack(true); story({}); ac("AC1-file-stock-record", "API"); ac("AC2-submit-via-form", "E2E");
+    expect(uiTrackFlattenReason(consortDir, F)).toBeNull();
+  });
+
+  it("uiTrack + requires_e2e:false => ok (explicit backend-only opt-out honored)", () => {
+    uiTrack(true); story({ requires_e2e: false }); ac("AC1-file-stock-record", "API");
+    expect(uiTrackFlattenReason(consortDir, F)).toBeNull();
+  });
+
+  it("uiTrack + requires_e2e:true => ok here (requiresE2eReason owns enforcing the E2E AC)", () => {
+    uiTrack(true); story({ requires_e2e: true }); ac("AC1-file-stock-record", "API");
+    expect(uiTrackFlattenReason(consortDir, F)).toBeNull();
+  });
+
+  it("backend-only project (uiTrack:false) + all-API => null (no UI to exercise)", () => {
+    uiTrack(false); story({}); ac("AC1-file-stock-record", "API");
+    expect(uiTrackFlattenReason(consortDir, F)).toBeNull();
   });
 });
 
