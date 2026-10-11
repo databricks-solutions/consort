@@ -65,6 +65,11 @@ export const BLOCKING_SMELLS: ReadonlySet<SmellName> = new Set<SmellName>([
   // machinery. Halts the build until the design defect is resolved.
   "reflect-spec-defect",
   "reflect-testlist-defect",
+  // The reflect critic found a persistence invariant contradicting the requirement
+  // (e.g. a not_null column the brief renders when absent). Spec-level + architect-owned:
+  // routes to the Architect (re-run the architecture gate) via revise-route, bounded one
+  // revise then HITL. Prevents the avoidable later-story supersession + build refactor.
+  "reflect-architecture-defect",
   // The boundary/routes layer touching persistence directly (a fat controller),
   // instead of delegating to a service + repository. A build-level structural
   // defect; the Navigator flags it in REVIEW and the layering fitness test

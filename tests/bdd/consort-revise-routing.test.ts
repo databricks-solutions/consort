@@ -64,6 +64,13 @@ describe("smell taxonomy", () => {
     });
   });
 
+  it("tags reflect-architecture-defect as spec-level -> architect-reviewer at the architecture gate", () => {
+    expect(specLevelSmell("reflect-architecture-defect")).toEqual({
+      owning_role: "architect-reviewer",
+      gate_to_rerun: "architecture",
+    });
+  });
+
   it("treats build-level smells (and unknowns) as non-routable", () => {
     expect(specLevelSmell("cycle-stall")).toBeNull();
     expect(specLevelSmell("scaffold-defect")).toBeNull();

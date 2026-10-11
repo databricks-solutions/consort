@@ -84,6 +84,15 @@ describe("recordReflectionGate: failed verdict -> routed spec-level smell(s)", (
     expect(recordReflectionGate(tdd, F, "S1").map((h) => h.smell)).toEqual(["reflect-testlist-defect"]);
   });
 
+  it("an architect-reviewer finding flags reflect-architecture-defect (routes to the architect)", () => {
+    writeReflectVerdict(tdd, F, "S1", {
+      version: 1,
+      passed: false,
+      findings: [{ owner: "architect-reviewer", detail: "PI2 not_null on tracking_code, which the feature-request renders when absent" }],
+    });
+    expect(recordReflectionGate(tdd, F, "S1").map((h) => h.smell)).toEqual(["reflect-architecture-defect"]);
+  });
+
   it("mixed findings flag ONE smell per owner (both authors)", () => {
     writeReflectVerdict(tdd, F, "S1", {
       version: 1,

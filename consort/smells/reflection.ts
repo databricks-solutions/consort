@@ -20,7 +20,7 @@ import { writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellHit, type Sm
 
 /** Who owns the fix for a reflection finding, and thus which smell/gate it
  *  routes to: the Spec Author (spec gate) or the Test Strategist (test_list). */
-export type ReflectOwner = "spec-author" | "test-strategist";
+export type ReflectOwner = "spec-author" | "test-strategist" | "architect-reviewer";
 
 export interface ReflectFinding {
   /** Which author must fix it (drives the smell + the revise-route). */
@@ -50,6 +50,7 @@ export interface ReflectVerdict {
 const SMELL_FOR_OWNER: Record<ReflectOwner, SmellName> = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect",
+  "architect-reviewer": "reflect-architecture-defect",
 };
 
 /** Write a story's reflect verdict (the Navigator reflect turn's output). */

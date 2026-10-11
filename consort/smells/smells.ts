@@ -38,6 +38,7 @@ export type SmellName =
   // reusing the revise-route machinery.
   | "reflect-spec-defect"
   | "reflect-testlist-defect"
+  | "reflect-architecture-defect"
   // The deterministic architect-notes projection (FEIP-7902) found a story whose
   // AC layers / architecture dimensions the project canon does not cover: a blind
   // projection would guess, so route to the Architect (re-annotate + amend the
@@ -204,6 +205,23 @@ export const SMELL_CATALOG: SmellDefinition[] = [
     level: "spec",
     owning_role: "test-strategist",
     gate_to_rerun: "test_list",
+  },
+  {
+    name: "reflect-architecture-defect",
+    description:
+      "The pre-build reflection critic (Navigator, reflect mode) found a defect in the story's " +
+      "ARCHITECTURE before the build lane: a persistence invariant that contradicts the stated " +
+      "requirement — most often a `not_null` invariant on a column the feature-request / design-brief " +
+      "renders when ABSENT (an explicit 'not tracked' / optional-detail state). Left unresolved it " +
+      "surfaces downstream as a later story relaxing the column (an avoidable supersession + build refactor).",
+    proposed_remediation:
+      "Route back to the Architect (Gate 2 / architecture): make the invariant match the requirement — " +
+      "a column the brief renders when absent is nullable, not `not_null`. Bounded to one automatic " +
+      "revise per story; if the critic still finds the defect after the re-architecture, it escalates to the human.",
+    // An architecture defect the critic surfaces is an architect fix: route back to the architecture gate.
+    level: "spec",
+    owning_role: "architect-reviewer",
+    gate_to_rerun: "architecture",
   },
   {
     name: "shared-state-aggregate-assertion",
