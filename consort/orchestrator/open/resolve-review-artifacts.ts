@@ -161,6 +161,23 @@ export function roleArtifacts(consortDir: string, role: string, opts: { feature?
   return out;
 }
 
+/** Work-status priority for picking the CURRENT story to scope the per-turn open. The story a
+ *  design role just wrote into is the one actively being WORKED (designing / awaiting its gate),
+ *  NOT one you are already past (ready/building/.../done). Ranking by this (highest first) means
+ *  an older, already-advanced story can never shadow the current one — the bug where mtime alone
+ *  (fragile after a clone/checkout/rehydrate rewrites timestamps) kept re-opening a story we were
+ *  past. mtime (storyFreshness) stays only as a tiebreaker AMONG same-status stories (parallel
+ *  design). Statuses mirror STORY_STATUSES; an unknown status ranks lowest. */
+const STORY_WORK_PRIORITY: Record<string, number> = {
+  designing: 6,
+  "awaiting-gate": 5,
+  building: 4,
+  "awaiting-acceptance": 3,
+  ready: 2,
+  done: 1,
+  discarded: 0,
+};
+
 /** The freshest mtime across a story's key artifacts (dir + story.json + acs/) – used to pick
  *  the story a just-finished role wrote into when several are mid-design. 0 when none exist. */
 function storyFreshness(consortDir: string, feature: string, story: string): number {
@@ -188,11 +205,21 @@ export function resolveScope(consortDir: string): { feature?: string; story?: st
     };
     const feature = next.feature ?? undefined;
     if (feature) {
+      // Pick the CURRENT story by work-status priority (the actively-worked one outranks any we
+      // are past), with artifact mtime as a tiebreaker among same-status stories. Only a story
+      // whose artifacts EXIST (freshness > 0) is eligible, so a not-yet-authored story is skipped.
       let story: string | undefined;
-      let best = 0; // only a story whose artifacts EXIST (freshness > 0) is picked
-      for (const id of Object.keys(next.state?.stories ?? {})) {
+      let bestPriority = -1;
+      let bestMtime = 0;
+      for (const [id, status] of Object.entries(next.state?.stories ?? {})) {
         const m = storyFreshness(consortDir, feature, id);
-        if (m > best) { best = m; story = id; }
+        if (m === 0) continue; // artifacts not authored yet – nothing to open for it
+        const priority = STORY_WORK_PRIORITY[status] ?? 0;
+        if (priority > bestPriority || (priority === bestPriority && m > bestMtime)) {
+          bestPriority = priority;
+          bestMtime = m;
+          story = id;
+        }
       }
       return { feature, ...(story ? { story } : {}) };
     }

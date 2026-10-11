@@ -206,6 +206,21 @@ describe("resolveScope (LIVE feature/story from next.json, not the stale workflo
     expect(resolveScope(dir)).toEqual({ feature: "F4-outbound-pick", story: "S3-a" });
   });
 
+  it("picks the actively-WORKED story over one we're PAST, even when the past story's mtime is fresher (the stale-open bug)", () => {
+    // S1 is design-complete (ready) and happens to have the FRESHEST mtime (a later
+    // checkout / rehydrate rewrote its timestamps); S2 is the one being designed now.
+    writeFileSync(join(dir, "next.json"), JSON.stringify({
+      feature: "F1",
+      state: { stories: { "S1-ready": "ready", "S2-designing": "designing" } },
+    }));
+    for (const s of ["S1-ready", "S2-designing"]) mkdirSync(join(dir, "features", "F1", "stories", s), { recursive: true });
+    const older = new Date("2020-01-01T00:00:00Z"), newer = new Date("2020-09-01T00:00:00Z");
+    utimesSync(join(dir, "features", "F1", "stories", "S1-ready"), newer, newer); // past story, freshest on disk
+    utimesSync(join(dir, "features", "F1", "stories", "S2-designing"), older, older); // current story, older mtime
+    // work-status priority wins: the designing story is current despite the older mtime
+    expect(resolveScope(dir)).toEqual({ feature: "F1", story: "S2-designing" });
+  });
+
   it("next.json with a feature but no existing story dirs => feature only (no bogus story)", () => {
     writeFileSync(join(dir, "next.json"), JSON.stringify({ feature: "F4", state: { stories: { "S1": "done" } } }));
     expect(resolveScope(dir)).toEqual({ feature: "F4" });
