@@ -275,3 +275,20 @@ describe("test-list: per-story scoping (phase 2c)", () => {
     expect(readMasterTestList(tdd, "F1").items.filter((i) => i.ac_id === "AC3").length).toBe(1);
   });
 });
+
+// The per-story-view postTurn (consort-test-list <dir> <feature> <story>) TRACES whether it ran + what
+// it scoped into the persisted agent-log, so a run can diagnose the double-dispatch (testListReady reads
+// the per-story view; when it does not materialize on the authoring turn the lane re-dispatches). The CLI
+// is a self-invoking bin (dist __dirname shim), so assert the WIRING statically, like the drive bin tests.
+describe("test-list CLI traces the per-story-view generation (postTurn observability)", () => {
+  const SRC = readFileSync(new URL("../../bin/consort/test-list.cli.ts", import.meta.url), "utf8");
+  it("emits an orchestrator agent-log event with the master + scoped item counts, and traces failures", () => {
+    expect(SRC).toMatch(/import\s*\{[^}]*\bemitAgentLogEvent\b[^}]*\}\s*from/);
+    expect(SRC).toMatch(/per-story-view generated/);
+    expect(SRC).toMatch(/master=.*scoped=/);
+    // The erred path is traced too, so "ran but failed" is distinguishable from "never ran".
+    expect(SRC).toMatch(/per-story-view generation FAILED/);
+    // Best-effort: diagnostics never fail the CLI.
+    expect(SRC).toMatch(/diagnostics never fail the CLI/);
+  });
+});

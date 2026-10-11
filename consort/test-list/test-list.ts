@@ -283,7 +283,7 @@ export function writeStoryTestList(
     // on (ac_id + description), which is unique across the feature (each AC belongs
     // to one story), and RE-ID the additions to extend the master's numbering so
     // the master keeps globally-unique ids (markTestItemGreen finds items by id).
-    const key = (it: TestListItem): string => `${it.ac_id} ${it.description}`;
+    const key = (it: TestListItem): string => `${it.ac_id} ${it.description}`;
     const have = new Set(baseList.items.map(key));
     const usedIds = new Set(baseList.items.map((i) => i.id));
     const fresh = authored.items.filter((it) => storyAcIds.includes(it.ac_id) && !have.has(key(it)));
