@@ -83,10 +83,10 @@ export function agentLogHasRoleEvent(producedPath: string, role = "spec-author")
 // NOTE: the test-strategist FAN-OUT and ux-designer BROWSE provenance checks are NOT output validators.
 // A meta-channel agent-log output resolves to `<metaDir ?? workspaceDir>/agent-log.jsonl`, which is NOT
 // the persisted `<consortDir>/agent-log.jsonl` where the reconciled role events live, so Step.run finds
-// the output ABSENT at the resolved path and the executor skips the validator (a silent no-op — proven
-// live: a solo-authored S1 reached the spec gate). Those provenance checks run as DETERMINISTIC SPEC-GATE
-// conditions that read the PERSISTED log — testStrategistFanOutReason / uxDesignerBrowsedReason in
-// gate-conformance-guard.ts.
+// the output ABSENT at the resolved path and the executor skips the validator (a silent no-op). The
+// test-strategist FAN-OUT provenance gate that briefly lived in gate-conformance-guard.ts was REMOVED
+// (it false-blocked legitimate fan-outs whose dispatch consort-log was permission-denied); the ux-designer
+// BROWSE provenance (uxDesignerBrowsedReason) remains a spec-gate condition reading the persisted log.
 
 /**
  * nonEmptyFile validator: the produced file exists and carries non-whitespace content. The

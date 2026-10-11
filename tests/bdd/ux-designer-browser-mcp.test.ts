@@ -71,11 +71,13 @@ describe("ux-designer browser MCP: tools are PRE-APPROVED for the headless spawn
     expect(allowed).toContain("WebSearch");
   });
 
-  it("adds NO browser tools for any other role (their spawn is byte-identical)", () => {
+  it("adds NO browser tools for any other role (only the universal cd baseline)", () => {
     for (const role of ["driver", "navigator", "architect", "product-owner"]) {
       expect(browserAllowedToolsForRole(role)).toEqual([]);
       const args = claudeToolArgs({ kind: "claude", role } as unknown as ClaudeCmd);
-      expect(args).not.toContain("--allowed-tools");
+      // Every spawn carries the harmless `cd` pre-approval (for the agent's `cd … && ./scripts/lk` kit
+      // calls), but a non-ux role gets NO browser tools — so its allow-list is exactly the cd baseline.
+      expect(args).toEqual(["--allowed-tools", "Bash(cd:*)"]);
     }
   });
 });

@@ -12,7 +12,7 @@
 // SKIPPED, with the violations as the reason, never approved.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, appendFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { drainGatesAsHumanProxy, supplyArtifact, supplyRequests, supplyProposals } from "../../consort/gates/human-proxy";
@@ -60,17 +60,6 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(tdd, { recursive: true, force: true });
 });
-
-/** Seed the test-strategist fan-out provenance the test_list gate now requires (testStrategistFanOutReason
- *  reads the persisted agent-log for a `test-analyst:<kind>` dispatch event per enabled analyst). These
- *  tests target OTHER test_list conditions (fitness/persistence/schema coverage), so give them a legitimate
- *  fan-out log so that condition passes and the one under test is isolated. All three kinds (behavior/fitness/
- *  client) are seeded so it holds whether or not uiTrack enables the client analyst. */
-function seedFanOut(consortDir: string): void {
-  const line = (kind: string) =>
-    JSON.stringify({ timestamp: new Date().toISOString(), level: "info", role: "test-strategist", event: "reasoning", message: `test-analyst:${kind} dispatched (model=sonnet)` });
-  appendFileSync(join(consortDir, "agent-log.jsonl"), ["behavior", "fitness", "client"].map(line).join("\n") + "\n");
-}
 
 /** Assert no gate record was bound to the fabricated placeholder hash. */
 function assertNoFabricatedHashes(consortDir: string): void {
@@ -356,7 +345,6 @@ describe("drainGatesAsHumanProxy: hard-blocks non-conformant artifacts (Layer 2)
   it("hard-blocks test_list when a service_backed feature has no fitness item (checkFitnessCoverage, previously unwired)", () => {
     writeFileSync(join(fdir, "feature-spec.json"), FEATURE_JSON);
     writeFileSync(join(fdir, "feature-spec.md"), FEATURE_MD);
-    seedFanOut(tdd); // isolate the fitness/persistence coverage conditions from the new fan-out condition
     writeFileSync(join(fdir, "architecture.json"), JSON.stringify({ service_backed: true, layers: [{ role: "boundary", module: "app/routes" }, { role: "service", module: "app/services" }, { role: "repository", module: "app/repositories" }], persistence_invariants: [{ id: "PI1-bug-title-not-null", type: "not_null", table: "bug", brief: "a bug with no title is rejected" }] }));
     // test-list with only behavior items -> fitness coverage hard-block.
     writeFileSync(
@@ -394,7 +382,6 @@ describe("drainGatesAsHumanProxy: hard-blocks non-conformant artifacts (Layer 2)
 
     // valid test list -> approved with the real hash
     writeFileSync(join(fdir, "test-list.json"), TEST_LIST_JSON);
-    seedFanOut(tdd); // this test isolates schema validity; satisfy the new fan-out condition so it can approve
     const good = drainGatesAsHumanProxy({ featureId: FEATURE_ID, consortDir: tdd });
     expect(good.approved).toContain("test_list");
     const state = readGates(FEATURE_ID, { consortDir: tdd });

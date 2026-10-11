@@ -44,7 +44,7 @@
       "filename": "agent-log.jsonl",
       "channel": "meta",
       "validator": "testStrategistLoggedAuthoring",
-      "description": "The Test Strategist's structured log (shared agent-log script). FAN-OUT PROVENANCE (a `test-analyst:<kind>` dispatch per enabled analyst) is enforced DETERMINISTICALLY at the spec gate (testStrategistFanOutReason reads the persisted agent-log), NOT as a meta-channel output validator — the executor skips those (the resolved meta path is not the persisted log)."
+      "description": "The Test Strategist's structured log (shared agent-log script). Validated for a role event only; the fan-out PROVENANCE gate was removed (it false-blocked legitimate fan-outs whose dispatch consort-log was permission-denied). Fan-out quality is the role's; the agent's log access is fixed so its reasoning is recorded."
     }
   ],
   "routing": {

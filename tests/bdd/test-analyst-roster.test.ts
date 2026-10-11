@@ -52,11 +52,14 @@ describe("renderTestAnalystRoster: uiTrack gates client", () => {
     expect(block).toMatch(/effort/i);
     expect(block).toMatch(/tool_scope|Confine your work/i);
   });
-  it("CONSISTENCY FIX: the header makes model MANDATORY + effort/tool_scope VERBATIM + a per-analyst reasoning log", () => {
+  it("CONSISTENCY FIX: the header makes model MANDATORY + effort/tool_scope VERBATIM", () => {
     const block = renderTestAnalystRoster({ projectDir: "/tmp/p", uiTrack: true });
     expect(block).toMatch(/MUST set the Task's model.*EXACTLY|never substitute your own model/i);
     expect(block).toMatch(/MUST RESTATE.*VERBATIM/i);
-    expect(block).toMatch(/log a one-line reasoning event|auditable/i);
+    // The `test-analyst:<kind>` dispatch-log mandate was removed with the fan-out provenance gate
+    // (it fed a reverted gate + its blocked consort-log disrupted the fan-out); the roster no longer
+    // demands it.
+    expect(block).not.toMatch(/log a one-line reasoning event|machine-auditable/i);
   });
 });
 

@@ -486,62 +486,14 @@ function fitnessSingularCoverageReason(consortDir: string, featureId: string, te
   return r.ok ? null : `singular fitness coverage failed: ${r.violations.join("; ")}`;
 }
 
-/**
- * PURE fan-out check: given the raw agent-log text + the enabled analyst kinds, return the kinds that
- * have NO `test-analyst:<kind>` dispatch reasoning event from the test-strategist anywhere in the log.
- * Exported so it is directly runnable against a real run's `.consort/agent-log.jsonl` (live check) and
- * unit-testable. Reads the WHOLE (accumulated, persisted) log, which is what makes it idempotent-safe:
- * a proper fan-out logged at any point satisfies it forever, so a resume/no-op re-run never regresses
- * it; only a test-list that was NEVER fanned out (solo-authored) leaves a kind unmatched.
- */
-export function missingAnalystDispatchKinds(logText: string, enabledKinds: string[]): string[] {
-  const messages: string[] = [];
-  for (const line of logText.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    try {
-      const o = JSON.parse(line) as { role?: string; message?: string };
-      if (o.role === "test-strategist" && typeof o.message === "string") messages.push(o.message);
-    } catch {
-      /* skip malformed */
-    }
-  }
-  return enabledKinds.filter((k) => !messages.some((m) => m.includes(`test-analyst:${k}`)));
-}
-
-/**
- * test-strategist FAN-OUT provenance (spec-gate condition, reads the PERSISTED agent-log). The Test
- * Strategist is a SUPERVISOR that must spawn one per-kind test-analyst subagent and reconcile their
- * slices, NOT author the test list solo. The roster prompt mandates a `test-analyst:<kind>` dispatch
- * reasoning event per analyst; this blocks the spec gate when the feature has a test-list but the log
- * carries NO dispatch event for some ENABLED analyst (client only when uiTrack). Runs at the GATE (not
- * as a meta-channel OUTPUT validator — those resolve to a path that is not the persisted log, so the
- * executor skips them: the no-op that let a solo-authored S1 reach the gate). Null when no test-list
- * yet (test-strategist has not run) or every enabled analyst was dispatched. NOTE: feature-level — one
- * dispatch per kind across the feature satisfies it; perfect per-story accounting would need the
- * dispatch token to carry the story (a follow-up), but this catches the proven failure (a test-list
- * authored with ZERO fan-out).
- */
-export function testStrategistFanOutReason(consortDir: string, featureId: string, testListJson: string): string | null {
-  // Only gate once the test-strategist has actually produced a non-empty list (items[] present).
-  try {
-    const items = (JSON.parse(testListJson) as { items?: unknown[] }).items;
-    if (!Array.isArray(items) || items.length === 0) return null;
-  } catch {
-    return null; // malformed test-list is caught by its own conformance check
-  }
-  const logPath = join(consortDir, "agent-log.jsonl");
-  if (!existsSync(logPath)) return null; // no log to attest fan-out (don't fabricate a block)
-  const uiTrack = resolveProjectSettings(dirname(consortDir)).project.uiTrack;
-  const kinds = enabledAnalysts({ projectDir: dirname(consortDir), uiTrack }).map((a) => a.kind);
-  const missing = missingAnalystDispatchKinds(readFileSync(logPath, "utf8"), kinds);
-  if (missing.length === 0) return null;
-  return (
-    `the test-strategist produced a test list but did not fan out to the ${missing.join(", ")} ` +
-    `analyst${missing.length > 1 ? "s" : ""} (no \`test-analyst:<kind>\` dispatch event in the agent-log). ` +
-    `The Test Strategist SUPERVISES: it must spawn one Task subagent per enabled roster analyst ` +
-    `(behavior / fitness / client) and reconcile their slices, never author the test list solo. ` +
-    `Re-run the test-strategist turn fanning out to each analyst and logging the mandated per-dispatch event.`
-  );
-}
+// NOTE: a test-strategist FAN-OUT provenance gate was removed here (shipped 0.3.117, reverted). It
+// required a `test-analyst:<kind>` dispatch log event per analyst and blocked the spec gate when absent.
+// It was premised on a misread — the supervisor DOES fan out — and it FALSE-BLOCKED legitimate fan-outs
+// whose dispatch `consort-log` was permission-denied in the headless agent (the mandated-but-blocked
+// logging also disrupted the agent into occasional solo authoring). The agent's log access is fixed
+// separately (so its reasoning IS recorded); fan-out quality is left to the role, not a fragile
+// log-provenance gate. (The ux-designer BROWSE provenance below is kept — the ux-designer logs its
+// `browsed:` events reliably — but note it is the same class and may warrant the same scrutiny.)
 
 /**
  * ux-designer BROWSE provenance (spec-gate condition, reads the PERSISTED agent-log). The UX Designer
@@ -1125,12 +1077,8 @@ export function resolveArtifactInputs(
         // born-vacuous — route it to a Playwright e2e spec (the stockflow-3-100 T19 class).
         const jsdomReason = jsdomBrowserAssertionReason(tlJson);
         if (jsdomReason !== null) return { reason: jsdomReason };
-        // Fan-out provenance (Gate 3): the test-strategist is a SUPERVISOR that must dispatch one
-        // per-kind test-analyst and reconcile their slices, not author the list solo. Reads the
-        // PERSISTED agent-log for a `test-analyst:<kind>` dispatch per enabled analyst (the real door —
-        // the meta-channel output validator never runs live). A solo-authored list blocks here.
-        const fanOutReason = testStrategistFanOutReason(consortDir, featureId, tlJson);
-        if (fanOutReason !== null) return { reason: fanOutReason };
+        // (The test-strategist fan-out provenance gate was removed — see the note above its former
+        // definition. It false-blocked legitimate fan-outs whose dispatch log was permission-denied.)
       }
       return conf;
     }

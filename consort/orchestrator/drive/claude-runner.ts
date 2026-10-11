@@ -543,7 +543,15 @@ export function claudeToolArgs(cmd: Extract<DriveCommand, { kind: "claude" }>): 
   // /WebFetch call is DENIED ("...you haven't granted it yet") — PROVEN live: without
   // these in --allowed-tools mcp__playwright__browser_navigate is permission-denied; with
   // them it is permitted. So the role that loads the browser MCP must also allow its tools.
-  const allowed = [...new Set([...(cmd.allowedTools ?? []), ...browserAllowedToolsForRole(cmd.role)])];
+  // Pre-approve the harmless `cd` prefix for EVERY agent. An agent habitually writes a kit command as
+  // `cd <project-root> && ./scripts/lk …` (or `cd …; ./scripts/lk …`); the permission matcher splits a
+  // compound command and requires EACH part allowed, so even though the project allow-list grants
+  // `Bash(./scripts/lk *)`, the `cd` part is un-granted and the WHOLE command is DENIED headless under
+  // acceptEdits — which silently swallowed the agent's own `consort-log` writes (its reasoning/dispatch
+  // records). `cd` only changes directory (no side effects), so granting it lets the agent's logging +
+  // kit calls run as written. PROVEN: a test-strategist's `cd … && ./scripts/lk consort-log …` was
+  // permission-blocked and its events never recorded.
+  const allowed = [...new Set(["Bash(cd:*)", ...(cmd.allowedTools ?? []), ...browserAllowedToolsForRole(cmd.role)])];
   if (allowed.length) out.push("--allowed-tools", allowed.join(","));
   if (cmd.disallowedTools && cmd.disallowedTools.length) out.push("--disallowed-tools", cmd.disallowedTools.join(","));
   return out;
