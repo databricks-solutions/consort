@@ -303,14 +303,16 @@ export function buildNextOptions(action: WorkflowAction, ctx: NextContext): Next
         {
           id: "spec.approve",
           title: `Approve story ${storyOf(action) ?? "<story>"}'s spec`,
-          // A design-bound run (`/design`) stays in the design lane on approval: it advances
-          // to the next story's design (or completes design) and NEVER starts the build. Only
-          // an unbounded/build run moves an approved story into its build. Say which, so the
-          // approval is not a surprise jump into building.
+          // The spec gate FREEZES the story's spec. What the drive does NEXT is governed solely by the
+          // run's bound, and the prompt states it UNAMBIGUOUSLY + SELF-CONTAINED so the presenter has
+          // nothing to add: a design-bound (`/design`) run continues DESIGN (next story, or stops at
+          // design-complete) and starts NO build; any other run proceeds to BUILD this story. The two
+          // outcomes are mutually exclusive — never both. (The presenter MUST relay this verbatim; it
+          // must NOT append its own account of subsequent stories/build — that is the ambiguity source.)
           hil_prompt:
             ctx.bound === "design"
-              ? `Approve story ${storyOf(action) ?? "<story>"}'s spec? This feature is design-bound: approving advances the design lane to the next story (or completes design) and will NOT start the build. (To send it back, edit the spec and re-run the design lane.)`
-              : `Approve story ${storyOf(action) ?? "<story>"}'s spec so its build can start? (To send it back, edit the spec and re-run the design lane.)`,
+              ? `Approve story ${storyOf(action) ?? "<story>"}'s spec? This is a design-only (/design) run: approving FREEZES this story's spec and the design lane continues to the next story (or stops at design-complete if this is the last). NO build starts here — run /build after the whole feature's design is approved. (To send it back, edit the spec and re-run the design lane.)`
+              : `Approve story ${storyOf(action) ?? "<story>"}'s spec? Approving FREEZES this story's spec and the drive proceeds to BUILD it (RED-GREEN-REFACTOR). (To send it back, edit the spec and re-run the design lane.)`,
           kind: "gate",
           enact: gateEnact,
         },

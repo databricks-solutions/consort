@@ -191,13 +191,20 @@ describe("durable phase bound: a /design resume stays design-bound (no silent ju
     expect(none.enact).toEqual({ bin: "consort-drive", args: ["--feature", "F1-checkout"] });
   });
 
-  it("the spec-gate prompt tells the human a design-bound approval will NOT start the build", () => {
+  it("the spec-gate prompt is unambiguous + self-contained per bound (design = NO build; full = builds)", () => {
     const design = buildNextOptions({ kind: "approve-gate", story: "S1" } as WorkflowAction, DESIGN_CTX)[0];
-    expect(design.hil_prompt).toMatch(/design-bound/i);
-    expect(design.hil_prompt).toMatch(/will NOT start the build/i);
-    // The unbounded prompt is unchanged (approving starts the build).
+    // Design-only: states it continues design + NO build starts (both halves, so the presenter adds nothing).
+    expect(design.hil_prompt).toMatch(/design-only|\/design/i);
+    expect(design.hil_prompt).toMatch(/NO build starts/i);
+    expect(design.hil_prompt).toMatch(/continues to the next story/i);
+    // Design prompt must NOT promise a build.
+    expect(design.hil_prompt).not.toMatch(/proceeds to BUILD it/i);
+    // Full: states the drive builds this story — and does NOT mention designing other stories (the
+    // agent-composed "continues designing S2/S3" line was the ambiguity source).
     const full = buildNextOptions({ kind: "approve-gate", story: "S1" } as WorkflowAction, CTX)[0];
-    expect(full.hil_prompt).toMatch(/so its build can start/i);
+    expect(full.hil_prompt).toMatch(/proceeds to BUILD it/i);
+    // Must NOT promise designing other stories (the agent-composed "continues designing S2/S3" mush).
+    expect(full.hil_prompt).not.toMatch(/continues? to the next story|designing S|continues designing/i);
   });
 
   it("computes the SAME next action the bounded drive would: a design-bound snapshot uses the design-only transition", () => {
