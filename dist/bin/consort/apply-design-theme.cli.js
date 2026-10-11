@@ -67,6 +67,34 @@ function applyBrandIconReference(projectDir, installTo) {
     return false;
   }
 }
+function applyNavbarBranding(projectDir, branding) {
+  const appTsx = join2(projectDir, "client", "src", "App.tsx");
+  if (!existsSync2(appTsx)) return false;
+  try {
+    const src = readFileSync2(appTsx, "utf8");
+    let next = src;
+    if (branding.installTo) {
+      const href = `/${basename(branding.installTo)}`;
+      next = next.replace(
+        /(<img\b[^>]*\bclassName="navbar__icon"[^>]*\bsrc=")[^"]*(")/,
+        `$1${href}$2`
+      );
+    }
+    if (branding.appName) {
+      next = next.replace(
+        /(<span className="navbar__brand">[\s\S]*?\/>\s*)([^<]*?)(\s*<\/span>)/,
+        `$1${branding.appName}$3`
+      );
+    }
+    if (next !== src) {
+      writeFileSync2(appTsx, next);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 function designGuideToCssVars(guide) {
   const vars = {};
   vars["--font-sans"] = guide.typography.font_family;
@@ -87,7 +115,7 @@ function designGuideToCssVars(guide) {
       vars[`--color-${k}`] = v;
     }
   }
-  for (const map of [guide.spacing, guide.radius, guide.shadows, guide.breakpoints]) {
+  for (const map of [guide.spacing, guide.radius, guide.shadows, guide.breakpoints, guide.motion]) {
     if (!map) continue;
     for (const [k, v] of Object.entries(map)) {
       vars[`--${k}`] = v;
@@ -133,6 +161,12 @@ function applyDesignGuideTheme(projectDir) {
   if (guide.app_icon) {
     iconInstalled = installBrandAsset(projectDir, consortDir, guide.app_icon);
     applyBrandIconReference(projectDir, guide.app_icon.install_to);
+  }
+  if (guide.app_icon || guide.app_name) {
+    applyNavbarBranding(projectDir, {
+      ...guide.app_icon ? { installTo: guide.app_icon.install_to } : {},
+      ...guide.app_name ? { appName: guide.app_name } : {}
+    });
   }
   return { themePath, varCount: (css.match(/--[\w-]+:/g) ?? []).length, iconInstalled };
 }

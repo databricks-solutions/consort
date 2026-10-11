@@ -7639,15 +7639,15 @@ var test_strategist_default = {
       id: "test-list",
       filename: "test-list.json",
       channel: "artifact",
-      validator: "nonEmptyFile",
-      description: "The feature master test list (this story's ordered tests appended). The post-turn verify-artifact asserts test-list.json exists under the resolved root."
+      validator: "testListConformant",
+      description: "The feature master test list (this story's ordered tests appended). SCHEMA-conformance is validated deterministically AT THE TURN (not merely non-empty), so a malformed list blocks + re-issues here, not only at the downstream test_list gate. Full coverage conformance (fitness/persistence/e2e) stays deterministically enforced at the test_list gate."
     },
     {
       id: "agent-log",
       filename: "agent-log.jsonl",
       channel: "meta",
-      validator: "testStrategistLoggedAuthoring",
-      description: "The Test Strategist's structured log of the test-list it authored for the story."
+      validator: "testStrategistDispatchedAnalysts",
+      description: "The Test Strategist's structured log. Validated for FAN-OUT PROVENANCE: must carry a `test-analyst:<kind>` dispatch reasoning event per enabled analyst (behavior/fitness, +client when uiTrack), proving it SUPERVISED rather than authored the list solo. A solo turn fails here and re-issues (bounded retry -> HIL at the cap)."
     }
   ],
   routing: {
@@ -7657,7 +7657,7 @@ var test_strategist_default = {
   },
   agentOptions: {
     model: "sonnet",
-    effort: "low",
+    effort: "default",
     session: "resume",
     resumeKeyFrom: "role"
   },
