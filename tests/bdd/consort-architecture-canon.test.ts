@@ -64,6 +64,27 @@ describe("deriveCanon: project the standing canon from architecture.json + ACs",
     ]);
   });
 
+  it("captures NFR posture when the text is in `statement` or `brief`, not `requirement` (field-drift tolerance)", () => {
+    // The architect agent writes the requirement text as `statement`; the schema prefers `brief`
+    // (legacy `requirement`). deriveCanon must read all three or it drops the NFR from the posture —
+    // the drift that left canon nfr_posture empty despite a feature declaring rich NFRs.
+    const arch = JSON.stringify({
+      feature_id: "F1",
+      service_backed: true,
+      nfrs: [
+        { category: "data-integrity", statement: "stock survives migrations" }, // agent's field
+        { category: "usability", brief: "validation names the field" }, // schema-preferred field
+        { category: "performance", requirement: "list endpoints paginate" }, // legacy field
+      ],
+    });
+    const c = deriveCanon(arch, ["API"], "F1", NOW)!;
+    expect(c.nfr_posture).toEqual([
+      { category: "data-integrity", requirement: "stock survives migrations" },
+      { category: "usability", requirement: "validation names the field" },
+      { category: "performance", requirement: "list endpoints paginate" },
+    ]);
+  });
+
   it("returns undefined for a non-service-backed feature (nothing standing to pin)", () => {
     expect(deriveCanon(JSON.stringify({ service_backed: false }), ["API"], "F1", NOW)).toBeUndefined();
   });

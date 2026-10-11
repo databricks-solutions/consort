@@ -50,6 +50,9 @@ function discoverArtifacts(consortDir: string, featureId: string): ArtifactSpec[
   // Feature-level artifacts.
   add(join(fdir, "feature-spec.json"), "spec-author", "feature-spec.json");
   add(join(fdir, "architecture.json"), "architect-reviewer", "architecture.json");
+  // The DBA's schema design. Was omitted here, so a dba turn logged a phase.start + turn.usage
+  // but NO artifact.written for db-design.json – the one design artifact with no log trace.
+  add(join(fdir, "db-design.json"), "dba", "db-design.json");
   add(join(fdir, "test-list.json"), "test-strategist", "test-list.json");
 
   // Project-level architecture conventions (the canonical role -> module layout).

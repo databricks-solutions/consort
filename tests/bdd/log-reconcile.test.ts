@@ -81,14 +81,17 @@ describe("reconcileArtifactLog", () => {
     expect(emitted.length).toBe(4); // the other four artifacts
   });
 
-  it("attributes architecture + test-list to their owning roles", () => {
+  it("attributes architecture + db-design + test-list to their owning roles", () => {
     const consortDir = mkTdd();
     const f = path.join(consortDir, "features", F);
     write(path.join(f, "architecture.json"));
+    write(path.join(f, "db-design.json"));
     write(path.join(f, "test-list.json"));
     const emitted = reconcileArtifactLog({ consortDir, featureId: F });
     const byPath = Object.fromEntries(emitted.map((e) => [e.metadata?.path, e.role]));
     expect(byPath[`features/${F}/architecture.json`]).toBe("architect-reviewer");
+    // db-design.json was previously NOT discovered, so a dba turn left no artifact.written trace.
+    expect(byPath[`features/${F}/db-design.json`]).toBe("dba");
     expect(byPath[`features/${F}/test-list.json`]).toBe("test-strategist");
   });
 
