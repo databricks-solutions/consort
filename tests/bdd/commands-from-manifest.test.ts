@@ -63,7 +63,7 @@ describe("commandsFromManifest ≡ commandsForAction (golden equivalence)", () =
   });
 });
 
-describe("commandsFromManifest ≡ commandsForAction: ux-designer design turn (empty-postTurn shape)", () => {
+describe("commandsFromManifest ≡ commandsForAction: ux-designer design turn (apply-theme postTurn)", () => {
   const UX_DESIGNER: WorkflowAction = { kind: "invoke-role", role: "ux-designer" };
 
   it("ux-designer: byte-identical command list", () => {
@@ -72,16 +72,19 @@ describe("commandsFromManifest ≡ commandsForAction: ux-designer design turn (e
     expect(fromManifest).toEqual(legacy);
   });
 
-  it("reproduces the ux-designer structural commands in order – NO reset/sync postTurn (the empty-postTurn case)", () => {
+  it("reproduces the ux-designer structural commands in order, with the deterministic apply-theme postTurn", () => {
     const cmds = commandsFromManifest(UX_DESIGNER, cfg());
     expect(cmds).toBeDefined();
-    // Unlike breakdown ([reset, claude, verify, sync, reconcile]), a design role with no
-    // postTurn CLIs is just [claude, verify-artifact, log-reconcile].
-    expect(cmds!.map((c) => (c.kind === "cli" ? `cli:${c.args[0]}` : c.kind))).toEqual([
+    // [claude, verify-artifact, consort-apply-design-theme (generate theme.css from the guide), log-reconcile].
+    // The apply-theme postTurn is what makes theme generation DETERMINISTIC (not agent-prompted).
+    expect(cmds!.map((c) => (c.kind === "cli" ? `cli:${c.bin}` : c.kind))).toEqual([
       "claude",
       "verify-artifact",
-      "cli:--reconcile",
+      "cli:consort-apply-design-theme",
+      "cli:consort-log",
     ]);
+    const apply = cmds!.find((c) => c.kind === "cli" && c.bin === "consort-apply-design-theme");
+    expect(apply && apply.kind === "cli" ? apply.args[0] : undefined).toBe("--project");
   });
 
   it("honors the same model lever as the legacy path (ux-designer -> sonnet by default)", () => {

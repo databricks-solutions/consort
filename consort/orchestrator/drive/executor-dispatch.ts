@@ -248,7 +248,7 @@ export function manifestPostTurnCommands(
   const story = "story" in action && typeof action.story === "string" ? action.story : undefined;
   const expand = (args: string[]): string[] =>
     args.flatMap((a) =>
-      a === "--tdd" ? tdd : a === "{feature}" ? [cfg.featureId] : a === "{tddDir}" ? [cfg.consortDir] : a === "{story}" ? (story ? [story] : []) : [a],
+      a === "--tdd" ? tdd : a === "{feature}" ? [cfg.featureId] : a === "{tddDir}" ? [cfg.consortDir] : a === "{projectRoot}" ? [cfg.projectDir] : a === "{story}" ? (story ? [story] : []) : [a],
     );
   const out: DriveCommand[] = [];
   for (const p of manifest.postTurn ?? []) {

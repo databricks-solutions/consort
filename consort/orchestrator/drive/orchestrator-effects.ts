@@ -1176,6 +1176,11 @@ const CYCLE_BIN = "consort-cycle";
 const HUMAN_PROXY_BIN = "consort-human-proxy";
 const LOG_BIN = "consort-log";
 const TEST_LIST_BIN = "consort-test-list";
+// Generates client/src/styles/theme.css (:root tokens) from design-guide.json. Run as a
+// DETERMINISTIC ux-designer postTurn so every UI project's theme is generated regardless of
+// whether the agent ran the CLI — removing the divergence that otherwise leaves the stale
+// scaffold-template theme.css and forces a driver CSS refactor downstream.
+const APPLY_DESIGN_THEME_BIN = "consort-apply-design-theme";
 const DEPLOY_BIN = "consort-deploy";
 const GATE_CONFORMANCE_BIN = "consort-gate-conformance";
 const CANON_NOTES_BIN = "consort-canon-notes";
@@ -1470,6 +1475,7 @@ export function commandsFromManifest(action: WorkflowAction, cfg: DriveEffectsCo
     HUMAN_PROXY_BIN,
     LOG_BIN,
     TEST_LIST_BIN,
+    APPLY_DESIGN_THEME_BIN,
   };
   const resolveBin = (token: string): string => BIN_TOKENS[token] ?? token;
   // Substitute the manifest arg placeholders with this run's concrete values. `--tdd`
@@ -1483,6 +1489,7 @@ export function commandsFromManifest(action: WorkflowAction, cfg: DriveEffectsCo
       if (a === "--tdd") return tdd;
       if (a === "{feature}") return [f];
       if (a === "{tddDir}") return [cfg.consortDir];
+      if (a === "{projectRoot}") return [cfg.projectDir];
       if (a === "{story}") return story ? [story] : [];
       return [a];
     });
@@ -1611,6 +1618,14 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
       // waiting on a per-story list the role wrote under a different name/shape.
       if (!("mode" in action) && action.role === "test-strategist") {
         cmds.push({ kind: "cli", bin: TEST_LIST_BIN, args: [cfg.consortDir, f, action.story] });
+      }
+      // After the UX Designer writes design-guide.json, DETERMINISTICALLY generate
+      // client/src/styles/theme.css (:root tokens) from it, so every UI project's theme IS
+      // the guide regardless of whether the agent ran the CLI. Leaving this to the agent is
+      // the divergence root cause: a skipped generation leaves the stale scaffold theme.css,
+      // which the driver then hand-refactors in build. (Mirrors the manifest postTurn.)
+      if (action.role === "ux-designer") {
+        cmds.push({ kind: "cli", bin: APPLY_DESIGN_THEME_BIN, args: ["--project", cfg.projectDir] });
       }
       // Cycle recording is an ORCHESTRATION concern, not the role's: the
       // Navigator/Driver are pure (write the failing test / write the code +
@@ -2186,7 +2201,7 @@ export { executorDispatched } from "./executor-dispatch.js";
 
 /** The bin-token -> resolved-bin map the executor-dispatch post-turn expander shares with
  *  commandsFromManifest (one source of the resolved names). */
-const POST_TURN_BIN_TOKENS: Record<string, string> = { PIPELINE_BIN, CYCLE_BIN, HUMAN_PROXY_BIN, LOG_BIN, TEST_LIST_BIN };
+const POST_TURN_BIN_TOKENS: Record<string, string> = { PIPELINE_BIN, CYCLE_BIN, HUMAN_PROXY_BIN, LOG_BIN, TEST_LIST_BIN, APPLY_DESIGN_THEME_BIN };
 
 /** Build a DriveEffects bound to a project: readState from disk, perform via
  *  commandsForAction + the injected runner. */
