@@ -93,10 +93,13 @@ describe("resolveConsortSettings: defaults when no file + no env", () => {
     expect(s.effortFor("spec-author", "breakdown")).toBe("low");
     expect(s.effortFor("spec-author", "acs")).toBe("default");
     expect(s.effortFor("spec-author")).toBe("default"); // no key -> scalar default
-    // test-strategist's TEST-LIST step defaults low: the #556 quality-gated sweep measured
-    // effort=low on sonnet -89% wall (71.5s vs 679.9s) with quality 0.90 (ABOVE the sonnet
-    // baseline 0.85). Keyed to the `test-list` step only. Model stays the recommended default.
-    expect(s.effortFor("test-strategist", "test-list")).toBe("low");
+    // test-strategist's TEST-LIST step runs at DEFAULT effort. An earlier #556 quality-gated sweep
+    // had set it low (-89% wall at "quality 0.90") — but that quality metric scored the ARTIFACT's
+    // conformance, which a solo-authored list satisfies just as well as a fanned-out one, so the sweep
+    // was rewarding cheap-but-conformant SOLO authoring and could not see the coverage-depth loss from
+    // skipping the per-kind analyst fan-out. The supervise+reconcile+order turn is multi-step; it runs
+    // at default effort, and the fan-out is now enforced deterministically (testStrategistDispatchedAnalysts).
+    expect(s.effortFor("test-strategist", "test-list")).toBe("default");
     expect(s.build.loopGranularity).toBe("story"); // default is story-scoped Navigator/Driver turns
     expect(s.build.sessionScope).toBe("story");
     expect(s.plan.sizing).toBe(true);

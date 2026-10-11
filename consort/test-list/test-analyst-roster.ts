@@ -60,8 +60,10 @@ export function renderTestAnalystRoster(ctx: AnalystEnablementContext, opts: Ren
     `or "tool_scope", you MUST RESTATE them VERBATIM at the top of that spawn's prompt – "Think at ` +
     `<effort> effort." and "Confine your work to these tools: <tool_scope>." – since the Task tool takes ` +
     `no effort/tool parameters (the analyst self-paces/self-limits on your instruction); do not paraphrase ` +
-    `or omit them. For EACH analyst you spawn, first log a one-line reasoning event naming the analyst + ` +
-    `the model/effort/tool_scope you applied (so the levers in effect are auditable). These are the ` +
+    `or omit them. For EACH analyst you spawn, FIRST log a one-line reasoning event whose message BEGINS ` +
+    `with the exact token "test-analyst:<kind>" (e.g. "test-analyst:fitness") followed by the model/effort/` +
+    `tool_scope you applied, so the dispatch is machine-auditable (a deterministic post-turn check requires ` +
+    `one such event per enabled analyst). These are the ` +
     `ENABLED analysts for THIS project (a no-frontend project omits "client"). Collect each analyst's ` +
     `returned UNORDERED slice, then RECONCILE (discrepancies / overlaps / omissions), ASSEMBLE + ORDER ` +
     `the feature master, and assign the final feature-flat T-ids – see your role prompt for the ` +

@@ -493,8 +493,19 @@ describe("performViaExecutor (Stage 1b): the 7 design roles run FULL through the
           if (cmd.kind === "cli") {
             labels.push(`cli:${cmd.bin.replace("consort-", "")}:${cmd.args[0]}`);
             if (cmd.bin.endsWith("-log") && cmd.args[0] === "--reconcile") {
-              writeFileSync(join(consortDir, "agent-log.jsonl"),
-                JSON.stringify({ timestamp: "2026-08-05T00:00:00Z", level: "info", role, event: "artifact.written", message: "wrote artifact" }) + "\n");
+              const events = [
+                { timestamp: "2026-08-05T00:00:00Z", level: "info", role, event: "artifact.written", message: "wrote artifact" },
+              ];
+              // A VALID test-strategist turn SUPERVISES: it logs a `test-analyst:<kind>` dispatch event
+              // per enabled analyst (uiTrack defaults on here => behavior/fitness/client). The agent-log
+              // validator (testStrategistDispatchedAnalysts) requires these, so the fixture must simulate
+              // the fan-out, not a solo turn.
+              if (role === "test-strategist") {
+                for (const kind of ["behavior", "fitness", "client"]) {
+                  events.push({ timestamp: "2026-08-05T00:00:01Z", level: "debug", role, event: "reasoning", message: `test-analyst:${kind} model=sonnet` });
+                }
+              }
+              writeFileSync(join(consortDir, "agent-log.jsonl"), events.map((e) => JSON.stringify(e)).join("\n") + "\n");
             }
             return;
           }
@@ -507,7 +518,7 @@ describe("performViaExecutor (Stage 1b): the 7 design roles run FULL through the
   const AC = JSON.stringify({ id: "AC1-x", story_id: RED_STORY, statement: "S", layer: "persistence", given: "g", when: "w", then: "t", status: "draft" }) + "\n";
   const ARCH = JSON.stringify({ feature_id: FEATURE, service_backed: true, layers: [{ role: "driver", module: "app" }], persistence_invariants: [{ id: "I1", type: "unique", table: "sku", brief: "b" }] }) + "\n";
   const DBD = JSON.stringify({ feature_id: FEATURE, tables: [{ name: "sku", columns: [{ name: "id", type: "text", nullable: false }], primary_key: ["id"] }], schema_changes: [], realizes_invariants: ["I1"] }) + "\n";
-  const TL = JSON.stringify({ feature_id: FEATURE, items: [{ id: "T1", ac_id: "AC1-x", kind: "behavior", description: "d", invariant_id: "I1" }] }) + "\n";
+  const TL = JSON.stringify({ feature_id: FEATURE, ordered_for: "design-momentum", items: [{ id: "T1", ac_id: "AC1-x", kind: "behavior", status: "pending", description: "d", invariant_id: "I1" }] }) + "\n";
   const DG = JSON.stringify({ tokens: { colors: {}, typography: {}, spacing: {}, radius: {}, shadows: {}, breakpoints: {} }, components: { navbar: { class: "nav", notes: "n" } } }) + "\n";
   const PROPOSE = "# Feature A\nscope\n";
   const EST = JSON.stringify([{ feature_id: "FA", name: "Feature A", size: "M", rationale: "r" }]) + "\n";
