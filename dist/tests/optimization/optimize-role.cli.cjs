@@ -6990,7 +6990,7 @@ var test_strategist_default = {
       filename: "agent-log.jsonl",
       channel: "meta",
       validator: "testStrategistLoggedAuthoring",
-      description: "The Test Strategist's structured log (shared agent-log script). FAN-OUT PROVENANCE (a `test-analyst:<kind>` dispatch per enabled analyst) is enforced DETERMINISTICALLY at the spec gate (testStrategistFanOutReason reads the persisted agent-log), NOT as a meta-channel output validator \u2014 the executor skips those (the resolved meta path is not the persisted log)."
+      description: "The Test Strategist's structured log (shared agent-log script). Validated for a role event only; the fan-out PROVENANCE gate was removed (it false-blocked legitimate fan-outs whose dispatch consort-log was permission-denied). Fan-out quality is the role's; the agent's log access is fixed so its reasoning is recorded."
     }
   ],
   routing: {
@@ -9557,7 +9557,7 @@ function renderTestAnalystRoster(ctx, opts = {}) {
   });
   if (analysts.length === 0) return "";
   const payload = JSON.stringify({ analysts }, null, 2);
-  return `<<TEST-ANALYST ROSTER \u2013 spawn ONE Task subagent (subagent_type general-purpose) per entry below, passing its focus_prompt VERBATIM + the story inputs it declares. You MUST set the Task's model to the entry's "model" EXACTLY \u2013 never substitute your own model choice. When an entry gives "effort" or "tool_scope", you MUST RESTATE them VERBATIM at the top of that spawn's prompt \u2013 "Think at <effort> effort." and "Confine your work to these tools: <tool_scope>." \u2013 since the Task tool takes no effort/tool parameters (the analyst self-paces/self-limits on your instruction); do not paraphrase or omit them. For EACH analyst you spawn, FIRST log a one-line reasoning event whose message BEGINS with the exact token "test-analyst:<kind>" (e.g. "test-analyst:fitness") followed by the model/effort/tool_scope you applied, so the dispatch is machine-auditable (a deterministic post-turn check requires one such event per enabled analyst). These are the ENABLED analysts for THIS project (a no-frontend project omits "client"). Collect each analyst's returned UNORDERED slice, then RECONCILE (discrepancies / overlaps / omissions), ASSEMBLE + ORDER the feature master, and assign the final feature-flat T-ids \u2013 see your role prompt for the reconciliation contract.>>
+  return `<<TEST-ANALYST ROSTER \u2013 spawn ONE Task subagent (subagent_type general-purpose) per entry below, passing its focus_prompt VERBATIM + the story inputs it declares. You MUST set the Task's model to the entry's "model" EXACTLY \u2013 never substitute your own model choice. When an entry gives "effort" or "tool_scope", you MUST RESTATE them VERBATIM at the top of that spawn's prompt \u2013 "Think at <effort> effort." and "Confine your work to these tools: <tool_scope>." \u2013 since the Task tool takes no effort/tool parameters (the analyst self-paces/self-limits on your instruction); do not paraphrase or omit them. These are the ENABLED analysts for THIS project (a no-frontend project omits "client"). Collect each analyst's returned UNORDERED slice, then RECONCILE (discrepancies / overlaps / omissions), ASSEMBLE + ORDER the feature master, and assign the final feature-flat T-ids \u2013 see your role prompt for the reconciliation contract.>>
 \`\`\`json
 ` + payload + `
 \`\`\`
@@ -10900,7 +10900,7 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
 }
 function claudeToolArgs(cmd) {
   const out = [];
-  const allowed = [.../* @__PURE__ */ new Set([...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
+  const allowed = [.../* @__PURE__ */ new Set(["Bash(cd:*)", ...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
   if (allowed.length) out.push("--allowed-tools", allowed.join(","));
   if (cmd.disallowedTools && cmd.disallowedTools.length) out.push("--disallowed-tools", cmd.disallowedTools.join(","));
   return out;
@@ -12085,6 +12085,43 @@ function requiresE2eReason(consortDir, featureId) {
   }
   return null;
 }
+function uiTrackFlattenReason(consortDir, featureId) {
+  let uiTrack = false;
+  try {
+    uiTrack = resolveProjectSettings((0, import_node_path13.dirname)(consortDir)).project.uiTrack;
+  } catch {
+    return null;
+  }
+  if (!uiTrack) return null;
+  const fdir = featureDir2(consortDir, featureId);
+  const storiesDir2 = (0, import_node_path13.join)(fdir, "stories");
+  if (!(0, import_node_fs9.existsSync)(storiesDir2)) return null;
+  for (const s of (0, import_node_fs9.readdirSync)(storiesDir2)) {
+    const acsDir2 = (0, import_node_path13.join)(storiesDir2, s, "acs");
+    if (!(0, import_node_fs9.existsSync)(acsDir2)) continue;
+    let requiresE2e;
+    try {
+      requiresE2e = JSON.parse((0, import_node_fs9.readFileSync)((0, import_node_path13.join)(storiesDir2, s, "story.json"), "utf8")).requires_e2e;
+    } catch {
+    }
+    if (requiresE2e === true || requiresE2e === false) continue;
+    const acFiles = (0, import_node_fs9.readdirSync)(acsDir2).filter((f) => f.endsWith(".json"));
+    if (acFiles.length === 0) continue;
+    const layers = acFiles.map((f) => {
+      try {
+        return JSON.parse((0, import_node_fs9.readFileSync)((0, import_node_path13.join)(acsDir2, f), "utf8")).layer;
+      } catch {
+        return void 0;
+      }
+    });
+    const hasE2e = layers.some((l) => l === "E2E");
+    const allApi = layers.length > 0 && layers.every((l) => l === "API");
+    if (!hasE2e && allApi) {
+      return `story ${s} is on a UI (uiTrack) project but its acceptance criteria are ALL layer:"API" with no UI-interaction (layer:"E2E") AC, and requires_e2e is left unset \u2013 the design system is never exercised and this silently flattens a possibly user-facing story to a backend record. Decide explicitly: if the story has a user interaction (a form submit + its rendered result), add a client-submit AC tagged layer:"E2E" and set requires_e2e:true; if it is genuinely backend-only, set requires_e2e:false to confirm.`;
+    }
+  }
+  return null;
+}
 function architectureConventionsReason(consortDir, featureId) {
   const conventions = readConventions(consortDir);
   if (!conventions) return null;
@@ -12193,32 +12230,6 @@ function fitnessSingularCoverageReason(consortDir, featureId, testListJson) {
   if (arch === void 0) return null;
   const r = checkFitnessSingularCoverage(testListJson, arch);
   return r.ok ? null : `singular fitness coverage failed: ${r.violations.join("; ")}`;
-}
-function missingAnalystDispatchKinds(logText, enabledKinds) {
-  const messages = [];
-  for (const line of logText.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    try {
-      const o = JSON.parse(line);
-      if (o.role === "test-strategist" && typeof o.message === "string") messages.push(o.message);
-    } catch {
-    }
-  }
-  return enabledKinds.filter((k) => !messages.some((m) => m.includes(`test-analyst:${k}`)));
-}
-function testStrategistFanOutReason(consortDir, featureId, testListJson) {
-  try {
-    const items = JSON.parse(testListJson).items;
-    if (!Array.isArray(items) || items.length === 0) return null;
-  } catch {
-    return null;
-  }
-  const logPath = (0, import_node_path13.join)(consortDir, "agent-log.jsonl");
-  if (!(0, import_node_fs9.existsSync)(logPath)) return null;
-  const uiTrack = resolveProjectSettings((0, import_node_path13.dirname)(consortDir)).project.uiTrack;
-  const kinds = enabledAnalysts({ projectDir: (0, import_node_path13.dirname)(consortDir), uiTrack }).map((a) => a.kind);
-  const missing = missingAnalystDispatchKinds((0, import_node_fs9.readFileSync)(logPath, "utf8"), kinds);
-  if (missing.length === 0) return null;
-  return `the test-strategist produced a test list but did not fan out to the ${missing.join(", ")} analyst${missing.length > 1 ? "s" : ""} (no \`test-analyst:<kind>\` dispatch event in the agent-log). The Test Strategist SUPERVISES: it must spawn one Task subagent per enabled roster analyst (behavior / fitness / client) and reconcile their slices, never author the test list solo. Re-run the test-strategist turn fanning out to each analyst and logging the mandated per-dispatch event.`;
 }
 function uxDesignerBrowsedReason(consortDir, featureId) {
   const fdir = featureDir2(consortDir, featureId);
@@ -12491,6 +12502,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (e2eLayerReason !== null) return { reason: e2eLayerReason };
       const requiresE2e = requiresE2eReason(consortDir, featureId);
       if (requiresE2e !== null) return { reason: requiresE2e };
+      const flattenReason = uiTrackFlattenReason(consortDir, featureId);
+      if (flattenReason !== null) return { reason: flattenReason };
       const browsedReason = uxDesignerBrowsedReason(consortDir, featureId);
       if (browsedReason !== null) return { reason: browsedReason };
       const layeringReason = layeringDeclaredReason(consortDir, featureId);
@@ -12545,8 +12558,6 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (e2eReason !== null) return { reason: e2eReason };
         const jsdomReason = jsdomBrowserAssertionReason(tlJson);
         if (jsdomReason !== null) return { reason: jsdomReason };
-        const fanOutReason = testStrategistFanOutReason(consortDir, featureId, tlJson);
-        if (fanOutReason !== null) return { reason: fanOutReason };
       }
       return conf;
     }

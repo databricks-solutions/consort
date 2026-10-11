@@ -7679,7 +7679,7 @@ var test_strategist_default = {
       filename: "agent-log.jsonl",
       channel: "meta",
       validator: "testStrategistLoggedAuthoring",
-      description: "The Test Strategist's structured log (shared agent-log script). FAN-OUT PROVENANCE (a `test-analyst:<kind>` dispatch per enabled analyst) is enforced DETERMINISTICALLY at the spec gate (testStrategistFanOutReason reads the persisted agent-log), NOT as a meta-channel output validator \u2014 the executor skips those (the resolved meta path is not the persisted log)."
+      description: "The Test Strategist's structured log (shared agent-log script). Validated for a role event only; the fan-out PROVENANCE gate was removed (it false-blocked legitimate fan-outs whose dispatch consort-log was permission-denied). Fan-out quality is the role's; the agent's log access is fixed so its reasoning is recorded."
     }
   ],
   routing: {
@@ -8446,6 +8446,18 @@ function orchestratorLogEvents(action, ctx = {}) {
           slots: { source: action.source, reason: action.reason, ...withStory }
         }
       ];
+    case "revise-route":
+      return [
+        {
+          ...base,
+          level: "warn",
+          event: "reasoning",
+          slots: {
+            note: `orchestrator: revise-route -> ${action.role} re-runs the ${action.gate} gate for ${action.story} (source: ${action.source}): ${action.reason}`,
+            ...withStory
+          }
+        }
+      ];
     case "done":
       return [{ ...base, event: "phase.end", slots: { phase: "workflow", outcome: "complete" } }];
     default: {
@@ -8934,7 +8946,7 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
 }
 function claudeToolArgs(cmd) {
   const out = [];
-  const allowed = [.../* @__PURE__ */ new Set([...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
+  const allowed = [.../* @__PURE__ */ new Set(["Bash(cd:*)", ...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
   if (allowed.length) out.push("--allowed-tools", allowed.join(","));
   if (cmd.disallowedTools && cmd.disallowedTools.length) out.push("--disallowed-tools", cmd.disallowedTools.join(","));
   return out;
