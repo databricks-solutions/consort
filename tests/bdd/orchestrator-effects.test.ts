@@ -1016,7 +1016,7 @@ describe("commandsForAction: build-lane perf (P2 review rubric / P5 session scop
     }
     // The TEST-loop line rides only on turns that RUN the loop: GREEN yes, RED no.
     expect(greenTask).toMatch(/TESTS ::/);
-    expect(greenTask).toMatch(/do NOT find\/grep\/ls/);
+    expect(greenTask).toMatch(/tests\/step_defs\//);
     expect(redTask).not.toMatch(/TESTS ::/);
     rmSync(tmp, { recursive: true, force: true });
   });

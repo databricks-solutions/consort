@@ -300,10 +300,8 @@ function buildContextPack(
   // e2e is owned by the deploy gate, never re-run per cycle here.
   if (!opts.skipTestLoop) {
     parts.push(
-      ` TESTS :: this story's tests are under tests/step_defs/ (behavior, one file per story) and` +
-        ` tests/architecture/ (fitness: layering, persistence invariants, migration reversibility). Read those` +
-        ` named paths directly; do NOT find/grep/ls to locate them. Iterate against the single failing test while` +
-        ` fixing; the honest-GREEN verify is the authoritative full run.`,
+      ` TESTS :: this story's behavior tests are under tests/step_defs/ (one file per story). Iterate against` +
+        ` the single failing test while fixing; the honest-GREEN full run is the authoritative verify.`,
     );
   }
 
