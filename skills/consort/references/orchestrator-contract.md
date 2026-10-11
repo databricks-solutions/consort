@@ -26,7 +26,13 @@ the phase/role/gate transitions; don't narrate the tooling.
    launch that survives your turn ending: a `nohup … &` leaves the drive in your tool
    call's process group, which the harness SIGTERMs on turn-end (the "drive reaped
    between turns" failure); `--detach` escapes that group. Do NOT redirect stderr to
-   `drive-live.log` (the drive owns it – a redirect double-writes). **(b) To SHOW EACH
+   `drive-live.log` (the drive owns it – a redirect double-writes). **Launch a phase lane
+   with its bound:** a `/design` / `/build` / `/deploy` is `consort-drive --feature <F> --only
+   <phase>` (the scaffolded command carries the `--only`); run that command AS WRITTEN. A bare
+   `consort-drive --feature <F>` with NO `--only` is an UNBOUNDED (full) run that continues through
+   build after the spec gate — so NEVER substitute a bare `consort-drive` for a phase lane (that is
+   how a `/design` silently becomes a full run that offers to build). A bound-less RESUME recovers the
+   feature's recorded bound, but the FIRST launch of the lane must carry `--only`. **(b) To SHOW EACH
    STEP LIVE, relay POLL-ONCE with `consort-watch --since <cursor>` in a loop – the ONLY
    foreground-safe way, mandatory.** Each call returns IMMEDIATELY with the new lines + a
    `[consort-watch] cursor=<N> status=<running|gate|pause|escalation|done|waiting>`

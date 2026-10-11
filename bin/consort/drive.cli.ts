@@ -72,7 +72,7 @@ import { kitVersion, exportConsortVersionEnv } from "../../consort/config/kit-bi
 import { isForeignFeatureClaim, readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import { driveAuthPreflight } from "../../consort/orchestrator/provisioning/credentials.js";
-import { writeRunConfig } from "../../consort/session/run-config.js";
+import { writeRunConfig, readRunConfig } from "../../consort/session/run-config.js";
 import { resolveLaunchKitRef, pinRunKitRef, kitRefDriftWarning } from "../../consort/config/kit-ref.js";
 import {
   buildCfg,
@@ -1027,6 +1027,12 @@ function snapshotRunConfig(cfg: DriveEffectsConfig, bound: string, gates: "inter
     loopGranularity: cfg.loopGranularity,
     batchCap: cfg.batchCap,
     modelForRole: cfg.modelForRole ?? (() => "inherit"),
+    // Stamp the DURABLE per-feature lane intent ONLY when this is an explicit single-feature phase
+    // bound (design|build|deploy) — so a later bound-less relaunch of this feature recovers it. A
+    // bound-less run (bound==="full") stamps nothing (writeRunConfig ignores non-phase bounds).
+    ...(cfg.featureId && ["design", "build", "deploy"].includes(bound)
+      ? { laneIntent: { feature: cfg.featureId, bound } }
+      : {}),
   });
 }
 
@@ -1294,6 +1300,17 @@ async function main(): Promise<number> {
       return 2;
     }
     bound = args.only as DriverBound;
+  }
+  // Recover a dropped phase bound: a single-feature launch with NO explicit --only (and not --plan-only)
+  // inherits THIS feature's last explicit bound from run-config's durable lane_intents map — so an
+  // improvised bare `consort-drive --feature F` relaunch of a /design run stays design, not silently
+  // full (the gate prompt + approve behavior follow the bound). /sprint returned above and never reaches
+  // here. First-ever launch of a feature has no recorded intent -> stays unbounded (full), as today.
+  if (bound === undefined && !args.planOnly && args.feature) {
+    const inherited = readRunConfig(args.consortDir ?? resolveConsortDir(args.projectDir ?? process.cwd()))?.lane_intents?.[args.feature];
+    if (inherited === "design" || inherited === "build" || inherited === "deploy") {
+      bound = inherited as DriverBound;
+    }
   }
   const boundOpts = bound ? driverBoundOptions(bound) : {};
 

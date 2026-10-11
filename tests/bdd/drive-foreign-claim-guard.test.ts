@@ -60,3 +60,17 @@ describe("consort-drive AUTO-CLAIMS the feature branch when none is claimed (any
     expect(DRIVE_SRC.slice(Math.max(0, idx - 400), idx)).toMatch(/inReplayLane/);
   });
 });
+
+// A single-feature launch with NO explicit --only recovers the feature's last explicit bound from the
+// durable run-config lane_intents map — so an improvised bare `consort-drive --feature F` relaunch of a
+// /design run stays design instead of silently defaulting to full (the bound=full-on-/design trap).
+describe("consort-drive recovers a dropped phase bound from the durable lane_intents map", () => {
+  it("inherits lane_intents[feature] when no --only is passed, only for design|build|deploy", () => {
+    expect(DRIVE_SRC).toMatch(/lane_intents\?\.\[args\.feature\]/);
+    const idx = DRIVE_SRC.indexOf("lane_intents?.[args.feature]");
+    const region = DRIVE_SRC.slice(Math.max(0, idx - 200), idx + 200);
+    // Gated on a bound-less launch (bound === undefined) and the three real phases.
+    expect(region).toMatch(/bound === undefined/);
+    expect(region).toMatch(/"design"|"build"|"deploy"/);
+  });
+});

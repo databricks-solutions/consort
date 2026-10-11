@@ -115,6 +115,33 @@ describe("run-config: write / read / mirror", () => {
   });
 });
 
+// Durable per-feature lane intent: a `--only <phase>` launch stamps feature->bound so a later
+// bound-less relaunch of that feature recovers it (the bound=full-on-/design trap). full/plan are
+// not recorded; prior entries are preserved (merged, never clobbered).
+describe("run-config: durable per-feature lane_intents", () => {
+  it("stamps feature -> explicit phase bound (design|build|deploy), not full/plan", () => {
+    writeRunConfig(inputs({ bound: "design", laneIntent: { feature: "F1", bound: "design" } }));
+    expect(readRunConfig(tdd)?.lane_intents).toEqual({ F1: "design" });
+    // A later bound-less (full) run for a DIFFERENT feature must PRESERVE F1's intent + not record "full".
+    writeRunConfig(inputs({ bound: "full" }));
+    expect(readRunConfig(tdd)?.lane_intents).toEqual({ F1: "design" });
+  });
+
+  it("preserves other features' intents and updates the stamped one (merge, never clobber)", () => {
+    writeRunConfig(inputs({ bound: "design", laneIntent: { feature: "F1", bound: "design" } }));
+    writeRunConfig(inputs({ bound: "build", laneIntent: { feature: "F2", bound: "build" } }));
+    expect(readRunConfig(tdd)?.lane_intents).toEqual({ F1: "design", F2: "build" });
+    // Re-stamping F1 to deploy updates only F1.
+    writeRunConfig(inputs({ bound: "deploy", laneIntent: { feature: "F1", bound: "deploy" } }));
+    expect(readRunConfig(tdd)?.lane_intents).toEqual({ F1: "deploy", F2: "build" });
+  });
+
+  it("omits lane_intents entirely when none has ever been stamped", () => {
+    writeRunConfig(inputs({ bound: "full" }));
+    expect(readRunConfig(tdd)?.lane_intents).toBeUndefined();
+  });
+});
+
 describe("run-config: formatRunConfig groups roles by model", () => {
   it("renders a compact config block with models grouped + the option line", () => {
     const text = formatRunConfig(buildRunConfig(inputs()));
