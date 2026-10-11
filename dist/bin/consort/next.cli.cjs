@@ -7779,211 +7779,18 @@ function resolveConsortSettings(inputs) {
   return { models, modelFor, fallbackModels, budgets, mcpConfigs, effortFor, build, plan, project };
 }
 
-// consort/orchestrator/drive/orchestrator-effects.ts
-init_cjs_shims();
-var fs18 = __toESM(require("fs"), 1);
-var import_node_path27 = require("path");
+// bin/consort/next.cli.ts
+var import_lakebase11 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
-// consort/orchestrator/drive/orchestrator-drive.ts
+// consort/intake/orchestrator-sprint.ts
 init_cjs_shims();
 
-// consort/orchestrator/workflow/workflow-vocabulary.ts
-init_cjs_shims();
-function escalationPreempt(state) {
-  if (!state.escalation) return void 0;
-  const e = state.escalation;
-  if (e.routable) {
-    return {
-      kind: "revise-route",
-      story: e.routable.story,
-      role: e.routable.owning_role,
-      gate: e.routable.gate,
-      reason: e.reason,
-      source: e.source
-    };
-  }
-  return { kind: "raise-to-hil", reason: e.reason, source: e.source, ...e.story_id ? { story: e.story_id } : {} };
-}
-
-// consort/orchestrator/drive/orchestrator-drive.ts
-function uxDesignerPending(s) {
-  return !!s.uiTrack && s.breakdownDone && !s.designGuideReady;
-}
-function nextDesignAction(state) {
-  if (!state.breakdownDone) {
-    return { kind: "invoke-role", role: "spec-author", mode: "breakdown" };
-  }
-  if (uxDesignerPending(state)) {
-    return { kind: "invoke-role", role: "ux-designer" };
-  }
-  for (const story of state.storyOrder) {
-    const v = state.stories[story];
-    if (v?.gateApproved) continue;
-    const design = v?.design ?? {
-      hasAcs: false,
-      architectAnnotated: false,
-      architectProjectable: false,
-      dbaDesigned: false,
-      testListReady: false,
-      testListConforms: true,
-      reflectionPassed: false,
-      reflectionVerdictWritten: false
-    };
-    if (!design.hasAcs) return { kind: "invoke-role", role: "spec-author", story };
-    if (!design.architectAnnotated) {
-      if (design.architectProjectable) return { kind: "project-architect-notes", story };
-      return { kind: "invoke-role", role: "architect-reviewer", story };
-    }
-    if (!design.dbaDesigned) return { kind: "invoke-role", role: "dba", story };
-    if (!design.testListReady) return { kind: "invoke-role", role: "test-strategist", story };
-    if (!design.testListConforms) return { kind: "flag-testlist-nonconformance", story };
-    if (!design.reflectionPassed) return { kind: "invoke-role", role: "navigator", story, buildMode: "reflect" };
-    if (!v?.gateSurfaced) return { kind: "surface-gate", story };
-    return { kind: "approve-gate", story };
-  }
-  return { kind: "design-complete" };
-}
-function nextBuildAction(story, b) {
-  if (!b.experimentCut || b.experimentStale) {
-    return b.experimentDiscarded || b.experimentStale ? { kind: "cut-experiment", story, resetStaleBranch: true } : { kind: "cut-experiment", story };
-  }
-  if (b.refactorVerifyAssessEligible) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess-refactor" };
-  if (b.refactorVerifyRefactorPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor-superseded" };
-  if ((b.loop ?? "story") === "story") {
-    if (b.reviewStoryPending) return { kind: "invoke-role", role: "navigator", story, buildMode: "review" };
-    if (b.refactorStoryPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor" };
-  } else {
-    if (b.reviewAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "review", ac: b.reviewAc };
-    if (b.refactorAc) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor", ac: b.refactorAc };
-  }
-  if (b.assessGreenAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess", ac: b.assessGreenAc };
-  if (b.repairRegressionAc) return { kind: "invoke-role", role: "driver", story, buildMode: "repair", ac: b.repairRegressionAc };
-  if (b.greenSupersededAc) return { kind: "invoke-role", role: "driver", story, buildMode: "green-superseded" };
-  if (b.specDefectAc) {
-    const scope = b.specDefectFromRole ?? "test-strategist";
-    return {
-      kind: "raise-to-hil",
-      source: "spec-defect",
-      reason: `The failing test/NFR for ${b.specDefectAc} is a SPEC-DEFECT (the test is wrong, not the code) \u2014 revise it in the design lane, do NOT repair the code. Recommended: reopen this story from the ${scope} (consort-reopen-story --from ${scope}), re-author, and rebuild.`,
-      story
-    };
-  }
-  if (b.greenUnfixableAc) {
-    return {
-      kind: "raise-to-hil",
-      source: "green-unfixable",
-      reason: `The GREEN-verify failure for ${b.greenUnfixableAc} was assessed as a genuine regression that is NOT driver-fixable (no fix directive \u2013 it needs a human or a design change). Escalating directly with the diagnosis instead of burning bounded Driver re-attempts that cannot fix it (issue #200). Diagnosis: ${b.greenUnfixableDiagnosis ?? "see the green-failure record"}`,
-      story
-    };
-  }
-  if (!b.testsWritten) return { kind: "invoke-role", role: "navigator", story };
-  if (!b.codeWritten) return { kind: "invoke-role", role: "driver", story };
-  if (!b.awaitingAcceptance) return { kind: "await-acceptance", story };
-  if (b.deployVerifyAssessEligible) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess-deploy" };
-  if (b.deployVerifyRefactorPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor-deploy" };
-  if (!b.deployVerified) return { kind: "await-acceptance", story };
-  if (!b.accepted) return { kind: "accept", story };
-  return { kind: "complete", story };
-}
-function nextTransition(state) {
-  const preempt = escalationPreempt(state);
-  if (preempt) return preempt;
-  if (state.phase === "planning") {
-    const p = state.planning ?? { proposed: false, estimated: false, requestsAuthored: false };
-    if (p.intakeReady === false) return { kind: "invoke-role", role: "product-owner", mode: "intake" };
-    if (p.intakeReady === true && p.intakeApproved === false) return { kind: "approve-intake-gate" };
-    if (!p.proposed) return { kind: "invoke-role", role: "spec-author", mode: "propose" };
-    if (!p.skipSizing && !p.estimated) return { kind: "invoke-role", role: "architect-reviewer", mode: "estimate" };
-    if (p.backlogCommitted === false) return { kind: "approve-backlog-gate" };
-    if (!p.requestsAuthored) return { kind: "invoke-role", role: "product-owner", mode: "author-requests" };
-    if (!p.skipSizing && p.committedEstimated === false)
-      return { kind: "invoke-role", role: "architect-reviewer", mode: "estimate-committed" };
-    if (!p.gateApproved) return { kind: "approve-plan-gate" };
-    return { kind: "planning-complete" };
-  }
-  if (state.phase === "deploy") {
-    const d = state.deploy ?? { deployed: false, gateApproved: false };
-    if (!d.deployed) return { kind: "deploy" };
-    if (d.verifyAssessEligible) return { kind: "deploy-verify-heal", role: "navigator", mode: "assess-deploy" };
-    if (d.verifyRefactorPending) return { kind: "deploy-verify-heal", role: "driver", mode: "refactor-deploy" };
-    if (!d.gateApproved) {
-      if (d.verifyPassed === false) {
-        if (d.reverifyAttempted) {
-          return {
-            kind: "raise-to-hil",
-            source: "deploy-verify-failed",
-            reason: `The feature deploy-verify still fails after a re-deploy + re-verify (deploy-evidence.json records verify.passed=false). This needs a human, not another approve: inspect the evidence's verify output, fix the cause, then re-run \`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale deploy server first: \`lsof -tiTCP:8000 | xargs kill\`) and approve the deploy gate.`
-          };
-        }
-        return { kind: "deploy-verify-reverify" };
-      }
-      return { kind: "approve-deploy-gate" };
-    }
-    return { kind: "deploy-complete" };
-  }
-  if (state.phase === "promote") {
-    const pr = state.promote ?? { prReady: false, ciGreen: false, prApproved: false, merged: false };
-    if (!pr.prReady) return { kind: "prepare-pr" };
-    if (!pr.ciGreen) return { kind: "wait-ci" };
-    if (!pr.prApproved) return { kind: "approve-promote-gate" };
-    if (!pr.merged) return { kind: "merge" };
-    return { kind: "done" };
-  }
-  if (state.phase === "done") return { kind: "done" };
-  if (uxDesignerPending(state)) {
-    return { kind: "invoke-role", role: "ux-designer" };
-  }
-  if (state.buildActive) {
-    return nextBuildAction(state.buildActive, state.stories[state.buildActive].build);
-  }
-  for (const story of state.storyOrder) {
-    const v = state.stories[story];
-    if (v?.gateApproved && !v.build.accepted) return { kind: "dispatch", story };
-  }
-  const design = nextDesignAction(toDesignView(state));
-  if (design.kind === "design-complete") return { kind: "feature-complete" };
-  return design;
-}
-function toDesignView(state) {
-  return {
-    breakdownDone: state.breakdownDone,
-    storyOrder: state.storyOrder,
-    uiTrack: state.uiTrack,
-    designGuideReady: state.designGuideReady,
-    stories: Object.fromEntries(
-      Object.entries(state.stories).map(([id, v]) => [
-        id,
-        { gateApproved: v.gateApproved, gateSurfaced: v.gateSurfaced, design: v.design }
-      ])
-    )
-  };
-}
-
-// consort/orchestrator/drive/executor-dispatch.ts
-init_cjs_shims();
-var fs10 = __toESM(require("fs"), 1);
-var import_node_path12 = require("path");
-
-// consort/orchestrator/turns/step-executor.ts
+// consort/gates/sprint-gates.ts
 init_cjs_shims();
 var import_node_fs2 = require("fs");
-var import_node_path3 = require("path");
 
-// consort/orchestrator/steps/step-contract.ts
+// consort/gates/gate-hash.ts
 init_cjs_shims();
-
-// consort/orchestrator/provisioning/channels.ts
-init_cjs_shims();
-
-// consort/orchestrator/steps/step.ts
-init_cjs_shims();
-var import_node_path5 = require("path");
-var import_node_fs4 = require("fs");
-
-// consort/orchestrator/validators/conformance/validator-registry.ts
-init_cjs_shims();
-var import_node_fs3 = require("fs");
-var import_node_path4 = require("path");
 
 // consort/orchestrator/validators/conformance/artifact-conformance.ts
 init_cjs_shims();
@@ -8268,42 +8075,11 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
-// consort/orchestrator/validators/conformance/validator-registry.ts
-function conformsTo(artifactName) {
-  return (producedPath) => {
-    let content;
-    try {
-      content = (0, import_node_fs3.readFileSync)(producedPath, "utf8");
-    } catch {
-      return { ok: false, violations: [`${artifactName} not readable at ${producedPath}`] };
-    }
-    const conf = checkArtifactConformance(artifactName, content);
-    return conf.ok ? { ok: true, violations: [] } : { ok: false, violations: conf.violations };
-  };
-}
-var acConformant = conformsTo("ac.json");
-var architectureConformant = conformsTo("architecture.json");
-var dbDesignConformant = conformsTo("db-design.json");
-var testListConformant = conformsTo("test-list.json");
-var productOverviewConformant = conformsTo("product-overview.md");
-var nfrsConformant = conformsTo("nfrs.md");
-var designBriefConformant = conformsTo("design-brief.md");
-
-// consort/orchestrator/steps/turn-events.ts
+// consort/logging/gate-decision-log.ts
 init_cjs_shims();
 
-// consort/orchestrator/agents/agent-catalogue.ts
+// consort/logging/agent-log.ts
 init_cjs_shims();
-var import_node_path10 = require("path");
-var import_node_fs9 = require("fs");
-
-// consort/orchestrator/agents/claude-step-agent.ts
-init_cjs_shims();
-var import_node_crypto2 = require("crypto");
-
-// consort/orchestrator/drive/claude-runner.ts
-init_cjs_shims();
-var import_node_child_process3 = require("child_process");
 
 // consort/config/consort-env.ts
 init_cjs_shims();
@@ -8333,77 +8109,6 @@ function warnLegacyEnv(legacyName, suffix) {
   } catch {
   }
 }
-
-// consort/setup/project-consort-setup.ts
-init_cjs_shims();
-var fs6 = __toESM(require("fs"), 1);
-var path5 = __toESM(require("path"), 1);
-var import_node_url3 = require("url");
-
-// consort/lakebase/adopt-consort.ts
-init_cjs_shims();
-var fs2 = __toESM(require("fs"), 1);
-var path = __toESM(require("path"), 1);
-var import_node_url = require("url");
-
-// consort/lakebase/update-agents.ts
-init_cjs_shims();
-var fs3 = __toESM(require("fs"), 1);
-var path2 = __toESM(require("path"), 1);
-
-// consort/lakebase/upgrade.ts
-init_cjs_shims();
-var fs5 = __toESM(require("fs"), 1);
-var path4 = __toESM(require("path"), 1);
-var import_node_child_process = require("child_process");
-
-// consort/config/kit-ref.ts
-init_cjs_shims();
-var import_node_fs5 = require("fs");
-var import_node_path6 = require("path");
-
-// consort/lakebase/update-commands.ts
-init_cjs_shims();
-var fs4 = __toESM(require("fs"), 1);
-var path3 = __toESM(require("path"), 1);
-
-// consort/lakebase/kit-ref-pin.ts
-init_cjs_shims();
-var import_node_url2 = require("url");
-var import_node_path7 = require("path");
-var import_node_fs6 = require("fs");
-
-// consort/lakebase/upgrade.ts
-var import_lakebase = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-var AGENT_SYNC_MARKER = path4.join(".claude", "agents", ".kit-version");
-
-// consort/setup/project-consort-setup.ts
-var __dirname2 = path5.dirname((0, import_node_url3.fileURLToPath)(importMetaUrl));
-var AGENT_SYNC_MARKER2 = path5.join(".claude", "agents", ".kit-version");
-
-// consort/orchestrator/drive/claude-runner.ts
-var import_node_crypto = require("crypto");
-var fs9 = __toESM(require("fs"), 1);
-var path7 = __toESM(require("path"), 1);
-var readline = __toESM(require("readline"), 1);
-
-// consort/logging/replay-artifacts.ts
-init_cjs_shims();
-
-// consort/logging/replay-build.ts
-init_cjs_shims();
-var SCAFFOLD_OWNED = /* @__PURE__ */ new Set([
-  ".git",
-  ...ALL_ARTIFACT_ROOTS,
-  ".lakebase",
-  "scripts",
-  ".claude",
-  ".github",
-  "node_modules"
-]);
-
-// consort/logging/agent-log.ts
-init_cjs_shims();
 
 // consort/logging/agent-log-events.ts
 init_cjs_shims();
@@ -8479,16 +8184,338 @@ function renderEventMessage(event, slots = {}) {
   });
 }
 
-// consort/gates/workflow-phase.ts
-init_cjs_shims();
-var fs7 = __toESM(require("fs"), 1);
-var PHASE_OWNER_KEY = "phase_feature_id";
+// consort/gates/sprint-gates.ts
+var SPRINT_GATES_SCHEMA_VERSION = 1;
+function defaultSprintGatesState(sprint) {
+  return {
+    sprint,
+    schema_version: SPRINT_GATES_SCHEMA_VERSION,
+    gates: { plan: { status: "open", history: [] } }
+  };
+}
+function sprintGatesFile(consortDir, sprint) {
+  return sprintGatesJson(consortDir, sprint);
+}
+function readSprintGates(sprint, opts = {}) {
+  const consortDir = opts.consortDir ?? resolveConsortDir();
+  const file = sprintGatesFile(consortDir, sprint);
+  if (!(0, import_node_fs2.existsSync)(file)) return defaultSprintGatesState(sprint);
+  let parsed;
+  try {
+    parsed = JSON.parse((0, import_node_fs2.readFileSync)(file, "utf8"));
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);
+  }
+  const plan = parsed.gates?.plan ?? { status: "open", history: [] };
+  return {
+    sprint,
+    schema_version: parsed.schema_version ?? SPRINT_GATES_SCHEMA_VERSION,
+    gates: { plan: { status: plan.status, approver: plan.approver, approved_at: plan.approved_at, artifact_hashes: plan.artifact_hashes, history: plan.history ?? [] } }
+  };
+}
 
-// consort/session/claude-usage.ts
+// consort/intake/orchestrator-sprint.ts
+var fs2 = __toESM(require("fs"), 1);
+function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
+  const proposed = fs2.existsSync(featureProposalsMd(consortDir));
+  const estimated = hasEstimates(consortDir);
+  const backlog = readBacklog(consortDir, sprint).features;
+  const requested = readRequested(consortDir, sprint);
+  const backlogCommitted = requested !== void 0 && requested.length > 0 || backlog.length > 0;
+  const requestsAuthored = backlog.length > 0 && backlog.every((f) => hasFeatureRequest(consortDir, f.id));
+  const estimatedIds = new Set(readEstimates(consortDir).map((e) => e.feature_id));
+  const committedEstimated = backlog.length > 0 && backlog.every((f) => estimatedIds.has(f.id));
+  let gateApproved = false;
+  try {
+    gateApproved = readSprintGates(sprint, { consortDir }).gates.plan.status === "approved";
+  } catch {
+    gateApproved = false;
+  }
+  return {
+    phase: "planning",
+    planning: { intakeReady: intakeReadyOnDisk(consortDir), intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated, backlogCommitted, requestsAuthored, committedEstimated, gateApproved, skipSizing: opts.skipSizing ?? false },
+    breakdownDone: false,
+    storyOrder: [],
+    stories: {},
+    buildActive: null
+  };
+}
+
+// consort/config/kit-bin.ts
+init_cjs_shims();
+var import_node_child_process = require("child_process");
+var fs3 = __toESM(require("fs"), 1);
+var path = __toESM(require("path"), 1);
+var kitRootCache;
+function resolveKitRoot() {
+  if (kitRootCache !== void 0) return kitRootCache;
+  const env = process.env.LAKEBASE_KIT_DIR?.trim();
+  kitRootCache = env && fs3.existsSync(path.join(env, "package.json")) ? env : path.resolve(__dirname, "..", "..", "..");
+  return kitRootCache;
+}
+function kitVersion() {
+  try {
+    const pkg = JSON.parse(fs3.readFileSync(path.join(resolveKitRoot(), "package.json"), "utf8"));
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+// consort/orchestrator/status/next.ts
+init_cjs_shims();
+var fs20 = __toESM(require("fs"), 1);
+var path11 = __toESM(require("path"), 1);
+
+// consort/orchestrator/drive/orchestrator-drive.ts
 init_cjs_shims();
 
-// consort/session/context-budget.ts
+// consort/orchestrator/workflow/workflow-vocabulary.ts
 init_cjs_shims();
+function escalationPreempt(state) {
+  if (!state.escalation) return void 0;
+  const e = state.escalation;
+  if (e.routable) {
+    return {
+      kind: "revise-route",
+      story: e.routable.story,
+      role: e.routable.owning_role,
+      gate: e.routable.gate,
+      reason: e.reason,
+      source: e.source
+    };
+  }
+  return { kind: "raise-to-hil", reason: e.reason, source: e.source, ...e.story_id ? { story: e.story_id } : {} };
+}
+function actionLane(action) {
+  switch (action.kind) {
+    case "invoke-role": {
+      if ("mode" in action) {
+        return action.mode === "breakdown" ? "design" : "planning";
+      }
+      return action.role === "navigator" || action.role === "driver" ? "build" : "design";
+    }
+    case "approve-intake-gate":
+    case "approve-backlog-gate":
+    case "approve-plan-gate":
+    case "planning-complete":
+      return "planning";
+    case "flag-testlist-nonconformance":
+    case "project-architect-notes":
+    case "surface-gate":
+    case "approve-gate":
+    case "design-complete":
+      return "design";
+    case "dispatch":
+    case "cut-experiment":
+    case "await-acceptance":
+    case "accept":
+    case "complete":
+      return "build";
+    case "feature-complete":
+      return "coarse";
+    case "deploy":
+    case "approve-deploy-gate":
+    case "deploy-verify-heal":
+    case "deploy-verify-reverify":
+      return "deploy";
+    case "deploy-complete":
+    case "prepare-pr":
+    case "wait-ci":
+    case "approve-promote-gate":
+    case "merge":
+      return "promote";
+    case "raise-to-hil":
+      return "done";
+    case "revise-route":
+      return "design";
+    case "done":
+      return "done";
+  }
+}
+
+// consort/orchestrator/drive/orchestrator-drive.ts
+function uxDesignerPending(s) {
+  return !!s.uiTrack && s.breakdownDone && !s.designGuideReady;
+}
+function nextDesignAction(state) {
+  if (!state.breakdownDone) {
+    return { kind: "invoke-role", role: "spec-author", mode: "breakdown" };
+  }
+  if (uxDesignerPending(state)) {
+    return { kind: "invoke-role", role: "ux-designer" };
+  }
+  for (const story of state.storyOrder) {
+    const v = state.stories[story];
+    if (v?.gateApproved) continue;
+    const design = v?.design ?? {
+      hasAcs: false,
+      architectAnnotated: false,
+      architectProjectable: false,
+      dbaDesigned: false,
+      testListReady: false,
+      testListConforms: true,
+      reflectionPassed: false,
+      reflectionVerdictWritten: false
+    };
+    if (!design.hasAcs) return { kind: "invoke-role", role: "spec-author", story };
+    if (!design.architectAnnotated) {
+      if (design.architectProjectable) return { kind: "project-architect-notes", story };
+      return { kind: "invoke-role", role: "architect-reviewer", story };
+    }
+    if (!design.dbaDesigned) return { kind: "invoke-role", role: "dba", story };
+    if (!design.testListReady) return { kind: "invoke-role", role: "test-strategist", story };
+    if (!design.testListConforms) return { kind: "flag-testlist-nonconformance", story };
+    if (!design.reflectionPassed) return { kind: "invoke-role", role: "navigator", story, buildMode: "reflect" };
+    if (!v?.gateSurfaced) return { kind: "surface-gate", story };
+    return { kind: "approve-gate", story };
+  }
+  return { kind: "design-complete" };
+}
+function nextBuildAction(story, b) {
+  if (!b.experimentCut || b.experimentStale) {
+    return b.experimentDiscarded || b.experimentStale ? { kind: "cut-experiment", story, resetStaleBranch: true } : { kind: "cut-experiment", story };
+  }
+  if (b.refactorVerifyAssessEligible) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess-refactor" };
+  if (b.refactorVerifyRefactorPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor-superseded" };
+  if ((b.loop ?? "story") === "story") {
+    if (b.reviewStoryPending) return { kind: "invoke-role", role: "navigator", story, buildMode: "review" };
+    if (b.refactorStoryPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor" };
+  } else {
+    if (b.reviewAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "review", ac: b.reviewAc };
+    if (b.refactorAc) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor", ac: b.refactorAc };
+  }
+  if (b.assessGreenAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess", ac: b.assessGreenAc };
+  if (b.repairRegressionAc) return { kind: "invoke-role", role: "driver", story, buildMode: "repair", ac: b.repairRegressionAc };
+  if (b.greenSupersededAc) return { kind: "invoke-role", role: "driver", story, buildMode: "green-superseded" };
+  if (b.specDefectAc) {
+    const scope = b.specDefectFromRole ?? "test-strategist";
+    return {
+      kind: "raise-to-hil",
+      source: "spec-defect",
+      reason: `The failing test/NFR for ${b.specDefectAc} is a SPEC-DEFECT (the test is wrong, not the code) \u2014 revise it in the design lane, do NOT repair the code. Recommended: reopen this story from the ${scope} (consort-reopen-story --from ${scope}), re-author, and rebuild.`,
+      story
+    };
+  }
+  if (b.greenUnfixableAc) {
+    return {
+      kind: "raise-to-hil",
+      source: "green-unfixable",
+      reason: `The GREEN-verify failure for ${b.greenUnfixableAc} was assessed as a genuine regression that is NOT driver-fixable (no fix directive \u2013 it needs a human or a design change). Escalating directly with the diagnosis instead of burning bounded Driver re-attempts that cannot fix it (issue #200). Diagnosis: ${b.greenUnfixableDiagnosis ?? "see the green-failure record"}`,
+      story
+    };
+  }
+  if (!b.testsWritten) return { kind: "invoke-role", role: "navigator", story };
+  if (!b.codeWritten) return { kind: "invoke-role", role: "driver", story };
+  if (!b.awaitingAcceptance) return { kind: "await-acceptance", story };
+  if (b.deployVerifyAssessEligible) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess-deploy" };
+  if (b.deployVerifyRefactorPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor-deploy" };
+  if (!b.deployVerified) return { kind: "await-acceptance", story };
+  if (!b.accepted) return { kind: "accept", story };
+  return { kind: "complete", story };
+}
+function nextTransition(state) {
+  const preempt = escalationPreempt(state);
+  if (preempt) return preempt;
+  if (state.phase === "planning") {
+    const p = state.planning ?? { proposed: false, estimated: false, requestsAuthored: false };
+    if (p.intakeReady === false) return { kind: "invoke-role", role: "product-owner", mode: "intake" };
+    if (p.intakeReady === true && p.intakeApproved === false) return { kind: "approve-intake-gate" };
+    if (!p.proposed) return { kind: "invoke-role", role: "spec-author", mode: "propose" };
+    if (!p.skipSizing && !p.estimated) return { kind: "invoke-role", role: "architect-reviewer", mode: "estimate" };
+    if (p.backlogCommitted === false) return { kind: "approve-backlog-gate" };
+    if (!p.requestsAuthored) return { kind: "invoke-role", role: "product-owner", mode: "author-requests" };
+    if (!p.skipSizing && p.committedEstimated === false)
+      return { kind: "invoke-role", role: "architect-reviewer", mode: "estimate-committed" };
+    if (!p.gateApproved) return { kind: "approve-plan-gate" };
+    return { kind: "planning-complete" };
+  }
+  if (state.phase === "deploy") {
+    const d = state.deploy ?? { deployed: false, gateApproved: false };
+    if (!d.deployed) return { kind: "deploy" };
+    if (d.verifyAssessEligible) return { kind: "deploy-verify-heal", role: "navigator", mode: "assess-deploy" };
+    if (d.verifyRefactorPending) return { kind: "deploy-verify-heal", role: "driver", mode: "refactor-deploy" };
+    if (!d.gateApproved) {
+      if (d.verifyPassed === false) {
+        if (d.reverifyAttempted) {
+          return {
+            kind: "raise-to-hil",
+            source: "deploy-verify-failed",
+            reason: `The feature deploy-verify still fails after a re-deploy + re-verify (deploy-evidence.json records verify.passed=false). This needs a human, not another approve: inspect the evidence's verify output, fix the cause, then re-run \`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale deploy server first: \`lsof -tiTCP:8000 | xargs kill\`) and approve the deploy gate.`
+          };
+        }
+        return { kind: "deploy-verify-reverify" };
+      }
+      return { kind: "approve-deploy-gate" };
+    }
+    return { kind: "deploy-complete" };
+  }
+  if (state.phase === "promote") {
+    const pr = state.promote ?? { prReady: false, ciGreen: false, prApproved: false, merged: false };
+    if (!pr.prReady) return { kind: "prepare-pr" };
+    if (!pr.ciGreen) return { kind: "wait-ci" };
+    if (!pr.prApproved) return { kind: "approve-promote-gate" };
+    if (!pr.merged) return { kind: "merge" };
+    return { kind: "done" };
+  }
+  if (state.phase === "done") return { kind: "done" };
+  if (uxDesignerPending(state)) {
+    return { kind: "invoke-role", role: "ux-designer" };
+  }
+  if (state.buildActive) {
+    return nextBuildAction(state.buildActive, state.stories[state.buildActive].build);
+  }
+  for (const story of state.storyOrder) {
+    const v = state.stories[story];
+    if (v?.gateApproved && !v.build.accepted) return { kind: "dispatch", story };
+  }
+  const design = nextDesignAction(toDesignView(state));
+  if (design.kind === "design-complete") return { kind: "feature-complete" };
+  return design;
+}
+function toDesignView(state) {
+  return {
+    breakdownDone: state.breakdownDone,
+    storyOrder: state.storyOrder,
+    uiTrack: state.uiTrack,
+    designGuideReady: state.designGuideReady,
+    stories: Object.fromEntries(
+      Object.entries(state.stories).map(([id, v]) => [
+        id,
+        { gateApproved: v.gateApproved, gateSurfaced: v.gateSurfaced, design: v.design }
+      ])
+    )
+  };
+}
+function nextDesignOnlyTransition(state) {
+  const preempt = escalationPreempt(state);
+  if (preempt) return preempt;
+  return nextDesignAction(toDesignView(state));
+}
+
+// consort/orchestrator/drive/orchestrator-run.ts
+init_cjs_shims();
+
+// consort/gates/orchestrator-expect.ts
+init_cjs_shims();
+
+// consort/orchestrator/steps/step-contract.ts
+init_cjs_shims();
+
+// consort/orchestrator/drive/orchestrator-run.ts
+function driverBoundOptions(bound) {
+  switch (bound) {
+    case "plan":
+      return { stopWhen: (a) => a.kind === "planning-complete" };
+    case "design":
+      return { transition: nextDesignOnlyTransition, stopWhen: (a) => a.kind === "design-complete" };
+    case "build":
+      return { stopWhen: (a) => actionLane(a) !== "build" };
+    case "deploy":
+      return { stopWhen: (a) => actionLane(a) !== "deploy" && actionLane(a) !== "promote" };
+  }
+}
 
 // consort/logging/orchestrator-logging.ts
 init_cjs_shims();
@@ -8618,178 +8645,22 @@ function gateEnactCommand(gate, ctx = {}) {
   }
 }
 
-// consort/config/kit-bin.ts
+// consort/orchestrator/status/feature-status.ts
 init_cjs_shims();
-var import_node_child_process2 = require("child_process");
-var fs8 = __toESM(require("fs"), 1);
-var path6 = __toESM(require("path"), 1);
-var kitRootCache;
-function resolveKitRoot() {
-  if (kitRootCache !== void 0) return kitRootCache;
-  const env = process.env.LAKEBASE_KIT_DIR?.trim();
-  kitRootCache = env && fs8.existsSync(path6.join(env, "package.json")) ? env : path6.resolve(__dirname, "..", "..", "..");
-  return kitRootCache;
-}
-function kitVersion() {
-  try {
-    const pkg = JSON.parse(fs8.readFileSync(path6.join(resolveKitRoot(), "package.json"), "utf8"));
-    return pkg.version ?? "unknown";
-  } catch {
-    return "unknown";
-  }
-}
-
-// consort/orchestrator/drive/claude-runner.ts
-var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-
-// consort/setup/stray-artifact-recovery.ts
-init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path8 = require("path");
-
-// consort/orchestrator/turns/turn-monitor.ts
-init_cjs_shims();
-
-// consort/orchestrator/drive/claude-runner.ts
-var MAX_TRANSIENT_RETRIES = Number(consortEnv("MAX_TRANSIENT_RETRIES") ?? "5");
-var TRANSIENT_BACKOFF_MS = Number(consortEnv("TRANSIENT_BACKOFF_MS") ?? "5000");
-var TURN_INACTIVITY_TIMEOUT_MS = Number(consortEnv("TURN_INACTIVITY_TIMEOUT_MS") ?? String(10 * 60 * 1e3));
-var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e3));
-
-// consort/orchestrator/agents/mock-replay-agent.ts
-init_cjs_shims();
-var import_node_fs8 = require("fs");
-var import_node_path9 = require("path");
-
-// consort/orchestrator/agents/replay-recorder-wrapper.ts
-init_cjs_shims();
-
-// consort/logging/turn-recorder.ts
-init_cjs_shims();
-var import_node_crypto3 = require("crypto");
-var import_node_fs10 = require("fs");
-var import_node_path11 = require("path");
-
-// consort/pipeline/record-build.ts
-init_cjs_shims();
-
-// consort/orchestrator/steps/assert-route-satisfiable.ts
-init_cjs_shims();
-var import_node_fs11 = require("fs");
-var import_node_path13 = require("path");
-
-// consort/orchestrator/state/orchestrator-derive.ts
-init_cjs_shims();
-function isContractStory(storyId) {
-  return /(^|[-_])(drop|remove|delete|rename|deprecate|cleanup|retire)([-_]|$)|dropp|remov|delet|renam|deprecat/i.test(
-    storyId
-  );
-}
-function effectiveLoopForStory(runLoop, storyId) {
-  return isContractStory(storyId) ? "ac" : runLoop;
-}
-function storyView(id, e, probe, loop) {
-  const gateApproved = e.gate?.status === "approved";
-  const accepted = e.acceptance?.decision === "accepted" || e.status === "done";
-  const exp = e.experiment;
-  const experimentStale = exp != null && exp.status === "active" && exp.design_fingerprint !== void 0 && (() => {
-    const cur = probe.designFingerprint(id);
-    return cur !== void 0 && cur !== exp.design_fingerprint;
-  })();
-  return {
-    gateApproved,
-    // The gate record exists once the story has been surfaced for review;
-    // awaiting-gate is the pre-record surfaced state.
-    gateSurfaced: e.gate != null || e.status === "awaiting-gate",
-    design: {
-      hasAcs: probe.hasAcs(id),
-      architectAnnotated: probe.architectAnnotated(id),
-      architectProjectable: probe.architectProjectable(id),
-      dbaDesigned: probe.dbaDesigned(id),
-      testListReady: probe.testListReady(id),
-      testListConforms: probe.testListConforms(id),
-      reflectionPassed: probe.reflectionPassed(id),
-      reflectionVerdictWritten: probe.reflectionVerdictWritten(id)
-    },
-    build: {
-      // An experiment that was discarded is no longer cut (a fresh one is cut
-      // on revise); merged/active both count as cut.
-      experimentCut: e.experiment != null && e.experiment.status !== "discarded",
-      experimentDiscarded: e.experiment != null && e.experiment.status === "discarded",
-      experimentStale,
-      testsWritten: probe.testsWritten(id),
-      codeWritten: probe.codeWritten(id),
-      loop,
-      reviewAc: probe.reviewPendingAc(id),
-      refactorAc: probe.refactorPendingAc(id),
-      reviewStoryPending: probe.reviewPending(id),
-      refactorStoryPending: probe.refactorPending(id),
-      assessGreenAc: probe.assessGreenFailureAc(id),
-      repairRegressionAc: probe.repairRegressionFixAc(id),
-      greenSupersededAc: probe.greenSupersededFailureAc(id),
-      specDefectAc: probe.specDefectAc(id),
-      specDefectFromRole: probe.specDefectFromRole(id),
-      greenUnfixableAc: probe.greenUnfixableAc(id),
-      greenUnfixableDiagnosis: probe.greenUnfixableDiagnosis(id),
-      awaitingAcceptance: e.status === "awaiting-acceptance",
-      deployVerified: probe.storyDeployVerified(id),
-      deployVerifyAssessEligible: probe.deployVerifyAssessEligible(id),
-      deployVerifyRefactorPending: probe.deployVerifyRefactorPending(id),
-      refactorVerifyAssessEligible: probe.refactorVerifyAssessEligible(id),
-      refactorVerifyRefactorPending: probe.refactorVerifyRefactorPending(id),
-      accepted
-    }
-  };
-}
-function deriveDriveState(pipeline, probe, ctx) {
-  const loop = ctx.loop ?? "story";
-  const stories = {};
-  for (const [id, entry] of Object.entries(pipeline.stories)) {
-    stories[id] = storyView(id, entry, probe, effectiveLoopForStory(loop, id));
-  }
-  const storyOrder = ctx.storyOrder ?? Object.keys(pipeline.stories);
-  const breakdownDone = ctx.breakdownDone || storyOrder.length > 0;
-  return {
-    phase: ctx.phase,
-    planning: ctx.planning,
-    deploy: ctx.deploy,
-    promote: ctx.promote,
-    breakdownDone,
-    storyOrder,
-    stories,
-    buildActive: pipeline.build_active,
-    escalation: probe.pendingEscalation()
-  };
-}
-function driverPhaseForTdd(tddPhase) {
-  switch (tddPhase) {
-    case "planning":
-      return "planning";
-    case "deploy":
-      return "deploy";
-    case "promote":
-      return "promote";
-    case "shipped":
-    case "done":
-      return "done";
-    default:
-      return "feature";
-  }
-}
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_cjs_shims();
-var fs15 = __toESM(require("fs"), 1);
-var path10 = __toESM(require("path"), 1);
+var fs9 = __toESM(require("fs"), 1);
+var path4 = __toESM(require("path"), 1);
 
 // consort/pipeline/run-cycle.ts
 init_cjs_shims();
-var import_lakebase4 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
 // consort/experiment/experiment.ts
 init_cjs_shims();
-var import_node_child_process4 = require("child_process");
-var import_lakebase3 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_node_child_process2 = require("child_process");
+var import_lakebase = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var RUNTIME_ARTIFACT_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -8811,9 +8682,6 @@ var import_fs6 = require("fs");
 var import_path7 = require("path");
 
 // consort/gates/verify-gate-integrity.ts
-init_cjs_shims();
-
-// consort/gates/gate-hash.ts
 init_cjs_shims();
 
 // consort/gates/gates.ts
@@ -8912,8 +8780,8 @@ function validateGateRecord(parsed, gateName, file) {
 
 // consort/gates/gate-conformance-guard.ts
 init_cjs_shims();
-var import_node_fs12 = require("fs");
-var import_node_path14 = require("path");
+var import_node_fs3 = require("fs");
+var import_node_path3 = require("path");
 
 // consort/test-list/test-list.ts
 init_cjs_shims();
@@ -8926,16 +8794,16 @@ init_cjs_shims();
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
-var import_node_child_process5 = require("child_process");
-var import_node_crypto4 = require("crypto");
-var import_node_fs14 = require("fs");
-var import_node_path16 = require("path");
-var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_node_child_process3 = require("child_process");
+var import_node_crypto = require("crypto");
+var import_node_fs5 = require("fs");
+var import_node_path5 = require("path");
+var import_lakebase6 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // consort/gates/escalation.ts
 init_cjs_shims();
-var fs11 = __toESM(require("fs"), 1);
+var fs4 = __toESM(require("fs"), 1);
 
 // consort/smells/smells.ts
 init_cjs_shims();
@@ -9224,18 +9092,18 @@ function escalationId(parts) {
   return [parts.source, parts.feature_id, parts.story_id, parts.ac_id].filter(Boolean).join("__").replace(/[^A-Za-z0-9_.-]/g, "-");
 }
 function readEscalationFile(file) {
-  if (!fs11.existsSync(file)) return void 0;
+  if (!fs4.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs11.readFileSync(file, "utf8"));
+    return JSON.parse(fs4.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
 }
 function readEscalations(consortDir) {
   const dir = escalationsDir(consortDir);
-  if (!fs11.existsSync(dir)) return [];
+  if (!fs4.existsSync(dir)) return [];
   const out = [];
-  for (const f of fs11.readdirSync(dir)) {
+  for (const f of fs4.readdirSync(dir)) {
     if (!f.endsWith(".json")) continue;
     const e = readEscalationFile(`${dir}/${f}`);
     if (e) out.push(e);
@@ -9271,18 +9139,18 @@ function firstPendingEscalation(consortDir, featureId) {
 
 // consort/smells/deploy-verify-assess.ts
 init_cjs_shims();
-var fs12 = __toESM(require("fs"), 1);
-var path8 = __toESM(require("path"), 1);
+var fs5 = __toESM(require("fs"), 1);
+var path2 = __toESM(require("path"), 1);
 function markerPath(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
-  return storyId ? path8.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path8.join(fdir, "deploy-verify-assess.json");
+  return storyId ? path2.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path2.join(fdir, "deploy-verify-assess.json");
 }
 function readDeployVerifyAssessMarker(consortDir, featureId, storyId) {
   const file = markerPath(consortDir, featureId, storyId);
-  if (!file || !fs12.existsSync(file)) return void 0;
+  if (!file || !fs5.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs12.readFileSync(file, "utf8"));
+    return JSON.parse(fs5.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9298,24 +9166,24 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs13 = require("fs");
-var import_node_path15 = require("path");
+var import_node_fs4 = require("fs");
+var import_node_path4 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
 var import_util = require("@databricks-solutions/lakebase-scm-utils/util");
+var import_lakebase3 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_lakebase4 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_lakebase5 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-var import_lakebase6 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
 // consort/deploy/deploy.ts
 function deployEvidencePasses(e) {
   return e !== void 0 && e.reachable === true && e.verify?.passed === true;
 }
 function readDeployEvidence(file) {
-  if (!(0, import_node_fs14.existsSync)(file)) return void 0;
+  if (!(0, import_node_fs5.existsSync)(file)) return void 0;
   try {
-    return JSON.parse((0, import_node_fs14.readFileSync)(file, "utf8"));
+    return JSON.parse((0, import_node_fs5.readFileSync)(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9323,22 +9191,22 @@ function readDeployEvidence(file) {
 function storyDeployVerified(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return false;
-  return deployEvidencePasses(readDeployEvidence((0, import_node_path16.join)(fdir, "stories", storyId, "deploy-evidence.json")));
+  return deployEvidencePasses(readDeployEvidence((0, import_node_path5.join)(fdir, "stories", storyId, "deploy-evidence.json")));
 }
 
 // consort/architecture/design-adherence.ts
 init_cjs_shims();
-var import_node_fs15 = require("fs");
-var import_node_path17 = require("path");
+var import_node_fs6 = require("fs");
+var import_node_path6 = require("path");
 
 // consort/smells/supersession.ts
 init_cjs_shims();
-var fs13 = __toESM(require("fs"), 1);
-var import_node_child_process6 = require("child_process");
-var import_node_crypto5 = require("crypto");
-var import_node_path18 = require("path");
+var fs6 = __toESM(require("fs"), 1);
+var import_node_child_process4 = require("child_process");
+var import_node_crypto2 = require("crypto");
+var import_node_path7 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
-  return (0, import_node_path18.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return (0, import_node_path7.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -9347,18 +9215,18 @@ function readSupersededTests(tdd, feature, story, ac) {
     return arr && arr.length > 0 && arr.every((t) => typeof t === "string") ? arr : void 0;
   };
   const file = supersededTestsJson(tdd, feature, story, ac);
-  if (fs13.existsSync(file)) {
+  if (fs6.existsSync(file)) {
     try {
-      const parsed = JSON.parse(fs13.readFileSync(file, "utf8"));
+      const parsed = JSON.parse(fs6.readFileSync(file, "utf8"));
       const tests = parseSuperseded(JSON.stringify(parsed));
       if (tests) return { ...parsed, tests };
     } catch {
     }
   }
   const regFile = regressionAssessmentJson(tdd, feature, story, ac);
-  if (fs13.existsSync(regFile)) {
+  if (fs6.existsSync(regFile)) {
     try {
-      const parsed = JSON.parse(fs13.readFileSync(regFile, "utf8"));
+      const parsed = JSON.parse(fs6.readFileSync(regFile, "utf8"));
       if (parsed.superseded === true) {
         const tests = parseSuperseded(JSON.stringify(parsed));
         if (tests) return { tests, reason: typeof parsed.reason === "string" ? parsed.reason : "superseded (from regression-assessment.json)" };
@@ -9374,7 +9242,7 @@ function hasPendingSupersession(tdd, feature, story, ac) {
   return s !== void 0 && s.refactored !== true;
 }
 function greenFailureJson(tdd, feature, story, ac) {
-  return (0, import_node_path18.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return (0, import_node_path7.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -9387,10 +9255,10 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 ];
 function computeTreeState(projectDir) {
   try {
-    const headSha = (0, import_node_child_process6.execFileSync)("git", ["rev-parse", "HEAD"], { cwd: projectDir, encoding: "utf8" }).trim();
-    const porcelain = (0, import_node_child_process6.execFileSync)("git", ["status", "--porcelain"], { cwd: projectDir, encoding: "utf8" });
+    const headSha = (0, import_node_child_process4.execFileSync)("git", ["rev-parse", "HEAD"], { cwd: projectDir, encoding: "utf8" }).trim();
+    const porcelain = (0, import_node_child_process4.execFileSync)("git", ["status", "--porcelain"], { cwd: projectDir, encoding: "utf8" });
     const codeLines = porcelain.split("\n").filter((l) => l.trim().length > 0).filter((l) => !TREE_STATE_EXCLUDE_PREFIXES.some((pfx) => l.slice(3).startsWith(pfx)));
-    const dirtySha = (0, import_node_crypto5.createHash)("sha1").update(codeLines.join("\n")).digest("hex");
+    const dirtySha = (0, import_node_crypto2.createHash)("sha1").update(codeLines.join("\n")).digest("hex");
     return { headSha, dirtySha };
   } catch {
     return void 0;
@@ -9398,13 +9266,13 @@ function computeTreeState(projectDir) {
 }
 function readGreenFailure(tdd, feature, story, ac) {
   const file = greenFailureJson(tdd, feature, story, ac);
-  if (!fs13.existsSync(file)) return void 0;
+  if (!fs6.existsSync(file)) return void 0;
   try {
-    const value = JSON.parse(fs13.readFileSync(file, "utf8"));
+    const value = JSON.parse(fs6.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState((0, import_node_path18.dirname)(tdd));
+      const cur = computeTreeState((0, import_node_path7.dirname)(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
-        fs13.rmSync(file, { force: true });
+        fs6.rmSync(file, { force: true });
         return void 0;
       }
     }
@@ -9434,13 +9302,13 @@ function specDefectFromRole(tdd, feature, story, ac) {
   return gf?.specDefect?.fromRole ?? "test-strategist";
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return (0, import_node_path18.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return (0, import_node_path7.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs16 = require("fs");
-var import_node_path19 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path8 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -9451,18 +9319,18 @@ var EXCLUDE_DIR_JUNK = new RegExp(
 
 // consort/smells/refactor-verify-assess.ts
 init_cjs_shims();
-var fs14 = __toESM(require("fs"), 1);
-var path9 = __toESM(require("path"), 1);
+var fs7 = __toESM(require("fs"), 1);
+var path3 = __toESM(require("path"), 1);
 function markerPath2(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
-  return path9.join(fdir, "stories", storyId, "refactor-verify-assess.json");
+  return path3.join(fdir, "stories", storyId, "refactor-verify-assess.json");
 }
 function readRefactorVerifyAssessMarker(consortDir, featureId, storyId) {
   const file = markerPath2(consortDir, featureId, storyId);
-  if (!file || !fs14.existsSync(file)) return void 0;
+  if (!file || !fs7.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs14.readFileSync(file, "utf8"));
+    return JSON.parse(fs7.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9478,24 +9346,24 @@ function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs17 = require("fs");
-var import_node_path20 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path9 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
-var import_node_child_process7 = require("child_process");
-var import_node_fs18 = require("fs");
-var import_node_path21 = require("path");
+var import_node_child_process5 = require("child_process");
+var import_node_fs9 = require("fs");
+var import_node_path10 = require("path");
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs19 = require("fs");
-var import_node_path22 = require("path");
+var import_node_fs10 = require("fs");
+var import_node_path11 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
-var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
   if (!(0, import_fs6.existsSync)(file)) {
@@ -9632,10 +9500,109 @@ function refactorPending(consortDir, featureId, story) {
   return hasOpenBuildRefactorRoutableSmell(consortDir, story);
 }
 
+// consort/orchestrator/state/orchestrator-derive.ts
+init_cjs_shims();
+function isContractStory(storyId) {
+  return /(^|[-_])(drop|remove|delete|rename|deprecate|cleanup|retire)([-_]|$)|dropp|remov|delet|renam|deprecat/i.test(
+    storyId
+  );
+}
+function effectiveLoopForStory(runLoop, storyId) {
+  return isContractStory(storyId) ? "ac" : runLoop;
+}
+function storyView(id, e, probe, loop) {
+  const gateApproved = e.gate?.status === "approved";
+  const accepted = e.acceptance?.decision === "accepted" || e.status === "done";
+  const exp = e.experiment;
+  const experimentStale = exp != null && exp.status === "active" && exp.design_fingerprint !== void 0 && (() => {
+    const cur = probe.designFingerprint(id);
+    return cur !== void 0 && cur !== exp.design_fingerprint;
+  })();
+  return {
+    gateApproved,
+    // The gate record exists once the story has been surfaced for review;
+    // awaiting-gate is the pre-record surfaced state.
+    gateSurfaced: e.gate != null || e.status === "awaiting-gate",
+    design: {
+      hasAcs: probe.hasAcs(id),
+      architectAnnotated: probe.architectAnnotated(id),
+      architectProjectable: probe.architectProjectable(id),
+      dbaDesigned: probe.dbaDesigned(id),
+      testListReady: probe.testListReady(id),
+      testListConforms: probe.testListConforms(id),
+      reflectionPassed: probe.reflectionPassed(id),
+      reflectionVerdictWritten: probe.reflectionVerdictWritten(id)
+    },
+    build: {
+      // An experiment that was discarded is no longer cut (a fresh one is cut
+      // on revise); merged/active both count as cut.
+      experimentCut: e.experiment != null && e.experiment.status !== "discarded",
+      experimentDiscarded: e.experiment != null && e.experiment.status === "discarded",
+      experimentStale,
+      testsWritten: probe.testsWritten(id),
+      codeWritten: probe.codeWritten(id),
+      loop,
+      reviewAc: probe.reviewPendingAc(id),
+      refactorAc: probe.refactorPendingAc(id),
+      reviewStoryPending: probe.reviewPending(id),
+      refactorStoryPending: probe.refactorPending(id),
+      assessGreenAc: probe.assessGreenFailureAc(id),
+      repairRegressionAc: probe.repairRegressionFixAc(id),
+      greenSupersededAc: probe.greenSupersededFailureAc(id),
+      specDefectAc: probe.specDefectAc(id),
+      specDefectFromRole: probe.specDefectFromRole(id),
+      greenUnfixableAc: probe.greenUnfixableAc(id),
+      greenUnfixableDiagnosis: probe.greenUnfixableDiagnosis(id),
+      awaitingAcceptance: e.status === "awaiting-acceptance",
+      deployVerified: probe.storyDeployVerified(id),
+      deployVerifyAssessEligible: probe.deployVerifyAssessEligible(id),
+      deployVerifyRefactorPending: probe.deployVerifyRefactorPending(id),
+      refactorVerifyAssessEligible: probe.refactorVerifyAssessEligible(id),
+      refactorVerifyRefactorPending: probe.refactorVerifyRefactorPending(id),
+      accepted
+    }
+  };
+}
+function deriveDriveState(pipeline, probe, ctx) {
+  const loop = ctx.loop ?? "story";
+  const stories = {};
+  for (const [id, entry] of Object.entries(pipeline.stories)) {
+    stories[id] = storyView(id, entry, probe, effectiveLoopForStory(loop, id));
+  }
+  const storyOrder = ctx.storyOrder ?? Object.keys(pipeline.stories);
+  const breakdownDone = ctx.breakdownDone || storyOrder.length > 0;
+  return {
+    phase: ctx.phase,
+    planning: ctx.planning,
+    deploy: ctx.deploy,
+    promote: ctx.promote,
+    breakdownDone,
+    storyOrder,
+    stories,
+    buildActive: pipeline.build_active,
+    escalation: probe.pendingEscalation()
+  };
+}
+function driverPhaseForTdd(tddPhase) {
+  switch (tddPhase) {
+    case "planning":
+      return "planning";
+    case "deploy":
+      return "deploy";
+    case "promote":
+      return "promote";
+    case "shipped":
+    case "done":
+      return "done";
+    default:
+      return "feature";
+  }
+}
+
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
-var import_node_crypto6 = require("crypto");
-var import_node_fs20 = require("fs");
+var import_node_crypto3 = require("crypto");
+var import_node_fs11 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -9654,18 +9621,23 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs20.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs11.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
-    return (0, import_node_crypto6.createHash)("sha256").update(canonical).digest("hex").slice(0, 16);
+    return (0, import_node_crypto3.createHash)("sha256").update(canonical).digest("hex").slice(0, 16);
   } catch {
     return void 0;
   }
 }
 
+// consort/gates/workflow-phase.ts
+init_cjs_shims();
+var fs8 = __toESM(require("fs"), 1);
+var PHASE_OWNER_KEY = "phase_feature_id";
+
 // consort/orchestrator/state/orchestrator-probe.ts
-var import_lakebase10 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
 // consort/smells/reflection.ts
 init_cjs_shims();
@@ -9781,22 +9753,22 @@ function architectNovelty(canon, storyAcs, storyArchitectureJsonContent) {
 
 // consort/orchestrator/state/orchestrator-probe.ts
 function storyCycles2(consortDir, featureId, story) {
-  const base = path10.join(cyclesRootDir(consortDir), featureId, story);
-  if (!fs15.existsSync(base)) return [];
+  const base = path4.join(cyclesRootDir(consortDir), featureId, story);
+  if (!fs9.existsSync(base)) return [];
   const out = [];
-  for (const acDir of fs15.readdirSync(base)) {
-    const dir = path10.join(base, acDir);
+  for (const acDir of fs9.readdirSync(base)) {
+    const dir = path4.join(base, acDir);
     let isDir = false;
     try {
-      isDir = fs15.statSync(dir).isDirectory();
+      isDir = fs9.statSync(dir).isDirectory();
     } catch {
       isDir = false;
     }
     if (!isDir) continue;
-    for (const f of fs15.readdirSync(dir)) {
+    for (const f of fs9.readdirSync(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(fs15.readFileSync(path10.join(dir, f), "utf8")));
+        out.push(JSON.parse(fs9.readFileSync(path4.join(dir, f), "utf8")));
       } catch {
       }
     }
@@ -9804,9 +9776,9 @@ function storyCycles2(consortDir, featureId, story) {
   return out;
 }
 function readJson(file) {
-  if (!fs15.existsSync(file)) return void 0;
+  if (!fs9.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs15.readFileSync(file, "utf8"));
+    return JSON.parse(fs9.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9821,25 +9793,25 @@ function readDriveContext(consortDir, featureId, projectDir) {
   const proposed = spec !== void 0;
   const intakeReady = intakeReadyOnDisk(consortDir);
   const breakdownDone = Array.isArray(spec?.stories) && spec.stories.length > 0;
-  const requestsAuthored = fs15.existsSync(featureRequestMd(consortDir, featureId));
+  const requestsAuthored = fs9.existsSync(featureRequestMd(consortDir, featureId));
   const backlogCommitted = requestsAuthored;
-  const deployed = fs15.existsSync(featureDeployEvidenceJson(consortDir, featureId));
+  const deployed = fs9.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
   const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
-  const reverifyAttempted = fs15.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
+  const reverifyAttempted = fs9.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   const verifyAssessEligible = deployVerifyNeedsAssess(consortDir, featureId);
   const verifyRefactorPending = deployVerifyRefactorPending(consortDir, featureId);
-  const proj = projectDir ?? path10.dirname(consortDir);
+  const proj = projectDir ?? path4.dirname(consortDir);
   let scmState;
   try {
-    scmState = (0, import_lakebase10.readWorkflowState)(proj)?.state;
+    scmState = (0, import_lakebase8.readWorkflowState)(proj)?.state;
   } catch {
     scmState = void 0;
   }
   const atOrPast = (target) => {
     if (!scmState) return false;
-    const i = import_lakebase10.SCM_STATES.indexOf(scmState);
-    const t = import_lakebase10.SCM_STATES.indexOf(target);
+    const i = import_lakebase8.SCM_STATES.indexOf(scmState);
+    const t = import_lakebase8.SCM_STATES.indexOf(target);
     return i >= 0 && t >= 0 && i >= t;
   };
   const promote = {
@@ -9860,7 +9832,7 @@ function readDriveContext(consortDir, featureId, projectDir) {
 }
 function readDeployVerifyPassed(consortDir, featureId) {
   try {
-    const ev = JSON.parse(fs15.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
+    const ev = JSON.parse(fs9.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
     return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : void 0;
   } catch {
     return void 0;
@@ -9882,22 +9854,22 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       const acs = storyAcIds(consortDir, featureId, story);
       if (acs.length === 0) return false;
       const everyAcNoted = acs.every((ac) => readAcArchitecturalNotes(consortDir, featureId, ac) !== void 0);
-      return everyAcNoted && fs15.existsSync(architectureJson(consortDir, featureId));
+      return everyAcNoted && fs9.existsSync(architectureJson(consortDir, featureId));
     },
     dbaDesigned() {
       const archFile = architectureJson(consortDir, featureId);
-      if (!fs15.existsSync(archFile)) return false;
+      if (!fs9.existsSync(archFile)) return false;
       let archContent;
       try {
-        archContent = fs15.readFileSync(archFile, "utf8");
+        archContent = fs9.readFileSync(archFile, "utf8");
       } catch {
         return false;
       }
       const dbFile = dbDesignJson(consortDir, featureId);
       let dbContent;
-      if (fs15.existsSync(dbFile)) {
+      if (fs9.existsSync(dbFile)) {
         try {
-          dbContent = fs15.readFileSync(dbFile, "utf8");
+          dbContent = fs9.readFileSync(dbFile, "utf8");
         } catch {
           dbContent = void 0;
         }
@@ -9905,7 +9877,7 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       return checkDbDesign(dbContent, archContent).ok;
     },
     architectProjectable(story) {
-      if (!fs15.existsSync(architectureJson(consortDir, featureId))) return false;
+      if (!fs9.existsSync(architectureJson(consortDir, featureId))) return false;
       const canon = readCanon(consortDir);
       if (!canon) return false;
       if (canon.established_by === featureId) return false;
@@ -9918,9 +9890,9 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
     },
     testListReady(story) {
       const file = storyTestListJson(consortDir, featureId, story);
-      if (!fs15.existsSync(file)) return false;
+      if (!fs9.existsSync(file)) return false;
       try {
-        const data = JSON.parse(fs15.readFileSync(file, "utf8"));
+        const data = JSON.parse(fs9.readFileSync(file, "utf8"));
         return Array.isArray(data.items) && data.items.length > 0;
       } catch {
         return false;
@@ -10100,12 +10072,15 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
   };
 }
 
+// consort/gates/design-spec-gate.ts
+init_cjs_shims();
+
+// consort/experiment/spike-carryforward.ts
+init_cjs_shims();
+
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
 var import_fs10 = require("fs");
-
-// consort/logging/gate-decision-log.ts
-init_cjs_shims();
 
 // consort/gates/gates-lock.ts
 init_cjs_shims();
@@ -10122,43 +10097,6 @@ function readPipeline(consortDir, featureId) {
   if (!(0, import_fs10.existsSync)(p)) return initPipeline(featureId);
   return JSON.parse((0, import_fs10.readFileSync)(p, "utf8"));
 }
-
-// consort/session/response-formatter.ts
-init_cjs_shims();
-var import_node_fs22 = require("fs");
-var import_node_path24 = require("path");
-
-// consort/architecture/e2e-route-adherence.ts
-init_cjs_shims();
-var import_node_fs21 = require("fs");
-var import_node_path23 = require("path");
-var CLIENT_SRC = (0, import_node_path23.join)("client", "src");
-var E2E_DIR = (0, import_node_path23.join)("client", "tests", "e2e");
-
-// consort/session/response-formatter.ts
-function designGuideConformance(consortDir) {
-  const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs22.existsSync)(file)) {
-    return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
-  }
-  let content;
-  try {
-    content = (0, import_node_fs22.readFileSync)(file, "utf8");
-  } catch (e) {
-    return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
-  }
-  const r = checkArtifactConformance(canonicalArtifactName(file), content);
-  return r.ok ? { ok: true } : { ok: false, problem: r.violations.join("; ") };
-}
-
-// consort/orchestrator/status/feature-status.ts
-init_cjs_shims();
-
-// consort/gates/design-spec-gate.ts
-init_cjs_shims();
-
-// consort/experiment/spike-carryforward.ts
-init_cjs_shims();
 
 // consort/orchestrator/status/feature-status.ts
 function summarizeStories(consortDir, featureId) {
@@ -10183,10 +10121,214 @@ function deriveFeaturePhase(stories) {
   return "design";
 }
 
+// consort/orchestrator/drive/orchestrator-effects.ts
+init_cjs_shims();
+var fs19 = __toESM(require("fs"), 1);
+var import_node_path27 = require("path");
+
+// consort/orchestrator/drive/executor-dispatch.ts
+init_cjs_shims();
+var fs16 = __toESM(require("fs"), 1);
+var import_node_path21 = require("path");
+
+// consort/orchestrator/turns/step-executor.ts
+init_cjs_shims();
+var import_node_fs12 = require("fs");
+var import_node_path12 = require("path");
+
+// consort/orchestrator/provisioning/channels.ts
+init_cjs_shims();
+
+// consort/orchestrator/steps/step.ts
+init_cjs_shims();
+var import_node_path14 = require("path");
+var import_node_fs14 = require("fs");
+
+// consort/orchestrator/validators/conformance/validator-registry.ts
+init_cjs_shims();
+var import_node_fs13 = require("fs");
+var import_node_path13 = require("path");
+function conformsTo(artifactName) {
+  return (producedPath) => {
+    let content;
+    try {
+      content = (0, import_node_fs13.readFileSync)(producedPath, "utf8");
+    } catch {
+      return { ok: false, violations: [`${artifactName} not readable at ${producedPath}`] };
+    }
+    const conf = checkArtifactConformance(artifactName, content);
+    return conf.ok ? { ok: true, violations: [] } : { ok: false, violations: conf.violations };
+  };
+}
+var acConformant = conformsTo("ac.json");
+var architectureConformant = conformsTo("architecture.json");
+var dbDesignConformant = conformsTo("db-design.json");
+var testListConformant = conformsTo("test-list.json");
+var productOverviewConformant = conformsTo("product-overview.md");
+var nfrsConformant = conformsTo("nfrs.md");
+var designBriefConformant = conformsTo("design-brief.md");
+
+// consort/orchestrator/steps/turn-events.ts
+init_cjs_shims();
+
+// consort/orchestrator/agents/agent-catalogue.ts
+init_cjs_shims();
+var import_node_path19 = require("path");
+var import_node_fs19 = require("fs");
+
+// consort/orchestrator/agents/claude-step-agent.ts
+init_cjs_shims();
+var import_node_crypto5 = require("crypto");
+
+// consort/orchestrator/drive/claude-runner.ts
+init_cjs_shims();
+var import_node_child_process7 = require("child_process");
+
+// consort/setup/project-consort-setup.ts
+init_cjs_shims();
+var fs14 = __toESM(require("fs"), 1);
+var path9 = __toESM(require("path"), 1);
+var import_node_url3 = require("url");
+
+// consort/lakebase/adopt-consort.ts
+init_cjs_shims();
+var fs10 = __toESM(require("fs"), 1);
+var path5 = __toESM(require("path"), 1);
+var import_node_url = require("url");
+
+// consort/lakebase/update-agents.ts
+init_cjs_shims();
+var fs11 = __toESM(require("fs"), 1);
+var path6 = __toESM(require("path"), 1);
+
+// consort/lakebase/upgrade.ts
+init_cjs_shims();
+var fs13 = __toESM(require("fs"), 1);
+var path8 = __toESM(require("path"), 1);
+var import_node_child_process6 = require("child_process");
+
+// consort/config/kit-ref.ts
+init_cjs_shims();
+var import_node_fs15 = require("fs");
+var import_node_path15 = require("path");
+
+// consort/lakebase/update-commands.ts
+init_cjs_shims();
+var fs12 = __toESM(require("fs"), 1);
+var path7 = __toESM(require("path"), 1);
+
+// consort/lakebase/kit-ref-pin.ts
+init_cjs_shims();
+var import_node_url2 = require("url");
+var import_node_path16 = require("path");
+var import_node_fs16 = require("fs");
+
+// consort/lakebase/upgrade.ts
+var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var AGENT_SYNC_MARKER = path8.join(".claude", "agents", ".kit-version");
+
+// consort/setup/project-consort-setup.ts
+var __dirname2 = path9.dirname((0, import_node_url3.fileURLToPath)(importMetaUrl));
+var AGENT_SYNC_MARKER2 = path9.join(".claude", "agents", ".kit-version");
+
+// consort/orchestrator/drive/claude-runner.ts
+var import_node_crypto4 = require("crypto");
+var fs15 = __toESM(require("fs"), 1);
+var path10 = __toESM(require("path"), 1);
+var readline = __toESM(require("readline"), 1);
+
+// consort/logging/replay-artifacts.ts
+init_cjs_shims();
+
+// consort/logging/replay-build.ts
+init_cjs_shims();
+var SCAFFOLD_OWNED = /* @__PURE__ */ new Set([
+  ".git",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "scripts",
+  ".claude",
+  ".github",
+  "node_modules"
+]);
+
+// consort/session/claude-usage.ts
+init_cjs_shims();
+
+// consort/session/context-budget.ts
+init_cjs_shims();
+
+// consort/orchestrator/drive/claude-runner.ts
+var import_lakebase10 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+
+// consort/setup/stray-artifact-recovery.ts
+init_cjs_shims();
+var import_node_fs17 = require("fs");
+var import_node_path17 = require("path");
+
+// consort/orchestrator/turns/turn-monitor.ts
+init_cjs_shims();
+
+// consort/orchestrator/drive/claude-runner.ts
+var MAX_TRANSIENT_RETRIES = Number(consortEnv("MAX_TRANSIENT_RETRIES") ?? "5");
+var TRANSIENT_BACKOFF_MS = Number(consortEnv("TRANSIENT_BACKOFF_MS") ?? "5000");
+var TURN_INACTIVITY_TIMEOUT_MS = Number(consortEnv("TURN_INACTIVITY_TIMEOUT_MS") ?? String(10 * 60 * 1e3));
+var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e3));
+
+// consort/orchestrator/agents/mock-replay-agent.ts
+init_cjs_shims();
+var import_node_fs18 = require("fs");
+var import_node_path18 = require("path");
+
+// consort/orchestrator/agents/replay-recorder-wrapper.ts
+init_cjs_shims();
+
+// consort/logging/turn-recorder.ts
+init_cjs_shims();
+var import_node_crypto6 = require("crypto");
+var import_node_fs20 = require("fs");
+var import_node_path20 = require("path");
+
+// consort/pipeline/record-build.ts
+init_cjs_shims();
+
+// consort/orchestrator/steps/assert-route-satisfiable.ts
+init_cjs_shims();
+var import_node_fs21 = require("fs");
+var import_node_path22 = require("path");
+
+// consort/session/response-formatter.ts
+init_cjs_shims();
+var import_node_fs23 = require("fs");
+var import_node_path24 = require("path");
+
+// consort/architecture/e2e-route-adherence.ts
+init_cjs_shims();
+var import_node_fs22 = require("fs");
+var import_node_path23 = require("path");
+var CLIENT_SRC = (0, import_node_path23.join)("client", "src");
+var E2E_DIR = (0, import_node_path23.join)("client", "tests", "e2e");
+
+// consort/session/response-formatter.ts
+function designGuideConformance(consortDir) {
+  const file = designGuideJson(consortDir);
+  if (!(0, import_node_fs23.existsSync)(file)) {
+    return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
+  }
+  let content;
+  try {
+    content = (0, import_node_fs23.readFileSync)(file, "utf8");
+  } catch (e) {
+    return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  const r = checkArtifactConformance(canonicalArtifactName(file), content);
+  return r.ok ? { ok: true } : { ok: false, problem: r.violations.join("; ") };
+}
+
 // consort/orchestrator/build/build-context.ts
 init_cjs_shims();
 var import_node_child_process8 = require("child_process");
-var fs16 = __toESM(require("fs"), 1);
+var fs17 = __toESM(require("fs"), 1);
 var import_node_path25 = require("path");
 
 // consort/orchestrator/build/preconditions.ts
@@ -10234,7 +10376,7 @@ var TEST_ANALYST_CATALOGUE = {
 
 // consort/orchestrator/steps/cross-story-context.ts
 init_cjs_shims();
-var fs17 = __toESM(require("fs"), 1);
+var fs18 = __toESM(require("fs"), 1);
 var import_node_path26 = require("path");
 
 // consort/orchestrator/drive/orchestrator-effects.ts
@@ -10249,78 +10391,33 @@ function readDriveStateFromDisk(consortDir, featureId, projectDir, opts = {}) {
   return state;
 }
 
-// bin/consort/next.cli.ts
-var import_lakebase11 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-
-// consort/intake/orchestrator-sprint.ts
+// consort/session/run-config.ts
 init_cjs_shims();
-
-// consort/gates/sprint-gates.ts
-init_cjs_shims();
-var import_node_fs23 = require("fs");
-var SPRINT_GATES_SCHEMA_VERSION = 1;
-function defaultSprintGatesState(sprint) {
-  return {
-    sprint,
-    schema_version: SPRINT_GATES_SCHEMA_VERSION,
-    gates: { plan: { status: "open", history: [] } }
-  };
-}
-function sprintGatesFile(consortDir, sprint) {
-  return sprintGatesJson(consortDir, sprint);
-}
-function readSprintGates(sprint, opts = {}) {
-  const consortDir = opts.consortDir ?? resolveConsortDir();
-  const file = sprintGatesFile(consortDir, sprint);
-  if (!(0, import_node_fs23.existsSync)(file)) return defaultSprintGatesState(sprint);
-  let parsed;
+var import_fs11 = require("fs");
+var import_path8 = require("path");
+var RUN_CONFIG_REL = (0, import_path8.join)(ARTIFACT_ROOT, "run-config.json");
+function readRunConfig(consortDir) {
+  const f = (0, import_path8.join)(consortDir, "run-config.json");
+  if (!(0, import_fs11.existsSync)(f)) return void 0;
   try {
-    parsed = JSON.parse((0, import_node_fs23.readFileSync)(file, "utf8"));
-  } catch (err) {
-    const cause = err instanceof Error ? err.message : String(err);
-    throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);
-  }
-  const plan = parsed.gates?.plan ?? { status: "open", history: [] };
-  return {
-    sprint,
-    schema_version: parsed.schema_version ?? SPRINT_GATES_SCHEMA_VERSION,
-    gates: { plan: { status: plan.status, approver: plan.approver, approved_at: plan.approved_at, artifact_hashes: plan.artifact_hashes, history: plan.history ?? [] } }
-  };
-}
-
-// consort/intake/orchestrator-sprint.ts
-var fs19 = __toESM(require("fs"), 1);
-function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
-  const proposed = fs19.existsSync(featureProposalsMd(consortDir));
-  const estimated = hasEstimates(consortDir);
-  const backlog = readBacklog(consortDir, sprint).features;
-  const requested = readRequested(consortDir, sprint);
-  const backlogCommitted = requested !== void 0 && requested.length > 0 || backlog.length > 0;
-  const requestsAuthored = backlog.length > 0 && backlog.every((f) => hasFeatureRequest(consortDir, f.id));
-  const estimatedIds = new Set(readEstimates(consortDir).map((e) => e.feature_id));
-  const committedEstimated = backlog.length > 0 && backlog.every((f) => estimatedIds.has(f.id));
-  let gateApproved = false;
-  try {
-    gateApproved = readSprintGates(sprint, { consortDir }).gates.plan.status === "approved";
+    return JSON.parse((0, import_fs11.readFileSync)(f, "utf8"));
   } catch {
-    gateApproved = false;
+    return void 0;
   }
-  return {
-    phase: "planning",
-    planning: { intakeReady: intakeReadyOnDisk(consortDir), intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated, backlogCommitted, requestsAuthored, committedEstimated, gateApproved, skipSizing: opts.skipSizing ?? false },
-    breakdownDone: false,
-    storyOrder: [],
-    stories: {},
-    buildActive: null
-  };
 }
 
 // consort/orchestrator/status/next.ts
-init_cjs_shims();
-var fs20 = __toESM(require("fs"), 1);
-var path11 = __toESM(require("path"), 1);
+var DRIVE_ONLY_BOUNDS = /* @__PURE__ */ new Set(["design", "build", "deploy"]);
+function boundTransition(bound) {
+  if (!bound || bound === "full" || bound === "plan") return void 0;
+  if (!["design", "build", "deploy"].includes(bound)) return void 0;
+  return driverBoundOptions(bound).transition;
+}
 function resumeCommand(ctx) {
-  return ctx.sprint && !ctx.featureId ? { bin: "consort-drive", args: ["--sprint", ctx.sprint] } : { bin: "consort-drive", args: ["--feature", ctx.featureId ?? "<feature-id>"] };
+  if (ctx.sprint && !ctx.featureId) return { bin: "consort-drive", args: ["--sprint", ctx.sprint] };
+  const args = ["--feature", ctx.featureId ?? "<feature-id>"];
+  if (ctx.bound && DRIVE_ONLY_BOUNDS.has(ctx.bound)) args.push("--only", ctx.bound);
+  return { bin: "consort-drive", args };
 }
 function holdOption() {
   return {
@@ -10416,7 +10513,11 @@ function buildNextOptions(action, ctx) {
         {
           id: "spec.approve",
           title: `Approve story ${storyOf2(action) ?? "<story>"}'s spec`,
-          hil_prompt: `Approve story ${storyOf2(action) ?? "<story>"}'s spec so its build can start? (To send it back, edit the spec and re-run the design lane.)`,
+          // A design-bound run (`/design`) stays in the design lane on approval: it advances
+          // to the next story's design (or completes design) and NEVER starts the build. Only
+          // an unbounded/build run moves an approved story into its build. Say which, so the
+          // approval is not a surprise jump into building.
+          hil_prompt: ctx.bound === "design" ? `Approve story ${storyOf2(action) ?? "<story>"}'s spec? This feature is design-bound: approving advances the design lane to the next story (or completes design) and will NOT start the build. (To send it back, edit the spec and re-run the design lane.)` : `Approve story ${storyOf2(action) ?? "<story>"}'s spec so its build can start? (To send it back, edit the spec and re-run the design lane.)`,
           kind: "gate",
           enact: gateEnact
         },
@@ -10556,8 +10657,8 @@ function summarize(scope, action, state, ctx) {
   }
   return `${who} is mid-flight (${state.derived_phase ?? state.coarse_phase}). The next step is: ${describeAction(action, { featureId: ctx.featureId })}.`;
 }
-function buildNextSnapshot(scope, state, ctx, transition = nextTransition) {
-  const action = transition(state);
+function buildNextSnapshot(scope, state, ctx, transition) {
+  const action = (transition ?? boundTransition(ctx.bound) ?? nextTransition)(state);
   const stories = {};
   for (const s of ctx.stories ?? []) stories[s.story_id] = s.status;
   const nextState = {
@@ -10608,6 +10709,17 @@ function buildStoryReview(consortDir, featureId) {
     out[story] = { apiOnly, ...docsUrl ? { docsUrl } : {} };
   }
   return out;
+}
+function readFeatureNextSnapshot(consortDir, featureId, projectDir, ctx = {}) {
+  const state = readDriveStateFromDisk(consortDir, featureId, projectDir, { uiTrack: ctx.uiTrack });
+  const bound = ctx.bound ?? readRunConfig(consortDir)?.bound;
+  return buildNextSnapshot("feature", state, {
+    ...ctx,
+    ...bound ? { bound } : {},
+    featureId,
+    stories: summarizeStories(consortDir, featureId),
+    storyReview: buildStoryReview(consortDir, featureId)
+  });
 }
 function renderNextSnapshot(snap) {
   const lines = [];
@@ -10735,20 +10847,13 @@ ${HELP}`);
     ...args.approver ? { approver: args.approver } : {},
     version: kitVersion()
   };
-  const snapshot = args.sprint ? buildNextSnapshot("sprint", deriveSprintPlanningState(consortDir, args.sprint, { skipSizing: !!args.noSizing }), ctx) : buildNextSnapshot(
-    "feature",
-    readDriveStateFromDisk(consortDir, args.feature, projectDir, {
-      uiTrack: resolveConsortSettings({ projectDir }).project.uiTrack
-    }),
-    {
-      ...ctx,
-      stories: summarizeStories(consortDir, args.feature),
-      storyReview: buildStoryReview(consortDir, args.feature),
-      // The promote gate's required --promote-ref is the feature's canonical
-      // branch, recorded in the SCM workflow state at claim (FEIP-8019).
-      ...(0, import_lakebase11.readWorkflowState)(projectDir)?.branch ? { featureBranch: (0, import_lakebase11.readWorkflowState)(projectDir).branch } : {}
-    }
-  );
+  const snapshot = args.sprint ? buildNextSnapshot("sprint", deriveSprintPlanningState(consortDir, args.sprint, { skipSizing: !!args.noSizing }), ctx) : readFeatureNextSnapshot(consortDir, args.feature, projectDir, {
+    ...ctx,
+    uiTrack: resolveConsortSettings({ projectDir }).project.uiTrack,
+    // The promote gate's required --promote-ref is the feature's canonical
+    // branch, recorded in the SCM workflow state at claim (FEIP-8019).
+    ...(0, import_lakebase11.readWorkflowState)(projectDir)?.branch ? { featureBranch: (0, import_lakebase11.readWorkflowState)(projectDir).branch } : {}
+  });
   if (args.json) process.stdout.write(JSON.stringify(snapshot, null, 2) + "\n");
   else process.stdout.write(renderNextSnapshot(snapshot) + "\n");
   return 0;
