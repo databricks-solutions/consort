@@ -7,12 +7,10 @@
 
 import { resolveConsortDir, ARTIFACT_ROOT } from "../../consort/config/consort-paths.js";
 import { resolveConsortSettings } from "../../consort/orchestrator/settings/project-settings.js";
-import { readDriveStateFromDisk } from "../../consort/orchestrator/drive/orchestrator-effects.js";
 import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { deriveSprintPlanningState } from "../../consort/intake/orchestrator-sprint.js";
-import { summarizeStories } from "../../consort/orchestrator/status/feature-status.js";
 import { kitVersion } from "../../consort/config/kit-bin.js";
-import { buildNextSnapshot, buildStoryReview, renderNextSnapshot, type NextContext } from "../../consort/orchestrator/status/next.js";
+import { buildNextSnapshot, readFeatureNextSnapshot, renderNextSnapshot, type NextContext } from "../../consort/orchestrator/status/next.js";
 
 interface ParsedArgs {
   feature?: string;
@@ -100,22 +98,18 @@ function main(): number {
     version: kitVersion(),
   };
 
+  // Feature scope goes through the shared readFeatureNextSnapshot, the ONE disk-reading builder
+  // that also reads the run's durable phase bound (run-config.json) — so the CLI and the drive's
+  // auto-emit agree, and a `/design` resume stays design-bound. Sprint scope has no feature bound.
   const snapshot = args.sprint
     ? buildNextSnapshot("sprint", deriveSprintPlanningState(consortDir, args.sprint, { skipSizing: !!args.noSizing }), ctx)
-    : buildNextSnapshot(
-        "feature",
-        readDriveStateFromDisk(consortDir, args.feature!, projectDir, {
-          uiTrack: resolveConsortSettings({ projectDir }).project.uiTrack,
-        }),
-        {
-          ...ctx,
-          stories: summarizeStories(consortDir, args.feature!),
-          storyReview: buildStoryReview(consortDir, args.feature!),
-          // The promote gate's required --promote-ref is the feature's canonical
-          // branch, recorded in the SCM workflow state at claim (FEIP-8019).
-          ...(readWorkflowState(projectDir)?.branch ? { featureBranch: readWorkflowState(projectDir)!.branch } : {}),
-        },
-      );
+    : readFeatureNextSnapshot(consortDir, args.feature!, projectDir, {
+        ...ctx,
+        uiTrack: resolveConsortSettings({ projectDir }).project.uiTrack,
+        // The promote gate's required --promote-ref is the feature's canonical
+        // branch, recorded in the SCM workflow state at claim (FEIP-8019).
+        ...(readWorkflowState(projectDir)?.branch ? { featureBranch: readWorkflowState(projectDir)!.branch } : {}),
+      });
 
   if (args.json) process.stdout.write(JSON.stringify(snapshot, null, 2) + "\n");
   else process.stdout.write(renderNextSnapshot(snapshot) + "\n");

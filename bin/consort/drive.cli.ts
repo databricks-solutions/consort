@@ -34,6 +34,7 @@ import * as readline from "node:readline";
 import { recordTurn, seedRecorderBaseline, recordCorrespondence, recordRoutingDecision, lastRecordedOrdinal, type CorrespondenceEntry } from "../../consort/logging/turn-recorder.js";
 import { readAgentLog } from "../../consort/logging/agent-log.js";
 import { recordBuildTurn, nextBuildTurnNumber } from "../../consort/pipeline/record-build.js";
+import { commitExperimentCode, ProtectedBranchCommitError } from "../../consort/pipeline/cycle-record.js";
 import { runDriver, driverBoundOptions, ProtocolViolationError, UnexpectedCallbackError, type DriveEffects, type DriverBound, type RunDriverResult, type RunDriverOptions } from "../../consort/orchestrator/drive/orchestrator-run.js";
 import type { DriveState } from "../../consort/orchestrator/workflow/workflow-vocabulary.js";
 import { writeEscalation } from "../../consort/gates/escalation.js";
@@ -1445,6 +1446,28 @@ async function main(): Promise<number> {
       return 2;
     } else if (result.stoppedAtBound) {
       const label = bound ?? "phase";
+      // When a `/design` run completes (stops at design-complete), commit the design corpus
+      // as ONE "design captured" commit on the feature branch: the `.consort` design +
+      // architecture artifacts and the design-system client files (favicon index.html, the app
+      // icon, src/assets, theme.css + global.css). Without it the design output sits UNCOMMITTED
+      // on the feature branch, which re-dirties the tree and blocks the next experiment fork's
+      // clean-tree check — the exact state a human/agent then hand-commits ad hoc. commitExperimentCode
+      // force-includes design/architecture + allow-lists the new client/src assets, is a no-op on a
+      // clean tree, and refuses on a protected tier (design must run on the feature branch).
+      if (result.stoppedAt?.kind === "design-complete") {
+        try {
+          const committed = await commitExperimentCode(
+            cfg.projectDir,
+            `design: capture ${cfg.featureId ?? "feature"} design corpus (design system + architecture)`,
+          );
+          if (committed) process.stderr.write(`[drive] committed the design corpus to the feature branch\n`);
+        } catch (e) {
+          // A protected-tier commit means design ran on a shared tier — a real misconfiguration;
+          // surface it. Otherwise best-effort: never fail a completed design on a bookkeeping commit.
+          if (e instanceof ProtectedBranchCommitError) throw e;
+          process.stderr.write(`[drive] design corpus commit skipped: ${e instanceof Error ? e.message : String(e)}\n`);
+        }
+      }
       // 0 actions on a bounded run means the phase was ALREADY satisfied (e.g.
       // `--only deploy` after every story already deployed + accepted per the
       // per-story pipeline), NOT a no-op failure. Say so plainly (FEIP-8016).

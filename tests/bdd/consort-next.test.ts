@@ -172,6 +172,55 @@ describe("buildNextOptions: the decision menu per stop", () => {
   });
 });
 
+// The design-bound determinism: a `/design` run (`--only design`) records bound="design" in
+// run-config.json; next re-reads it so a resume stays design-bound (never jumps into build), and
+// the spec-gate prompt says so. The bound lives in ONE place (ctx.bound, read from run-config).
+describe("durable phase bound: a /design resume stays design-bound (no silent jump into build)", () => {
+  const DESIGN_CTX: NextContext = { ...CTX, bound: "design" };
+
+  it("threads --only design into the resume command for a design-bound run", () => {
+    // The generic resume (default case) + the design-lane steps all carry the bound.
+    const resume = buildNextOptions({ kind: "invoke-role", role: "ux-designer" } as WorkflowAction, DESIGN_CTX)[0];
+    expect(resume.enact).toEqual({ bin: "consort-drive", args: ["--feature", "F1-checkout", "--only", "design"] });
+  });
+
+  it("does NOT thread --only for a full (unbounded) run", () => {
+    const full = buildNextOptions({ kind: "invoke-role", role: "ux-designer" } as WorkflowAction, { ...CTX, bound: "full" })[0];
+    expect(full.enact).toEqual({ bin: "consort-drive", args: ["--feature", "F1-checkout"] });
+    const none = buildNextOptions({ kind: "invoke-role", role: "ux-designer" } as WorkflowAction, CTX)[0];
+    expect(none.enact).toEqual({ bin: "consort-drive", args: ["--feature", "F1-checkout"] });
+  });
+
+  it("the spec-gate prompt tells the human a design-bound approval will NOT start the build", () => {
+    const design = buildNextOptions({ kind: "approve-gate", story: "S1" } as WorkflowAction, DESIGN_CTX)[0];
+    expect(design.hil_prompt).toMatch(/design-bound/i);
+    expect(design.hil_prompt).toMatch(/will NOT start the build/i);
+    // The unbounded prompt is unchanged (approving starts the build).
+    const full = buildNextOptions({ kind: "approve-gate", story: "S1" } as WorkflowAction, CTX)[0];
+    expect(full.hil_prompt).toMatch(/so its build can start/i);
+  });
+
+  it("computes the SAME next action the bounded drive would: a design-bound snapshot uses the design-only transition", () => {
+    // Two gate-approved, not-accepted stories with design still pending on the SECOND. The FULL
+    // transition would dispatch S1 into build; the design-only transition keeps designing. The
+    // snapshot must follow the bound (no injected transition -> derived from ctx.bound).
+    const state = baseState({
+      phase: "feature",
+      breakdownDone: true,
+      uiTrack: false,
+      designGuideReady: true,
+      storyOrder: ["S1", "S2"],
+      stories: {
+        S1: { gateApproved: true, gateSurfaced: true, design: { testListReady: true, reflectionPassed: true } as DriveState["stories"][string]["design"], build: { accepted: false } as DriveState["stories"][string]["build"] },
+        S2: { gateApproved: false, gateSurfaced: false, design: {} as DriveState["stories"][string]["design"], build: { accepted: false } as DriveState["stories"][string]["build"] },
+      },
+    } as Partial<DriveState>);
+    const bounded = buildNextSnapshot("feature", state, DESIGN_CTX);
+    // Design-only: must NOT be a build dispatch of the approved S1.
+    expect(bounded.primary_action.kind).not.toBe("dispatch");
+  });
+});
+
 describe("api-only stories offer the Swagger UI at the acceptance gate", () => {
   it("api-only + a live deploy: the accept prompt offers the Swagger UI at the docs URL", () => {
     const accept = buildNextOptions(

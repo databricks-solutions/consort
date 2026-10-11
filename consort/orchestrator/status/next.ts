@@ -26,11 +26,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { DriveState, WorkflowAction } from "../../../consort/orchestrator/drive/orchestrator-drive.js";
 import { nextTransition } from "../../../consort/orchestrator/drive/orchestrator-drive.js";
+import { driverBoundOptions, type DriverBound } from "../../../consort/orchestrator/drive/orchestrator-run.js";
 import { describeAction, gateEnactCommand, type EnactCommand } from "../../../consort/logging/orchestrator-logging.js";
 import { deriveFeaturePhase, summarizeStories, type StoryStatusEntry } from "./feature-status.js";
 import { findFeatureDir } from "../../../consort/config/consort-paths.js";
 import { readDeployEvidence, deployEvidencePasses } from "../../../consort/deploy/deploy.js";
 import { readDriveStateFromDisk } from "../../../consort/orchestrator/drive/orchestrator-effects.js";
+import { readRunConfig } from "../../../consort/session/run-config.js";
 
 /** One choice on the decision menu the human (or the agent, on their behalf)
  *  picks between at a stop. `enact` is the exact command that carries it out;
@@ -120,6 +122,12 @@ export interface NextContext {
   featureBranch?: string;
   /** Kit version string for authoritative_playbook_version. */
   version?: string;
+  /** The run's durable phase bound (plan|design|build|deploy|full), read back from
+   *  `.consort/run-config.json`. The drive writes it at launch; `next` re-reads it so a
+   *  resume computes the SAME bounded transition the drive uses and re-emits the bound in
+   *  its resume command. Without this, a `--only design` run's resume silently falls back
+   *  to the full transition and a spec-gate approval jumps the feature into build. */
+  bound?: string;
   /** ISO timestamp for generated_at (injectable for deterministic tests). */
   now?: string;
   /** Per-story derived rows (feature scope), for the reconciled state + phase.
@@ -139,11 +147,29 @@ export interface StoryReview {
   docsUrl?: string;
 }
 
-/** The universal "resume the drive to the next stop" enact for a scope. */
+/** The feature-run phase bounds `consort-drive --only <phase>` accepts. `plan` is the
+ *  sprint-planning bound (`--plan-only`, not a feature `--only`); `full` is unbounded, so
+ *  neither threads an `--only` into a feature resume. */
+const DRIVE_ONLY_BOUNDS: ReadonlySet<string> = new Set(["design", "build", "deploy"]);
+
+/** The bounded transition for a run bound, matching `driverBoundOptions`. Returns the
+ *  design-only transition for `design` (so `next` surfaces the SAME next action the drive
+ *  would take); `build`/`deploy` keep the full transition (they only stop at a phase
+ *  boundary, they do not rewrite the transition), as does `full`/unknown/undefined. */
+function boundTransition(bound: string | undefined): ((s: DriveState) => WorkflowAction) | undefined {
+  if (!bound || bound === "full" || bound === "plan") return undefined;
+  if (!["design", "build", "deploy"].includes(bound)) return undefined;
+  return driverBoundOptions(bound as DriverBound).transition;
+}
+
+/** The universal "resume the drive to the next stop" enact for a scope. Threads the run's
+ *  durable `--only <phase>` bound back in so a resume stays in the phase the run was launched
+ *  in (a `/design` run keeps designing + stops at design-complete; it never jumps into build). */
 function resumeCommand(ctx: NextContext): EnactCommand {
-  return ctx.sprint && !ctx.featureId
-    ? { bin: "consort-drive", args: ["--sprint", ctx.sprint] }
-    : { bin: "consort-drive", args: ["--feature", ctx.featureId ?? "<feature-id>"] };
+  if (ctx.sprint && !ctx.featureId) return { bin: "consort-drive", args: ["--sprint", ctx.sprint] };
+  const args = ["--feature", ctx.featureId ?? "<feature-id>"];
+  if (ctx.bound && DRIVE_ONLY_BOUNDS.has(ctx.bound)) args.push("--only", ctx.bound);
+  return { bin: "consort-drive", args };
 }
 
 /** The always-present "stop here / checkpoint" option. */
@@ -277,7 +303,14 @@ export function buildNextOptions(action: WorkflowAction, ctx: NextContext): Next
         {
           id: "spec.approve",
           title: `Approve story ${storyOf(action) ?? "<story>"}'s spec`,
-          hil_prompt: `Approve story ${storyOf(action) ?? "<story>"}'s spec so its build can start? (To send it back, edit the spec and re-run the design lane.)`,
+          // A design-bound run (`/design`) stays in the design lane on approval: it advances
+          // to the next story's design (or completes design) and NEVER starts the build. Only
+          // an unbounded/build run moves an approved story into its build. Say which, so the
+          // approval is not a surprise jump into building.
+          hil_prompt:
+            ctx.bound === "design"
+              ? `Approve story ${storyOf(action) ?? "<story>"}'s spec? This feature is design-bound: approving advances the design lane to the next story (or completes design) and will NOT start the build. (To send it back, edit the spec and re-run the design lane.)`
+              : `Approve story ${storyOf(action) ?? "<story>"}'s spec so its build can start? (To send it back, edit the spec and re-run the design lane.)`,
           kind: "gate",
           enact: gateEnact,
         },
@@ -447,9 +480,12 @@ export function buildNextSnapshot(
   scope: "feature" | "sprint",
   state: DriveState,
   ctx: NextContext,
-  transition: (s: DriveState) => WorkflowAction = nextTransition,
+  transition?: (s: DriveState) => WorkflowAction,
 ): NextSnapshot {
-  const action = transition(state);
+  // An explicit transition (tests) wins; otherwise derive it from the run's durable bound so
+  // `next` computes the SAME action the bounded drive would (a design-bound run surfaces the
+  // design-only transition, never a build action), falling back to the full nextTransition.
+  const action = (transition ?? boundTransition(ctx.bound) ?? nextTransition)(state);
   const stories: Record<string, string> = {};
   for (const s of ctx.stories ?? []) stories[s.story_id] = s.status;
   const nextState: NextState = {
@@ -530,8 +566,13 @@ export function readFeatureNextSnapshot(
   ctx: Omit<NextContext, "featureId" | "stories"> & { uiTrack?: boolean } = {},
 ): NextSnapshot {
   const state = readDriveStateFromDisk(consortDir, featureId, projectDir, { uiTrack: ctx.uiTrack });
+  // Read the run's durable phase bound from run-config.json HERE (the single disk-reading
+  // builder the drive's auto-emit and the CLI both go through), so both surfaces compute the
+  // bounded transition + re-emit `--only <phase>` from one place. An explicit ctx.bound wins.
+  const bound = ctx.bound ?? readRunConfig(consortDir)?.bound;
   return buildNextSnapshot("feature", state, {
     ...ctx,
+    ...(bound ? { bound } : {}),
     featureId,
     stories: summarizeStories(consortDir, featureId),
     storyReview: buildStoryReview(consortDir, featureId),
