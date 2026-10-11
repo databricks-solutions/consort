@@ -12,7 +12,7 @@ import { writeFileSync as writeFileSync3 } from "fs";
 
 // consort/session/preflight.ts
 import { execFileSync } from "child_process";
-import { existsSync as existsSync3, readFileSync as readFileSync4 } from "fs";
+import { existsSync as existsSync3, readFileSync as readFileSync4, readdirSync as readdirSync2 } from "fs";
 import { homedir as homedir2 } from "os";
 import { join as join4 } from "path";
 
@@ -51,6 +51,8 @@ function resolveConsortDir(projectDir = process.cwd()) {
   }
   return next;
 }
+var featuresDir = (tdd) => join2(tdd, "features");
+var featureDir = (tdd, featureId) => join2(featuresDir(tdd), featureId);
 
 // consort/telemetry/home-config.ts
 import * as fs3 from "fs";
@@ -106,6 +108,26 @@ function firstProjectMarker(env, home) {
 function insideEditor(env) {
   return env.TERM_PROGRAM === "vscode" || typeof env.VSCODE_GIT_IPC_HANDLE === "string" || typeof env.CURSOR_TRACE_ID === "string" || typeof env.VSCODE_PID === "string";
 }
+function featureFromBranch(consortDir, branch) {
+  const m = branch?.match(/^feature[-/](.+)$/);
+  if (!m) return null;
+  const slug = m[1].toLowerCase();
+  try {
+    for (const d of readdirSync2(featuresDir(consortDir))) {
+      if (d.toLowerCase() === slug) return d;
+    }
+  } catch {
+  }
+  return null;
+}
+function soleFeatureWithPipeline(consortDir) {
+  try {
+    const withPipeline = readdirSync2(featuresDir(consortDir), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).filter((name) => existsSync3(join4(featureDir(consortDir, name), "pipeline.json")));
+    return withPipeline.length === 1 ? withPipeline[0] : null;
+  } catch {
+    return null;
+  }
+}
 function buildPreflight(projectDir = process.cwd(), deps = {}) {
   const env = deps.env ?? process.env;
   const home = deps.home ?? homedir2();
@@ -155,6 +177,14 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
     scm.dirty = porcelain === null ? null : porcelain.length > 0;
   } else {
     warnings.push("scm: not a git repo or git unavailable");
+  }
+  if (project.is_consort && project.feature === null) {
+    try {
+      const consortDir = resolveConsortDir(projectDir);
+      project.feature = featureFromBranch(consortDir, scm.branch) ?? soleFeatureWithPipeline(consortDir);
+    } catch {
+      warnings.push("project: feature fallback (branch/pipeline) failed");
+    }
   }
   let offeredBefore = false;
   try {

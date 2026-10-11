@@ -7443,7 +7443,8 @@ var import_lakebase10 = require("@databricks-solutions/lakebase-scm-utils/lakeba
 init_cjs_shims();
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
-  "test-strategist": "reflect-testlist-defect"
+  "test-strategist": "reflect-testlist-defect",
+  "architect-reviewer": "reflect-architecture-defect"
 };
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 

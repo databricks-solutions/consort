@@ -7229,7 +7229,8 @@ import { readWorkflowState, SCM_STATES } from "@databricks-solutions/lakebase-sc
 init_esm_shims();
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
-  "test-strategist": "reflect-testlist-defect"
+  "test-strategist": "reflect-testlist-defect",
+  "architect-reviewer": "reflect-architecture-defect"
 };
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 

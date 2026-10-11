@@ -67,6 +67,8 @@ function resolveConsortDir(projectDir = process.cwd()) {
   }
   return next;
 }
+var featuresDir = (tdd) => (0, import_node_path.join)(tdd, "features");
+var featureDir = (tdd, featureId) => (0, import_node_path.join)(featuresDir(tdd), featureId);
 
 // consort/telemetry/home-config.ts
 var fs3 = __toESM(require("fs"), 1);
@@ -122,6 +124,26 @@ function firstProjectMarker(env, home) {
 function insideEditor(env) {
   return env.TERM_PROGRAM === "vscode" || typeof env.VSCODE_GIT_IPC_HANDLE === "string" || typeof env.CURSOR_TRACE_ID === "string" || typeof env.VSCODE_PID === "string";
 }
+function featureFromBranch(consortDir, branch) {
+  const m = branch?.match(/^feature[-/](.+)$/);
+  if (!m) return null;
+  const slug = m[1].toLowerCase();
+  try {
+    for (const d of (0, import_node_fs.readdirSync)(featuresDir(consortDir))) {
+      if (d.toLowerCase() === slug) return d;
+    }
+  } catch {
+  }
+  return null;
+}
+function soleFeatureWithPipeline(consortDir) {
+  try {
+    const withPipeline = (0, import_node_fs.readdirSync)(featuresDir(consortDir), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).filter((name) => (0, import_node_fs.existsSync)((0, import_node_path2.join)(featureDir(consortDir, name), "pipeline.json")));
+    return withPipeline.length === 1 ? withPipeline[0] : null;
+  } catch {
+    return null;
+  }
+}
 function buildPreflight(projectDir = process.cwd(), deps = {}) {
   const env = deps.env ?? process.env;
   const home = deps.home ?? (0, import_node_os.homedir)();
@@ -171,6 +193,14 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
     scm.dirty = porcelain === null ? null : porcelain.length > 0;
   } else {
     warnings.push("scm: not a git repo or git unavailable");
+  }
+  if (project.is_consort && project.feature === null) {
+    try {
+      const consortDir = resolveConsortDir(projectDir);
+      project.feature = featureFromBranch(consortDir, scm.branch) ?? soleFeatureWithPipeline(consortDir);
+    } catch {
+      warnings.push("project: feature fallback (branch/pipeline) failed");
+    }
   }
   let offeredBefore = false;
   try {

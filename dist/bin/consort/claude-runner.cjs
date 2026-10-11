@@ -7751,6 +7751,9 @@ var ux_designer_default = {
   routing: {
     produced: { next: "state-derived" }
   },
+  postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--project", "{projectRoot}"], when: "after" }
+  ],
   agentOptions: {
     model: "opus",
     effort: "low",

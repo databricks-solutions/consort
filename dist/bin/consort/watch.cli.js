@@ -193,6 +193,15 @@ function roleArtifacts(consortDir, role, opts = {}) {
   }
   return out;
 }
+var STORY_WORK_PRIORITY = {
+  designing: 6,
+  "awaiting-gate": 5,
+  building: 4,
+  "awaiting-acceptance": 3,
+  ready: 2,
+  done: 1,
+  discarded: 0
+};
 function storyFreshness(consortDir, feature, story) {
   let m = 0;
   for (const p of [storyDir(consortDir, feature, story), storyJson(consortDir, feature, story), acsDir(consortDir, feature, story)]) {
@@ -209,11 +218,15 @@ function resolveScope(consortDir) {
     const feature = next.feature ?? void 0;
     if (feature) {
       let story;
-      let best = 0;
-      for (const id of Object.keys(next.state?.stories ?? {})) {
+      let bestPriority = -1;
+      let bestMtime = 0;
+      for (const [id, status] of Object.entries(next.state?.stories ?? {})) {
         const m = storyFreshness(consortDir, feature, id);
-        if (m > best) {
-          best = m;
+        if (m === 0) continue;
+        const priority = STORY_WORK_PRIORITY[status] ?? 0;
+        if (priority > bestPriority || priority === bestPriority && m > bestMtime) {
+          bestPriority = priority;
+          bestMtime = m;
           story = id;
         }
       }

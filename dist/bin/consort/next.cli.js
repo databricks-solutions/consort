@@ -7284,6 +7284,9 @@ var ux_designer_default = {
   routing: {
     produced: { next: "state-derived" }
   },
+  postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--project", "{projectRoot}"], when: "after" }
+  ],
   agentOptions: {
     model: "opus",
     effort: "low",
@@ -9046,6 +9049,15 @@ var SMELL_CATALOG = [
     gate_to_rerun: "test_list"
   },
   {
+    name: "reflect-architecture-defect",
+    description: "The pre-build reflection critic (Navigator, reflect mode) found a defect in the story's ARCHITECTURE before the build lane: a persistence invariant that contradicts the stated requirement \u2014 most often a `not_null` invariant on a column the feature-request / design-brief renders when ABSENT (an explicit 'not tracked' / optional-detail state). Left unresolved it surfaces downstream as a later story relaxing the column (an avoidable supersession + build refactor).",
+    proposed_remediation: "Route back to the Architect (Gate 2 / architecture): make the invariant match the requirement \u2014 a column the brief renders when absent is nullable, not `not_null`. Bounded to one automatic revise per story; if the critic still finds the defect after the re-architecture, it escalates to the human.",
+    // An architecture defect the critic surfaces is an architect fix: route back to the architecture gate.
+    level: "spec",
+    owning_role: "architect-reviewer",
+    gate_to_rerun: "architecture"
+  },
+  {
     name: "shared-state-aggregate-assertion",
     description: "A test asserts an ABSOLUTE aggregate over the WHOLE store (an integrity/consistency probe, a global COUNT/SUM \u2013 e.g. 'the probe reports exactly 0/2/1 nonconforming rows') without owning the table state it asserts. It passes in the per-cycle build verify (an ISOLATED ephemeral branch holding only its seeded rows) but the honest-GREEN full-feature deploy-verify FAILS it, because that runs the whole suite against the SHARED feature-branch DB where other stories' rows (same nullable columns) inflate the count. A real probe over a real deployed DB can never assert an exact global total anyway.",
     proposed_remediation: "Route back to the Test Strategist (Gate 3): scope BOTH the seed AND the assertion to the test's own rows (filter the probe/count by the test's SKUs or a marker column, or assert a before-vs-after DELTA), never an absolute whole-table total. Bounded to one automatic revise per story; a second escape escalates to the human.",
@@ -9197,6 +9209,11 @@ var BLOCKING_SMELLS = /* @__PURE__ */ new Set([
   // machinery. Halts the build until the design defect is resolved.
   "reflect-spec-defect",
   "reflect-testlist-defect",
+  // The reflect critic found a persistence invariant contradicting the requirement
+  // (e.g. a not_null column the brief renders when absent). Spec-level + architect-owned:
+  // routes to the Architect (re-run the architecture gate) via revise-route, bounded one
+  // revise then HITL. Prevents the avoidable later-story supersession + build refactor.
+  "reflect-architecture-defect",
   // The boundary/routes layer touching persistence directly (a fat controller),
   // instead of delegating to a service + repository. A build-level structural
   // defect; the Navigator flags it in REVIEW and the layering fitness test
@@ -9667,7 +9684,8 @@ init_esm_shims();
 import { existsSync as existsSync38, readFileSync as readFileSync35, writeFileSync as writeFileSync23, mkdirSync as mkdirSync23, rmSync as rmSync9 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
-  "test-strategist": "reflect-testlist-defect"
+  "test-strategist": "reflect-testlist-defect",
+  "architect-reviewer": "reflect-architecture-defect"
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);

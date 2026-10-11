@@ -11208,7 +11208,8 @@ init_esm_shims();
 import { existsSync as existsSync25, readFileSync as readFileSync25, writeFileSync as writeFileSync16, mkdirSync as mkdirSync15, rmSync as rmSync6 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
-  "test-strategist": "reflect-testlist-defect"
+  "test-strategist": "reflect-testlist-defect",
+  "architect-reviewer": "reflect-architecture-defect"
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
