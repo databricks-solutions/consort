@@ -639,7 +639,18 @@ export function fold(
     orchestratorActivity: latestOrchestratorActivity(slice),
     pendingGate,
     // The one focus observation, derived once here; every surface reads it (see focusOf).
-    focus: focusOf({ topology, pendingGate, blockers }),
+    // When the run is PARKED at an unapproved gate — a `pendingGate` with NO agent working (the drive
+    // surfaced the gate and exited, or ran a trailing navigator-reconcile turn AFTER surfacing it) —
+    // present the topology to focusOf with `laneCurrent` cleared so the pending gate wins (focus "gate"
+    // → Transport "WAITING", the gate glows). Otherwise the stale last step (the post-gate reconcile)
+    // masks the HIL and the board never shows "awaiting your decision". focusOf prefers laneCurrent for
+    // an ACTIVE turn (a mid-phase run), not a parked one — so gate it on an agent actually working.
+    focus: focusOf({
+      topology:
+        pendingGate && !agents.some((a) => a.status === "working") ? { ...topology, laneCurrent: null } : topology,
+      pendingGate,
+      blockers,
+    }),
     // Per-step model/effort/cost/turns for the step cards, folded over the full slice.
     laneStepMeta: laneStepMeta(slice),
     lane,

@@ -61,16 +61,24 @@ describe("consort-drive AUTO-CLAIMS the feature branch when none is claimed (any
   });
 });
 
-// A single-feature launch with NO explicit --only recovers the feature's last explicit bound from the
-// durable run-config lane_intents map — so an improvised bare `consort-drive --feature F` relaunch of a
-// /design run stays design instead of silently defaulting to full (the bound=full-on-/design trap).
-describe("consort-drive recovers a dropped phase bound from the durable lane_intents map", () => {
-  it("inherits lane_intents[feature] when no --only is passed, only for design|build|deploy", () => {
-    expect(DRIVE_SRC).toMatch(/lane_intents\?\.\[args\.feature\]/);
-    const idx = DRIVE_SRC.indexOf("lane_intents?.[args.feature]");
-    const region = DRIVE_SRC.slice(Math.max(0, idx - 200), idx + 200);
-    // Gated on a bound-less launch (bound === undefined) and the three real phases.
-    expect(region).toMatch(/bound === undefined/);
-    expect(region).toMatch(/"design"|"build"|"deploy"/);
+// Determinism: a feature drive MUST name its phase. A bare `consort-drive --feature F` with no --only
+// is REFUSED (return 2) rather than silently running an unbounded design+build+deploy drive — so
+// "invoke a design loop" can never non-deterministically become a build. The old lane_intents
+// inheritance (a bare relaunch silently recovering a prior bound) is removed as itself an implicit mode.
+describe("consort-drive REFUSES a bare feature drive with no phase bound", () => {
+  it("returns 2 and names the phase when --feature has no --only (and no --plan-only)", () => {
+    // The refuse is gated on a bound-less single-feature launch.
+    expect(DRIVE_SRC).toMatch(/bound === undefined && !args\.planOnly && args\.feature/);
+    const idx = DRIVE_SRC.indexOf("bound === undefined && !args.planOnly && args.feature");
+    const region = DRIVE_SRC.slice(idx, idx + 600);
+    // It refuses (non-zero) with a message naming the phases + the slash commands.
+    expect(region).toMatch(/must name its phase/i);
+    expect(region).toMatch(/--only design\|build\|deploy/);
+    expect(region).toMatch(/\/design, \/build, \/deploy/);
+    expect(region).toMatch(/return 2;/);
+  });
+
+  it("no longer inherits a bound from a durable lane_intents map (the implicit mode is gone)", () => {
+    expect(DRIVE_SRC).not.toMatch(/lane_intents/);
   });
 });

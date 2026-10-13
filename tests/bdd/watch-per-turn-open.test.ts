@@ -90,16 +90,19 @@ describe("roleArtifacts (role -> exactly what that role produced)", () => {
     // feature-proposals.md is the SPEC-AUTHOR's propose output, not the PO's intake.
     expect(a.some((p) => p.endsWith("feature-proposals.md"))).toBe(false);
   });
-  it("navigator (reflect) -> the story under review", () => {
-    const a = roleArtifacts(dir, "navigator", SCOPE);
-    expect(a.some((p) => p.endsWith(join("stories", "S1", "story.json")))).toBe(true);
+  it("navigator -> NOTHING (it REVIEWS in design + writes test CODE in build; it authors no design doc)", () => {
+    // Regression: it used to open story.md/story.json — which the SPEC-AUTHOR authored, not the
+    // navigator — mislabeling them as "produced by navigator" and (in a multi-story round) surfacing
+    // the wrong story. The design docs are shown by the GATE open, not this per-turn navigator open.
+    expect(roleArtifacts(dir, "navigator", SCOPE)).toEqual([]);
   });
   it("driver (build turn) -> NOTHING (code, not a reviewable design artifact)", () => {
     expect(roleArtifacts(dir, "driver", SCOPE)).toEqual([]);
   });
-  it("DESIGN_ROLES covers the design lane but not the driver", () => {
+  it("DESIGN_ROLES covers the design-doc authors but not the navigator or driver (review/code roles)", () => {
     expect(DESIGN_ROLES.has("spec-author")).toBe(true);
     expect(DESIGN_ROLES.has("dba")).toBe(true);
+    expect(DESIGN_ROLES.has("navigator")).toBe(false);
     expect(DESIGN_ROLES.has("driver")).toBe(false);
   });
 });
@@ -224,6 +227,30 @@ describe("resolveScope (LIVE feature/story from next.json, not the stale workflo
   it("next.json with a feature but no existing story dirs => feature only (no bogus story)", () => {
     writeFileSync(join(dir, "next.json"), JSON.stringify({ feature: "F4", state: { stories: { "S1": "done" } } }));
     expect(resolveScope(dir)).toEqual({ feature: "F4" });
+  });
+
+  it("falls back to the freshest story DIR on disk when next.json's stories map is not yet populated (fresh run's first story)", () => {
+    // A fresh run authors S1's artifacts BEFORE the drive writes next.json's stories map, so the
+    // priority scan finds nothing. Without the on-disk fallback, EVERY S1 design role opened nothing.
+    writeFileSync(join(dir, "next.json"), JSON.stringify({ feature: "F1", state: { stories: {} } }));
+    mkdirSync(join(dir, "features", "F1", "stories", "S1-file-stock"), { recursive: true });
+    expect(resolveScope(dir)).toEqual({ feature: "F1", story: "S1-file-stock" });
+  });
+
+  it("derives feature+story from disk when NO next.json exists yet (the REAL fresh-run first-story case)", () => {
+    // The actual fresh-run bug: next.json is written only at the first stop/gate, so during S1's design
+    // turns it does NOT exist, and .consort/workflow-state.json carries a null feature_id mid-drive —
+    // NEITHER names the feature. resolveScope must still recover {F1, S1} from the just-authored artifacts.
+    mkdirSync(join(dir, "features", "F1-stock-visibility", "stories", "S1-file-stock", "acs"), { recursive: true });
+    writeFileSync(join(dir, "features", "F1-stock-visibility", "stories", "S1-file-stock", "acs", "AC1.json"), "{}");
+    expect(resolveScope(dir)).toEqual({ feature: "F1-stock-visibility", story: "S1-file-stock" });
+  });
+
+  it("still resolves via workflow-state's feature_id (story_id null mid-drive) by recovering the story from disk", () => {
+    writeFileSync(join(dir, "workflow-state.json"), JSON.stringify({ feature_id: "F1-stock-visibility", story_id: null }));
+    mkdirSync(join(dir, "features", "F1-stock-visibility", "stories", "S2-table", "acs"), { recursive: true });
+    writeFileSync(join(dir, "features", "F1-stock-visibility", "stories", "S2-table", "acs", "AC1.json"), "{}");
+    expect(resolveScope(dir)).toEqual({ feature: "F1-stock-visibility", story: "S2-table" });
   });
 
   it("falls back to workflow-state.json when there is no next.json", () => {

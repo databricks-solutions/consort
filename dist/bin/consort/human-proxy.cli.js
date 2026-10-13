@@ -6711,6 +6711,8 @@ var featuresDir = (tdd) => join(tdd, "features");
 var planningDir = (tdd) => join(tdd, "planning");
 var sprintsDir = (tdd) => join(tdd, "sprints");
 var cyclesRootDir = (tdd) => join(tdd, "cycles");
+var escalationsDir = (tdd) => join(tdd, "escalations");
+var escalationFile = (tdd, id) => join(escalationsDir(tdd), `${id}.json`);
 var nfrsMd = (tdd) => join(tdd, "nfrs.md");
 var intakeApprovedMarker = (tdd) => join(tdd, "intake", "approved");
 var architectureDir = (tdd) => join(tdd, "architecture");
@@ -9400,6 +9402,37 @@ import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 // consort/gates/escalation.ts
 init_esm_shims();
 import * as fs2 from "fs";
+function readEscalationFile(file) {
+  if (!fs2.existsSync(file)) return void 0;
+  try {
+    return JSON.parse(fs2.readFileSync(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function readEscalations(consortDir) {
+  const dir = escalationsDir(consortDir);
+  if (!fs2.existsSync(dir)) return [];
+  const out = [];
+  for (const f of fs2.readdirSync(dir)) {
+    if (!f.endsWith(".json")) continue;
+    const e = readEscalationFile(`${dir}/${f}`);
+    if (e) out.push(e);
+  }
+  return out;
+}
+function resolveEscalationsForStory(consortDir, featureId, story, at = (/* @__PURE__ */ new Date()).toISOString()) {
+  const dir = escalationsDir(consortDir);
+  const resolved = [];
+  for (const e of readEscalations(consortDir)) {
+    if (e.resolved_at) continue;
+    if (e.story_id !== story) continue;
+    if (e.feature_id !== void 0 && e.feature_id !== featureId) continue;
+    fs2.writeFileSync(escalationFile(consortDir, e.id), JSON.stringify({ ...e, resolved_at: at }, null, 2) + "\n", "utf8");
+    resolved.push(e.id);
+  }
+  return resolved;
+}
 
 // consort/smells/deploy-verify-assess.ts
 init_esm_shims();
@@ -9744,6 +9777,7 @@ function applyReviseSelfHeal(args) {
     kind: "revised",
     note: `revised by ${approver}: routed to ${args.routedTo} (${args.gate} gate)`
   });
+  resolveEscalationsForStory(consortDir, args.featureId, args.story, at);
   return { decided: "revise", story: args.story, routedTo: args.routedTo, resolvedSmell };
 }
 

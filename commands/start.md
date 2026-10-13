@@ -141,7 +141,7 @@ Before the create questions, on the user's **first** time only, offer the bundle
   ./scripts/lk --install --detach   # cache this project's pinned kit (see the install step in the main flow below)
   ./scripts/lk lakebase-stage-first-project   # run this only after the install above finishes
   ```
-  `lakebase-stage-first-project` copies the example's intake (`product-overview.md`, `nfrs.md`, `design-brief.md`, and the warehouse icon), the **pre-authored design system** (`design/design-guide.{json,md}` + the `ia.md` establish skeleton into `.consort/design/`, and the materialized `client-styles/{theme.css,global.css}` into `client/src/styles/`), and one `feature-request.md` per feature into the new project's `.consort/`. Staging `design-guide.json` makes the project `designGuideReady`, so the UX Designer's establish turn is skipped and the design lane goes straight to per-story IA refinement. Then resume: **`/plan`** (the Spec Author proposes a sprint from the staged intake), or **`/design F1-stock-visibility`** to jump straight into the first feature. `examples/first-project/README.md` in the kit is the walkthrough.
+  `lakebase-stage-first-project` copies the example's intake (`product-overview.md`, `nfrs.md`, `design-brief.md`, and the warehouse icon), the **pre-authored design system** (`design/design-guide.{json,md}` + the `ia.md` establish skeleton into `.consort/design/`, and the materialized `client-styles/{theme.css,global.css}` into `client/src/styles/`), and one `feature-request.md` per feature into the new project's `.consort/`. Staging `design-guide.json` makes the project `designGuideReady`, so the UX Designer's establish turn is skipped and the design lane goes straight to per-story IA refinement. It then **commits the staged seed to the current (base) branch** so the first feature fork sees a clean tree — without that commit the first `/design <F>` refuses to fork a dirty staging tree and halts at Step 0. Then resume: **`/plan`** (the Spec Author proposes a sprint from the staged intake), or **`/design F1-stock-visibility`** to jump straight into the first feature. `examples/first-project/README.md` in the kit is the walkthrough.
 - **If they pick their own project:** proceed with the questions below as normal.
 
 Walk the user through the create questions (ask, do not assume; offer the noted defaults). Most of these are FREE TEXT (project name, parent directory, Databricks host, GitHub owner): ask them in plain prose. Reserve a structured multiple-choice prompt only for the genuine either/or decisions (tiers 1/2/3, language, UI track (UI SPA / backend-only), E2E on/off, model profile); never wrap a free-text answer in an options prompt (it errors with "Invalid tool parameters").
@@ -205,7 +205,7 @@ KIT_REF="${LAKEBASE_KIT_REF:-}"
 if [ -z "$KIT_REF" ] && [ -f "$CONSORT_ROOT/.claude-plugin/plugin.json" ]; then
   KIT_REF="v$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
 fi
-KIT_REF="${KIT_REF:-v0.4.0}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
+KIT_REF="${KIT_REF:-v0.4.1}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
 export LAKEBASE_KIT_REF="$KIT_REF"
 
 # Launch scaffolding DETACHED (own session): it prints the child pid + a live-log path

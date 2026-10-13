@@ -119,15 +119,14 @@ import { spawnSync } from "child_process";
 
 // consort/orchestrator/open/resolve-review-artifacts.ts
 import * as fs2 from "fs";
-import { join as join2 } from "path";
+import { join as join2, dirname } from "path";
 var DESIGN_ROLES = /* @__PURE__ */ new Set([
   "product-owner",
   "spec-author",
   "architect-reviewer",
   "dba",
   "ux-designer",
-  "test-strategist",
-  "navigator"
+  "test-strategist"
 ]);
 function roleArtifacts(consortDir, role, opts = {}) {
   const { feature: f, story: s } = opts;
@@ -183,10 +182,6 @@ function roleArtifacts(consortDir, role, opts = {}) {
       if (f && s) add(storyTestListJson(consortDir, f, s));
       break;
     case "navigator":
-      if (f && s) {
-        add(join2(storyDir(consortDir, f, s), "story.md"));
-        add(storyJson(consortDir, f, s));
-      }
       break;
     default:
       break;
@@ -212,6 +207,41 @@ function storyFreshness(consortDir, feature, story) {
   }
   return m;
 }
+function freshestStoryOnDisk(consortDir, feature) {
+  const storiesDir2 = dirname(storyDir(consortDir, feature, "_"));
+  let best;
+  let bestMtime = 0;
+  try {
+    for (const name of fs2.readdirSync(storiesDir2)) {
+      const m = storyFreshness(consortDir, feature, name);
+      if (m > bestMtime) {
+        bestMtime = m;
+        best = name;
+      }
+    }
+  } catch {
+  }
+  return best;
+}
+function deriveScopeFromDisk(consortDir) {
+  let bestFeature;
+  let bestStory;
+  let bestMtime = 0;
+  try {
+    for (const feature of fs2.readdirSync(featuresDir(consortDir))) {
+      const story = freshestStoryOnDisk(consortDir, feature);
+      if (!story) continue;
+      const m = storyFreshness(consortDir, feature, story);
+      if (m > bestMtime) {
+        bestMtime = m;
+        bestFeature = feature;
+        bestStory = story;
+      }
+    }
+  } catch {
+  }
+  return bestFeature ? { feature: bestFeature, story: bestStory } : {};
+}
 function resolveScope(consortDir) {
   try {
     const next = JSON.parse(fs2.readFileSync(join2(consortDir, "next.json"), "utf8"));
@@ -230,16 +260,20 @@ function resolveScope(consortDir) {
           story = id;
         }
       }
-      return { feature, ...story ? { story } : {} };
+      const resolved = story ?? freshestStoryOnDisk(consortDir, feature);
+      return { feature, ...resolved ? { story: resolved } : {} };
     }
   } catch {
   }
   try {
     const ws = JSON.parse(fs2.readFileSync(join2(consortDir, "workflow-state.json"), "utf8"));
-    return { ...ws.feature_id ? { feature: ws.feature_id } : {}, ...ws.story_id ? { story: ws.story_id } : {} };
+    if (ws.feature_id) {
+      const story = ws.story_id ?? freshestStoryOnDisk(consortDir, ws.feature_id);
+      return { feature: ws.feature_id, ...story ? { story } : {} };
+    }
   } catch {
-    return {};
   }
+  return deriveScopeFromDisk(consortDir);
 }
 
 // consort/orchestrator/open/open-in-editor.ts

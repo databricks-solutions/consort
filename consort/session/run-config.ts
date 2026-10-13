@@ -50,14 +50,6 @@ export interface RunConfig {
   kit_ref?: string;
   /** The resolved model per spawnable role (override -> recommended). */
   models: Record<string, string>;
-  /** DURABLE per-feature lane intent: feature id -> the last EXPLICIT phase bound
-   *  (`design`|`build`|`deploy`) a `--only` launch set for it. A bound-LESS single-feature
-   *  relaunch (`consort-drive --feature F` with no `--only`) inherits its feature's entry
-   *  instead of silently defaulting to `full` — so an improvised bare relaunch of a `/design`
-   *  run stays design (the gate prompt + behavior follow). Preserved across launches (merged,
-   *  never clobbered). `/sprint` sets its bound explicitly in runSprintMode and never records
-   *  here (it is not a single-feature `--only` launch). */
-  lane_intents?: Record<string, string>;
 }
 
 /** Artifact-root-relative path of the run-config snapshot. */
@@ -80,10 +72,6 @@ export interface RunConfigInputs {
   batchCap?: number;
   /** Resolve the model the driver will spawn a role with (cfg.modelForRole). */
   modelForRole: (role: string) => string;
-  /** Stamp the DURABLE per-feature lane intent (feature id + its explicit phase bound) so a later
-   *  bound-less relaunch of that feature recovers the bound. Set ONLY on an explicit `--only` feature
-   *  launch; omitted for a bound-less run (nothing new to stamp) and for `/sprint`. */
-  laneIntent?: { feature: string; bound: string };
   /** Override the start timestamp (tests); defaults to now. */
   startedAt?: string;
   /** Override env lookups (tests); defaults to process.env. */
@@ -131,15 +119,6 @@ export function buildRunConfig(inputs: RunConfigInputs): RunConfig {
  */
 export function writeRunConfig(inputs: RunConfigInputs): RunConfig {
   const cfg = buildRunConfig(inputs);
-  // Preserve the per-feature lane-intent map across launches (merge, never clobber) and stamp this
-  // run's feature -> explicit bound. Only design|build|deploy are durable intents; `full`/`plan` are
-  // not recorded (a bound-less launch should inherit a REAL prior phase, not re-pin "full").
-  const prior = readRunConfig(inputs.consortDir)?.lane_intents ?? {};
-  const laneIntents: Record<string, string> = { ...prior };
-  if (inputs.laneIntent && ["design", "build", "deploy"].includes(inputs.laneIntent.bound)) {
-    laneIntents[inputs.laneIntent.feature] = inputs.laneIntent.bound;
-  }
-  if (Object.keys(laneIntents).length > 0) cfg.lane_intents = laneIntents;
   const body = JSON.stringify(cfg, null, 2) + "\n";
   try {
     mkdirSync(inputs.consortDir, { recursive: true });

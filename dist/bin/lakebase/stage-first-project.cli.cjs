@@ -32,6 +32,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var stage_first_project_cli_exports = {};
 __export(stage_first_project_cli_exports, {
   bundledSeedDir: () => bundledSeedDir,
+  commitStagedSeed: () => commitStagedSeed,
   stageFirstProject: () => stageFirstProject
 });
 module.exports = __toCommonJS(stage_first_project_cli_exports);
@@ -43,6 +44,7 @@ var importMetaUrl = /* @__PURE__ */ getImportMetaUrl();
 // bin/lakebase/stage-first-project.cli.ts
 var fs2 = __toESM(require("fs"), 1);
 var path = __toESM(require("path"), 1);
+var import_node_child_process = require("child_process");
 var import_node_url = require("url");
 var import_util = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -149,6 +151,32 @@ function stageFirstProject(opts = {}) {
   }
   return { seedDir, consortDir, staged, features };
 }
+function commitStagedSeed(projectDir, staged) {
+  if (staged.length === 0) return { committed: false, reason: "nothing staged" };
+  const git = (...a) => (0, import_node_child_process.execFileSync)("git", a, { cwd: projectDir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    git("rev-parse", "--is-inside-work-tree");
+  } catch {
+    return { committed: false, reason: "not a git work tree" };
+  }
+  try {
+    git("add", "--", ...staged);
+    try {
+      git("diff", "--cached", "--quiet");
+      return { committed: false, reason: "no changes to commit" };
+    } catch {
+    }
+    git("commit", "-m", "chore(seed): stage StockFlow first-project seed");
+    let branch;
+    try {
+      branch = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    } catch {
+    }
+    return { committed: true, branch };
+  } catch (err) {
+    return { committed: false, reason: err.message };
+  }
+}
 if ((0, import_util.isCliEntry)(importMetaUrl)) {
   const argv = process.argv.slice(2);
   if (argv.includes("-h") || argv.includes("--help")) {
@@ -162,10 +190,14 @@ if ((0, import_util.isCliEntry)(importMetaUrl)) {
   if (i >= 0 && argv[i + 1]) projectDir = argv[i + 1];
   try {
     const r = stageFirstProject({ projectDir });
+    const commit = commitStagedSeed(projectDir, r.staged);
+    const commitLine = commit.committed ? `  committed the seed to ${commit.branch ?? "the current branch"} \u2014 the first feature fork sees a clean tree
+` : `  seed NOT committed (${commit.reason}); commit the staged paths before the first /design or it halts at Step 0
+`;
     process.stdout.write(
       `[stage-first-project] staged ${r.staged.length} files into ${r.consortDir}
   feature requests (${r.features.length}): ${r.features.join(", ")}
-Next: run /plan (the Spec Author proposes a sprint from the staged intake), or /design ${r.features[0]} to jump into the first feature.
+` + commitLine + `Next: run /plan (the Spec Author proposes a sprint from the staged intake), or /design ${r.features[0]} to jump into the first feature.
 `
     );
   } catch (err) {
@@ -177,5 +209,6 @@ Next: run /plan (the Spec Author proposes a sprint from the staged intake), or /
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   bundledSeedDir,
+  commitStagedSeed,
   stageFirstProject
 });

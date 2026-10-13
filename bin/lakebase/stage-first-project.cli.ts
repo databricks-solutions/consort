@@ -19,10 +19,18 @@
 // proposals during /plan. Idempotent (overwrites). Never throws a partial state: it
 // creates parent dirs as it goes.
 //
+// After copying, the CLI entry COMMITS exactly the staged paths to the current (base)
+// branch (`commitStagedSeed`). The seed is copied into the work tree uncommitted; without
+// this commit the first `/design <F>` refuses to fork a dirty staging tree and halts at
+// Step 0 — the one-time setup friction every fresh seeded run used to hit. The commit is
+// scoped to the exact staged paths (never `git add -A`) and is best-effort: a non-git dir
+// or an idempotent re-stage with no diff is a no-op, not an error.
+//
 // Usage: lakebase-stage-first-project [--project-dir <dir>]   (default: cwd)
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import {
@@ -135,6 +143,52 @@ export function stageFirstProject(opts: { projectDir?: string; seedDir?: string 
   return { seedDir, consortDir, staged, features };
 }
 
+export interface SeedCommitResult {
+  committed: boolean;
+  branch?: string; // the branch committed onto (when committed)
+  reason?: string; // why nothing was committed (when committed === false)
+}
+
+/**
+ * Commit exactly the staged seed paths onto the current (base) branch so the first feature
+ * fork sees a clean tree. stageFirstProject only COPIES the seed into the work tree; the
+ * first `/design <F>` then refuses to fork a dirty staging tree and halts at Step 0. This
+ * closes that one-time setup friction on the real path. Scoped to the exact paths (never
+ * `git add -A`). Best-effort by design: a non-git dir, an empty seed, or an idempotent
+ * re-stage with no diff is a no-op (committed === false) rather than an error.
+ */
+export function commitStagedSeed(projectDir: string, staged: string[]): SeedCommitResult {
+  if (staged.length === 0) return { committed: false, reason: "nothing staged" };
+  const git = (...a: string[]): string =>
+    execFileSync("git", a, { cwd: projectDir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    git("rev-parse", "--is-inside-work-tree");
+  } catch {
+    return { committed: false, reason: "not a git work tree" };
+  }
+  try {
+    git("add", "--", ...staged);
+    // `git diff --cached --quiet` exits 0 (no throw) when nothing is staged — an idempotent
+    // re-stage that produced no change. A non-zero exit (throw) means there ARE staged changes.
+    try {
+      git("diff", "--cached", "--quiet");
+      return { committed: false, reason: "no changes to commit" };
+    } catch {
+      /* staged changes present — fall through to commit */
+    }
+    git("commit", "-m", "chore(seed): stage StockFlow first-project seed");
+    let branch: string | undefined;
+    try {
+      branch = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    } catch {
+      /* detached or bare — branch is cosmetic, omit it */
+    }
+    return { committed: true, branch };
+  } catch (err) {
+    return { committed: false, reason: (err as Error).message };
+  }
+}
+
 if (isCliEntry(import.meta.url)) {
   const argv = process.argv.slice(2);
   if (argv.includes("-h") || argv.includes("--help")) {
@@ -149,9 +203,14 @@ if (isCliEntry(import.meta.url)) {
   if (i >= 0 && argv[i + 1]) projectDir = argv[i + 1];
   try {
     const r = stageFirstProject({ projectDir });
+    const commit = commitStagedSeed(projectDir, r.staged);
+    const commitLine = commit.committed
+      ? `  committed the seed to ${commit.branch ?? "the current branch"} — the first feature fork sees a clean tree\n`
+      : `  seed NOT committed (${commit.reason}); commit the staged paths before the first /design or it halts at Step 0\n`;
     process.stdout.write(
       `[stage-first-project] staged ${r.staged.length} files into ${r.consortDir}\n` +
         `  feature requests (${r.features.length}): ${r.features.join(", ")}\n` +
+        commitLine +
         `Next: run /plan (the Spec Author proposes a sprint from the staged intake), ` +
         `or /design ${r.features[0]} to jump into the first feature.\n`,
     );

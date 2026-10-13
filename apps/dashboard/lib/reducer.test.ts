@@ -336,6 +336,36 @@ describe("fold — liveness only applies at the live edge", () => {
   });
 });
 
+describe("fold — a run PARKED at an unapproved gate surfaces the HIL focus (not the stale reconcile step)", () => {
+  // The whole-feature design lane surfaces a story's spec gate, then runs a trailing navigator-RECONCILE
+  // turn (cross-story) AFTER the gate.surfaced. The reconcile leaves laneCurrent on the navigator step,
+  // which used to MASK the pending gate in focusOf (laneCurrent wins over pendingGate) — so the board
+  // showed no WAITING even though the gate is genuinely awaiting a human. Once the reconcile turn CLOSES
+  // (no agent working), the parked gate must win.
+  const parked: AgentLogEvent[] = [
+    ev("phase.start", { phase: "design", story: "S3" }, { role: "spec-author" }),
+    ev("turn.usage", { cost_usd: 1 }, { role: "spec-author" }),
+    ev("gate.surfaced", { gate: "spec", story: "S3" }, { role: "orchestrator" }),
+    ev("handoff", { phase: "reconcile" }, { role: "orchestrator" }),
+    ev("phase.start", { phase: "reconcile" }, { role: "navigator" }),
+    ev("turn.usage", { cost_usd: 1 }, { role: "navigator" }), // reconcile CLOSED → no agent working
+  ];
+
+  it("focus is the GATE (parked, no agent working) despite the trailing reconcile step", () => {
+    const s = fold(parked, snap());
+    expect(s.pendingGate).toBe("spec"); // unapproved gate.surfaced, nothing cleared it
+    expect(s.focus.kind).toBe("gate"); // the HIL state — was "step" (the stale reconcile) before the fix
+  });
+
+  it("but an IN-FLIGHT turn after the gate keeps the step focus (a mid-phase run is not 'waiting')", () => {
+    // Same gate, but the reconcile turn is still OPEN (no closing turn.usage) → the agent is working.
+    const inFlight = parked.slice(0, -1); // drop the closing turn.usage
+    const s = fold(inFlight, snap());
+    expect(s.pendingGate).toBe("spec");
+    expect(s.focus.kind).toBe("step"); // an active turn wins; the gate does not falsely read as waiting
+  });
+});
+
 describe("fold — a role's turn closes on the next dispatch (replay/no-token runs)", () => {
   // REPLAY runs never spawn the model, so they emit NO turn.usage — the event that
   // otherwise closes a role's turn. Design/build roles also never emit phase.end (only

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // consort-drive: the deterministic orchestrator driver (phase 3b).
 //
-//   consort-drive --feature <id> [--project-dir <dir>] [--tdd-dir <dir>]
-//                      [--instance <i>] [--deploy-target <t>] [--approver <a>]
-//                      [--dry-run]
+//   consort-drive --feature <id> --only <design|build|deploy> [--project-dir <dir>]
+//                      [--tdd-dir <dir>] [--instance <i>] [--deploy-target <t>]
+//                      [--approver <a>] [--dry-run]   (a feature drive must name its phase)
 //
 // Reads the project's persisted state, asks nextTransition for the next action,
 // and performs it, looping to `done`. This replaces the LLM scrum-master with a
@@ -72,7 +72,7 @@ import { kitVersion, exportConsortVersionEnv } from "../../consort/config/kit-bi
 import { isForeignFeatureClaim, readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import { driveAuthPreflight } from "../../consort/orchestrator/provisioning/credentials.js";
-import { writeRunConfig, readRunConfig } from "../../consort/session/run-config.js";
+import { writeRunConfig } from "../../consort/session/run-config.js";
 import { resolveLaunchKitRef, pinRunKitRef, kitRefDriftWarning } from "../../consort/config/kit-ref.js";
 import {
   buildCfg,
@@ -126,7 +126,8 @@ function help(): string {
   return `consort-drive (deterministic orchestrator driver)
 
 Usage:
-  consort-drive --feature <id> [flags]
+  consort-drive --feature <id> --only <design|build|deploy> [flags]
+  (a feature drive must name its phase; --plan-only / --sprint are the planning entries)
 
 Flags:
   --feature <id>       Feature to drive (required)
@@ -142,7 +143,9 @@ Flags:
   --dry-run            Print the single next action + its commands, then exit
   --max-steps <n>      Stop after n actions (incremental/live testing + safety)
   --plan-only          Tier-2: run the sprint planning sub-machine only (/plan)
-  --only <phase>       Tier-2 bound: design | build | deploy (one phase, then stop)
+  --only <phase>       Tier-2 bound: design | build | deploy (one phase, then stop).
+                       REQUIRED for a feature drive — a bare --feature with no phase
+                       is refused (determinism: a design drive never becomes a build).
   --pause-before <m>   PAUSE (not stop) just before a handoff: navigator (the
                        build kickoff) | release-engineer (the deploy/verify). The
                        driver blocks for a human [Y/n], then RESUMES the same run
@@ -1048,12 +1051,6 @@ function snapshotRunConfig(cfg: DriveEffectsConfig, bound: string, gates: "inter
     loopGranularity: cfg.loopGranularity,
     batchCap: cfg.batchCap,
     modelForRole: cfg.modelForRole ?? (() => "inherit"),
-    // Stamp the DURABLE per-feature lane intent ONLY when this is an explicit single-feature phase
-    // bound (design|build|deploy) — so a later bound-less relaunch of this feature recovers it. A
-    // bound-less run (bound==="full") stamps nothing (writeRunConfig ignores non-phase bounds).
-    ...(cfg.featureId && ["design", "build", "deploy"].includes(bound)
-      ? { laneIntent: { feature: cfg.featureId, bound } }
-      : {}),
   });
 }
 
@@ -1322,16 +1319,19 @@ async function main(): Promise<number> {
     }
     bound = args.only as DriverBound;
   }
-  // Recover a dropped phase bound: a single-feature launch with NO explicit --only (and not --plan-only)
-  // inherits THIS feature's last explicit bound from run-config's durable lane_intents map — so an
-  // improvised bare `consort-drive --feature F` relaunch of a /design run stays design, not silently
-  // full (the gate prompt + approve behavior follow the bound). /sprint returned above and never reaches
-  // here. First-ever launch of a feature has no recorded intent -> stays unbounded (full), as today.
+  // Determinism (hard rule): a feature drive MUST name its phase. A bare `consort-drive --feature F`
+  // with no --only (and not --plan-only) is REFUSED rather than silently running an unbounded
+  // design+build+deploy drive — so "invoke a design loop" can NEVER non-deterministically become a
+  // build. Build and deploy are always explicit, phase-bounded acts (`/build`, `/deploy`, or
+  // `--only build|deploy`); design is `/design` or `--only design`. `/sprint` (--sprint) is the
+  // end-to-end entry and returned above; it never reaches here.
   if (bound === undefined && !args.planOnly && args.feature) {
-    const inherited = readRunConfig(args.consortDir ?? resolveConsortDir(args.projectDir ?? process.cwd()))?.lane_intents?.[args.feature];
-    if (inherited === "design" || inherited === "build" || inherited === "deploy") {
-      bound = inherited as DriverBound;
-    }
+    process.stderr.write(
+      `consort-drive: a feature drive must name its phase — pass --only design|build|deploy ` +
+        `(or use the /design, /build, /deploy commands). A bare --feature with no phase is refused so ` +
+        `"drive this feature" can never silently run design AND build.\n`,
+    );
+    return 2;
   }
   const boundOpts = bound ? driverBoundOptions(bound) : {};
 

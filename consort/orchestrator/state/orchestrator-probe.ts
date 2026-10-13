@@ -38,7 +38,7 @@ import {
 } from "../../smells/refactor-verify-assess.js";
 import { readWorkflowState, SCM_STATES } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { firstPendingEscalation } from "../../gates/escalation.js";
-import { specLevelSmell, priorReviseCount, isBuildRefactorRoutableSmell, isReflectSmell, priorReflectReviseCount, REFLECT_REVISE_CAP, storyTestListFingerprint, lastReflectReviseFingerprint } from "../../smells/smells.js";
+import { specLevelSmell, priorReviseCount, isBuildRefactorRoutableSmell, isReflectSmell, priorReflectReviseCount, REFLECT_REVISE_CAP, storyTestListFingerprint, lastReflectReviseFingerprint, lastReflectReviseSmell } from "../../smells/smells.js";
 import { reflectionPassed, reflectionVerdictWritten } from "../../smells/reflection.js";
 import { testListConforms as testListConformsFor } from "../../smells/testlist-conformance.js";
 import { iaConforms as iaConformsFor } from "../../smells/ia-conformance.js";
@@ -709,6 +709,14 @@ export function diskArtifactProbe(
               budgetSpent = true;
             } else if (revises === 0) {
               budgetSpent = false; // first revise always allowed
+            } else if (lastReflectReviseSmell(consortDir, story) === "reflect-architecture-defect") {
+              // The prior revise was an ARCHITECTURE revise, which PRESERVES the test-list by design
+              // (status/revise.ts clears it only for gate !== "architecture"). So an UNCHANGED test-list
+              // fingerprint here is EXPECTED, not a stuck test-strategist — the fingerprint progress check
+              // would false-stall and send a legitimately-new testlist defect (e.g. an endpoint the
+              // architecture revise just moved) straight to HIL. Grant the revise: the test-strategist
+              // has not yet had a lap against the revised architecture.
+              budgetSpent = false;
             } else {
               // Progress check: the current test-list must differ from what the
               // last revise sent back. Unchanged => no progress => stop.

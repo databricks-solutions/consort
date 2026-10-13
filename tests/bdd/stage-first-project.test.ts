@@ -8,7 +8,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { stageFirstProject } from "../../bin/lakebase/stage-first-project.cli.js";
+import { execFileSync } from "node:child_process";
+import { stageFirstProject, commitStagedSeed } from "../../bin/lakebase/stage-first-project.cli.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SEED_DIR = path.join(REPO_ROOT, "examples", "first-project", "stockflow-seed");
@@ -109,5 +110,60 @@ describe("stageFirstProject (first-project example seed stager)", () => {
   it("is idempotent (re-staging overwrites without error)", () => {
     stageFirstProject({ projectDir, seedDir: SEED_DIR });
     expect(() => stageFirstProject({ projectDir, seedDir: SEED_DIR })).not.toThrow();
+  });
+});
+
+describe("commitStagedSeed (first fork sees a clean tree)", () => {
+  let projectDir: string;
+  const git = (...a: string[]): string =>
+    execFileSync("git", a, { cwd: projectDir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+  afterEach(() => {
+    if (projectDir) fs.rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  /** A git repo with one initial commit, mirroring the scaffold the stager runs against. */
+  function gitProject(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "commit-seed-"));
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["config", "user.email", "t@example.com"], { cwd: dir });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: dir });
+    fs.writeFileSync(path.join(dir, "README.md"), "# scaffold\n");
+    execFileSync("git", ["add", "README.md"], { cwd: dir });
+    execFileSync("git", ["commit", "-qm", "initial"], { cwd: dir });
+    return dir;
+  }
+
+  it("commits exactly the staged seed paths and leaves a clean tree", () => {
+    projectDir = gitProject();
+    const r = stageFirstProject({ projectDir, seedDir: SEED_DIR });
+    const res = commitStagedSeed(projectDir, r.staged);
+    expect(res.committed).toBe(true);
+    // the staged files are now tracked at HEAD
+    const tracked = git("ls-files").split("\n").filter(Boolean);
+    for (const rel of r.staged) expect(tracked, `${rel} should be committed`).toContain(rel);
+    // and the work tree is clean, so the first `/design <F>` fork is not refused
+    expect(git("status", "--porcelain").trim()).toBe("");
+    // the seed landed in a single scoped commit
+    expect(git("log", "-1", "--format=%s").trim()).toMatch(/stage StockFlow first-project seed/);
+  });
+
+  it("is a no-op (not an error) when there is nothing to commit (idempotent re-stage)", () => {
+    projectDir = gitProject();
+    const r = stageFirstProject({ projectDir, seedDir: SEED_DIR });
+    commitStagedSeed(projectDir, r.staged); // first commit
+    stageFirstProject({ projectDir, seedDir: SEED_DIR }); // re-copy: byte-identical, no diff
+    const res = commitStagedSeed(projectDir, r.staged);
+    expect(res.committed).toBe(false);
+    expect(res.reason).toMatch(/no changes/);
+  });
+
+  it("is a no-op (not an error) outside a git work tree", () => {
+    projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "commit-seed-nogit-"));
+    fs.mkdirSync(path.join(projectDir, ".consort"), { recursive: true });
+    const r = stageFirstProject({ projectDir, seedDir: SEED_DIR });
+    const res = commitStagedSeed(projectDir, r.staged);
+    expect(res.committed).toBe(false);
+    expect(res.reason).toMatch(/not a git work tree/);
   });
 });

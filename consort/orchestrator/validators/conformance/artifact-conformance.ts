@@ -729,6 +729,103 @@ export function checkTestlistWholeTableAggregate(testListJson: string): Conforma
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
+/** Normalize an `/api/...` endpoint token to `{ path, keys }`, collapsing a concrete id segment (one
+ *  containing a digit, or a `{placeholder}`) to `{param}` so `/api/skus/SKU-100` and `/api/skus/{sku}`
+ *  compare equal, and reducing the query to its KEY set (values dropped). Lowercased. */
+function normalizeEndpoint(tok: string): { path: string; keys: Set<string> } {
+  const [rawPath, rawQuery = ""] = tok.toLowerCase().split("?");
+  const path = rawPath
+    .split("/")
+    .map((s) => (s !== "" && (/\d/.test(s) || /^\{.*\}$/.test(s)) ? "{param}" : s))
+    .join("/")
+    .replace(/\/+$/, "");
+  const keys = new Set<string>();
+  for (const kv of rawQuery.split("&")) {
+    const k = kv.split("=")[0]?.trim();
+    if (k) keys.add(k);
+  }
+  return { path, keys };
+}
+
+const API_ENDPOINT_RE = /\/api\/[A-Za-z0-9_{}/-]+(?:\?[A-Za-z0-9_=&{}%<>-]*)?/g;
+
+/** Every `/api/...` endpoint token in a blob of text (architecture.json / spec / ACs / a test
+ *  description). Used by the caller to assemble the declared API surface for checkTestlistEndpointCoherence. */
+export function extractApiEndpoints(text: string): string[] {
+  return text.match(API_ENDPOINT_RE) ?? [];
+}
+
+/**
+ * endpoint-coherence, at the test-LIST (design) layer — the pre-reflect complement to the LLM reflect
+ * critic (Fix A). An architecture revise can MOVE a read to a dedicated endpoint (e.g. SKU-detail from
+ * `GET /api/stock?sku=` to `GET /api/skus/{sku}`), but an architecture revise PRESERVES the test-list
+ * (status/revise.ts), so a test that still asserts the OLD endpoint drifts. The deterministic gate was
+ * designed to re-catch exactly this (see status/revise.ts), but had no endpoint check — so the drift
+ * fell through to the LLM reflect (non-deterministic, and it then tripped the revise stall-guard).
+ *
+ * `declaredEndpoints` is every `/api/...` token the architecture/spec/ACs declare (the authoritative API
+ * surface). CONSERVATIVE + FAIL-OPEN: flags a behavior/client test's asserted endpoint only when (a) its
+ * PATH is not in the declared surface at all, or (b) a query KEY is undeclared for that path AND that
+ * key names a resource with its OWN dedicated declared endpoint (`/api/<key>s/{param}`) — the "moved to a
+ * dedicated endpoint" drift. A query key with no dedicated endpoint (page/limit/location/…) never flags,
+ * and an empty declared surface (nothing to validate against) is vacuously OK — so a prose phrasing that
+ * omits the literal token can never false-halt.
+ */
+export function checkTestlistEndpointCoherence(testListJson: string, declaredEndpoints: string[]): ConformanceResult {
+  let tl: { items?: Array<{ id?: string; ac_id?: string; description?: string; kind?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  // Build the declared surface: paths, the query-keys declared per path, and the "dedicated resource"
+  // segments (a segment immediately before a `{param}`, e.g. `skus` in `/api/skus/{param}`).
+  const declaredPaths = new Set<string>();
+  const keysByPath = new Map<string, Set<string>>();
+  const resourceSegs = new Set<string>();
+  for (const d of declaredEndpoints) {
+    const { path, keys } = normalizeEndpoint(d);
+    if (!path.startsWith("/api/")) continue;
+    declaredPaths.add(path);
+    const set = keysByPath.get(path) ?? new Set<string>();
+    for (const k of keys) set.add(k);
+    keysByPath.set(path, set);
+    const segs = path.split("/");
+    for (let i = 0; i < segs.length - 1; i++) if (segs[i + 1] === "{param}" && segs[i]) resourceSegs.add(segs[i]);
+  }
+  if (declaredPaths.size === 0) return { ok: true }; // nothing to validate against → fail-open
+
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  const declaredList = [...declaredPaths].sort().join(", ");
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "behavior" && it.kind !== "client") continue; // only API/UI tests assert endpoints
+    const desc = it.description ?? "";
+    for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
+      const { path, keys } = normalizeEndpoint(tok);
+      if (!declaredPaths.has(path)) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts endpoint "${tok}" whose path is not in the architecture's ` +
+            `declared API surface (declared: ${declaredList}). Re-target it to a declared endpoint.`,
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+        break;
+      }
+      const declaredKeys = keysByPath.get(path) ?? new Set<string>();
+      const drift = [...keys].find((k) => !declaredKeys.has(k) && (resourceSegs.has(k) || resourceSegs.has(`${k}s`)));
+      if (drift) {
+        violations.push(
+          `test item ${it.id ?? "?"} queries "${tok}", but "${drift}" has a dedicated endpoint ` +
+            `(/api/${drift}s/{${drift}}) — the architecture declares ${path} without it. Re-target to the dedicated ${drift} endpoint.`,
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+        break;
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
 /**
  * fixed-key-e2e, at the test-LIST (design) layer — the pre-reflect complement to the code-layer
  * `fixed-key-e2e` smell in architecture/test-smell-clean.ts (which scans the authored Playwright
@@ -1714,6 +1811,38 @@ export function checkFitnessSingularCoverage(testListJson: string, architectureJ
  * id to its declared layer (the gate's per-story acs walk). An AC with no
  * recorded layer defers (the layer contract check owns that).
  */
+/**
+ * e2e-spec-suffix, at the test-LIST layer — the pre-reflect complement to the LLM reflect critic. A
+ * scenario_file placed UNDER a `tests/e2e/` directory but NOT ending `.spec.ts` is silently skipped by
+ * the scaffold's `playwright.config.ts` default testMatch (`**\/*.spec.ts`), so the authored test never
+ * runs — exactly the live defect ("scenario_files use the .e2e.ts suffix … Playwright matches only
+ * .spec.ts"). Caught here it is a cheap scoped test_list revise before an LLM reflect lap. NARROW by
+ * design: this is only the SUFFIX/placement defect (an e2e-dir file Playwright won't match). A client
+ * test that uses a pages/*.test.tsx component harness is a DIFFERENT mechanism concern (not under e2e/)
+ * and is NOT this check's business — so a jsdom-harness design is never false-flagged here.
+ */
+export function checkTestlistE2eSpecSuffix(testListJson: string): ConformanceResult {
+  let tl: { items?: Array<{ id?: string; ac_id?: string; scenario_file?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const it of tl.items ?? []) {
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    if (/\/tests\/e2e\//.test(sf) && !/\.spec\.ts$/.test(sf)) {
+      violations.push(
+        `test ${it.id ?? "?"} scenario_file "${sf}" is under tests/e2e/ but is not a .spec.ts — playwright.config's ` +
+          `default testMatch runs only *.spec.ts, so this file never runs. Rename it to <name>.spec.ts.`,
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
 export function checkClientKindLayerCoherence(testListJson: string, acLayerById: Record<string, string>): ConformanceResult {
   let tl: { items?: Array<{ id?: string; kind?: string; ac_id?: string }> };
   try {

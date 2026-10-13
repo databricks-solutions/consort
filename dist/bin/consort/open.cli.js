@@ -68,7 +68,7 @@ import { spawnSync } from "child_process";
 
 // consort/orchestrator/open/resolve-review-artifacts.ts
 import * as fs2 from "fs";
-import { join as join2 } from "path";
+import { join as join2, dirname } from "path";
 function reviewArtifacts(consortDir, opts = {}) {
   const out = [];
   const add = (p) => {

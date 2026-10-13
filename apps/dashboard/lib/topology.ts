@@ -924,13 +924,22 @@ export function laneStepForEvent(e: AgentLogEvent | null | undefined): LaneHit |
  *  matcher reads, reusing `laneStepForEvent` so turn→step and event→step cannot disagree. */
 export function laneStepForTurn(turn: { role?: string | null; mode?: string | null; label?: string | null }): string | null {
   if (!turn.role) return null;
+  // A build BASE turn records NO `mode` (the navigator RED turn, the driver GREEN turn); only the VARIANT
+  // turns record their buildMode as `mode` (reflect/reconcile in design; review/refactor/assess/repair in
+  // build). Derive the base buildMode from the role so RED/GREEN still correlate — a mode-less navigator is
+  // RED (its only mode-less turn; reflect/reconcile always carry a mode), a mode-less driver is GREEN.
+  const mode = turn.mode ?? (turn.role === "navigator" ? "red" : turn.role === "driver" ? "green" : null);
   const synthetic: AgentLogEvent = {
     timestamp: "",
     level: "info",
     role: turn.role,
     event: "phase.start",
     message: turn.label ?? "",
-    metadata: turn.mode ? { phase: turn.mode } : {},
+    // Feed `mode` as BOTH phase and buildMode: design steps match on `phase`, build steps match on
+    // `buildMode` (b-review/b-refactor/b-assess), and a turn record carries only one `mode` field — so
+    // without this, a build VARIANT turn (mode="review") never matched its buildMode-keyed step. The
+    // step's own role gate keeps this from cross-lighting (b-* require navigator/driver).
+    metadata: mode ? { phase: mode, buildMode: mode } : {},
   };
   return laneStepForEvent(synthetic)?.step ?? null;
 }

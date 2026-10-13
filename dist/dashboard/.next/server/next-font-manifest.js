@@ -1,1 +1,1 @@
-self.__NEXT_FONT_MANIFEST="{\"pages\":{},\"app\":{\"/Users/kevin.hartman/code/databricks-solutions/consort/apps/dashboard/app/layout\":[\"static/media/22a5144ee8d83bca-s.p.woff2\",\"static/media/7d4881bb7e1bf84d-s.p.woff2\"]},\"appUsingSizeAdjust\":true,\"pagesUsingSizeAdjust\":false}"
+self.__NEXT_FONT_MANIFEST='{"pages":{},"app":{"/Users/kevin.hartman/code/databricks-solutions/consort/apps/dashboard/app/layout":["static/media/22a5144ee8d83bca-s.p.woff2","static/media/7d4881bb7e1bf84d-s.p.woff2"]},"appUsingSizeAdjust":true,"pagesUsingSizeAdjust":false}';

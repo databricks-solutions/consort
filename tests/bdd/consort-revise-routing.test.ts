@@ -329,6 +329,31 @@ describe("applyReviseSelfHeal (the revise self-heal transition)", () => {
     expect(priorReviseCount(tdd, "ac-overlap", STORY)).toBe(1);
   });
 
+  it("resolves a matching escalation FILE too, so pendingEscalation does not re-fire the same revise-route (stall)", () => {
+    // A smell that previously surfaced as a terminal escalation FILE (e.g. it was routable only after a
+    // mid-run upgrade) must have that file cleared by the revise-route — else firstPendingEscalation
+    // re-reads the unresolved file and the drive re-derives the IDENTICAL action without advancing state
+    // (the stall guard aborts). Resolving the smell alone is NOT enough; the file is a second source.
+    writeEscalation(tdd, {
+      source: "smell:ac-overlap",
+      reason: "AC4 implied by AC2",
+      feature_id: FEATURE,
+      story_id: STORY,
+    });
+    expect(readEscalations(tdd).some((e) => e.story_id === STORY && !e.resolved_at)).toBe(true);
+    applyReviseSelfHeal({
+      featureId: FEATURE,
+      story: STORY,
+      smell: "ac-overlap",
+      routedTo: "spec-author",
+      gate: "spec",
+      reason: "AC4 implied by AC2",
+      consortDir: tdd,
+    });
+    // No unresolved escalation file remains for the story.
+    expect(readEscalations(tdd).every((e) => e.resolved_at || e.story_id !== STORY)).toBe(true);
+  });
+
   it("resets the story's BUILD state so it re-drives RED/GREEN, not re-deploy (Finding 27)", () => {
     // A revised story that kept its stale green_at cycles resurrects allGreen once
     // the design lane regenerates a same-id test-list, so the drive skips the build
@@ -676,6 +701,20 @@ describe("diskArtifactProbe pendingEscalation.routable", () => {
     const e = diskArtifactProbe(tdd, FEATURE, STORY).pendingEscalation();
     expect(e?.source).toBe("smell:reflect-testlist-defect");
     expect(e?.routable).toBeUndefined();
+  });
+
+  it("marks a testlist defect routable after an ARCHITECTURE revise even though the list is UNCHANGED (architecture revise preserves it — not a stall)", () => {
+    // The prior reflect lap was an ARCHITECTURE defect; its revise re-runs the architect and PRESERVES
+    // the test-list (status/revise.ts clears it only for gate !== "architecture"), so the recorded
+    // fingerprint IS the v1 list and the list stays v1 — unchanged BY DESIGN, not a stuck strategist.
+    writeTestList("v1");
+    recordBlockingSmellFlag(tdd, "reflect-architecture-defect", "response-shape moved to GET /api/skus/{sku}", { story_id: STORY });
+    resolveOpenReflectSmellsForStory(tdd, STORY, "revised arch", storyTestListFingerprint(tdd, FEATURE, STORY));
+    // That architecture change now invalidates a test (its endpoint moved) — a GENUINELY-NEW defect, not
+    // a no-change re-emit. The unchanged-fingerprint progress check must NOT false-stall it to HIL.
+    recordBlockingSmellFlag(tdd, "reflect-testlist-defect", "T31 still targets the old GET /api/stock?sku=", { story_id: STORY });
+    const e = diskArtifactProbe(tdd, FEATURE, STORY).pendingEscalation();
+    expect(e?.routable).toEqual({ story: STORY, owning_role: "test-strategist", gate: "test_list" });
   });
 });
 

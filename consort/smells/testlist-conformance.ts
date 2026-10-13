@@ -7,7 +7,8 @@
 //
 // This module runs the deterministic AUTHORING-SMELL checks (checkClientKindLayerCoherence /
 // checkJsdomBrowserAssertion / checkTestlistWholeTableAggregate / checkTestlistFixedKeyE2e /
-// checkTestlistScenarioFileCoherence) over the per-story test-list EARLIER:
+// checkTestlistScenarioFileCoherence / checkTestlistEndpointCoherence / checkTestlistE2eSpecSuffix) over
+// the per-story test-list EARLIER:
 // `testlistConformanceReason` is the pure predicate the probe reads
 // (testListConforms), and `recordTestListGate` is the deterministic gate CLI step
 // that flags the SAME `reflect-testlist-defect` smell the reflect gate uses — so
@@ -31,13 +32,16 @@
 // would false-positive a design that covers E2E ACs via other harnesses.
 
 import { existsSync, readFileSync, readdirSync } from "fs";
-import { storyTestListJson, acsDir } from "../../consort/config/consort-paths.js";
+import { storyTestListJson, acsDir, architectureJson, featureSpecJson } from "../../consort/config/consort-paths.js";
 import {
   checkClientKindLayerCoherence,
   checkJsdomBrowserAssertion,
   checkTestlistWholeTableAggregate,
   checkTestlistFixedKeyE2e,
   checkTestlistScenarioFileCoherence,
+  checkTestlistEndpointCoherence,
+  checkTestlistE2eSpecSuffix,
+  extractApiEndpoints,
 } from "../orchestrator/validators/conformance/artifact-conformance.js";
 import { writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellHit } from "./smells.js";
 
@@ -61,6 +65,30 @@ function storyAcLayers(consortDir: string, featureId: string, story: string): Re
     }
   }
   return acLayerById;
+}
+
+/** The feature's DECLARED `/api/...` surface — every endpoint token the architecture, the feature spec,
+ *  and the story's ACs name. The union across sources is deliberately GENEROUS: an endpoint declared
+ *  ANYWHERE counts as declared, so checkTestlistEndpointCoherence only flags a test endpoint that is
+ *  absent from ALL of them (fewer false positives). Empty when no source names an `/api/...` endpoint. */
+function declaredApiEndpoints(consortDir: string, featureId: string, story: string): string[] {
+  const texts: string[] = [];
+  for (const p of [architectureJson(consortDir, featureId), featureSpecJson(consortDir, featureId)]) {
+    try {
+      if (existsSync(p)) texts.push(readFileSync(p, "utf8"));
+    } catch {
+      /* a malformed source is reported by its own conformance gate */
+    }
+  }
+  const dir = acsDir(consortDir, featureId, story);
+  try {
+    if (existsSync(dir)) for (const f of readdirSync(dir)) if (f.endsWith(".json")) texts.push(readFileSync(`${dir}/${f}`, "utf8"));
+  } catch {
+    /* no acs dir yet */
+  }
+  const toks = new Set<string>();
+  for (const t of texts) for (const e of extractApiEndpoints(t)) toks.add(e);
+  return [...toks];
 }
 
 /**
@@ -93,6 +121,8 @@ export function testlistConformanceViolations(
     checkTestlistWholeTableAggregate(testListJson),
     checkTestlistFixedKeyE2e(testListJson, acLayerById),
     checkTestlistScenarioFileCoherence(testListJson),
+    checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
+    checkTestlistE2eSpecSuffix(testListJson),
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);

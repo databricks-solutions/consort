@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { testlistConformanceReason, recordTestListGate } from "../../consort/smells/testlist-conformance.js";
+import { checkTestlistEndpointCoherence, checkTestlistE2eSpecSuffix } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { readSmellsLog } from "../../consort/smells/smells.js";
 
 const F = "F1";
@@ -150,6 +151,81 @@ describe("testlistConformanceReason", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "testlist-conf-"));
     tmpDirs.push(dir);
     expect(testlistConformanceReason(dir, F, S)).toBeNull();
+  });
+});
+
+describe("checkTestlistEndpointCoherence (Fix A: endpoint drift vs the declared API surface)", () => {
+  // The declared surface as extractApiEndpoints yields it (clean `/api/...` tokens): a location list on
+  // /api/stock, and the DEDICATED SKU-detail endpoint the architecture revise moved sku-detail to.
+  const declared = ["/api/stock?location=<loc>", "/api/skus/{sku}"];
+  const item = (over: Record<string, unknown> = {}): Record<string, unknown> => ({ id: "T1", kind: "client", ac_id: "AC1", description: "", ...over });
+  const tl = (its: Array<Record<string, unknown>>): string => JSON.stringify({ items: its });
+
+  it("flags a test querying /api/stock?sku= when sku has a dedicated /api/skus/{sku} endpoint (the S3 drift)", () => {
+    const r = checkTestlistEndpointCoherence(tl([item({ description: "GET /api/stock?sku=SKU-100 returns only SKU-100 rows" })]), declared);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/dedicated endpoint|skus\/\{sku\}/i);
+      expect(r.acIds).toEqual(["AC1"]);
+    }
+  });
+
+  it("flags a behavior test the same way (not only client)", () => {
+    expect(checkTestlistEndpointCoherence(tl([item({ kind: "behavior", description: "GET /api/stock?sku=SKU-300 returns an empty list" })]), declared).ok).toBe(false);
+  });
+
+  it("does NOT flag the dedicated endpoint /api/skus/SKU-100 (normalizes to /api/skus/{param})", () => {
+    expect(checkTestlistEndpointCoherence(tl([item({ description: "GET /api/skus/SKU-100 returns {sku, par_level, locations}" })]), declared).ok).toBe(true);
+  });
+
+  it("does NOT flag a DECLARED query key (/api/stock?location=)", () => {
+    expect(checkTestlistEndpointCoherence(tl([item({ description: "GET /api/stock?location=A-01 lists rows" })]), declared).ok).toBe(true);
+  });
+
+  it("does NOT flag an undeclared query key with NO dedicated endpoint (fail-open: pagination/filters)", () => {
+    expect(checkTestlistEndpointCoherence(tl([item({ description: "GET /api/stock?page=2 paginates the rows" })]), declared).ok).toBe(true);
+  });
+
+  it("flags a path absent from the declared surface entirely", () => {
+    const r = checkTestlistEndpointCoherence(tl([item({ description: "GET /api/widgets lists widgets" })]), declared);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.join(" ")).toMatch(/not in the architecture's declared API surface/);
+  });
+
+  it("is vacuously OK when the declared surface is empty (fail-open: nothing to validate against)", () => {
+    expect(checkTestlistEndpointCoherence(tl([item({ description: "GET /api/stock?sku=SKU-100" })]), []).ok).toBe(true);
+  });
+
+  it("does NOT flag a non-behavior/client kind, nor an item that names no endpoint (prose phrasing)", () => {
+    expect(checkTestlistEndpointCoherence(tl([item({ kind: "fitness", description: "the probe hits GET /api/stock?sku=SKU-100" })]), declared).ok).toBe(true);
+    expect(checkTestlistEndpointCoherence(tl([item({ description: "files a stock record and asserts it renders" })]), declared).ok).toBe(true);
+  });
+});
+
+describe("checkTestlistE2eSpecSuffix (Fix: an e2e-dir scenario_file Playwright won't match — the .e2e.ts defect)", () => {
+  const item = (over: Record<string, unknown> = {}): Record<string, unknown> => ({ id: "T1", kind: "client", ac_id: "AC1-file", ...over });
+  const tl = (its: Array<Record<string, unknown>>): string => JSON.stringify({ items: its });
+
+  it("flags a scenario_file under tests/e2e/ that uses the .e2e.ts suffix (the live defect)", () => {
+    const r = checkTestlistE2eSpecSuffix(tl([item({ scenario_file: "client/tests/e2e/file-stock.e2e.ts" })]));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/tests\/e2e\/|never runs|\.spec\.ts/);
+      expect(r.acIds).toEqual(["AC1-file"]);
+    }
+  });
+
+  it("does NOT flag a real Playwright e2e spec (.spec.ts under tests/e2e)", () => {
+    expect(checkTestlistE2eSpecSuffix(tl([item({ scenario_file: "client/tests/e2e/file-stock.spec.ts" })])).ok).toBe(true);
+  });
+
+  it("does NOT flag a pages/*.test.tsx harness (NOT under tests/e2e — a separate mechanism concern)", () => {
+    expect(checkTestlistE2eSpecSuffix(tl([item({ scenario_file: "client/tests/pages/FileStock.test.tsx" })])).ok).toBe(true);
+  });
+
+  it("does NOT flag a .e2e.ts token that is not under a tests/e2e/ dir, nor an item with no scenario_file", () => {
+    expect(checkTestlistE2eSpecSuffix(tl([item({ scenario_file: "client/tests/misc/file-stock.e2e.ts" })])).ok).toBe(true);
+    expect(checkTestlistE2eSpecSuffix(tl([item({})])).ok).toBe(true);
   });
 });
 

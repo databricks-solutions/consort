@@ -126,6 +126,25 @@ describe("latestTurnByStep — full-corpus STEP+STORY → latest reached turn (t
     expect(m["d-spec|S1-file-stock"]).toBe(1);
     expect(m["d-breakdown|"]).toBe(0);
   });
+
+  // The build cycle, as the recorder actually writes it: the BASE turns record NO mode (the navigator
+  // RED turn, the driver GREEN turn); the VARIANT turns record their buildMode as `mode` (review /
+  // refactor). The resolver must map each to ITS OWN step — the bug was: RED/REVIEW resolved to nothing
+  // ("hasn't run"), and the refactor turn (mode="refactor") fell onto b-green (phase-only synth never set
+  // buildMode, so b-green's buildModeNot didn't exclude it), so clicking driver-GREEN showed the REFACTOR.
+  it("maps the build cycle's base + variant turns each to its OWN step (no refactor-onto-green bleed)", () => {
+    const build: Pick<TurnIndexEntry, "ordinal" | "role" | "mode" | "story">[] = [
+      { ordinal: 10, role: "navigator", mode: null, story: "S1-file-stock" }, // RED (no mode) → b-red
+      { ordinal: 11, role: "driver", mode: null, story: "S1-file-stock" }, // GREEN (no mode) → b-green
+      { ordinal: 12, role: "navigator", mode: "review", story: "S1-file-stock" }, // review → b-review
+      { ordinal: 13, role: "driver", mode: "refactor", story: "S1-file-stock" }, // refactor → b-refactor
+    ];
+    const m = latestTurnByStep(build, new Set([10, 11, 12, 13]));
+    expect(m["b-red|S1-file-stock"]).toBe(10); // was: undefined ("hasn't run")
+    expect(m["b-green|S1-file-stock"]).toBe(11); // was: 13 (showed the refactor turn)
+    expect(m["b-review|S1-file-stock"]).toBe(12); // was: undefined ("hasn't run")
+    expect(m["b-refactor|S1-file-stock"]).toBe(13);
+  });
 });
 
 describe("correlate — differential against the reference implementation", () => {

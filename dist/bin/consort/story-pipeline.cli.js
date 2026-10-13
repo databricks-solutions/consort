@@ -8653,6 +8653,7 @@ function applyReviseSelfHeal(args) {
     kind: "revised",
     note: `revised by ${approver}: routed to ${args.routedTo} (${args.gate} gate)`
   });
+  resolveEscalationsForStory(consortDir, args.featureId, args.story, at);
   return { decided: "revise", story: args.story, routedTo: args.routedTo, resolvedSmell };
 }
 function revisableSmellForStory(consortDir, featureId, story) {

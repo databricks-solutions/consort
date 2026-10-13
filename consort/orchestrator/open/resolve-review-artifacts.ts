@@ -5,7 +5,7 @@
 // => unit-testable off a fixture.
 
 import * as fs from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import {
   productOverviewMd,
   nfrsMd,
@@ -25,6 +25,7 @@ import {
   storyJson,
   storyTestListJson,
   acsDir,
+  featuresDir,
 } from "../../config/consort-paths.js";
 
 /** The reviewable artifacts for a scope, existing-only, deduped, in review order.
@@ -72,9 +73,12 @@ export function reviewArtifacts(consortDir: string, opts: { feature?: string; st
   return out;
 }
 
-/** The design roles that PRODUCE reviewable artifacts. A turn-done for one of these with
- *  nothing to open is worth reporting (scope/timing); a build turn (driver) opening nothing
- *  is expected + stays silent. Slugs match the telemetry ROLE_VALUES closed enum. */
+/** The roles that AUTHOR reviewable design artifacts. A turn-done for one of these with nothing
+ *  to open is worth reporting (scope/timing); a turn that authors no design doc opening nothing is
+ *  expected + stays silent. The NAVIGATOR is deliberately absent: it REVIEWS in the design lane
+ *  (reflect/review/assess → a verdict) and writes TEST code in the build lane — it authors no
+ *  reviewable design document, so (like the driver) its per-turn open stays silent. Slugs match the
+ *  telemetry ROLE_VALUES closed enum. */
 export const DESIGN_ROLES: ReadonlySet<string> = new Set([
   "product-owner",
   "spec-author",
@@ -82,7 +86,6 @@ export const DESIGN_ROLES: ReadonlySet<string> = new Set([
   "dba",
   "ux-designer",
   "test-strategist",
-  "navigator",
 ]);
 
 /** The reviewable artifacts a SPECIFIC role produces this turn, existing-only, in review
@@ -148,12 +151,14 @@ export function roleArtifacts(consortDir: string, role: string, opts: { feature?
       if (f && s) add(storyTestListJson(consortDir, f, s));
       break;
     case "navigator":
-      // reflect: the story under review – what's going into the gate the human is about to
-      // approve, so they see the reflected design (not the reflect verdict itself).
-      if (f && s) {
-        add(join(storyDir(consortDir, f, s), "story.md"));
-        add(storyJson(consortDir, f, s));
-      }
+      // The navigator AUTHORS no reviewable DESIGN document: in the design lane it REVIEWS
+      // (reflect/review/assess → a verdict, not docs the human edits), and in the build lane it
+      // writes TEST code (reviewed via the build cycle + diff, like the driver's GREEN code — not
+      // via this per-turn design-doc open). So it opens NOTHING here, same as the driver. Opening
+      // story.md/story.json (which the SPEC-AUTHOR authored) mislabeled someone else's artifacts as
+      // "produced by navigator" and, in a multi-story round, surfaced the wrong story's spec. The
+      // story's design docs are shown by the GATE open (the full reviewArtifacts set) when the drive
+      // stops at the spec gate — which is where the human reviews them.
       break;
     default:
       break; // driver + anything else: no reviewable design artifact
@@ -186,6 +191,44 @@ function storyFreshness(consortDir: string, feature: string, story: string): num
     try { m = Math.max(m, fs.statSync(p).mtimeMs); } catch { /* absent */ }
   }
   return m;
+}
+
+/** The freshest EXISTING story dir on disk for a feature (by storyFreshness), or undefined. The
+ *  fallback for when next.json names a feature but its `state.stories` map is not yet populated:
+ *  EARLY in a FRESH run the first story's design turns author its artifacts BEFORE the drive writes
+ *  the stories map, so the priority scan finds nothing and the per-turn open resolves no story — every
+ *  S1 design role then opens nothing. Scanning the dirs recovers the just-authored story. */
+function freshestStoryOnDisk(consortDir: string, feature: string): string | undefined {
+  const storiesDir = dirname(storyDir(consortDir, feature, "_"));
+  let best: string | undefined;
+  let bestMtime = 0;
+  try {
+    for (const name of fs.readdirSync(storiesDir)) {
+      const m = storyFreshness(consortDir, feature, name);
+      if (m > bestMtime) { bestMtime = m; best = name; }
+    }
+  } catch { /* no stories dir yet */ }
+  return best;
+}
+
+/** Derive {feature, story} PURELY from disk — the freshest story artifacts across every feature. The
+ *  last-resort fallback for a FRESH run's first story: next.json does not exist yet (the drive writes it
+ *  at the first stop/gate) AND `.consort/workflow-state.json` carries a null feature_id mid-drive, so
+ *  NEITHER names the feature during S1's design turns. Scanning features/<F>/stories/<S> for the freshest
+ *  authored story recovers exactly what the just-finished role wrote. {} when no story exists anywhere. */
+function deriveScopeFromDisk(consortDir: string): { feature?: string; story?: string } {
+  let bestFeature: string | undefined;
+  let bestStory: string | undefined;
+  let bestMtime = 0;
+  try {
+    for (const feature of fs.readdirSync(featuresDir(consortDir))) {
+      const story = freshestStoryOnDisk(consortDir, feature);
+      if (!story) continue;
+      const m = storyFreshness(consortDir, feature, story);
+      if (m > bestMtime) { bestMtime = m; bestFeature = feature; bestStory = story; }
+    }
+  } catch { /* no features dir */ }
+  return bestFeature ? { feature: bestFeature, story: bestStory } : {};
 }
 
 /**
@@ -221,7 +264,11 @@ export function resolveScope(consortDir: string): { feature?: string; story?: st
           story = id;
         }
       }
-      return { feature, ...(story ? { story } : {}) };
+      // Fallback: next.json named the feature but its stories map had no story with artifacts yet
+      // (a fresh run's first story authors its files before the map is written). Recover the
+      // just-authored story from disk so the first story's per-turn opens are not all empty.
+      const resolved = story ?? freshestStoryOnDisk(consortDir, feature);
+      return { feature, ...(resolved ? { story: resolved } : {}) };
     }
   } catch { /* no next.json – fall through */ }
   try {
@@ -229,8 +276,13 @@ export function resolveScope(consortDir: string): { feature?: string; story?: st
       feature_id?: string | null;
       story_id?: string | null;
     };
-    return { ...(ws.feature_id ? { feature: ws.feature_id } : {}), ...(ws.story_id ? { story: ws.story_id } : {}) };
-  } catch {
-    return {};
-  }
+    if (ws.feature_id) {
+      // story_id is often null mid-drive — recover the just-authored story from disk.
+      const story = ws.story_id ?? freshestStoryOnDisk(consortDir, ws.feature_id);
+      return { feature: ws.feature_id, ...(story ? { story } : {}) };
+    }
+  } catch { /* no workflow-state – fall through */ }
+  // Final fallback: a FRESH run's first turns have no next.json yet and a null workflow-state feature_id,
+  // so neither names the feature — derive both from the freshest story artifacts on disk.
+  return deriveScopeFromDisk(consortDir);
 }

@@ -8187,6 +8187,69 @@ function checkTestlistWholeTableAggregate(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function normalizeEndpoint(tok) {
+  const [rawPath, rawQuery = ""] = tok.toLowerCase().split("?");
+  const path12 = rawPath.split("/").map((s) => s !== "" && (/\d/.test(s) || /^\{.*\}$/.test(s)) ? "{param}" : s).join("/").replace(/\/+$/, "");
+  const keys = /* @__PURE__ */ new Set();
+  for (const kv of rawQuery.split("&")) {
+    const k = kv.split("=")[0]?.trim();
+    if (k) keys.add(k);
+  }
+  return { path: path12, keys };
+}
+var API_ENDPOINT_RE = /\/api\/[A-Za-z0-9_{}/-]+(?:\?[A-Za-z0-9_=&{}%<>-]*)?/g;
+function extractApiEndpoints(text) {
+  return text.match(API_ENDPOINT_RE) ?? [];
+}
+function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const declaredPaths = /* @__PURE__ */ new Set();
+  const keysByPath = /* @__PURE__ */ new Map();
+  const resourceSegs = /* @__PURE__ */ new Set();
+  for (const d of declaredEndpoints) {
+    const { path: path12, keys } = normalizeEndpoint(d);
+    if (!path12.startsWith("/api/")) continue;
+    declaredPaths.add(path12);
+    const set2 = keysByPath.get(path12) ?? /* @__PURE__ */ new Set();
+    for (const k of keys) set2.add(k);
+    keysByPath.set(path12, set2);
+    const segs = path12.split("/");
+    for (let i = 0; i < segs.length - 1; i++) if (segs[i + 1] === "{param}" && segs[i]) resourceSegs.add(segs[i]);
+  }
+  if (declaredPaths.size === 0) return { ok: true };
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  const declaredList = [...declaredPaths].sort().join(", ");
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "behavior" && it.kind !== "client") continue;
+    const desc = it.description ?? "";
+    for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
+      const { path: path12, keys } = normalizeEndpoint(tok);
+      if (!declaredPaths.has(path12)) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts endpoint "${tok}" whose path is not in the architecture's declared API surface (declared: ${declaredList}). Re-target it to a declared endpoint.`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+        break;
+      }
+      const declaredKeys = keysByPath.get(path12) ?? /* @__PURE__ */ new Set();
+      const drift = [...keys].find((k) => !declaredKeys.has(k) && (resourceSegs.has(k) || resourceSegs.has(`${k}s`)));
+      if (drift) {
+        violations.push(
+          `test item ${it.id ?? "?"} queries "${tok}", but "${drift}" has a dedicated endpoint (/api/${drift}s/{${drift}}) \u2014 the architecture declares ${path12} without it. Re-target to the dedicated ${drift} endpoint.`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+        break;
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 var E2E_WRITE_FLOW = /\b(?:re)?fil(?:e|es|ed|ing)\b|\bcreat\w*|\badd(?:s|ed|ing)?\b|\bsubmit\w*|\bregister\w*|\bsave[sd]?\b|\binsert\w*/i;
 var HARDCODED_KEY = /\b[A-Z]{2,}[-_]?\d{2,}\b|\b(?:fixed|hard-?coded|shared|the same)\s+(?:business\s+)?(?:key|sku|code|identity|identifier)\b/i;
 var PER_RUN_UNIQUE = /\bper-run\b|\bunique\b|\buuid\b|\brandomuuid\b|\bfresh\b|\bgenerated\b|\bper-test\b/i;
@@ -8644,6 +8707,26 @@ function checkFitnessSingularCoverage(testListJson, architectureJson2) {
     };
   }
   return { ok: true };
+}
+function checkTestlistE2eSpecSuffix(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    if (/\/tests\/e2e\//.test(sf) && !/\.spec\.ts$/.test(sf)) {
+      violations.push(
+        `test ${it.id ?? "?"} scenario_file "${sf}" is under tests/e2e/ but is not a .spec.ts \u2014 playwright.config's default testMatch runs only *.spec.ts, so this file never runs. Rename it to <name>.spec.ts.`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
@@ -12984,6 +13067,12 @@ function lastReflectReviseFingerprint(consortDir, story_id) {
   const last = reflects[reflects.length - 1];
   return typeof last.revised_artifact_sha === "string" ? last.revised_artifact_sha : null;
 }
+function lastReflectReviseSmell(consortDir, story_id) {
+  const reflects = readSmellsLog(consortDir).detected.filter(
+    (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
+  );
+  return reflects.length === 0 ? null : reflects[reflects.length - 1].smell;
+}
 
 // consort/gates/escalation.ts
 var BLOCKING_SMELLS = /* @__PURE__ */ new Set([
@@ -13616,6 +13705,25 @@ function storyAcLayers(consortDir, featureId, story) {
   }
   return acLayerById;
 }
+function declaredApiEndpoints(consortDir, featureId, story) {
+  const texts = [];
+  for (const p of [architectureJson(consortDir, featureId), featureSpecJson(consortDir, featureId)]) {
+    try {
+      if (existsSync44(p)) texts.push(readFileSync44(p, "utf8"));
+    } catch {
+    }
+  }
+  const dir = acsDir(consortDir, featureId, story);
+  try {
+    if (existsSync44(dir)) {
+      for (const f of readdirSync30(dir)) if (f.endsWith(".json")) texts.push(readFileSync44(`${dir}/${f}`, "utf8"));
+    }
+  } catch {
+  }
+  const toks = /* @__PURE__ */ new Set();
+  for (const t of texts) for (const e of extractApiEndpoints(t)) toks.add(e);
+  return [...toks];
+}
 function testlistConformanceViolations(consortDir, featureId, story) {
   const tlPath = storyTestListJson(consortDir, featureId, story);
   if (!existsSync44(tlPath)) return null;
@@ -13633,7 +13741,9 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     checkJsdomBrowserAssertion(testListJson),
     checkTestlistWholeTableAggregate(testListJson),
     checkTestlistFixedKeyE2e(testListJson, acLayerById),
-    checkTestlistScenarioFileCoherence(testListJson)
+    checkTestlistScenarioFileCoherence(testListJson),
+    checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
+    checkTestlistE2eSpecSuffix(testListJson)
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);
@@ -14121,6 +14231,8 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
             if (revises >= REFLECT_REVISE_CAP) {
               budgetSpent = true;
             } else if (revises === 0) {
+              budgetSpent = false;
+            } else if (lastReflectReviseSmell(consortDir, story) === "reflect-architecture-defect") {
               budgetSpent = false;
             } else {
               const lastSha = lastReflectReviseFingerprint(consortDir, story);

@@ -487,6 +487,14 @@ export function applyReviseSelfHeal(args: ReviseSelfHealArgs): ReviseSelfHealRes
         kind: "revised",
         note: `revised by ${approver}: routed to ${args.routedTo} (${args.gate} gate)`,
       });
+  // Resolve any explicit escalation FILE for this story too. `firstPendingEscalation` reads BOTH the
+  // open blocking smells AND the escalation files, so when a smell previously surfaced as a terminal
+  // escalation FILE (e.g. a mid-run kit upgrade — or anything — that made a once-terminal escalation
+  // newly ROUTABLE), resolving only the smell above leaves the file, which re-fires the IDENTICAL
+  // revise-route next derive → the stall guard aborts ("the effect did not change what readState()
+  // returns"). The file is a second, independent escalation source; rebuildStory already clears it, and
+  // the revise-route must too. Story-scoped, matching the reflect co-heal (one lap resolves the story).
+  resolveEscalationsForStory(consortDir, args.featureId, args.story, at);
   return { decided: "revise", story: args.story, routedTo: args.routedTo, resolvedSmell };
 }
 

@@ -8173,6 +8173,69 @@ function checkTestlistWholeTableAggregate(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function normalizeEndpoint(tok) {
+  const [rawPath, rawQuery = ""] = tok.toLowerCase().split("?");
+  const path15 = rawPath.split("/").map((s) => s !== "" && (/\d/.test(s) || /^\{.*\}$/.test(s)) ? "{param}" : s).join("/").replace(/\/+$/, "");
+  const keys = /* @__PURE__ */ new Set();
+  for (const kv of rawQuery.split("&")) {
+    const k = kv.split("=")[0]?.trim();
+    if (k) keys.add(k);
+  }
+  return { path: path15, keys };
+}
+var API_ENDPOINT_RE = /\/api\/[A-Za-z0-9_{}/-]+(?:\?[A-Za-z0-9_=&{}%<>-]*)?/g;
+function extractApiEndpoints(text) {
+  return text.match(API_ENDPOINT_RE) ?? [];
+}
+function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const declaredPaths = /* @__PURE__ */ new Set();
+  const keysByPath = /* @__PURE__ */ new Map();
+  const resourceSegs = /* @__PURE__ */ new Set();
+  for (const d of declaredEndpoints) {
+    const { path: path15, keys } = normalizeEndpoint(d);
+    if (!path15.startsWith("/api/")) continue;
+    declaredPaths.add(path15);
+    const set = keysByPath.get(path15) ?? /* @__PURE__ */ new Set();
+    for (const k of keys) set.add(k);
+    keysByPath.set(path15, set);
+    const segs = path15.split("/");
+    for (let i = 0; i < segs.length - 1; i++) if (segs[i + 1] === "{param}" && segs[i]) resourceSegs.add(segs[i]);
+  }
+  if (declaredPaths.size === 0) return { ok: true };
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  const declaredList = [...declaredPaths].sort().join(", ");
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "behavior" && it.kind !== "client") continue;
+    const desc = it.description ?? "";
+    for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
+      const { path: path15, keys } = normalizeEndpoint(tok);
+      if (!declaredPaths.has(path15)) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts endpoint "${tok}" whose path is not in the architecture's declared API surface (declared: ${declaredList}). Re-target it to a declared endpoint.`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+        break;
+      }
+      const declaredKeys = keysByPath.get(path15) ?? /* @__PURE__ */ new Set();
+      const drift = [...keys].find((k) => !declaredKeys.has(k) && (resourceSegs.has(k) || resourceSegs.has(`${k}s`)));
+      if (drift) {
+        violations.push(
+          `test item ${it.id ?? "?"} queries "${tok}", but "${drift}" has a dedicated endpoint (/api/${drift}s/{${drift}}) \u2014 the architecture declares ${path15} without it. Re-target to the dedicated ${drift} endpoint.`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+        break;
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 var E2E_WRITE_FLOW = /\b(?:re)?fil(?:e|es|ed|ing)\b|\bcreat\w*|\badd(?:s|ed|ing)?\b|\bsubmit\w*|\bregister\w*|\bsave[sd]?\b|\binsert\w*/i;
 var HARDCODED_KEY = /\b[A-Z]{2,}[-_]?\d{2,}\b|\b(?:fixed|hard-?coded|shared|the same)\s+(?:business\s+)?(?:key|sku|code|identity|identifier)\b/i;
 var PER_RUN_UNIQUE = /\bper-run\b|\bunique\b|\buuid\b|\brandomuuid\b|\bfresh\b|\bgenerated\b|\bper-test\b/i;
@@ -8283,6 +8346,26 @@ function canonicalArtifactName(path15) {
   const base = basename(path15);
   if (basename(dirname5(path15)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
+}
+function checkTestlistE2eSpecSuffix(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    if (/\/tests\/e2e\//.test(sf) && !/\.spec\.ts$/.test(sf)) {
+      violations.push(
+        `test ${it.id ?? "?"} scenario_file "${sf}" is under tests/e2e/ but is not a .spec.ts \u2014 playwright.config's default testMatch runs only *.spec.ts, so this file never runs. Rename it to <name>.spec.ts.`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
@@ -8609,6 +8692,12 @@ function lastReflectReviseFingerprint(consortDir, story_id) {
   if (reflects.length === 0) return null;
   const last = reflects[reflects.length - 1];
   return typeof last.revised_artifact_sha === "string" ? last.revised_artifact_sha : null;
+}
+function lastReflectReviseSmell(consortDir, story_id) {
+  const reflects = readSmellsLog(consortDir).detected.filter(
+    (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
+  );
+  return reflects.length === 0 ? null : reflects[reflects.length - 1].smell;
 }
 
 // consort/gates/escalation.ts
@@ -10303,6 +10392,25 @@ function storyAcLayers(consortDir, featureId, story) {
   }
   return acLayerById;
 }
+function declaredApiEndpoints(consortDir, featureId, story) {
+  const texts = [];
+  for (const p of [architectureJson(consortDir, featureId), featureSpecJson(consortDir, featureId)]) {
+    try {
+      if (existsSync28(p)) texts.push(readFileSync27(p, "utf8"));
+    } catch {
+    }
+  }
+  const dir = acsDir(consortDir, featureId, story);
+  try {
+    if (existsSync28(dir)) {
+      for (const f of readdirSync15(dir)) if (f.endsWith(".json")) texts.push(readFileSync27(`${dir}/${f}`, "utf8"));
+    }
+  } catch {
+  }
+  const toks = /* @__PURE__ */ new Set();
+  for (const t of texts) for (const e of extractApiEndpoints(t)) toks.add(e);
+  return [...toks];
+}
 function testlistConformanceViolations(consortDir, featureId, story) {
   const tlPath = storyTestListJson(consortDir, featureId, story);
   if (!existsSync28(tlPath)) return null;
@@ -10320,7 +10428,9 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     checkJsdomBrowserAssertion(testListJson),
     checkTestlistWholeTableAggregate(testListJson),
     checkTestlistFixedKeyE2e(testListJson, acLayerById),
-    checkTestlistScenarioFileCoherence(testListJson)
+    checkTestlistScenarioFileCoherence(testListJson),
+    checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
+    checkTestlistE2eSpecSuffix(testListJson)
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);
@@ -10850,6 +10960,8 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
             if (revises >= REFLECT_REVISE_CAP) {
               budgetSpent = true;
             } else if (revises === 0) {
+              budgetSpent = false;
+            } else if (lastReflectReviseSmell(consortDir, story) === "reflect-architecture-defect") {
               budgetSpent = false;
             } else {
               const lastSha = lastReflectReviseFingerprint(consortDir, story);
@@ -15622,12 +15734,6 @@ function buildRunConfig(inputs) {
 }
 function writeRunConfig(inputs) {
   const cfg = buildRunConfig(inputs);
-  const prior = readRunConfig(inputs.consortDir)?.lane_intents ?? {};
-  const laneIntents = { ...prior };
-  if (inputs.laneIntent && ["design", "build", "deploy"].includes(inputs.laneIntent.bound)) {
-    laneIntents[inputs.laneIntent.feature] = inputs.laneIntent.bound;
-  }
-  if (Object.keys(laneIntents).length > 0) cfg.lane_intents = laneIntents;
   const body = JSON.stringify(cfg, null, 2) + "\n";
   try {
     mkdirSync32(inputs.consortDir, { recursive: true });
@@ -17034,7 +17140,8 @@ function help() {
   return `consort-drive (deterministic orchestrator driver)
 
 Usage:
-  consort-drive --feature <id> [flags]
+  consort-drive --feature <id> --only <design|build|deploy> [flags]
+  (a feature drive must name its phase; --plan-only / --sprint are the planning entries)
 
 Flags:
   --feature <id>       Feature to drive (required)
@@ -17050,7 +17157,9 @@ Flags:
   --dry-run            Print the single next action + its commands, then exit
   --max-steps <n>      Stop after n actions (incremental/live testing + safety)
   --plan-only          Tier-2: run the sprint planning sub-machine only (/plan)
-  --only <phase>       Tier-2 bound: design | build | deploy (one phase, then stop)
+  --only <phase>       Tier-2 bound: design | build | deploy (one phase, then stop).
+                       REQUIRED for a feature drive \u2014 a bare --feature with no phase
+                       is refused (determinism: a design drive never becomes a build).
   --pause-before <m>   PAUSE (not stop) just before a handoff: navigator (the
                        build kickoff) | release-engineer (the deploy/verify). The
                        driver blocks for a human [Y/n], then RESUMES the same run
@@ -17617,11 +17726,7 @@ function snapshotRunConfig(cfg, bound, gates) {
     // records what the drive actually used, never a stale env value.
     loopGranularity: cfg.loopGranularity,
     batchCap: cfg.batchCap,
-    modelForRole: cfg.modelForRole ?? (() => "inherit"),
-    // Stamp the DURABLE per-feature lane intent ONLY when this is an explicit single-feature phase
-    // bound (design|build|deploy) — so a later bound-less relaunch of this feature recovers it. A
-    // bound-less run (bound==="full") stamps nothing (writeRunConfig ignores non-phase bounds).
-    ...cfg.featureId && ["design", "build", "deploy"].includes(bound) ? { laneIntent: { feature: cfg.featureId, bound } } : {}
+    modelForRole: cfg.modelForRole ?? (() => "inherit")
   });
 }
 function drivePidPath(consortDir) {
@@ -17793,10 +17898,11 @@ ${help()}`);
     bound = args.only;
   }
   if (bound === void 0 && !args.planOnly && args.feature) {
-    const inherited = readRunConfig(args.consortDir ?? resolveConsortDir(args.projectDir ?? process.cwd()))?.lane_intents?.[args.feature];
-    if (inherited === "design" || inherited === "build" || inherited === "deploy") {
-      bound = inherited;
-    }
+    process.stderr.write(
+      `consort-drive: a feature drive must name its phase \u2014 pass --only design|build|deploy (or use the /design, /build, /deploy commands). A bare --feature with no phase is refused so "drive this feature" can never silently run design AND build.
+`
+    );
+    return 2;
   }
   const boundOpts = bound ? driverBoundOptions(bound) : {};
   let pauseMilestone;

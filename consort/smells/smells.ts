@@ -1072,6 +1072,19 @@ export function lastReflectReviseFingerprint(consortDir: string, story_id: strin
   return typeof last.revised_artifact_sha === "string" ? last.revised_artifact_sha : null;
 }
 
+/** The SMELL of the most recent reflect `revised` entry for this story (null when none). Lets the
+ *  progress-based budget tell WHAT the prior revise targeted: the stored `revised_artifact_sha` is
+ *  always a TEST-LIST fingerprint, but an architecture revise PRESERVES the test-list by design
+ *  (status/revise.ts: the test-list clear is gated `gate !== "architecture"`), so an UNCHANGED
+ *  fingerprint after a `reflect-architecture-defect` revise is EXPECTED — not a stuck test-strategist.
+ *  Only a prior revise that re-derives the test-list (spec / test_list / ia) makes "unchanged" a stall. */
+export function lastReflectReviseSmell(consortDir: string, story_id: string): string | null {
+  const reflects = readSmellsLog(consortDir).detected.filter(
+    (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id,
+  );
+  return reflects.length === 0 ? null : reflects[reflects.length - 1].smell;
+}
+
 /** Co-heal: resolve EVERY open reflect smell for a story as `revised` in one pass,
  *  so a single revise addresses the whole reflection and no sibling reflect smell
  *  immediately re-routes or halts. Returns how many were resolved. */

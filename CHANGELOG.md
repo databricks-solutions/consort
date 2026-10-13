@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-10-13
+
+- **Deterministic design-drive bound.** A bare `consort-drive --feature <F>` with no `--only` is refused (name the phase: `/design` | `/build` | `/deploy`), and the implicit `lane_intents` inheritance is removed — "invoke a design loop" can no longer silently become a build.
+- **Reflect revise no longer false-stalls across gates.** The per-story reflect progress check treats an unchanged test-list as "stuck" only when the prior revise targeted the test_list; an *architecture* revise (which preserves the test-list) no longer pushes a subsequent test-list defect straight to HIL. The revise-route also resolves the matching escalation file, so a now-routable escalation can't re-fire into a stall.
+- **Deterministic pre-reflect test-list checks** (ahead of the LLM reflect): **endpoint coherence** (a test's asserted `/api/…` path, or a query key whose resource has a dedicated endpoint, must exist in the architecture's declared surface) and **e2e-spec suffix** (a `tests/e2e/` scenario_file must be `.spec.ts`, the only pattern Playwright's default testMatch runs).
+- **First-project seed is committed to the base branch** by `lakebase-stage-first-project`, so the first `/design <feature>` fork sees a clean tree instead of halting at Step 0.
+- **Per-turn artifact-open fixes.** The Navigator opens nothing (it reviews / writes test code, authoring no reviewable design doc); design-doc roles resolve their scope from disk on a fresh run's first story (before `next.json` is written), so S1's per-turn opens no longer come up empty.
+- **Dashboard fixes.** Build-cycle steps correlate to their own turns (RED / REVIEW / GREEN / REFACTOR, no refactor-onto-green bleed); a run parked at an unapproved gate surfaces the **WAITING** (HIL) state instead of masking it behind a trailing reconcile step.
+
 ## [0.4.0] - 2026-10-13
 
 - **UX Designer establish/IA split.** The one-time Style + IA *establish* moves to planning (under the intake gate); per-story **IA refinement** runs in the design loop; a `reflect-ia-defect` routes an IA gap back to the UX Designer. The StockFlow seed ships the materialized design system so a fresh project is `designGuideReady` and the establish turn is skipped.
