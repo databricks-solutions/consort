@@ -22,6 +22,7 @@ interface ParsedArgs {
   ac?: string;
   layer?: string;
   notes?: string;
+  uiSeams?: string;
   consortDir?: string;
   help?: boolean;
 }
@@ -31,11 +32,16 @@ const LAYERS = ["API", "E2E", "Infra"];
 const HELP = `consort-annotate-ac – safely add the Architect's layer + architectural_notes to an AC
 
 Usage:
-  consort-annotate-ac --feature <F> --story <S> --ac <AC> --layer <API|E2E|Infra> --notes "<text>" [--consort-dir <dir>]
+  consort-annotate-ac --feature <F> --story <S> --ac <AC> --layer <API|E2E|Infra> --notes "<text>" \\
+    [--ui-seams "seam-a,seam-b"] [--consort-dir <dir>]
 
-Reads acs/<AC>.json, merges { layer, architectural_notes } ON TOP of the existing
-object (every prior field preserved), and writes valid JSON. Use this instead of
-hand-editing the AC file, so a dropped brace can never corrupt it.
+Reads acs/<AC>.json, merges { layer, architectural_notes[, ui_seams] } ON TOP of the
+existing object (every prior field preserved), and writes valid JSON. Use this instead
+of hand-editing the AC file, so a dropped brace can never corrupt it.
+
+--ui-seams (E2E / client ACs): a comma-separated list of the ia.md data-testid seam
+tokens this AC's UI must drive (e.g. "stock-cell-tracking,stock-not-tracked"). The
+deterministic pre-reflect IA gate checks each is named in ia.md.
 `;
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -47,6 +53,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case "--ac": out.ac = argv[++i]; break;
       case "--layer": out.layer = argv[++i]; break;
       case "--notes": out.notes = argv[++i]; break;
+      case "--ui-seams": out.uiSeams = argv[++i]; break;
       case "--consort-dir": case "--tdd-dir": out.consortDir = argv[++i]; break;
       case "--help": case "-h": out.help = true; break;
       default: break;
@@ -62,12 +69,20 @@ export function parseArgs(argv: string[]): ParsedArgs {
  */
 export function mergeAcAnnotation(
   raw: string,
-  fields: { layer?: string; notes: string },
+  fields: { layer?: string; notes: string; uiSeams?: string[] },
 ): string {
   const obj = JSON.parse(raw) as Record<string, unknown>;
   if (fields.layer) obj.layer = fields.layer;
   obj.architectural_notes = fields.notes;
+  // Only set ui_seams when provided (a non-UI AC omits it); an explicit empty list clears it.
+  if (fields.uiSeams !== undefined) obj.ui_seams = fields.uiSeams;
   return JSON.stringify(obj, null, 2) + "\n";
+}
+
+/** Parse a comma-separated --ui-seams value into a trimmed, de-duped token list. */
+export function parseUiSeams(raw: string | undefined): string[] | undefined {
+  if (raw === undefined) return undefined;
+  return [...new Set(raw.split(",").map((s) => s.trim()).filter((s) => s.length > 0))];
 }
 
 function main(argv: string[]): number {
@@ -94,7 +109,7 @@ function main(argv: string[]): number {
   }
   let merged: string;
   try {
-    merged = mergeAcAnnotation(fs.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes });
+    merged = mergeAcAnnotation(fs.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes, uiSeams: parseUiSeams(args.uiSeams) });
   } catch (e) {
     process.stderr.write(
       `Error: ${file} is not valid JSON (${e instanceof Error ? e.message : String(e)}). ` +

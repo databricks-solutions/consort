@@ -7088,6 +7088,16 @@ function checkDbDesign(dbDesignJson, architectureJson) {
       `persistence_invariant(s) not realized by db-design.json realizes_invariants[]: ${uncovered.join(", ")} (the DBA must physically realize every invariant the architect declared \u2013 a table/column/constraint/index \u2013 and list its id here; see agents/dba.md)`
     );
   }
+  const accessPatterns = (arch.access_patterns ?? []).filter((p) => p && typeof p.id === "string" && p.id.length > 0).map((p) => p.id);
+  if (accessPatterns.length > 0) {
+    const addressed = new Set((db.addresses_access_patterns ?? []).filter((x) => typeof x === "string" && x.length > 0));
+    const unaddressed = accessPatterns.filter((id) => !addressed.has(id));
+    if (unaddressed.length > 0) {
+      violations.push(
+        `access_pattern(s) not addressed by db-design.json addresses_access_patterns[]: ${unaddressed.join(", ")} (the DBA must CONSIDER each query shape the architect flagged \u2013 add an index/structure on its columns or record a deliberate no-index decision in db-design.md \u2013 and list its id here; see agents/dba.md)`
+      );
+    }
+  }
   return violations.length > 0 ? { ok: false, violations } : { ok: true };
 }
 function checkStoryIndependence(stories, targetStory) {

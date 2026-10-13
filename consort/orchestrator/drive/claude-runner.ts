@@ -543,15 +543,19 @@ export function claudeToolArgs(cmd: Extract<DriveCommand, { kind: "claude" }>): 
   // /WebFetch call is DENIED ("...you haven't granted it yet") — PROVEN live: without
   // these in --allowed-tools mcp__playwright__browser_navigate is permission-denied; with
   // them it is permitted. So the role that loads the browser MCP must also allow its tools.
-  // Pre-approve the harmless `cd` prefix for EVERY agent. An agent habitually writes a kit command as
-  // `cd <project-root> && ./scripts/lk …` (or `cd …; ./scripts/lk …`); the permission matcher splits a
-  // compound command and requires EACH part allowed, so even though the project allow-list grants
-  // `Bash(./scripts/lk *)`, the `cd` part is un-granted and the WHOLE command is DENIED headless under
-  // acceptEdits — which silently swallowed the agent's own `consort-log` writes (its reasoning/dispatch
-  // records). `cd` only changes directory (no side effects), so granting it lets the agent's logging +
-  // kit calls run as written. PROVEN: a test-strategist's `cd … && ./scripts/lk consort-log …` was
-  // permission-blocked and its events never recorded.
-  const allowed = [...new Set(["Bash(cd:*)", ...(cmd.allowedTools ?? []), ...browserAllowedToolsForRole(cmd.role)])];
+  // Pre-approve the full Bash tool + Task (subagent dispatch) for EVERY drive-spawned role agent.
+  // These are the kit's OWN trusted roles, run headlessly by the deterministic drive on the
+  // project's files — but under `--permission-mode acceptEdits` any shell command NOT in the narrow
+  // allow-list is DENIED with no human to approve, so the agents could not run their own work: the
+  // test-strategist's `consort-response-formatter` self-check and its analyst `Task` fan-out were
+  // blocked (so reconciliation never ran), the architect could not parse-check `architecture.json`,
+  // and a compound `cd … && ./scripts/lk …` was swallowed because one segment was un-granted. The
+  // agents self-reported every one of these as "shell commands were being blocked". Granting `Bash`
+  // + `Task` lets each role run its self-check, parse/transform, kit calls, logging, and (for a
+  // supervisor) its subagent dispatch, as written. acceptEdits stays the mode (NOT bypassPermissions,
+  // which an enterprise managed-settings policy silently downgrades to `default`); this only widens
+  // the pre-approved tool set the drive hands its own agents.
+  const allowed = [...new Set(["Bash", "Task", ...(cmd.allowedTools ?? []), ...browserAllowedToolsForRole(cmd.role)])];
   if (allowed.length) out.push("--allowed-tools", allowed.join(","));
   if (cmd.disallowedTools && cmd.disallowedTools.length) out.push("--disallowed-tools", cmd.disallowedTools.join(","));
   return out;
@@ -916,10 +920,11 @@ export function execRunner(cfg: DriveEffectsConfig): CommandRunner {
           // Record this turn's total context so the next resume decision for this
           // session can apply the context-budget guard above.
           if (cmd.resumeKey) sessionContext.set(cmd.resumeKey, turnContextTokens(usage));
-          // Wall-clock per turn: the missing signal for perf work. Emitted on the
-          // turn.usage event (+ a terse console line) so a run's log shows WHERE the
-          // seconds go (which role/turn) instead of guessing.
-          process.stderr.write(`[drive] ${cmd.role} turn ${(turnMs / 1000).toFixed(1)}s (${cmd.model})\n`);
+          // Wall-clock per turn: the missing signal for perf work, recorded on the
+          // turn.usage event (duration_ms) so a run's log shows WHERE the seconds go.
+          // The human-readable "[drive] <role> turn <n>s" narration is emitted ONCE at
+          // the executor dispatch (executor-dispatch.ts); emitting it here too printed
+          // every turn twice in drive-live.log (two Date.now() reads, ~0.3s apart).
           try {
             emitAgentLogEvent(
               {

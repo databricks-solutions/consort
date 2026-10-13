@@ -3,7 +3,7 @@
 // valid JSON (the corruption that aborted a drive came from hand-editing braces).
 
 import { describe, it, expect } from "vitest";
-import { mergeAcAnnotation } from "../../bin/consort/annotate-ac.cli.js";
+import { mergeAcAnnotation, parseUiSeams } from "../../bin/consort/annotate-ac.cli.js";
 
 const AC = JSON.stringify({
   id: "AC1",
@@ -46,5 +46,20 @@ describe("mergeAcAnnotation", () => {
 
   it("throws on malformed input JSON rather than blindly overwriting a corrupt AC", () => {
     expect(() => mergeAcAnnotation('{ "id": "AC1"', { notes: "x" })).toThrow();
+  });
+
+  it("sets ui_seams for an E2E AC (the pre-reflect IA gate's input) only when provided", () => {
+    // provided → written
+    const withSeams = JSON.parse(mergeAcAnnotation(AC, { layer: "E2E", notes: "renders the table", uiSeams: ["stock-table", "stock-cell-tracking"] }));
+    expect(withSeams.ui_seams).toEqual(["stock-table", "stock-cell-tracking"]);
+    // omitted (a non-UI AC) → the field is absent, not an empty array
+    const noSeams = JSON.parse(mergeAcAnnotation(AC, { layer: "API", notes: "endpoint" }));
+    expect("ui_seams" in noSeams).toBe(false);
+  });
+
+  it("parseUiSeams splits, trims, de-dupes a comma list; undefined passes through", () => {
+    expect(parseUiSeams("stock-table, stock-cell-qty ,stock-table")).toEqual(["stock-table", "stock-cell-qty"]);
+    expect(parseUiSeams(undefined)).toBeUndefined();
+    expect(parseUiSeams("")).toEqual([]);
   });
 });

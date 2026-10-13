@@ -107,7 +107,7 @@ H1 title; `## Screens` (every screen the feature touches + what each is for); `#
    - **Author the components:** write `client/src/styles/global.css` — one class per `design-guide.json` `components` entry, named EXACTLY its `class`, realizing its `notes`/`variants`, styled ONLY through `var(--token)`. This replaces the scaffold's generic baseline with THIS project's vocabulary (`.hero-value`, `.delta`, `.holdings-table`, …), so the app looks like the brief, not like every other project. No hardcoded hex/px.
 6. State the **adherence contract**: which checks downstream UI must pass, run at the **E2E (Playwright) layer**.
 
-**Self-check before you return:** `./scripts/lk consort-response-formatter --role ux-designer --feature <F>` (exits 0 when `design-guide.json` conforms to its schema; non-zero lists the problems — a non-conformant guide hard-fails Gate 3 and stalls the design lane). THEN confirm you materialized the system: `./scripts/lk consort-apply-design-theme` re-run cleanly (theme.css regenerated), and every `components[].class` in `design-guide.json` is defined in `global.css`. Fix and re-run until both pass.
+**Self-check before you return:** `./scripts/lk consort-response-formatter --role ux-designer --feature <F>` (exits 0 when `design-guide.json` conforms to its schema; non-zero lists the problems — a non-conformant guide hard-fails Gate 3 and stalls the design lane). THEN confirm you materialized the system: `./scripts/lk consort-apply-design-theme` re-run cleanly (theme.css regenerated), and every `components[].class` in `design-guide.json` is defined in `global.css`. Fix and re-run until both pass. Run each as its own command (headless, the kit CLI is granted standalone).
 
 ## How adherence is enforced
 

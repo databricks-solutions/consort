@@ -4,6 +4,76 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-13
+
+- **UX Designer establish/IA split.** The one-time Style + IA *establish* moves to planning (under the intake gate); per-story **IA refinement** runs in the design loop; a `reflect-ia-defect` routes an IA gap back to the UX Designer. The StockFlow seed ships the materialized design system so a fresh project is `designGuideReady` and the establish turn is skipped.
+- **Feature-complete cross-story reconciliation.** A story-less `navigator reconcile` turn checks every story's ACs and open decisions against the whole feature before the gated approvals (/design bound only); a blocking finding reopens the owning story.
+- **Deterministic test-list assembler.** The fan-out assembles the kind analysts' slices in-process (coverage, order, feature-flat T-ids, exact + per-invariant dedup); the dedicated LLM assembler subagent is removed (a model-safeguard false-positive made it a single point of lane failure). The test-strategist does a final semantic de-dup + momentum re-order.
+- **Pre-reflect gates (deterministic, ahead of the LLM reflect):** `fixed-key-e2e` (an E2E create flow keyed on a hardcoded business key), `scenario_file` coherence (a test description naming a different spec file than its `scenario_file`), and AC↔IA `ui_seams` conformance.
+- **DBA story attribution** fixed (a feature-level schema re-realization is attributed to the story in design, not the earliest surfaced one); an **architecture-gate revise preserves the test-list** (a `ui_seams`/notes change no longer blind-re-rolls the tests). DBA runs at `effort: low`.
+- **Dashboard:** a gate turn's `#ordinal` renders in the gate-band color, not the orchestration action-kind.
+- Repoints bundled scm-utils `0.2.51` -> `0.3.0` (adds .NET language support).
+
+## [0.3.118] - 2026-10-11
+
+- Corrective to 0.3.117: remove the false-blocking test-strategist fan-out spec-gate condition (it blocked legit fan-outs whose dispatch log was Bash-permission-denied) and fix agent-log access via a `Bash(cd:*)` pre-approval; design-lane bound / lane-intent recovery; spec-gate prompt clarity; `uiTrack` flatten guard; revise-route logging.
+
+## [0.3.117] - 2026-10-11
+
+- Design-lane hardening: fan-out + browse provenance move to SPEC-GATE conditions that read the persisted `.consort/agent-log.jsonl` (idempotent, live-proven to block a solo-authored log); `requires_e2e` preserved via `STORY_ALLOWED_KEYS` from the schema; blocked-past-retry-budget throws `ProtocolViolationError` (clean HIL exit 3); architecture canon reads brief/requirement/statement so `nfr_posture` isn't dropped; reconcile logs the DBA's `db-design.json`; per-story-view postTurn trace.
+
+## [0.3.116] - 2026-10-11
+
+- Enforce the test-strategist fan-out + a turn-level `testListConformant` validator; the UX Designer apply step owns the app-shell wiring (navbar icon + title; new `app_name` + motion token groups in `design-guide.schema`).
+
+## [0.3.115] - 2026-10-11
+
+- **Durable design bound.** `/design` designs the whole feature then stops; the design corpus is committed at design-complete; the feature branch is auto-claimed on any lane entry. Repoints bundled scm-utils `0.2.50` -> `0.2.51`.
+
+## [0.3.114] - 2026-10-11
+
+- Churn-reduction design fixes: path-agnostic fitness coverage, a `reflect-architecture-defect` route for a not-null-vs-"renders-when-absent" contradiction, deterministic `theme.css` as a UX Designer postTurn, `watch` opens the active story by work-status priority, preflight resolves the in-flight feature when `next.json` is absent. Repoints bundled scm-utils `0.2.49` -> `0.2.50`.
+
+## [0.3.113] - 2026-10-10
+
+- Wire `verifyGateIntegrity` as a RED-start `test_list` drift backstop.
+
+## [0.3.112] - 2026-10-10
+
+- Upgrade/install precedes scaffold on create; a mid-run upgrade is blocked on resume (offered only at a stoppable point).
+
+## [0.3.111] - 2026-10-10
+
+- Dashboard defaults to dark mode on startup (`THEME=light` / `?theme=light` opts back; the toggle + localStorage still win). The newer-Consort check in `/consort:start` runs up front, state-aware.
+
+## [0.3.110] - 2026-10-10
+
+- Brand app icon installs at design-apply time (`applyDesignGuideTheme` copies the `app_icon` binary to `install_to` + wires the favicon). First-project seed `tracking_code` schema alignment, richer design-brief, adaptive home-table fields.
+
+## [0.3.109] - 2026-10-09
+
+- Repoints bundled scm-utils to `0.2.49` (canonical 90-day `GitHub Actions (<repo>)` CI token + expiry-aware re-mint preflight); sync the pre-push template to the sync-ci-secrets delegator.
+
+## [0.3.108] - 2026-10-09
+
+- Keep the per-feature `pipeline.json` ledger TRACKED (revert the self-heal untrack — it is the durable story ledger). Repoints bundled scm-utils `0.2.47` -> `0.2.48` (merge-layer promotion-conflict reconcile).
+
+## [0.3.107] - 2026-10-09
+
+- Dashboard relaunches on kit-version skew; `consort-upgrade` moves `.lakebase/scm-utils-ref` in lockstep; `pipeline.json` self-heal covers `.gitignore`.
+
+## [0.3.106] - 2026-10-08
+
+- Dashboard running-title + pass-scoped DAG frontier. Repoints bundled scm-utils to `0.2.47` (`lk --help` no-install, wait-ci conflicting-PR surfacing, sync-ci-secrets repair CLI).
+
+## [0.3.105] - 2026-10-08
+
+- A deterministic preflight tooling-agenda drives the resume dashboard/editor/extension hand-off.
+
+## [0.3.104] - 2026-10-08
+
+- Update-check pin-lag fix + release-aware throttle; dashboard topology card step-accuracy; `start.md` offers a stale-extension upgrade at the IDE hand-off.
+
 ## [0.3.103] - 2026-10-08
 
 - **API-only stories offer a Swagger UI for acceptance review.** A clicked API-only story (no client/e2e tests) surfaces its backend's Swagger UI (`<base_url>/docs`) as the acceptance surface, gated to the deployed server; the Node (Express) scaffold now serves `/docs` too via scm-utils 0.2.46 (FastAPI already did).

@@ -55,6 +55,9 @@ function actionFromMatch(m: StepManifest): Extract<WorkflowAction, { kind: "invo
   const hasMode = "mode" in m.match && m.match.mode !== null;
   const hasBuildMode = "buildMode" in m.match && m.match.buildMode !== null;
   if (STORY_SCOPED.has(m.role) && !hasMode && !("story" in a)) a.story = STORY;
+  // The ux-designer ia-refinement is story-scoped despite carrying a mode (its establish
+  // sibling is project-level); add a story so its story:acs input resolves.
+  if (m.role === "ux-designer" && m.match.mode === "ia" && !("story" in a)) a.story = STORY;
   // assess/repair carry an ac in the real drive (per-AC cycle); seed one so the advisory + the
   // cycle-scoped inputs (green-failure / regression-assessment) resolve at cycleDir, not the story dir.
   if (hasBuildMode && (m.match.buildMode === "assess" || m.match.buildMode === "repair") && !("ac" in a)) a.ac = AC;
@@ -144,8 +147,8 @@ function cfg(consortDir: string, projectDir: string, runner: DriveEffectsConfig[
 const AGENT_MANIFESTS = SHIPPED_MANIFESTS;
 
 describe("every agent manifest dispatches through the executor (A-full #649)", () => {
-  it("covers all 22 shipped manifests (guard: the matrix stays exhaustive)", () => {
-    expect(AGENT_MANIFESTS.length).toBe(22);
+  it("covers all 24 shipped manifests (guard: the matrix stays exhaustive)", () => {
+    expect(AGENT_MANIFESTS.length).toBe(24);
   });
 
   it.each(AGENT_MANIFESTS.map((m) => [m.id, m] as [string, StepManifest]))(
@@ -170,15 +173,22 @@ describe("every agent manifest dispatches through the executor (A-full #649)", (
             supersededTestRefs: "tests/test_prior.py::test_legacy_shape asserts the dropped `legacy_code`",
           } as never);
         }
-        // The cross-story-context preparer reads the feature's OTHER stories' ACs. Seed a sibling
-        // story with one AC so the block projects non-empty for a turn that declares it.
-        if ((manifest.preconditions ?? []).some((p) => p.kind === "cross-story-context")) {
-          const sibAcs = join(dirname(storyResolved(consortDir, FEATURE, STORY)), "S2-stock-by-location-table", "acs");
-          mkdirSync(sibAcs, { recursive: true });
-          writeFileSync(
-            join(sibAcs, "AC1-table-lists-stock.json"),
-            JSON.stringify({ id: "AC1-table-lists-stock", status: "gated", layer: "api", given: "stock exists at locations", when: "the home table renders", then: "it lists SKU, location, quantity" }) + "\n",
-          );
+        // The cross-story-context (sibling ACs) + reconcile-context (ALL stories' ACs) preparers read
+        // the feature's stories' ACs. Seed a sibling story with one AC so the block projects non-empty.
+        const prekinds = (manifest.preconditions ?? []).map((p) => p.kind);
+        if (prekinds.includes("cross-story-context") || prekinds.includes("reconcile-context")) {
+          const seedStoryAc = (storyId: string, acId: string): void => {
+            const acs = join(dirname(storyResolved(consortDir, FEATURE, STORY)), storyId, "acs");
+            mkdirSync(acs, { recursive: true });
+            writeFileSync(
+              join(acs, `${acId}.json`),
+              JSON.stringify({ id: acId, status: "gated", layer: "api", given: "stock exists at locations", when: "the home table renders", then: "it lists SKU, location, quantity" }) + "\n",
+            );
+          };
+          seedStoryAc("S2-stock-by-location-table", "AC1-table-lists-stock");
+          // reconcile is SYMMETRIC + feature-scoped (no story:acs input), so it also needs THIS story's
+          // ACs on disk — seed S1 too so the whole set is ≥2 stories (otherwise the block is vacuously "").
+          if (prekinds.includes("reconcile-context")) seedStoryAc(STORY, "AC1-file-stock");
         }
 
         const outPaths = outputPathsForAction(action, consortDir, FEATURE);

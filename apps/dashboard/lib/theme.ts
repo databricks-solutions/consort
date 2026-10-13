@@ -3,14 +3,14 @@
 // Before this existed, ~60 color literals were spread across page.tsx and AgentBubble.tsx
 // as inline styles, and the role palette was a private const in page.tsx. Phase 1 item 6
 // of the merge plan promotes both into a token layer, adopting the idea (though not the
-// naming) from Kevin's CSS custom properties — his `--c1…--c10 / --good / --warning` is
+// naming) of named CSS custom properties (`--c1…--c10 / --good / --warning`) — a token layer is
 // better engineering than inline-literals-everywhere.
 //
 // The `surface`/`border`/`text`/`status`/`roleColor` objects below are the LIGHT theme;
 // their values are unchanged from the inline literals they replaced (lib/theme.test.ts
 // pins every one against the pre-refactor value so a "tidy-up" can't quietly restyle the
-// board). The `*Dark` objects are the DARK theme — a port of Kevin's original dashboard
-// palette (warm near-black surfaces, tan secondary text, his c1…c10 role hues). Each dark
+// board). The `*Dark` objects are the DARK theme — a natively-dark palette (warm near-black
+// surfaces, tan secondary text, c1…c10 role hues). Each dark
 // object is typed against the light object's keys, so the compiler rejects a token that is
 // themed for light but not dark (a half-themed element).
 //
@@ -143,13 +143,12 @@ export function colorForRole(role: string): string {
 }
 
 // === DARK THEME =============================================================
-// A port of Kevin's original dashboard (`_dashboard_template.html`), which is natively dark:
-// warm near-black surfaces (#0d0d0d / #1a1a19 / #222220 / #2a2a28), tan secondary text
-// (#c3c2b7), his c1…c10 categorical hues for roles, and good/warning/critical from his
-// --good/--warning/--critical. Each object is typed against its light counterpart's keys, so
-// the build fails if a token is defined for light but not dark (see the completeness test).
-// Text-on-tint variants (`*Text`) and the tints are lightened / re-alpha'd for a dark ground —
-// the light values (dark ink on a pale tint) would be invisible on #0d0d0d.
+// A natively-dark palette: warm near-black surfaces (#0d0d0d / #1a1a19 / #222220 / #2a2a28),
+// tan secondary text (#c3c2b7), c1…c10 categorical hues for roles, and good/warning/critical
+// base colors. Each object is typed against its light counterpart's keys, so the build fails if
+// a token is defined for light but not dark (see the completeness test). Text-on-tint variants
+// (`*Text`) and the tints are lightened / re-alpha'd for a dark ground — the light values (dark
+// ink on a pale tint) would be invisible on #0d0d0d.
 
 type Tokens<T> = Record<keyof T, string>;
 
@@ -164,15 +163,15 @@ export const surfaceDark: Tokens<typeof surface> = {
 };
 
 export const borderDark: Tokens<typeof border> = {
-  default: "rgba(255,255,255,0.10)", // Kevin's --border
+  default: "rgba(255,255,255,0.10)", // --border
   strong: "rgba(255,255,255,0.18)",
 };
 
 export const textDark: Tokens<typeof text> = {
-  strong: "#ffffff", // Kevin --text-primary
+  strong: "#ffffff", // --text-primary
   heading: "#E7E6DD",
-  body: "#c3c2b7", // Kevin --text-secondary (warm tan)
-  muted: "#898781", // Kevin --muted
+  body: "#c3c2b7", // --text-secondary (warm tan)
+  muted: "#898781", // --muted
   faint: "#6F6D67",
   onDark: "#E5E7EB", // ticker already assumes a dark ground — carries over
   onDarkMuted: "#D1D5DB",
@@ -188,13 +187,13 @@ export const statusDark: Tokens<typeof status> = {
   accentTintSoft: "rgba(255,112,51,0.12)",
   accentGlow: "rgba(255,112,51,0.45)",
 
-  good: "#0ca30c", // Kevin --good
+  good: "#0ca30c", // --good
   goodLight: "#34D399",
   goodText: "#4ADE80",
   goodTint: "rgba(12,163,12,0.20)",
   goodTintSoft: "rgba(12,163,12,0.12)",
 
-  critical: "#d03b3b", // Kevin --critical
+  critical: "#d03b3b", // --critical
   criticalText: "#F87171",
   criticalTextDeep: "#FCA5A5",
   criticalSoft: "rgba(208,59,59,0.32)",
@@ -202,7 +201,7 @@ export const statusDark: Tokens<typeof status> = {
   criticalTintSoft: "rgba(208,59,59,0.12)",
   criticalTintFaint: "rgba(208,59,59,0.06)",
 
-  warning: "#fab219", // Kevin --warning
+  warning: "#fab219", // --warning
   warningAmber: "#FBBF24",
   warningText: "#FCD34D",
   warningTextDeep: "#FDE68A",
@@ -232,8 +231,8 @@ export const statusDark: Tokens<typeof status> = {
   selection: "#A3E635", // brighter lime for a dark ground (see --status-selection in the light block)
 };
 
-// Role hues from Kevin's c1…c10, mapped to preserve the light theme's semantics where it
-// matters (navigator stays orange, driver stays green). orchestrator → warm grey (his --muted).
+// Role hues from the c1…c10 categorical palette, mapped to preserve the light theme's semantics
+// where it matters (navigator stays orange, driver stays green). orchestrator → warm grey.
 export const roleColorDark: Record<Role, string> = {
   orchestrator: "#94A3B8", // slate (cool blue-grey), reads on dark
   "spec-author": "#3987e5", // c1

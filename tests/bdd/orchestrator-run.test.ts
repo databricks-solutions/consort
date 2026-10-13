@@ -25,7 +25,7 @@ function freshStory(): StoryView {
   return {
     gateApproved: false,
     gateSurfaced: false,
-    design: { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
+    design: { hasAcs: false, iaRefined: false, iaProjectable: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, iaConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
     build: {
       experimentCut: false,
       testsWritten: false,
@@ -72,9 +72,15 @@ function makeFakeWorld(storyIds: string[]) {
               state.breakdownDone = true;
               state.storyOrder = [...storyIds];
               for (const id of storyIds) state.stories[id] = freshStory();
+            } else if (action.role === "ux-designer" && action.mode === "establish") {
+              state.designGuideReady = true;
+            } else if (action.role === "ux-designer" && action.mode === "ia") {
+              state.stories[action.story].design.iaRefined = true;
             }
-          } else if (action.role === "ux-designer") {
-            state.designGuideReady = true;
+          } else if (action.role === "navigator" && "buildMode" in action && action.buildMode === "reconcile") {
+            // Feature-complete reconciliation (story-less): the happy path finds the stories mutually
+            // consistent, so the drive advances to design-complete.
+            state.reconcilePassed = true;
           } else {
             const s = state.stories[action.story];
             if (action.role === "spec-author") s.design.hasAcs = true;
@@ -307,7 +313,7 @@ describe("runDriver: Tier-2 phase bounds (driverBoundOptions)", () => {
     state.storyOrder = ["S1", "S2"];
     for (const id of ["S1", "S2"]) {
       const v = freshStory();
-      v.design = { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true };
+      v.design = { hasAcs: true, iaRefined: true, iaProjectable: false, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, iaConforms: true, reflectionPassed: true, reflectionVerdictWritten: true };
       v.gateApproved = true;
       v.gateSurfaced = true;
       state.stories[id] = v;

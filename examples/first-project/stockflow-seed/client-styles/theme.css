@@ -1,0 +1,90 @@
+/*
+ * DESIGN TOKENS — GENERATED from .consort/design/design-guide.json.
+ * Do NOT hand-edit the :root block: edit the design guide and re-run
+ *   ./scripts/lk consort-apply-design-theme
+ * so what renders IS what the guide declares (the design-adherence gate reads
+ * these :root vars back and compares them to the guide). The component classes
+ * that consume these tokens live in global.css (UX-designer authored).
+ */
+:root {
+  --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --text-xs: 10px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-xxl: 29px;
+  --line-height-body: 1.5;
+  --line-height-heading: 1.25;
+  --line-height-tight: 1.1;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --color-brand: #FF3621;
+  --color-brand-hover: #EB1600;
+  --color-brand-light: rgba(255,54,33,0.08);
+  --color-navy-900: #1B3139;
+  --color-navy-700: #1B5162;
+  --color-navy-500: #618794;
+  --color-navy-400: #90A5B1;
+  --color-navy-300: #C4CCD6;
+  --color-navy-200: #E5EAF1;
+  --color-navy-100: #EDF2F8;
+  --color-success: #2E844A;
+  --color-success-light: rgba(46,132,74,0.10);
+  --color-warning: #FFAB00;
+  --color-warning-light: rgba(255,171,0,0.12);
+  --color-info: #0176D3;
+  --color-info-light: rgba(1,118,211,0.10);
+  --color-error: #FF3621;
+  --color-error-light: rgba(255,54,33,0.08);
+  --color-card: #FFFFFF;
+  --color-page: #F9F7F4;
+  --color-cool: #F0F2F5;
+  --color-text: #1B3139;
+  --color-text-secondary: #1B5162;
+  --color-text-tertiary: #618794;
+  --color-text-disabled: #90A5B1;
+  --color-text-inverse: #FFFFFF;
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --content-max-width: 960px;
+  --narrow-max-width: 560px;
+  --navbar-height: 64px;
+  --tap-target: 44px;
+  --border-width: 1px;
+  --border-accent: 2px;
+  --focus-ring: 2px;
+  --lift: -2px;
+  --icon-sm: 16px;
+  --icon-md: 24px;
+  --icon-brand: 32px;
+  --icon-empty: 48px;
+  --radius-none: 0px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 15px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 2px 8px rgba(27,49,57,0.06);
+  --shadow-md: 0 4px 16px rgba(27,49,57,0.08);
+  --shadow-lg: 0 2px 4px rgba(27,49,57,0.04), 0 8px 24px rgba(27,49,57,0.10), 0 16px 48px rgba(27,49,57,0.08);
+  --shadow-navbar: 0 2px 12px rgba(27,49,57,0.24);
+  --mobile: 480px;
+  --tablet: 768px;
+  --desktop: 1024px;
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+  --toast-dismiss: 3s;
+}

@@ -21,8 +21,10 @@ function writeJson(file: string, obj: unknown): void {
 function acsDir(): string {
   return join(tdd, "features", F, "stories", S, "acs");
 }
-function perStoryList(): string {
-  return join(tdd, "features", F, "stories", S, "test-list-per-story.json");
+function masterList(): string {
+  // The agent's authoritative output: the feature MASTER test-list. The self-check validates this
+  // (scoped to the story's ACs), not the orchestration-derived per-story view.
+  return join(tdd, "features", F, "test-list.json");
 }
 function writeAc(id: string, over: Record<string, unknown> = {}): void {
   writeJson(join(acsDir(), `${id}.json`), {
@@ -48,42 +50,41 @@ describe("response-formatter: test-strategist (the S2 contract)", () => {
     writeAc("AC2-redirected-to-detail-page");
   });
 
-  it("FLAGS an empty per-story test list", () => {
-    writeJson(perStoryList(), { feature_id: F, story_id: S, items: [] });
+  it("FLAGS a master list with no items mapped to the story's ACs", () => {
+    writeJson(masterList(), { feature_id: F, items: [] });
     const r = formatRoleResponse({ role: "test-strategist", consortDir: tdd, featureId: F, story: S });
     expect(r.ok).toBe(false);
-    expect(r.violations[0].problem).toMatch(/empty `items`/);
+    expect(r.violations[0].problem).toMatch(/no tests mapped/);
   });
 
-  it("FLAGS an item with null/empty ac_id (the exact S2 bug)", () => {
-    writeJson(perStoryList(), {
+  it("FLAGS the S2 empty-scope bug: the only item has a null ac_id, so nothing maps to the story", () => {
+    // The S2 live stall: a null-ac_id item is a covering test for NO story, so the story's mapped
+    // scope is empty — surfaced as 'no tests mapped' against the master.
+    writeJson(masterList(), {
       feature_id: F,
-      story_id: S,
       items: [{ id: "T7", description: "x", ac_id: null, status: "pending" }],
     });
     const r = formatRoleResponse({ role: "test-strategist", consortDir: tdd, featureId: F, story: S });
     expect(r.ok).toBe(false);
-    expect(r.violations[0].problem).toMatch(/null\/empty ac_id/);
+    expect(r.violations[0].problem).toMatch(/no tests mapped/);
   });
 
-  it("FLAGS an item whose ac_id does not map to the story's ACs", () => {
-    writeJson(perStoryList(), {
+  it("FLAGS when the only item maps to a different story's AC (none scope to this story)", () => {
+    writeJson(masterList(), {
       feature_id: F,
-      story_id: S,
       items: [{ id: "T1", description: "x", ac_id: "AC9-not-a-real-ac", status: "pending" }],
     });
     const r = formatRoleResponse({ role: "test-strategist", consortDir: tdd, featureId: F, story: S });
     expect(r.ok).toBe(false);
-    expect(r.violations[0].problem).toMatch(/not one of the story's ACs/);
+    expect(r.violations[0].problem).toMatch(/no tests mapped/);
   });
 
   it("FLAGS an AC left with no covering test (reverse coverage; the reflect-testlist-defect the gate raises)", () => {
     // Only AC1 is covered; AC2 (e.g. a client-presentation AC the strategist
     // under-covered) has no item. The self-check must catch it in-turn, not let
     // the reflect gate hard-halt turns later.
-    writeJson(perStoryList(), {
+    writeJson(masterList(), {
       feature_id: F,
-      story_id: S,
       items: [{ id: "T1", description: "submit creates", ac_id: "AC1-form-submission-creates-bug", status: "pending" }],
     });
     const r = formatRoleResponse({ role: "test-strategist", consortDir: tdd, featureId: F, story: S });
@@ -92,9 +93,8 @@ describe("response-formatter: test-strategist (the S2 contract)", () => {
   });
 
   it("FLAGS a kind:fitness item carrying a Gherkin .feature scenario_file (mutually exclusive)", () => {
-    writeJson(perStoryList(), {
+    writeJson(masterList(), {
       feature_id: F,
-      story_id: S,
       items: [
         { id: "T1", description: "submit creates", ac_id: "AC1-form-submission-creates-bug", status: "pending" },
         { id: "T2", description: "redirect", ac_id: "AC2-redirected-to-detail-page", status: "pending" },
@@ -106,13 +106,15 @@ describe("response-formatter: test-strategist (the S2 contract)", () => {
     expect(r.violations.some((x) => /kind:"fitness".*\.feature|Gherkin/.test(x.problem))).toBe(true);
   });
 
-  it("PASSES a conformant per-story list (>=1 item, every ac_id mapped, every AC covered)", () => {
-    writeJson(perStoryList(), {
+  it("PASSES a master list whose story-scoped items cover every AC (the agent authors the master; no per-story file required)", () => {
+    // A sibling story's item is in the master too — it must be IGNORED for this story's self-check,
+    // proving the check scopes by ac_id rather than requiring a hand-authored per-story file.
+    writeJson(masterList(), {
       feature_id: F,
-      story_id: S,
       items: [
         { id: "T1", description: "submit creates", ac_id: "AC1-form-submission-creates-bug", status: "pending" },
         { id: "T2", description: "redirect", ac_id: "AC2-redirected-to-detail-page", status: "pending" },
+        { id: "T9", description: "a sibling story's test", ac_id: "AC1-of-another-story", status: "pending" },
       ],
     });
     const r = formatRoleResponse({ role: "test-strategist", consortDir: tdd, featureId: F, story: S });

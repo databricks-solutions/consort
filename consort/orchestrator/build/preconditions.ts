@@ -19,7 +19,7 @@
 import { buildContextPack } from "./build-context.js";
 import { readGreenFailure } from "../../smells/supersession.js";
 import { renderTestAnalystRoster } from "../../test-list/test-analyst-roster.js";
-import { renderCrossStoryContextBlock } from "../steps/cross-story-context.js";
+import { renderCrossStoryContextBlock, renderFeatureReconcileBlock } from "../steps/cross-story-context.js";
 import { resolveProjectSettings } from "../../config/consort-config-file.js";
 
 /** The scope a preparer projects against (a pure read of on-disk `.consort`). */
@@ -112,6 +112,10 @@ export const PRECONDITION_PREPARERS: Record<string, PreconditionPreparer> = {
   // ride the prompt deterministically instead of depending on the agent shelling out to
   // `consort-cross-story-context`. Empty for a lone-story feature.
   "cross-story-context": (ctx) => renderCrossStoryContextBlock(ctx.consortDir, ctx.featureId, ctx.story),
+  // The SYMMETRIC feature-complete reconciliation context: EVERY story's ACs (none folded out) +
+  // open_decisions + mandated not-null fields, for the Navigator's one `reconcile` turn once all
+  // stories are gated. Feature-scoped — ignores ctx.story (the turn is story-less, like breakdown).
+  "reconcile-context": (ctx) => renderFeatureReconcileBlock(ctx.consortDir, ctx.featureId),
   // The test-analyst roster: project the ENABLED test-analyst catalogue (client gated on the
   // project's uiTrack) into the test-strategist supervisor's turn so it Task-spawns one analyst
   // subagent per enabled kind. Reads project.uiTrack from projectDir; absent => true.

@@ -93,6 +93,15 @@ describe("recordReflectionGate: failed verdict -> routed spec-level smell(s)", (
     expect(recordReflectionGate(tdd, F, "S1").map((h) => h.smell)).toEqual(["reflect-architecture-defect"]);
   });
 
+  it("a ux-designer finding flags reflect-ia-defect (routes to the ux ia refinement)", () => {
+    writeReflectVerdict(tdd, F, "S1", {
+      version: 1,
+      passed: false,
+      findings: [{ owner: "ux-designer", detail: "AC1 (E2E) asserts a file-stock form that ia.md does not name" }],
+    });
+    expect(recordReflectionGate(tdd, F, "S1").map((h) => h.smell)).toEqual(["reflect-ia-defect"]);
+  });
+
   it("mixed findings flag ONE smell per owner (both authors)", () => {
     writeReflectVerdict(tdd, F, "S1", {
       version: 1,

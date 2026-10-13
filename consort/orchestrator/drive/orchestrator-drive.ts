@@ -45,23 +45,15 @@ export function uxDesignerPending(s: {
  *
  * Order of precedence:
  *   1. Break the feature down if not done.
- *   2. UI track: author the project design guide (UX Designer) once.
- *   3. Otherwise advance the FIRST story (in breakdown order) whose gate is not
- *      yet approved, through: ACs -> architecture -> tests -> surface -> approve.
- *   4. When every story's gate is approved, the design lane is complete.
+ *   2. Advance the FIRST story (in breakdown order) whose gate is not yet approved,
+ *      through: ACs -> IA refine (UX; the first story that needs it bounces up to
+ *      establish the project design guide + ia.md skeleton, then refines per story)
+ *      -> architecture -> DBA -> tests -> reflect -> surface -> approve.
+ *   3. When every story's gate is approved, the design lane is complete.
  */
-export function nextDesignAction(state: DesignDriveState): DriveAction {
+export function nextDesignAction(state: DesignDriveState, opts: { featureReconcile?: boolean } = {}): DriveAction {
   if (!state.breakdownDone) {
     return { kind: "invoke-role", role: "spec-author", mode: "breakdown" };
-  }
-
-  // UI track: the UX Designer translates the design brief into the project style
-  // guide ONCE (design-guide.{md,json} + ia.md), after breakdown and before any
-  // story is architected or built, so the Architect's E2E layers and the
-  // Navigator/Driver's UI build against it. Idempotent: skipped once the guide
-  // exists (project-level, reused across features).
-  if (uxDesignerPending(state)) {
-    return { kind: "invoke-role", role: "ux-designer" };
   }
 
   for (const story of state.storyOrder) {
@@ -70,16 +62,39 @@ export function nextDesignAction(state: DesignDriveState): DriveAction {
     if (v?.gateApproved) continue; // done designing; move on
     const design = v?.design ?? {
       hasAcs: false,
+      specRevisePending: false,
+      iaRefined: false,
+      iaProjectable: false,
       architectAnnotated: false,
       architectProjectable: false,
       dbaDesigned: false,
       testListReady: false,
       testListConforms: true,
+      iaConforms: true,
       reflectionPassed: false,
       reflectionVerdictWritten: false,
     };
 
-    if (!design.hasAcs) return { kind: "invoke-role", role: "spec-author", story };
+    // Re-invoke the spec-author when it has no ACs yet (first draft) OR a scoped spec revise cleared only
+    // its flagged AC(s) and they are not yet re-authored (the other ACs stay intact on disk). Both run
+    // BEFORE the architect, so the re-authored AC is re-annotated by its owner, not reconstructed.
+    if (!design.hasAcs || design.specRevisePending === true) return { kind: "invoke-role", role: "spec-author", story };
+    // UX IA refinement (UI track only): refine ia.md for THIS story's surfaces
+    // before the architect tags E2E layers (so layers land against IA-named
+    // screens/forms). Project deterministically (no turn) when the story adds no
+    // new surface; else a live ux turn. Mirrors the architect's project/live split
+    // below. A non-UI project has no IA to refine, so this is skipped entirely.
+    if (state.uiTrack && !design.iaRefined) {
+      // No project style system / ia.md skeleton yet (the planning establish was
+      // skipped): author it HERE first — bounce up to the UX plan-role (establish the
+      // design-guide + ia.md skeleton), then drop back to this story's per-story IA
+      // refinement on the next derivation. The establish is reached THROUGH this refine
+      // step, after the story's ACs, never as a standalone step that preempts the design
+      // lane's breakdown -> ACs -> refine order.
+      if (uxDesignerPending(state)) return { kind: "invoke-role", role: "ux-designer", mode: "establish" };
+      if (design.iaProjectable) return { kind: "project-ia-notes", story };
+      return { kind: "invoke-role", role: "ux-designer", mode: "ia", story };
+    }
     // Architect step: PROJECT the per-AC notes from the canon when the story maps
     // cleanly (no turn); otherwise dispatch the architect live – to author the
     // feature architecture.json on the first story, or clean a novel story + amend
@@ -88,11 +103,29 @@ export function nextDesignAction(state: DesignDriveState): DriveAction {
       if (design.architectProjectable) return { kind: "project-architect-notes", story };
       return { kind: "invoke-role", role: "architect-reviewer", story };
     }
+    // Deterministic pre-reflect AC↔IA gate (#3): the architect has now declared each
+    // E2E AC's ui_seams, so check they are all named in ia.md BEFORE the dba/test-strategist
+    // /reflect run. A gap flags reflect-ia-defect → a bounded ia-revise to the ux-designer
+    // (re-refine ia.md), caught here instead of a full LLM-reflect lap (the dominant live
+    // lap driver: 2 of 3 stories lapped on exactly this class). Fail-open (vacuously true
+    // with no ia.md / no declared seams), so it never pre-empts a correct design.
+    if (!design.iaConforms) return { kind: "flag-ia-nonconformance", story };
     // DBA step: once the architect has annotated the story, the DBA realizes the
     // physical schema (db-design.json) before the test list is built. The probe
     // satisfies this without a turn for a not-service_backed feature (nothing to
     // realize), so a trivial feature skips straight to the test strategist.
-    if (!design.dbaDesigned) return { kind: "invoke-role", role: "dba", story };
+    //
+    // `dbaDesigned` is FEATURE-level (checkDbDesign over the shared feature
+    // architecture.json + db-design.json; it takes no story), so a LATER story's
+    // architect extending the schema flips it false for the WHOLE feature. The
+    // `!gateSurfaced` guard keeps that re-realization from firing under an already
+    // surfaced (earliest-unapproved) story and mis-attributing a sibling's schema
+    // work to it — the story still IN design (not surfaced) picks it up and owns the
+    // label. A surfaced story's design is frozen pending its gate; a reconcile/reflect
+    // reopen resets it to "designing" (clears gateSurfaced), so a genuine reopen
+    // re-enters here. (The last story's dba always runs before that story surfaces, so
+    // no feature ends surfaced-everywhere with the schema still stale.)
+    if (!design.dbaDesigned && !v?.gateSurfaced) return { kind: "invoke-role", role: "dba", story };
     if (!design.testListReady) return { kind: "invoke-role", role: "test-strategist", story };
     // Deterministic pre-reflect gate: the cheap structural conformance checks
     // (client-kind↔layer, e2e coverage, jsdom-vacuous assertion) gate the revise
@@ -107,7 +140,27 @@ export function nextDesignAction(state: DesignDriveState): DriveAction {
     // only advance once the critic has PASSED the story.
     if (!design.reflectionPassed) return { kind: "invoke-role", role: "navigator", story, buildMode: "reflect" };
     if (!v?.gateSurfaced) return { kind: "surface-gate", story };
-    return { kind: "approve-gate", story };
+    // STREAMING (the full drive, per-story-experiment lifecycle): approve each story's gate as it
+    // finishes, so build/deploy/promote can stream per story. featureReconcile DEFERS this approval: the
+    // /design bound designs the WHOLE feature first, so it holds every approval until the one
+    // feature-complete reconcile has run — then approves. (Per-story mode gets its cross-story feedback
+    // organically at build time, so it needs no feature-complete pass; see nextDesignOnlyTransition.)
+    if (!opts.featureReconcile) return { kind: "approve-gate", story };
+    // featureReconcile: leave this story surfaced-not-approved and advance the others.
+  }
+
+  // /design bound only (featureReconcile): every story is now surfaced OR approved. If any still awaits
+  // approval, run the feature-complete SYMMETRIC cross-story reconciliation FIRST — the whole set checked
+  // against itself (closing the asymmetry where the first-designed story was never checked against its
+  // later siblings). A blocking defect writes the owning story's reflect smell (reconcile-gate), reopening
+  // it via the revise-route BEFORE it was ever approved. Multi-story only; a fully-approved feature (no
+  // pending approval) never re-runs it. THEN approve each surfaced story's gate.
+  if (opts.featureReconcile) {
+    const pendingApproval = state.storyOrder.filter((id) => !state.stories[id]?.gateApproved);
+    if (pendingApproval.length > 0 && state.storyOrder.length >= 2 && state.reconcilePassed !== true) {
+      return { kind: "invoke-role", role: "navigator", buildMode: "reconcile" };
+    }
+    if (pendingApproval.length > 0) return { kind: "approve-gate", story: pendingApproval[0] };
   }
 
   return { kind: "design-complete" };
@@ -256,6 +309,16 @@ export function nextTransition(state: DriveState): WorkflowAction {
     // an EXPLICIT `false`: absent/undefined (legacy + hermetic states) is treated as satisfied, so
     // every existing run is byte-identical (same convention as `committedEstimated === false`).
     if (p.intakeReady === false) return { kind: "invoke-role", role: "product-owner", mode: "intake" };
+    // UX establish UNDER the intake gate: once intake is drafted (brief + product-overview exist),
+    // the UX Designer authors the project style system + IA skeleton FROM them, BEFORE the intake
+    // gate is approved — so the human approves the design-guide + ia.md together with the brief they
+    // derive from (the gate's artifact set widens; NO new gate). UI track only, once (skipped when
+    // the guide already exists). A project that reaches design without it self-heals via the
+    // design-lane lazy fallback. Fires only on an EXPLICIT intakeReady true (the brief exists), so
+    // legacy/hermetic states (intakeReady undefined) are byte-identical.
+    if (p.intakeReady === true && state.uiTrack && !state.designGuideReady) {
+      return { kind: "invoke-role", role: "ux-designer", mode: "establish" };
+    }
     // Intake drafted but NOT yet approved: PARK at the intake gate so the human reviews / edits /
     // requests changes on product-overview/nfrs/design-brief BEFORE the Spec Author proposes from
     // them. Headless the Human Proxy approves it (intakeApproved true), so replay/CI never park.
@@ -357,7 +420,7 @@ export function nextTransition(state: DriveState): WorkflowAction {
   // for the guide rather than building UI against a guide that does not exist.
   // Idempotent: skipped once design-guide.json is on disk.
   if (uxDesignerPending(state)) {
-    return { kind: "invoke-role", role: "ux-designer" };
+    return { kind: "invoke-role", role: "ux-designer", mode: "establish" };
   }
   // 1. Finish/advance the story the build lane is already on.
   if (state.buildActive) {
@@ -382,6 +445,7 @@ function toDesignView(state: DriveState): DesignDriveState {
     storyOrder: state.storyOrder,
     uiTrack: state.uiTrack,
     designGuideReady: state.designGuideReady,
+    reconcilePassed: state.reconcilePassed,
     stories: Object.fromEntries(
       Object.entries(state.stories).map(([id, v]) => [
         id,
@@ -405,5 +469,9 @@ export function nextDesignOnlyTransition(state: DriveState): WorkflowAction {
   // reflect turn on an unresolved defect until the stall guard fires.
   const preempt = escalationPreempt(state);
   if (preempt) return preempt;
-  return nextDesignAction(toDesignView(state));
+  // The /design bound designs the WHOLE feature before any build, so it is the ONLY mode that runs the
+  // feature-complete symmetric reconcile (featureReconcile: it surfaces every story, reconciles, THEN
+  // approves). The streaming full transition does NOT — it builds per story, so a cross-story defect
+  // surfaces organically at a later story's build + its incremental cross-story-context covers the rest.
+  return nextDesignAction(toDesignView(state), { featureReconcile: true });
 }

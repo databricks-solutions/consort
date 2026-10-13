@@ -12,6 +12,10 @@ var __esm = (fn, res) => function __init() {
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -28,11 +32,15 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // node_modules/tsup/assets/cjs_shims.js
+var getImportMetaUrl, importMetaUrl;
 var init_cjs_shims = __esm({
   "node_modules/tsup/assets/cjs_shims.js"() {
     "use strict";
+    getImportMetaUrl = () => typeof document === "undefined" ? new URL(`file:${__filename}`).href : document.currentScript && document.currentScript.tagName.toUpperCase() === "SCRIPT" ? document.currentScript.src : new URL("main.js", document.baseURI).href;
+    importMetaUrl = /* @__PURE__ */ getImportMetaUrl();
   }
 });
 
@@ -6642,6 +6650,11 @@ var require_ajv = __commonJS({
 });
 
 // bin/consort/cycle.cli.ts
+var cycle_cli_exports = {};
+__export(cycle_cli_exports, {
+  main: () => main
+});
+module.exports = __toCommonJS(cycle_cli_exports);
 init_cjs_shims();
 
 // consort/config/consort-paths.ts
@@ -6672,6 +6685,7 @@ var storyReviewVerdictJson = (tdd, f, s) => (0, import_node_path.join)(cyclesRoo
 var nfrsMd = (tdd) => (0, import_node_path.join)(tdd, "nfrs.md");
 var designDir = (tdd) => (0, import_node_path.join)(tdd, "design");
 var designGuideJson = (tdd) => (0, import_node_path.join)(designDir(tdd), "design-guide.json");
+var iaMd = (tdd) => (0, import_node_path.join)(designDir(tdd), "ia.md");
 var designAssetsDir = (tdd) => (0, import_node_path.join)(designDir(tdd), "assets");
 var architectureDir = (tdd) => (0, import_node_path.join)(tdd, "architecture");
 var architectureConventionsJson = (tdd) => (0, import_node_path.join)(architectureDir(tdd), "conventions.json");
@@ -6698,6 +6712,7 @@ var acsDir = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s),
 var acJson = (tdd, f, s, ac) => (0, import_node_path.join)(acsDir(tdd, f, s), `${ac}.json`);
 var storyTestListJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "test-list-per-story.json");
 var reflectVerdictJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "reflect-verdict.json");
+var reconcileVerdictJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "reconcile-verdict.json");
 var cycleDir = (tdd, f, s, ac) => (0, import_node_path.join)(cyclesRootDir(tdd), f, s, ac);
 function findFeatureDir(tdd, featureId) {
   const root = featuresDir(tdd);
@@ -7446,14 +7461,16 @@ function checkJsdomBrowserAssertion(testListJson) {
   const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
   const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
       violations.push(
         `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
       );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 function checkTestlistWholeTableAggregate(testListJson) {
   let tl;
@@ -7465,15 +7482,74 @@ function checkTestlistWholeTableAggregate(testListJson) {
   const wholeTableCount = /\bcount\s*\(\s*\*\s*\)|\b(?:count|number|total|tally)\s+of\s+(?:all\s+)?(?:the\s+)?rows\b|\brow\s+count\b|\btotal\s+(?:number\s+of\s+)?rows\b|\breturns?\s+(?:exactly\s+)?the\s+count\b/i;
   const scopedOrDelta = /\bseed(?:s|ed|ing)?\b|\bdelta\b|\bbefore\b.*\bafter\b|\bafter\b.*\bbefore\b|count_before|count_after|probe_before|\bsubtract|\bminus\b|\bits own rows\b|\bthe (?:test'?s?|rows? it) (?:own|seed)|\bscoped to\b|\bmarker\b|\buuid\b|\bunique (?:sku|key)\b|\bper-test\b/i;
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     const desc = it.description ?? "";
     if (wholeTableCount.test(desc) && !scopedOrDelta.test(desc)) {
       violations.push(
         `test item ${it.id ?? "?"} asserts an ABSOLUTE whole-table aggregate ("${desc.slice(0, 90)}\u2026") with no own-row scoping and no delta \u2014 it passes on the isolated experiment branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total`
       );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+var E2E_WRITE_FLOW = /\b(?:re)?fil(?:e|es|ed|ing)\b|\bcreat\w*|\badd(?:s|ed|ing)?\b|\bsubmit\w*|\bregister\w*|\bsave[sd]?\b|\binsert\w*/i;
+var HARDCODED_KEY = /\b[A-Z]{2,}[-_]?\d{2,}\b|\b(?:fixed|hard-?coded|shared|the same)\s+(?:business\s+)?(?:key|sku|code|identity|identifier)\b/i;
+var PER_RUN_UNIQUE = /\bper-run\b|\bunique\b|\buuid\b|\brandomuuid\b|\bfresh\b|\bgenerated\b|\bper-test\b/i;
+function isFixedKeyE2eCreateFlow(description) {
+  return E2E_WRITE_FLOW.test(description) && HARDCODED_KEY.test(description) && !PER_RUN_UNIQUE.test(description);
+}
+function checkTestlistFixedKeyE2e(testListJson, acLayerById) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    if (acLayerById[it.ac_id] !== "E2E") continue;
+    const desc = it.description ?? "";
+    if (isFixedKeyE2eCreateFlow(desc)) {
+      violations.push(
+        `test item ${it.id ?? "?"} is an E2E create flow keyed on a HARDCODED business key ("${desc.slice(0, 90)}\u2026") with no per-run uniqueness \u2014 the e2e verify runs against the SHARED feature branch, so a prior run or sibling story already holds that key and the second run hits a unique-violation (or asserts a stale duplicate), going perma-red on a correct app. Derive a per-run-unique key (e.g. 'SKU-' + crypto.randomUUID().slice(0,8)) and use that SAME value in both the create fill and the assertion locator, so each run owns its own row`
+      );
+      acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkTestlistScenarioFileCoherence(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const base = (p) => p.split("/").pop() ?? p;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    const desc = it.description ?? "";
+    if (!sf) continue;
+    const suffix = sf.match(/\.(?:spec|test)\.tsx?$|\.py$/)?.[0];
+    if (!suffix) continue;
+    const tokenRe = new RegExp(`[\\w./-]+${suffix.replace(/\./g, "\\.")}`, "g");
+    for (const tok of desc.match(tokenRe) ?? []) {
+      if (base(tok) !== base(sf)) {
+        violations.push(
+          `test item ${it.id ?? "?"} description names "${tok}" but its scenario_file is "${sf}" \u2014 the Navigator cannot tell which file to author. Align the description's named spec file to scenario_file (or drop the stray path).`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+        break;
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 function checkPersistenceCoverage(testListJson, architectureJson2) {
   let arch;
@@ -7636,6 +7712,16 @@ function checkDbDesign(dbDesignJson2, architectureJson2) {
     violations.push(
       `persistence_invariant(s) not realized by db-design.json realizes_invariants[]: ${uncovered.join(", ")} (the DBA must physically realize every invariant the architect declared \u2013 a table/column/constraint/index \u2013 and list its id here; see agents/dba.md)`
     );
+  }
+  const accessPatterns = (arch.access_patterns ?? []).filter((p) => p && typeof p.id === "string" && p.id.length > 0).map((p) => p.id);
+  if (accessPatterns.length > 0) {
+    const addressed = new Set((db.addresses_access_patterns ?? []).filter((x) => typeof x === "string" && x.length > 0));
+    const unaddressed = accessPatterns.filter((id) => !addressed.has(id));
+    if (unaddressed.length > 0) {
+      violations.push(
+        `access_pattern(s) not addressed by db-design.json addresses_access_patterns[]: ${unaddressed.join(", ")} (the DBA must CONSIDER each query shape the architect flagged \u2013 add an index/structure on its columns or record a deliberate no-index decision in db-design.md \u2013 and list its id here; see agents/dba.md)`
+      );
+    }
   }
   return violations.length > 0 ? { ok: false, violations } : { ok: true };
 }
@@ -7874,6 +7960,7 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
     const layer = acLayerById[it.ac_id];
@@ -7881,9 +7968,10 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
       violations.push(
         `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
       );
+      acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
 // consort/test-list/test-list.ts
@@ -10426,6 +10514,7 @@ var SMELL_FIX = {
   "broad-integrity-except": "a bare `except IntegrityError`/`except Exception` swallow catches the UMBRELLA (unique + check + FK violations) with no discrimination and masks the real failure \u2013 a wrong table/column name then reads as the expected conflict. Catch the specific subclass (UniqueViolation / CheckViolation / NotNullViolation), or discriminate explicitly: assert on the exception's message or isinstance against the subclass (a broad catch WITH a discriminating assert is fine and is not flagged)",
   "schema-unsatisfiable-ref": "the test references a table NO migration creates, so it is unsatisfiable (UndefinedTable on every run) \u2013 fix the table name (see the known tables below) or add the migration; never paper it over with a broad except",
   "whole-table-aggregate": "an ABSOLUTE whole-table COUNT/SUM with no seed-scope and no delta passes on the isolated branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total",
+  "fixed-key-e2e": "this Playwright e2e spec CREATES a record (fills a form + submits) but seeds no per-run-unique key, so it uses a HARDCODED business key (SKU/code/name). The e2e verify runs against the SHARED feature branch, which already holds the row a prior run/sibling story created with that same key \u2014 so the second run hits a unique-violation (or asserts a stale duplicate) and the row goes perma-red, costing a reflect/assess lap on a correct app. Derive a per-run-unique key (e.g. `const sku = 'SKU-' + crypto.randomUUID().slice(0, 8)`) and use that SAME value in both the create fill and the assertion locator, so each run owns its own row",
   "migration-marker-presence": "a downgrade/upgrade test without @pytest.mark.migration runs on the SHARED verify DB and drops/alters its live schema for every other test. Add @pytest.mark.migration so the verify harness routes it to its OWN ephemeral branch (single-step downgrade -1 + upgrade head, never downgrade base)",
   "relative-migration-revision": "a reversibility test asserts a NAMED column is absent after a RELATIVE `downgrade -1` (and/or restores with `upgrade head`) \u2013 this assumes THAT column's migration is the current head, so the moment a later feature stacks a migration on top, `-1` reverses the WRONG migration and the column-absence assertion can never pass again (the F6/S1-broke-F1/S3 par_level class). Pin the migration's OWN revision instead: downgrade to its down_revision and upgrade to its revision, so the round-trip validates THIS migration independent of any later head",
   "reversible-invariant-round-trip": "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility \u2013 and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade \u2192 seed/migrate \u2192 upgrade \u2192 assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
@@ -10674,6 +10763,15 @@ function checkTestSmells(args) {
           "(file)",
           `asserts ${col ? `'${col[1]}'` : "a named column"} absent after a relative 'downgrade -N' \u2013 pin the migration's own revision (down_revision + revision), not -N/head`
         );
+      }
+      const isE2eSpec = isJs && /(^|\/)e2e\/[^/]*\.spec\.(ts|tsx|js|jsx|mjs)$/.test(file.replace(/\\/g, "/"));
+      if (isE2eSpec) {
+        const hasFill = /\.fill\s*\(/.test(body);
+        const hasSubmit = /getByRole\(\s*["']button["'][\s\S]{0,80}?\b(create|add|new|file|save|submit|register|record)\b/i.test(body) || /getByText\(\s*["'`\/][^)]{0,40}\b(create|add|new|file|save|submit|register)\b/i.test(body);
+        const uniquenessSource = /randomUUID|crypto\b|Date\.now|\buuid\b|performance\.now|Math\.random|nanoid|new Date\(|getTime\(/i.test(body);
+        if (hasFill && hasSubmit && !uniquenessSource) {
+          push("fixed-key-e2e", rel, 1, "(file)", "a create-flow e2e spec with no per-run-unique key seed (crypto.randomUUID)");
+        }
       }
     }
   }
@@ -11263,7 +11361,8 @@ var import_fs13 = require("fs");
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect",
-  "architect-reviewer": "reflect-architecture-defect"
+  "architect-reviewer": "reflect-architecture-defect",
+  "ux-designer": "reflect-ia-defect"
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
@@ -11308,18 +11407,64 @@ function recordReflectionGate(consortDir, feature, story) {
   return hits;
 }
 
-// consort/smells/testlist-conformance.ts
+// consort/smells/reconcile.ts
 init_cjs_shims();
 var import_fs14 = require("fs");
+function readReconcileVerdict(consortDir, feature) {
+  const p = reconcileVerdictJson(consortDir, feature);
+  if (!(0, import_fs14.existsSync)(p)) return void 0;
+  try {
+    return JSON.parse((0, import_fs14.readFileSync)(p, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function recordReconcileGate(consortDir, feature) {
+  const verdict = readReconcileVerdict(consortDir, feature);
+  const blocking = (verdict?.findings ?? []).filter((f) => (f.severity ?? "blocking") === "blocking");
+  if (!verdict || verdict.passed || blocking.length === 0) {
+    if (verdict?.passed || verdict && blocking.length === 0 && verdict.findings.length > 0) {
+      for (const smell of REFLECT_SMELLS) {
+        resolveOpenSmells(consortDir, smell, { kind: "cleared", note: "feature-complete reconciliation now passes" });
+      }
+    }
+    return [];
+  }
+  const byKey = /* @__PURE__ */ new Map();
+  for (const f of blocking) {
+    const key = `${f.owner}__${f.story}`;
+    const e = byKey.get(key) ?? { owner: f.owner, story: f.story, details: [], ac_ids: /* @__PURE__ */ new Set() };
+    e.details.push(f.detail);
+    for (const id of f.ac_ids ?? []) e.ac_ids.add(id);
+    byKey.set(key, e);
+  }
+  const hits = [...byKey.values()].map((e) => ({
+    smell: SMELL_FOR_OWNER[e.owner],
+    cycle_ids: [],
+    detail: `feature-complete reconciliation: ${e.details.join("; ") || "cross-story defect"}`,
+    story_id: e.story,
+    ...e.ac_ids.size > 0 ? { ac_ids: [...e.ac_ids] } : {}
+  }));
+  const fresh = hits.filter((h) => !hasOpenSmell(consortDir, h.smell, h.story_id));
+  if (fresh.length) writeSmellsLog(consortDir, fresh);
+  return hits;
+}
+
+// bin/consort/cycle.cli.ts
+var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
+
+// consort/smells/testlist-conformance.ts
+init_cjs_shims();
+var import_fs15 = require("fs");
 var TESTLIST_SMELL = "reflect-testlist-defect";
 function storyAcLayers(consortDir, featureId, story) {
   const acLayerById = {};
   const dir = acsDir(consortDir, featureId, story);
-  if ((0, import_fs14.existsSync)(dir)) {
-    for (const f of (0, import_fs14.readdirSync)(dir)) {
+  if ((0, import_fs15.existsSync)(dir)) {
+    for (const f of (0, import_fs15.readdirSync)(dir)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse((0, import_fs14.readFileSync)(`${dir}/${f}`, "utf8")).layer;
+        const layer = JSON.parse((0, import_fs15.readFileSync)(`${dir}/${f}`, "utf8")).layer;
         if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
       } catch {
       }
@@ -11327,29 +11472,35 @@ function storyAcLayers(consortDir, featureId, story) {
   }
   return acLayerById;
 }
-function testlistConformanceReason(consortDir, featureId, story) {
+function testlistConformanceViolations(consortDir, featureId, story) {
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (!(0, import_fs14.existsSync)(tlPath)) return null;
+  if (!(0, import_fs15.existsSync)(tlPath)) return null;
   let testListJson;
   try {
-    testListJson = (0, import_fs14.readFileSync)(tlPath, "utf8");
+    testListJson = (0, import_fs15.readFileSync)(tlPath, "utf8");
   } catch {
     return null;
   }
   const acLayerById = storyAcLayers(consortDir, featureId, story);
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const r of [
     checkClientKindLayerCoherence(testListJson, acLayerById),
     checkJsdomBrowserAssertion(testListJson),
-    checkTestlistWholeTableAggregate(testListJson)
+    checkTestlistWholeTableAggregate(testListJson),
+    checkTestlistFixedKeyE2e(testListJson, acLayerById),
+    checkTestlistScenarioFileCoherence(testListJson)
   ]) {
-    if (!r.ok) violations.push(...r.violations);
+    if (!r.ok) {
+      violations.push(...r.violations);
+      for (const id of r.acIds ?? []) acIds.add(id);
+    }
   }
-  return violations.length === 0 ? null : violations.join("; ");
+  return violations.length === 0 ? null : { reason: violations.join("; "), acIds: [...acIds] };
 }
 function recordTestListGate(consortDir, featureId, story) {
-  const reason = testlistConformanceReason(consortDir, featureId, story);
-  if (reason === null) {
+  const found = testlistConformanceViolations(consortDir, featureId, story);
+  if (found === null) {
     resolveOpenSmells(consortDir, TESTLIST_SMELL, {
       story_id: story,
       kind: "cleared",
@@ -11360,10 +11511,83 @@ function recordTestListGate(consortDir, featureId, story) {
   const hit = {
     smell: TESTLIST_SMELL,
     cycle_ids: [],
-    detail: `test-list conformance: ${reason}`,
-    story_id: story
+    detail: `test-list conformance: ${found.reason}`,
+    story_id: story,
+    // Carry the flagged ac_id(s) so the revise self-heal scopes the re-author to
+    // exactly those ACs (a targeted patch, no whole-story architect re-annotate) — #4.
+    ...found.acIds.length > 0 ? { ac_ids: found.acIds } : {}
   };
   if (hasOpenSmell(consortDir, TESTLIST_SMELL, story)) return [];
+  writeSmellsLog(consortDir, [hit]);
+  return [hit];
+}
+
+// consort/smells/ia-conformance.ts
+init_cjs_shims();
+var import_fs16 = require("fs");
+var import_path13 = require("path");
+var IA_SMELL = "reflect-ia-defect";
+function iaNamesSeam(iaMarkdown, seam) {
+  const esc = seam.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\w-])${esc}(?![\\w-])`).test(iaMarkdown);
+}
+function storyUiSeams(consortDir, featureId, story) {
+  const out = [];
+  const dir = acsDir(consortDir, featureId, story);
+  if (!(0, import_fs16.existsSync)(dir)) return out;
+  for (const f of (0, import_fs16.readdirSync)(dir)) {
+    if (!f.endsWith(".json")) continue;
+    try {
+      const ac = JSON.parse((0, import_fs16.readFileSync)((0, import_path13.join)(dir, f), "utf8"));
+      const seams = Array.isArray(ac.ui_seams) ? ac.ui_seams.filter((s) => typeof s === "string" && s.length > 0) : [];
+      if (seams.length > 0) out.push({ id: typeof ac.id === "string" ? ac.id : f.replace(/\.json$/, ""), seams });
+    } catch {
+    }
+  }
+  return out;
+}
+function iaConformanceViolations(consortDir, featureId, story) {
+  const iaPath = iaMd(consortDir);
+  if (!(0, import_fs16.existsSync)(iaPath)) return null;
+  const acs = storyUiSeams(consortDir, featureId, story);
+  if (acs.length === 0) return null;
+  let iaMarkdown;
+  try {
+    iaMarkdown = (0, import_fs16.readFileSync)(iaPath, "utf8");
+  } catch {
+    return null;
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const { id, seams } of acs) {
+    const missing = seams.filter((s) => !iaNamesSeam(iaMarkdown, s));
+    if (missing.length > 0) {
+      violations.push(
+        `AC ${id} drives UI seam(s) the information architecture (ia.md) does not name: ${missing.join(", ")}. Add the surface (and its data-testid seam) to the AC's screen in ia.md, OR \u2014 if the capability has no standalone surface \u2014 reconsider the AC's layer with the spec-author. The architect declared these seams in the AC's ui_seams; every one must have a home in the IA before the build drives a UI the IA never described.`
+      );
+      acIds.add(id);
+    }
+  }
+  return violations.length === 0 ? null : { reason: violations.join("; "), acIds: [...acIds] };
+}
+function recordIaGate(consortDir, featureId, story) {
+  const found = iaConformanceViolations(consortDir, featureId, story);
+  if (found === null) {
+    resolveOpenSmells(consortDir, IA_SMELL, {
+      story_id: story,
+      kind: "cleared",
+      note: "story's declared UI seams are all named in ia.md"
+    });
+    return [];
+  }
+  const hit = {
+    smell: IA_SMELL,
+    cycle_ids: [],
+    detail: `ia conformance: ${found.reason}`,
+    story_id: story,
+    ...found.acIds.length > 0 ? { ac_ids: found.acIds } : {}
+  };
+  if (hasOpenSmell(consortDir, IA_SMELL, story)) return [];
   writeSmellsLog(consortDir, [hit]);
   return [hit];
 }
@@ -11426,10 +11650,20 @@ Usage: consort-cycle <begin|green|review|refactor> --feature <F> --story <S> [--
   );
   return 2;
 }
-async function main() {
-  const a = parse(process.argv.slice(2));
-  if (!a.feature || !a.story) return usage("Error: --feature and --story are required.");
+async function main(argv = process.argv.slice(2)) {
+  const a = parse(argv);
+  if (!a.feature) return usage("Error: --feature is required.");
   const consortDir = a.consortDir ?? resolveConsortDir();
+  if (a.cmd === "reconcile-gate") {
+    const reconHits = recordReconcileGate(consortDir, a.feature);
+    process.stdout.write(
+      reconHits.length === 0 ? `cycle: reconcile gate passed for ${a.feature} (stories mutually consistent)
+` : `cycle: reconcile gate flagged ${reconHits.length} cross-story defect(s) for ${a.feature}: ${reconHits.map((h) => `${h.smell}@${h.story_id}`).join(", ")}
+`
+    );
+    return 0;
+  }
+  if (!a.story) return usage("Error: --story is required.");
   const base = { consortDir, featureId: a.feature, story: a.story };
   switch (a.cmd) {
     case "begin": {
@@ -11554,6 +11788,16 @@ async function main() {
       );
       return 0;
     }
+    case "ia-gate": {
+      if (!a.story) return usage("ia-gate: --story is required.");
+      const iaHits = recordIaGate(consortDir, a.feature, a.story);
+      process.stdout.write(
+        iaHits.length === 0 ? `cycle: ia gate passed for ${a.story} (declared UI seams all named in ia.md)
+` : `cycle: ia gate flagged ${iaHits.length} IA gap(s) for ${a.story}: ${iaHits.map((h) => h.smell).join(", ")}
+`
+      );
+      return 0;
+    }
     case "assess-green": {
       const ac = a.ac;
       if (!ac) return usage("assess-green: --ac is required.");
@@ -11666,8 +11910,14 @@ async function main() {
       return usage(`unknown subcommand: ${a.cmd}`);
   }
 }
-main().then((code) => process.exit(code)).catch((err) => {
-  process.stderr.write(`${err instanceof Error ? err.message : String(err)}
+if ((0, import_util3.isCliEntry)(importMetaUrl)) {
+  main().then((code) => process.exit(code)).catch((err) => {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}
 `);
-  process.exit(1);
+    process.exit(1);
+  });
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  main
 });

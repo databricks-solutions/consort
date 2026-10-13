@@ -25,7 +25,16 @@ function gated(): DesignDriveState["stories"][string] {
   return {
     gateApproved: true,
     gateSurfaced: false,
-    design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true },
+    design: { hasAcs: true, iaRefined: true, iaProjectable: false, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, iaConforms: true, reflectionPassed: true, reflectionVerdictWritten: true},
+  };
+}
+/** A story fully DESIGNED + surfaced for its spec gate, but NOT yet approved (the point where the
+ *  feature-complete reconcile runs, before approval). */
+function surfaced(): DesignDriveState["stories"][string] {
+  return {
+    gateApproved: false,
+    gateSurfaced: true,
+    design: { hasAcs: true, iaRefined: true, iaProjectable: false, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, iaConforms: true, reflectionPassed: true, reflectionVerdictWritten: true },
   };
 }
 /** A blank story: nothing designed yet. */
@@ -33,8 +42,13 @@ function fresh(): DesignDriveState["stories"][string] {
   return {
     gateApproved: false,
     gateSurfaced: false,
-    design: { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
+    design: { hasAcs: false, iaRefined: false, iaProjectable: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, iaConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
   };
+}
+
+/** A story past its ACs but not yet IA-refined — the per-story IA-refine entry point. */
+function withAcs(over: Partial<DesignDriveState["stories"][string]["design"]> = {}): DesignDriveState["stories"][string] {
+  return { gateApproved: false, gateSurfaced: false, design: { ...fresh().design, hasAcs: true, ...over } };
 }
 
 function state(over: Partial<DesignDriveState>): DesignDriveState {
@@ -73,12 +87,15 @@ describe("nextDesignAction (per-story design lane state machine)", () => {
     });
   });
 
-  it("surfaces the gate once a story's design is complete, then approves it", () => {
+  it("surfaces the gate once a story's design is complete, then approves it (streaming: per-story)", () => {
+    // The default (streaming full drive) approves each story as it finishes — surface then approve,
+    // per story — so build/deploy/promote can stream. The /design-bound defer-until-reconcile flow is
+    // covered by the #symmetry tests below (featureReconcile: true).
     const s = { S1: fresh(), S2: fresh(), S3: fresh() };
-    s.S1.design = { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true };
+    s.S1.design = { hasAcs: true, iaRefined: true, iaProjectable: false, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, iaConforms: true, reflectionPassed: true, reflectionVerdictWritten: true};
     // fully designed, not surfaced -> surface
     expect(nextDesignAction(state({ stories: s }))).toEqual({ kind: "surface-gate", story: "S1" });
-    // surfaced, not approved -> approve
+    // surfaced, not approved -> approve immediately (streaming, no feature-complete reconcile)
     s.S1.gateSurfaced = true;
     expect(nextDesignAction(state({ stories: s }))).toEqual({ kind: "approve-gate", story: "S1" });
   });
@@ -96,13 +113,66 @@ describe("nextDesignAction (per-story design lane state machine)", () => {
 
   it("never drafts a later story while an earlier one is still in design", () => {
     // Even if S2 somehow has ACs, the first non-approved story (S1) is driven.
-    const s = { S1: fresh(), S2: { ...fresh(), design: { hasAcs: true, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false } }, S3: fresh() };
+    const s = { S1: fresh(), S2: { ...fresh(), design: { hasAcs: true, iaRefined: true, iaProjectable: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, iaConforms: true, reflectionPassed: false, reflectionVerdictWritten: false } }, S3: fresh() };
     expect(nextDesignAction(state({ stories: s }))).toMatchObject({ story: "S1", role: "spec-author" });
   });
 
-  it("reports design-complete when every story is gate-approved", () => {
+  it("reports design-complete when every story is gate-approved (nothing left pending)", () => {
     const s = { S1: gated(), S2: gated(), S3: gated() };
     expect(nextDesignAction(state({ stories: s }))).toEqual({ kind: "design-complete" });
+  });
+
+  // #symmetry — the feature-complete reconcile is the /design bound's job (featureReconcile:true), NOT
+  // the streaming full drive (which approves per story so build/deploy/promote can stream).
+  it("#symmetry — /design: all stories SURFACED but not yet approved → reconcile runs BEFORE the gated approval", () => {
+    const s = { S1: surfaced(), S2: surfaced(), S3: surfaced() };
+    expect(nextDesignAction(state({ stories: s }), { featureReconcile: true })).toEqual({ kind: "invoke-role", role: "navigator", buildMode: "reconcile" });
+  });
+
+  it("#symmetry — /design: once reconcile has passed → NOW approve the surfaced gates (first pending)", () => {
+    const s = { S1: surfaced(), S2: surfaced() };
+    expect(nextDesignAction(state({ storyOrder: ["S1", "S2"], stories: s, reconcilePassed: true }), { featureReconcile: true })).toEqual({ kind: "approve-gate", story: "S1" });
+  });
+
+  it("#symmetry — streaming (no featureReconcile): a surfaced story approves IMMEDIATELY, no reconcile", () => {
+    const s = { S1: surfaced(), S2: surfaced(), S3: surfaced() };
+    expect(nextDesignAction(state({ stories: s }))).toEqual({ kind: "approve-gate", story: "S1" });
+  });
+
+  it("#symmetry — /design: a lone surfaced story has nothing to reconcile → approve it directly", () => {
+    const s = { S1: surfaced() };
+    expect(nextDesignAction(state({ storyOrder: ["S1"], stories: s }), { featureReconcile: true })).toEqual({ kind: "approve-gate", story: "S1" });
+  });
+
+  it("#symmetry — /design: a fully-approved feature never re-runs reconcile → design-complete", () => {
+    const s = { S1: gated(), S2: gated() };
+    expect(nextDesignAction(state({ storyOrder: ["S1", "S2"], stories: s }), { featureReconcile: true })).toEqual({ kind: "design-complete" });
+  });
+
+  // #dba-attribution — dbaDesigned is FEATURE-level, so a later story's architect extending the schema
+  // flips it false for the whole feature. In /design (featureReconcile) S1 is surfaced-not-approved and
+  // re-examined every derivation; the dba re-realization must NOT fire under surfaced S1 (which would
+  // mis-attribute S2's schema work to S1) — it fires under S2, the story still in design, which owns it.
+  it("#dba-attribution — a feature-level dbaDesigned flip fires the dba under the in-design story, not a surfaced sibling", () => {
+    const s = {
+      S1: surfaced(), // surfaced, not approved — but its feature-level dbaDesigned just flipped false
+      S2: withAcs({ iaRefined: true, architectAnnotated: true, dbaDesigned: false }), // in design, needs the schema
+    };
+    s.S1.design.dbaDesigned = false; // the shared feature db-design no longer covers S2's extension
+    expect(nextDesignAction(state({ storyOrder: ["S1", "S2"], stories: s }), { featureReconcile: true })).toEqual({
+      kind: "invoke-role",
+      role: "dba",
+      story: "S2",
+    });
+  });
+
+  it("#dba-attribution — a NON-surfaced story with a false dbaDesigned still gets its own dba (guard is scoped to surfaced)", () => {
+    const s = { S1: withAcs({ iaRefined: true, architectAnnotated: true, dbaDesigned: false }) };
+    expect(nextDesignAction(state({ storyOrder: ["S1"], stories: s }), { featureReconcile: true })).toEqual({
+      kind: "invoke-role",
+      role: "dba",
+      story: "S1",
+    });
   });
 });
 
@@ -112,21 +182,21 @@ describe("nextDesignAction (per-story design lane state machine)", () => {
 function gatedUnbuilt(): StoryView {
   return {
     gateApproved: true, gateSurfaced: true,
-    design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true },
+    design: { hasAcs: true, iaRefined: true, iaProjectable: false, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, iaConforms: true, reflectionPassed: true, reflectionVerdictWritten: true},
     build: { experimentCut: false, testsWritten: false, codeWritten: false, awaitingAcceptance: false, deployVerified: false, accepted: false },
   };
 }
 function freshStory(): StoryView {
   return {
     gateApproved: false, gateSurfaced: false,
-    design: { hasAcs: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
+    design: { hasAcs: false, iaRefined: false, iaProjectable: false, architectAnnotated: false, architectProjectable: false, dbaDesigned: false, testListReady: false, testListConforms: true, iaConforms: true, reflectionPassed: false, reflectionVerdictWritten: false },
     build: { experimentCut: false, testsWritten: false, codeWritten: false, awaitingAcceptance: false, deployVerified: false, accepted: false },
   };
 }
 function builtAccepted(): StoryView {
   return {
     gateApproved: true, gateSurfaced: true,
-    design: { hasAcs: true, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, reflectionPassed: true, reflectionVerdictWritten: true },
+    design: { hasAcs: true, iaRefined: true, iaProjectable: false, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, iaConforms: true, reflectionPassed: true, reflectionVerdictWritten: true},
     build: { experimentCut: true, testsWritten: true, codeWritten: true, awaitingAcceptance: true, deployVerified: true, accepted: true },
   };
 }
@@ -137,23 +207,65 @@ function ws(over: Partial<DriveState>): DriveState {
   };
 }
 
-describe("nextDesignAction: UX Designer (UI track)", () => {
+describe("nextDesignAction: UX Designer establish (UI track, reached via the per-story IA refine)", () => {
   const stories = { S1: fresh(), S2: fresh(), S3: fresh() };
-  it("emits ux-designer after breakdown when uiTrack is on and no design guide exists yet", () => {
+  it("does NOT establish right after breakdown — a fresh story goes to its ACs first", () => {
+    // The establish is reached THROUGH the per-story IA refine (after a story's ACs),
+    // never as a top-level step that preempts the design lane's breakdown -> ACs -> refine
+    // order. A fresh story (no ACs) therefore routes to the spec-author, not the UX establish.
     expect(nextDesignAction(state({ uiTrack: true, designGuideReady: false, stories })))
-      .toEqual({ kind: "invoke-role", role: "ux-designer" });
+      .toEqual({ kind: "invoke-role", role: "spec-author", story: "S1" });
   });
-  it("skips ux-designer once the design guide exists, proceeds to the first story", () => {
+  it("establishes the design guide + ia.md skeleton when the FIRST story's IA refine finds none", () => {
+    // S1 is past its ACs and reaches the IA-refine step with no project design guide yet:
+    // it bounces up to the UX plan-role to establish, then drops back to refine next derivation.
+    const s = { S1: withAcs(), S2: fresh() };
+    expect(nextDesignAction(state({ uiTrack: true, designGuideReady: false, storyOrder: ["S1", "S2"], stories: s })))
+      .toEqual({ kind: "invoke-role", role: "ux-designer", mode: "establish" });
+  });
+  it("skips establish once the design guide exists, proceeds to the first story's ACs", () => {
     expect(nextDesignAction(state({ uiTrack: true, designGuideReady: true, stories })))
       .toEqual({ kind: "invoke-role", role: "spec-author", story: "S1" });
   });
-  it("never emits ux-designer when uiTrack is off (API / CLI / Infra projects)", () => {
+  it("never establishes when uiTrack is off (API / CLI / Infra projects)", () => {
     expect(nextDesignAction(state({ uiTrack: false, designGuideReady: false, stories })))
       .toEqual({ kind: "invoke-role", role: "spec-author", story: "S1" });
   });
-  it("runs the UX step only after breakdown, breakdown still comes first", () => {
+  it("breakdown still comes first", () => {
     expect(nextDesignAction(state({ breakdownDone: false, uiTrack: true, designGuideReady: false, stories: {} })))
       .toEqual({ kind: "invoke-role", role: "spec-author", mode: "breakdown" });
+  });
+});
+
+describe("nextDesignAction: UX IA refinement (per story, before the architect)", () => {
+  // A story past its ACs but not yet IA-refined. designGuideReady:true so the per-story
+  // IA branch refines (or projects) rather than bouncing up to establish the guide first.
+  const acsOnly = (over: Partial<StoryView["design"]> = {}): DesignDriveState["stories"][string] => ({
+    gateApproved: false,
+    gateSurfaced: false,
+    design: {
+      hasAcs: true, iaRefined: false, iaProjectable: false, architectAnnotated: false, architectProjectable: false,
+      dbaDesigned: false, testListReady: false, testListConforms: true, iaConforms: true, reflectionPassed: false, reflectionVerdictWritten: false,
+      ...over,
+    },
+  });
+  const ui = (stories: DesignDriveState["stories"]) => state({ uiTrack: true, designGuideReady: true, storyOrder: Object.keys(stories), stories });
+
+  it("a UI-track story with ACs but no IA yet runs a LIVE ux ia turn — before the architect", () => {
+    expect(nextDesignAction(ui({ S1: acsOnly() })))
+      .toEqual({ kind: "invoke-role", role: "ux-designer", mode: "ia", story: "S1" });
+  });
+  it("PROJECTS IA coverage with no turn when the story's surfaces are already named (iaProjectable)", () => {
+    expect(nextDesignAction(ui({ S1: acsOnly({ iaProjectable: true }) })))
+      .toEqual({ kind: "project-ia-notes", story: "S1" });
+  });
+  it("skips IA refinement for a non-UI project (uiTrack off) — straight to the architect", () => {
+    expect(nextDesignAction(state({ uiTrack: false, designGuideReady: false, storyOrder: ["S1"], stories: { S1: acsOnly() } })))
+      .toEqual({ kind: "invoke-role", role: "architect-reviewer", story: "S1" });
+  });
+  it("once the IA is refined, proceeds to the architect (ux ia does not re-fire)", () => {
+    expect(nextDesignAction(ui({ S1: acsOnly({ iaRefined: true }) })))
+      .toEqual({ kind: "invoke-role", role: "architect-reviewer", story: "S1" });
   });
 });
 
@@ -164,7 +276,7 @@ describe("nextTransition: UX Designer prerequisite (hoisted above build dispatch
     // exist yet. The UX step must fire BEFORE the dispatch, so the UI is never
     // built against a guide that does not exist.
     const st = ws({ stories: { S1: gatedUnbuilt() }, uiTrack: true, designGuideReady: false });
-    expect(nextTransition(st)).toEqual({ kind: "invoke-role", role: "ux-designer" });
+    expect(nextTransition(st)).toEqual({ kind: "invoke-role", role: "ux-designer", mode: "establish" });
   });
   it("once the design guide exists, the gate-approved story dispatches to build", () => {
     const st = ws({ stories: { S1: gatedUnbuilt() }, uiTrack: true, designGuideReady: true });
@@ -187,6 +299,20 @@ describe("nextTransition: planning lane – intake precondition", () => {
   it("intakeReady:true -> straight to spec-author propose", () => {
     expect(nextTransition(ws({ phase: "planning", planning: { intakeReady: true, proposed: false, estimated: false, requestsAuthored: false } })))
       .toEqual({ kind: "invoke-role", role: "spec-author", mode: "propose" });
+  });
+  // The UX establish runs UNDER the intake gate: intake drafted + UI track + no guide yet -> establish,
+  // BEFORE the intake gate is approved (so the human approves the design-guide + ia.md with the brief).
+  it("establish fires under the intake gate (intakeReady + uiTrack + no guide)", () => {
+    expect(nextTransition(ws({ phase: "planning", uiTrack: true, designGuideReady: false, planning: { intakeReady: true, intakeApproved: false, proposed: false, estimated: false, requestsAuthored: false } })))
+      .toEqual({ kind: "invoke-role", role: "ux-designer", mode: "establish" });
+  });
+  it("once the guide exists, establish skips -> the intake gate parks for approval", () => {
+    expect(nextTransition(ws({ phase: "planning", uiTrack: true, designGuideReady: true, planning: { intakeReady: true, intakeApproved: false, proposed: false, estimated: false, requestsAuthored: false } })))
+      .toEqual({ kind: "approve-intake-gate" });
+  });
+  it("no establish in planning for a non-UI project (uiTrack off)", () => {
+    expect(nextTransition(ws({ phase: "planning", uiTrack: false, designGuideReady: false, planning: { intakeReady: true, intakeApproved: false, proposed: false, estimated: false, requestsAuthored: false } })))
+      .toEqual({ kind: "approve-intake-gate" });
   });
   // GUARDRAIL: intakeReady ABSENT (legacy/hermetic states) is treated as satisfied -> propose,
   // byte-identical to before the field existed. Intake fires ONLY on an explicit false.

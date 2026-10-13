@@ -7626,7 +7626,7 @@ var dba_default = {
   },
   agentOptions: {
     model: "opus",
-    effort: "default",
+    effort: "low",
     session: "resume",
     resumeKeyFrom: "role"
   }
@@ -7658,14 +7658,7 @@ var test_strategist_default = {
       description: "The DBA's concrete tables/constraints the invariant tests assert against. Feature-scoped: {feature} expands to the run's feature id (features/<F>/db-design.json)."
     }
   ],
-  preconditions: [
-    {
-      id: "test-analyst-roster",
-      kind: "test-analyst-roster",
-      position: "append",
-      description: "The ENABLED per-kind test-analyst roster (behavior/fitness/client; client omitted when the project's uiTrack is off) + each analyst's focus prompt, projected from the TEST_ANALYST_CATALOGUE. The supervisor Task-spawns one subagent per entry, then reconciles + assembles."
-    }
-  ],
+  preconditions: [],
   outputs: [
     {
       id: "test-list",
@@ -7734,18 +7727,18 @@ var driver_green_default = {
   ]
 };
 
-// consort/orchestrator/steps/manifests/ux-designer.json
-var ux_designer_default = {
-  id: "ux-designer",
+// consort/orchestrator/steps/manifests/ux-establish.json
+var ux_establish_default = {
+  id: "ux-establish",
   role: "ux-designer",
   agent: { kind: "claude", config: { role: "ux-designer" } },
-  match: { kind: "invoke-role", role: "ux-designer" },
+  match: { kind: "invoke-role", role: "ux-designer", mode: "establish" },
   inputs: [
-    { id: "design-guideline", source: "feature:design/design-brief.md", description: "The HIL design brief the UX Designer extracts the look FROM. Lives under design/ on the real tree (design/design-brief.md, per intake.ts)." },
+    { id: "design-guideline", source: "feature:design/design-brief.md", description: "The HIL design brief the UX Designer extracts the look FROM. Lives under design/ on the real tree (design/design-brief.md, per intake.ts). A planning/intake artifact, human-approved at the intake gate." },
     { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , which stories produce screens (product-overview.md)." }
   ],
   outputs: [
-    { id: "design-guide", filename: "design-guide.json", channel: "artifact", validator: "designGuideConformant", description: "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + ia.md are authored alongside but the JSON is the gated artifact." },
+    { id: "design-guide", filename: "design-guide.json", channel: "artifact", validator: "designGuideConformant", description: "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + the initial ia.md skeleton are authored alongside; the JSON is the gated artifact. One-time bootstrap of the project style system." },
     { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "uxDesignerLoggedAuthoring", description: "The UX Designer's structured log (shared agent-log script). BROWSE PROVENANCE (a `browsed:<site>` / `browse-gap:<site>` event) is enforced DETERMINISTICALLY at the spec gate (uxDesignerBrowsedReason reads the persisted agent-log), NOT as a meta-channel output validator \u2014 the executor skips those (the resolved meta path is not the persisted log)." }
   ],
   routing: {
@@ -7758,6 +7751,35 @@ var ux_designer_default = {
     model: "opus",
     effort: "low",
     session: "fresh",
+    resumeKeyFrom: "role"
+  }
+};
+
+// consort/orchestrator/steps/manifests/ux-ia.json
+var ux_ia_default = {
+  id: "ux-ia",
+  role: "ux-designer",
+  agent: { kind: "claude", config: { role: "ux-designer" } },
+  match: { kind: "invoke-role", role: "ux-designer", mode: "ia" },
+  inputs: [
+    { id: "ia", source: "feature:design/ia.md", description: "The project information architecture to REFINE for this story (append its screens/forms/flows). Project-level file, augmented per story; this story's surfaces must be named here before the architect tags E2E layers." },
+    { id: "design-guide", source: "feature:design/design-guide.json", description: "The established style system (tokens + component vocabulary) the new screens/forms compose from \u2014 read-only context, not re-authored here." },
+    { id: "acs", source: "story:acs", description: "This story's acceptance criteria \u2014 their user-facing surfaces (E2E / client ACs) are what the IA must name." }
+  ],
+  outputs: [
+    { id: "ia", filename: "ia.md", channel: "artifact", validator: "iaConformant", description: "The refined information architecture (required sections: Screens / Navigation / User flows), with this story's surfaces added. Project-level file, augmented per story (additive, never a rewrite)." },
+    { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "uxDesignerLoggedAuthoring", description: "The UX Designer's structured log (shared agent-log script)." }
+  ],
+  routing: {
+    produced: { next: "state-derived" }
+  },
+  postTurn: [
+    { bin: "IA_NOTES_BIN", args: ["--feature", "{feature}", "--story", "{story}", "--tdd-dir", "{tddDir}"], when: "after" }
+  ],
+  agentOptions: {
+    model: "opus",
+    effort: "low",
+    session: "resume",
     resumeKeyFrom: "role"
   }
 };
@@ -7837,6 +7859,31 @@ var navigator_reflect_default = {
     effort: "default",
     session: "resume",
     resumeKeyFrom: "story"
+  },
+  postTurn: [
+    { bin: "@build-cycle", args: [], when: "after" }
+  ]
+};
+
+// consort/orchestrator/steps/manifests/navigator-reconcile.json
+var navigator_reconcile_default = {
+  id: "navigator-reconcile",
+  role: "navigator",
+  agent: { kind: "claude", config: { role: "navigator" } },
+  match: { kind: "invoke-role", role: "navigator", buildMode: "reconcile" },
+  inputs: [],
+  preconditions: [
+    { id: "reconcile", kind: "reconcile-context", position: "append", description: "The SYMMETRIC feature-complete context: EVERY story's ACs (none folded out) + the architecture's open_decisions + its mandated not-null persistence fields, injected so the reconcile turn checks the whole set against itself (every story vs every other, incl. the first-designed one) deterministically , NOT a shell-out. Empty for a <2-story feature." }
+  ],
+  outputs: [],
+  routing: {
+    produced: { next: "state-derived" }
+  },
+  agentOptions: {
+    model: "sonnet",
+    effort: "default",
+    session: "resume",
+    resumeKeyFrom: "feature"
   },
   postTurn: [
     { bin: "@build-cycle", args: [], when: "after" }
@@ -8125,10 +8172,12 @@ var SHIPPED_MANIFESTS = [
   dba_default,
   test_strategist_default,
   driver_green_default,
-  ux_designer_default,
+  ux_establish_default,
+  ux_ia_default,
   navigator_red_default,
   navigator_review_default,
   navigator_reflect_default,
+  navigator_reconcile_default,
   navigator_assess_default,
   navigator_assess_deploy_default,
   navigator_assess_refactor_default,
@@ -8177,6 +8226,9 @@ function turnKeyForAction(action) {
       case "reflect":
         return "reflect";
       // design-lane critic, tuned as its own turn (sweep: haiku+low)
+      case "reconcile":
+        return "reconcile";
+      // feature-complete symmetric cross-story reconciliation — its OWN step key (NOT red)
       case "review":
         return "review";
       case "refactor":
@@ -8197,9 +8249,9 @@ function turnKeyForAction(action) {
     if (action.role === "spec-author" && action.mode === "breakdown") return "breakdown";
     if (action.role === "spec-author" && action.mode === "propose") return "propose";
     if (action.role === "architect-reviewer" && (action.mode === "estimate" || action.mode === "estimate-committed")) return "estimate";
+    if (action.role === "ux-designer") return "ux";
     return void 0;
   }
-  if (action.role === "ux-designer") return "ux";
   if ("story" in action && action.story) {
     if (action.role === "spec-author") return "acs";
     if (action.role === "architect-reviewer") return "architect";
@@ -8946,7 +8998,7 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
 }
 function claudeToolArgs(cmd) {
   const out = [];
-  const allowed = [.../* @__PURE__ */ new Set(["Bash(cd:*)", ...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
+  const allowed = [.../* @__PURE__ */ new Set(["Bash", "Task", ...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
   if (allowed.length) out.push("--allowed-tools", allowed.join(","));
   if (cmd.disallowedTools && cmd.disallowedTools.length) out.push("--disallowed-tools", cmd.disallowedTools.join(","));
   return out;
@@ -9141,8 +9193,6 @@ function execRunner(cfg) {
         const turnMs = Date.now() - turnStart;
         if (usage) {
           if (cmd.resumeKey) sessionContext.set(cmd.resumeKey, turnContextTokens(usage));
-          process.stderr.write(`[drive] ${cmd.role} turn ${(turnMs / 1e3).toFixed(1)}s (${cmd.model})
-`);
           try {
             emitAgentLogEvent(
               {

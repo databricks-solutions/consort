@@ -1,0 +1,23 @@
+{
+  "id": "navigator-reconcile",
+  "role": "navigator",
+  "agent": { "kind": "claude", "config": { "role": "navigator" } },
+  "match": { "kind": "invoke-role", "role": "navigator", "buildMode": "reconcile" },
+  "inputs": [],
+  "preconditions": [
+    { "id": "reconcile", "kind": "reconcile-context", "position": "append", "description": "The SYMMETRIC feature-complete context: EVERY story's ACs (none folded out) + the architecture's open_decisions + its mandated not-null persistence fields, injected so the reconcile turn checks the whole set against itself (every story vs every other, incl. the first-designed one) deterministically , NOT a shell-out. Empty for a <2-story feature." }
+  ],
+  "outputs": [],
+  "routing": {
+    "produced": { "next": "state-derived" }
+  },
+  "agentOptions": {
+    "model": "sonnet",
+    "effort": "default",
+    "session": "resume",
+    "resumeKeyFrom": "feature"
+  },
+  "postTurn": [
+    { "bin": "@build-cycle", "args": [], "when": "after" }
+  ]
+}

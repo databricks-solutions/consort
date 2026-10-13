@@ -9,6 +9,9 @@
 //   intake/nfrs.md               -> .consort/nfrs.md
 //   intake/design-brief.md       -> .consort/design/design-brief.md
 //   intake/assets/warehouse.png  -> .consort/design/assets/warehouse.png (alongside the brief)
+//   design/design-guide.{json,md} + design/ia.md -> .consort/design/ (the UX Designer's establish
+//     output, pre-authored so a seeded run SKIPS the establish turn)
+//   client-styles/{theme.css,global.css} -> client/src/styles/ (the materialized design system)
 //   feature-requests/<Fid>.md    -> .consort/features/<Fid>/feature-request.md (one per file)
 //   registration.json            -> .consort/registration.json (pre-registration; guards the F1 breakdown)
 //
@@ -27,6 +30,8 @@ import {
   productOverviewMd,
   nfrsMd,
   designBriefMd,
+  designGuideJson,
+  iaMd,
   featureRequestMd,
 } from "../../consort/config/consort-paths.js";
 import { registrationPath } from "../../consort/gates/registered-breakdown.js";
@@ -81,6 +86,28 @@ export function stageFirstProject(opts: { projectDir?: string; seedDir?: string 
   for (const [from, to] of intake) {
     copy(from, to);
     staged.push(rel(to));
+  }
+
+  // The UX Designer's project design system, pre-authored in the seed so a seeded run SKIPS the
+  // establish turn (design-guide.json present -> designGuideReady -> uxDesignerPending false): the
+  // canon docs into .consort/design/, the materialized CSS into client/src/styles/. ia.md is the
+  // establish SKELETON (per-feature screens, no per-story AC refs) so the per-story IA refinement
+  // still runs. The scaffold's own client/src/styles/STYLE_GUIDE.md is left as-is — it is a general
+  // scaffold document, not an establish output. Each is optional (guarded) so a seed without the
+  // design system still stages the rest.
+  const designDir = path.dirname(designBriefMd(consortDir));
+  const designSystem: Array<[string, string]> = [
+    [path.join(seedDir, "design", "design-guide.json"), designGuideJson(consortDir)],
+    [path.join(seedDir, "design", "design-guide.md"), path.join(designDir, "design-guide.md")],
+    [path.join(seedDir, "design", "ia.md"), iaMd(consortDir)],
+    [path.join(seedDir, "client-styles", "theme.css"), path.join(projectDir, "client", "src", "styles", "theme.css")],
+    [path.join(seedDir, "client-styles", "global.css"), path.join(projectDir, "client", "src", "styles", "global.css")],
+  ];
+  for (const [from, to] of designSystem) {
+    if (fs.existsSync(from)) {
+      copy(from, to);
+      staged.push(rel(to));
+    }
   }
 
   // Pre-registration: the canonical F1 story+AC breakdown. Staged to

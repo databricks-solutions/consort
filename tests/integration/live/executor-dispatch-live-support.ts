@@ -425,7 +425,7 @@ export const DESIGN_LIVE_SPECS: Partial<Record<TurnKey, DesignLiveSpec>> = {
     name: "ux-designer",
     step: "ux",
     corpusModel: "sonnet",
-    action: { kind: "invoke-role", role: "ux-designer" },
+    action: { kind: "invoke-role", role: "ux-designer", mode: "establish" },
     seed: [
       { rel: "design/design-brief.md", from: "design-brief.md" },
       { rel: "product-overview.md", from: "product-overview.md" },

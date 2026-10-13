@@ -300,6 +300,7 @@ export const TURN_SPAN_NAME = "consort.turn" as const;
 export const GATE_KINDS = [
   "invoke-role",
   "project-architect-notes",
+  "project-ia-notes",
   "surface-gate",
   "approve-gate",
   "design-complete",
@@ -325,6 +326,7 @@ export const GATE_KINDS = [
   "raise-to-hil",
   "revise-route",
   "flag-testlist-nonconformance",
+  "flag-ia-nonconformance",
   "done",
 ] as const;
 export type GateKind = (typeof GATE_KINDS)[number];

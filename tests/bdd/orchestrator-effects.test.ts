@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { TEST_ANALYST_CATALOGUE } from "../../consort/test-list/test-analyst-catalogue.js";
 import { join } from "node:path";
 
 import {
@@ -292,10 +293,11 @@ describe("commandsForAction: invoke-role -> claude", () => {
     expect(task).not.toMatch(/The story:/);
   });
 
-  it("test-strategist task inlines the story's AC ids so it need not re-derive them (P1)", () => {
-    // P1 outlier fix: hand the strategist the exact AC ids up front (it re-scanned
-    // the acs/ dir to re-derive them, a slow step on a small model) and pin the
-    // ac_id mapping the response-formatter enforces.
+  it("test-strategist task RUNS the deterministic fan-out bin + lists the AC ids as append context (b)", () => {
+    // Locked (b): the directive no longer tells the strategist to author/order — it RUNS the
+    // consort-fan-out-analysts bin (which spawns the analysts + assembler and writes the ordered
+    // list), then APPENDS analyst-ordered.json to the master. The AC ids ride as append-verification
+    // context.
     const tmp = mkdtempSync(join(tmpdir(), "effects-strategist-"));
     const consortDir = join(tmp, ".tdd");
     mkdirSync(join(consortDir, "features", "F1", "stories", "S1"), { recursive: true });
@@ -304,21 +306,40 @@ describe("commandsForAction: invoke-role -> claude", () => {
       JSON.stringify({ id: "S1", acs: ["AC1-create-form", "AC2-validate-input"] }),
     );
     const task = (commandsForAction({ kind: "invoke-role", role: "test-strategist", story: "S1" }, cfg({ consortDir }))[0] as { task: string }).task;
-    expect(task).toMatch(/story S1's ordered tests/);
-    expect(task).toMatch(/APPEND them to the feature master test list/);
-    expect(task).toMatch(/Do NOT author any test-list-per-story\.json/);
+    expect(task).toMatch(/consort-fan-out-analysts --feature F1 --story S1/);
+    expect(task).toMatch(/analyst-ordered\.json/);
+    expect(task).toMatch(/APPEND every item from .* to the feature master/);
+    expect(task).toMatch(/do NOT author the items yourself/i);
     expect(task).toContain("AC1-create-form");
     expect(task).toContain("AC2-validate-input");
-    expect(task).toMatch(/EXACT ids/);
-    expect(task).toMatch(/cover each AC at least once/);
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("test-strategist task falls back to the bare directive when no ACs are on disk yet", () => {
+  it("test-strategist task runs the bin even when no ACs are on disk yet (no AC append-context)", () => {
     const task = (commandsForAction({ kind: "invoke-role", role: "test-strategist", story: "S9" }, cfg())[0] as { task: string }).task;
-    expect(task).toMatch(/story S9's ordered tests/);
-    expect(task).toMatch(/APPEND them to the feature master test list/);
-    expect(task).not.toMatch(/The story's ACs are:/);
+    expect(task).toMatch(/consort-fan-out-analysts --feature .* --story S9/);
+    expect(task).toMatch(/analyst-ordered\.json/);
+    expect(task).not.toMatch(/Story S9's ACs are/);
+  });
+
+  it("Option A: a DIRECTED test-list PATCH revise (marker present) EDITS in place — no fan-out spawn", () => {
+    // When a scoped reflect-testlist revise dropped the patch marker, the directive must NOT tell the
+    // test-strategist to run consort-fan-out-analysts (which re-rolls the whole scope). It edits the
+    // existing analyst-ordered.json in place, applying only the named fix.
+    const tmp = mkdtempSync(join(tmpdir(), "effects-patch-"));
+    const consortDir = join(tmp, ".tdd");
+    const storyDir = join(consortDir, "features", "F1", "stories", "S1");
+    mkdirSync(storyDir, { recursive: true });
+    writeFileSync(join(storyDir, "story.json"), JSON.stringify({ id: "S1", acs: ["AC1-x", "AC2-y"] }));
+    writeFileSync(join(storyDir, "test-list-patch.json"), JSON.stringify({ ac_ids: ["AC2-y"] }));
+    const task = (commandsForAction({ kind: "invoke-role", role: "test-strategist", story: "S1" }, cfg({ consortDir }))[0] as { task: string }).task;
+    expect(task).toMatch(/DIRECTED test-list revise/);
+    expect(task).toMatch(/EDIT it in place/);
+    expect(task).toMatch(/the flagged AC\(s\): AC2-y/);
+    expect(task).toMatch(/Do NOT run[\s\S]*fan-out/i); // the whole point: no fan-out on a patch
+    expect(task).not.toMatch(/Run as its own command[\s\S]*consort-fan-out-analysts/); // not the fan-out RUN instruction
+    expect(task).not.toMatch(/do NOT author the items yourself/i); // that is the fan-out directive
+    rmSync(tmp, { recursive: true, force: true });
   });
 
   it("estimate-committed sizes the committed features by real id + re-syncs the backlog to stamp sizes", () => {
@@ -338,24 +359,13 @@ describe("commandsForAction: invoke-role -> claude", () => {
     expect(cmds.some((c) => (c as { kind: string }).kind === "sync-backlog" && (c as { sprint?: string }).sprint === "sprint-2")).toBe(true);
   });
 
-  it("test-strategist task warns that every DB-writing test must own its state (shared-state-write guard)", () => {
-    // A service-backed feature: the dbScope hint must carry the general
-    // state-ownership rule, not just the invariant-coverage directive, so a
-    // create/content-type test that writes a fixed key with no cleanup does not
-    // collide in the shared-feature-branch deploy-verify (the test_T3 halt).
-    const tmp = mkdtempSync(join(tmpdir(), "effects-strategist-state-"));
-    const consortDir = join(tmp, ".tdd");
-    mkdirSync(join(consortDir, "features", "F1", "stories", "S1"), { recursive: true });
-    writeFileSync(
-      join(consortDir, "features", "F1", "architecture.json"),
-      JSON.stringify({ service_backed: true, persistence_invariants: [{ id: "PI1-unique", brief: "unique (sku, location)" }] }),
-    );
-    const task = (commandsForAction({ kind: "invoke-role", role: "test-strategist", story: "S1" }, cfg({ consortDir }))[0] as { task: string }).task;
-    expect(task).toMatch(/WRITES to the DB/);
-    expect(task).toMatch(/own its state/);
-    expect(task).toMatch(/UNIQUE key/);
-    expect(task).toMatch(/shared-state-write/);
-    rmSync(tmp, { recursive: true, force: true });
+  it("the state-ownership guard moved intact to the analysts' focus prompts (not lost in the (b) rewire)", () => {
+    // The shared-state-write guard (a DB-writing test must own its state via a per-run-unique key)
+    // used to live in the test-strategist's dbScope directive; the (b) fan-out moved authoring to the
+    // per-kind analysts, so the rule now rides their focusPrompts. Assert it survived the move.
+    expect(TEST_ANALYST_CATALOGUE.behavior!.focusPrompt).toMatch(/own its state/);
+    expect(TEST_ANALYST_CATALOGUE.behavior!.focusPrompt).toMatch(/per-run-unique key/);
+    expect(TEST_ANALYST_CATALOGUE.fitness!.focusPrompt).toMatch(/own rows|per-run-unique key/);
   });
 
   it("author-requests dispatches the PO agent + a post-turn sync-backlog (metered, no inline supply-requests)", () => {
@@ -627,7 +637,7 @@ describe("commandsForAction: state transitions -> kit CLIs", () => {
   });
 
   it("ux-designer translates the design brief into the project style guide", () => {
-    const cmds = commandsForAction({ kind: "invoke-role", role: "ux-designer" }, cfg());
+    const cmds = commandsForAction({ kind: "invoke-role", role: "ux-designer", mode: "establish" }, cfg());
     expect(cmds[0]).toMatchObject({ kind: "claude", role: "ux-designer" });
     const task = (cmds[0] as { task: string }).task;
     expect(task).toMatch(/design-brief\.md/);
@@ -1376,7 +1386,7 @@ describe("role tasks name paths under the resolved artifact root (not a hardcode
   }
 
   it("ux-designer reads the design brief under .sftdd, not .tdd", () => {
-    const task = taskFor({ kind: "invoke-role", role: "ux-designer" });
+    const task = taskFor({ kind: "invoke-role", role: "ux-designer", mode: "establish" });
     expect(task).toContain(".sftdd/design/design-brief.md");
     expect(task).not.toContain(".tdd/");
   });
@@ -1401,7 +1411,7 @@ describe("role tasks name paths under the resolved artifact root (not a hardcode
   });
 
   it("a legacy .tdd root is honored verbatim (dual-read projects keep working)", () => {
-    const cmds = commandsForAction({ kind: "invoke-role", role: "ux-designer" }, cfg({ consortDir: "/p/.tdd" }));
+    const cmds = commandsForAction({ kind: "invoke-role", role: "ux-designer", mode: "establish" }, cfg({ consortDir: "/p/.tdd" }));
     const task = (cmds.find((c) => (c as { kind: string }).kind === "claude") as { task: string }).task;
     expect(task).toContain(".tdd/design/design-brief.md");
     expect(task).not.toContain(".sftdd/");
@@ -1438,7 +1448,7 @@ describe("commandsForAction: FEIP-8006 out-of-root artifact guard (verify-artifa
       [{ kind: "invoke-role", role: "architect-reviewer", mode: "estimate" }, "estimates.json"],
       [{ kind: "invoke-role", role: "architect-reviewer", mode: "estimate-committed" }, "estimates.json"],
       [{ kind: "invoke-role", role: "spec-author", mode: "breakdown" }, "feature-spec.json"],
-      [{ kind: "invoke-role", role: "ux-designer" }, "design-guide.json"],
+      [{ kind: "invoke-role", role: "ux-designer", mode: "establish" }, "design-guide.json"],
       [{ kind: "invoke-role", role: "spec-author", story: "S1" }, "acs"],
       [{ kind: "invoke-role", role: "architect-reviewer", story: "S1" }, "architecture.json"],
       [{ kind: "invoke-role", role: "test-strategist", story: "S1" }, "test-list.json"],

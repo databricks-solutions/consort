@@ -5,7 +5,7 @@ import { font, radius } from "@/lib/theme";
 import type { Planning } from "@/lib/types";
 
 // The planning / backlog view: what was proposed, how it was sized, what got committed to each
-// sprint, and whether the plan gate was approved. Ported from Kevin's `load_planning` output.
+// sprint, and whether the plan gate was approved. Renders the planning data (lib/planning.ts).
 //
 // Fetched once from /api/planning (mode-aware), not folded into the board: planning is a static
 // snapshot of the run's start, not timeline state, so it does not rewind with the transport.

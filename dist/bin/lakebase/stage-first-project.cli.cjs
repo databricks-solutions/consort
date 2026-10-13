@@ -66,6 +66,8 @@ var productOverviewMd = (tdd) => (0, import_node_path.join)(tdd, "product-overvi
 var nfrsMd = (tdd) => (0, import_node_path.join)(tdd, "nfrs.md");
 var designDir = (tdd) => (0, import_node_path.join)(tdd, "design");
 var designBriefMd = (tdd) => (0, import_node_path.join)(designDir(tdd), "design-brief.md");
+var designGuideJson = (tdd) => (0, import_node_path.join)(designDir(tdd), "design-guide.json");
+var iaMd = (tdd) => (0, import_node_path.join)(designDir(tdd), "ia.md");
 var featureDir = (tdd, featureId) => (0, import_node_path.join)(featuresDir(tdd), featureId);
 var featureResolved = (tdd, f) => findFeatureDir(tdd, f) ?? featureDir(tdd, f);
 var featureRequestMd = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "feature-request.md");
@@ -115,6 +117,20 @@ function stageFirstProject(opts = {}) {
   for (const [from, to] of intake) {
     copy(from, to);
     staged.push(rel(to));
+  }
+  const designDir2 = path.dirname(designBriefMd(consortDir));
+  const designSystem = [
+    [path.join(seedDir, "design", "design-guide.json"), designGuideJson(consortDir)],
+    [path.join(seedDir, "design", "design-guide.md"), path.join(designDir2, "design-guide.md")],
+    [path.join(seedDir, "design", "ia.md"), iaMd(consortDir)],
+    [path.join(seedDir, "client-styles", "theme.css"), path.join(projectDir, "client", "src", "styles", "theme.css")],
+    [path.join(seedDir, "client-styles", "global.css"), path.join(projectDir, "client", "src", "styles", "global.css")]
+  ];
+  for (const [from, to] of designSystem) {
+    if (fs2.existsSync(from)) {
+      copy(from, to);
+      staged.push(rel(to));
+    }
   }
   const regFrom = path.join(seedDir, "registration.json");
   if (fs2.existsSync(regFrom)) {

@@ -64,7 +64,7 @@ describe("commandsFromManifest ≡ commandsForAction (golden equivalence)", () =
 });
 
 describe("commandsFromManifest ≡ commandsForAction: ux-designer design turn (apply-theme postTurn)", () => {
-  const UX_DESIGNER: WorkflowAction = { kind: "invoke-role", role: "ux-designer" };
+  const UX_DESIGNER: WorkflowAction = { kind: "invoke-role", role: "ux-designer", mode: "establish" };
 
   it("ux-designer: byte-identical command list", () => {
     const legacy = commandsForAction(UX_DESIGNER, cfg());

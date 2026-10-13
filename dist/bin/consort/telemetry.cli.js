@@ -109,6 +109,7 @@ var PHASE_VALUES = [
 var GATE_KINDS = [
   "invoke-role",
   "project-architect-notes",
+  "project-ia-notes",
   "surface-gate",
   "approve-gate",
   "design-complete",
@@ -134,6 +135,7 @@ var GATE_KINDS = [
   "raise-to-hil",
   "revise-route",
   "flag-testlist-nonconformance",
+  "flag-ia-nonconformance",
   "done"
 ];
 var RESOURCE_KEY_SET = new Set(RESOURCE_ATTR_KEYS);

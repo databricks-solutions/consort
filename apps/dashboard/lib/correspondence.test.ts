@@ -43,21 +43,35 @@ describe("correspondence — parseCorrespondence", () => {
     expect(e.approved).toBe(false);
   });
 
-  it("falls back to the plain prompt when a progress row has no rendered markdown", () => {
+  it("reads the structured role and the detail-only prompt on a progress row", () => {
     const line = JSON.stringify({
       seq: 0,
       at: "2026-08-09T15:53:00.000Z",
       direction: "orch-to-hil",
       ordinal: 0,
       step: "0",
+      request: { kind: "progress", role: "spec-author", prompt: "propose 1 file(s) produced" },
+      response: { by: "orchestrator" },
+      outcome: { validated: true },
+    });
+    const [e] = parseCorrespondence(line);
+    expect(e.role).toBe("spec-author");
+    expect(e.promptMd).toBe("propose 1 file(s) produced");
+    expect(e.responseMd).toBeNull();
+    expect(e.ordinal).toBe(0);
+  });
+
+  it("leaves role null on a row that carries no structured role (gate / older corpus)", () => {
+    const line = JSON.stringify({
+      at: "2026-08-09T15:53:00.000Z",
+      direction: "orch-to-hil",
       request: { kind: "progress", prompt: "spec-author propose, 1 file(s) produced" },
       response: { by: "orchestrator" },
       outcome: { validated: true },
     });
     const [e] = parseCorrespondence(line);
+    expect(e.role).toBeNull();
     expect(e.promptMd).toBe("spec-author propose, 1 file(s) produced");
-    expect(e.responseMd).toBeNull();
-    expect(e.ordinal).toBe(0);
   });
 
   it("reads approved on a gate exchange", () => {
@@ -86,7 +100,7 @@ describe("correspondence — parseCorrespondence", () => {
 describe("correspondence — completionByOrdinal", () => {
   const mk = (o: Partial<CorrespondenceEntry>): CorrespondenceEntry => ({
     seq: 0, at: "2026-01-01T00:00:00Z", direction: "orch-to-hil", phase: null, ordinal: null,
-    kind: "progress", by: "orchestrator", promptMd: null, responseMd: null, validated: false, approved: false, ...o,
+    kind: "progress", role: null, by: "orchestrator", promptMd: null, responseMd: null, validated: false, approved: false, ...o,
   });
 
   it("maps validated progress rows by ordinal", () => {

@@ -18,6 +18,7 @@ import {
   readSmellsLog,
   composeReviseBrief,
   specLevelSmell,
+  isReflectSmell,
 } from "../../consort/smells/smells";
 import type { CycleArtifact, CycleScope } from "../../consort/pipeline/run-cycle";
 
@@ -64,6 +65,7 @@ describe("smells catalog", () => {
         "layering-violation",
         "migration-app-coupling",
         "reflect-architecture-defect",
+        "reflect-ia-defect",
         "reflect-spec-defect",
         "reflect-testlist-defect",
         "scaffold-defect",
@@ -98,6 +100,13 @@ describe("smells catalog", () => {
     expect(specLevelSmell("shared-state-aggregate-assertion")).toEqual({
       owning_role: "test-strategist",
       gate_to_rerun: "test_list",
+    });
+  });
+
+  it("reflect-ia-defect is spec-level and routes to the ux-designer at the ia refinement", () => {
+    expect(specLevelSmell("reflect-ia-defect")).toEqual({
+      owning_role: "ux-designer",
+      gate_to_rerun: "ia",
     });
   });
 });
@@ -299,19 +308,21 @@ describe("composeReviseBrief: the revise hand-back is smell-aware", () => {
   const reason =
     "NFR-S2-optional-detail-not-tracked has no covering test; no item asserts a listed row missing optional detail defaults to an explicit not tracked.";
 
-  it("FORCES the missing coverage for a reflect test-list defect (no open-question escape)", () => {
+  it("FORCES the missing coverage for a reflect test-list defect via a FAN-OUT re-derive (no hand-edit, no open-question escape)", () => {
     const brief = composeReviseBrief({ smell: "reflect-testlist-defect", gate: "test_list", reason });
     expect(brief).toContain(reason);
-    expect(brief).toMatch(/ADD the specific coverage/i);
     expect(brief).toMatch(/REQUIRED/);
     expect(brief).toMatch(/ordered test list/);
-    // A reflection revise is ADDITIVE: it must instruct the author to PRESERVE the
-    // existing items (they passed prior gates), not silently drop them while adding
-    // the named coverage. A revise that re-authored the artifact from scratch wiped
-    // prior ACs/tests and hard-blocked the gate (observed live run 14, S1 lost
-    // AC1-3 on the reflect revise). Guard both signals.
-    expect(brief).toMatch(/PRESERVE/i);
-    expect(brief).toMatch(/keep all existing[\s\S]*intact/i);
+    // The test list is produced by the DETERMINISTIC fan-out, not hand-authored: a test_list coverage
+    // revise re-RUNS the fan-out. It must NOT hand the test-strategist the old manual-authoring brief
+    // ("PRESERVE / keep all existing intact / ADD alongside") — that both CONTRADICTED the co-heal's
+    // "cleared BY DESIGN, re-derive FRESH" directive and described an authoring model the fan-out
+    // replaced. The run-14 AC-loss case is now guarded by the MACHINERY (scoped sidecar + merge).
+    expect(brief).toMatch(/RE-?RUN/i);
+    expect(brief).toMatch(/fan-out/i);
+    expect(brief).toMatch(/do NOT hand-edit/i);
+    expect(brief).not.toMatch(/keep all existing[\s\S]*intact/i);
+    expect(brief).not.toMatch(/ADD the specific coverage/i);
     // The permissive escape hatch must NOT appear – it is what let the author omit
     // again. The brief may FORBID the escape ("do NOT ... defer it to an open
     // question"), but must not INVITE it ("say so ... rather than fabricating").
@@ -320,14 +331,70 @@ describe("composeReviseBrief: the revise hand-back is smell-aware", () => {
     expect(brief).toMatch(/do NOT[\s\S]*defer it to an open question/i);
   });
 
-  it("FORCES coverage for a reflect spec defect against the acceptance criteria", () => {
-    const brief = composeReviseBrief({ smell: "reflect-spec-defect", gate: "spec", reason });
-    expect(brief).toMatch(/ADD the specific coverage/i);
-    expect(brief).toMatch(/acceptance criteria/);
-    // ADDITIVE revise – must preserve the story's existing ACs (the run-14 AC-loss guard).
-    expect(brief).toMatch(/PRESERVE/i);
-    expect(brief).toMatch(/keep all existing[\s\S]*intact/i);
+  it("scoped test-list revise is a DIRECTED PATCH (edit in place, no fan-out); full re-derives via the fan-out", () => {
+    // Option A: a clean AC-scoped reflect-testlist defect is a targeted patch — the test-strategist edits
+    // the existing ordered list in place, NOT a fan-out re-roll (which caused the 33→22 swing).
+    const scopedBrief = composeReviseBrief({ smell: "reflect-testlist-defect", gate: "test_list", reason, scoped: true });
+    expect(scopedBrief).toMatch(/DIRECTED test-list fix/);
+    expect(scopedBrief).toMatch(/do NOT re-run the fan-out/i);
+    expect(scopedBrief).toMatch(/byte-identical/);
+    expect(scopedBrief).not.toMatch(/do NOT hand-edit/i); // the opposite of the fan-out brief
+    // full/coupled still re-derives via the fan-out
+    const fullBrief = composeReviseBrief({ smell: "reflect-testlist-defect", gate: "test_list", reason, scoped: false });
+    expect(fullBrief).toMatch(/RE-?RUNNING the fan-out/i);
+    expect(fullBrief).toMatch(/prior test list was cleared[\s\S]*full list/i);
+  });
+
+  it("SCOPED reflect spec defect: re-author ONLY the flagged AC(s), the rest preserved (no PRESERVE-ALL lie)", () => {
+    const brief = composeReviseBrief({ smell: "reflect-spec-defect", gate: "spec", reason, acIds: ["AC3-empty-location-state"] });
+    expect(brief).toMatch(/acceptance criteri/);
+    expect(brief).toMatch(/Re-author ONLY the flagged[\s\S]*AC3-empty-location-state/);
+    // The OTHER ACs (and their architect notes) are preserved on disk — the brief must NOT hand the old
+    // "PRESERVE every item / keep all existing intact / ADD alongside" manual-edit lie (on a scoped revise
+    // the flagged AC file was cleared; the rest are untouched), and the architect re-annotates notes.
+    expect(brief).toMatch(/PRESERVED on disk/);
+    expect(brief).toMatch(/architect re-annotates/i);
+    expect(brief).not.toMatch(/keep all existing[\s\S]*intact/i);
+    expect(brief).not.toMatch(/ADD the specific coverage/i);
+    expect(brief).toMatch(/REQUIRED/);
+    expect(brief).toMatch(/do NOT[\s\S]*defer it to an open question/i);
     expect(brief).not.toMatch(/rather than fabricating/i);
+  });
+
+  it("WHOLE-STORY reflect spec defect (no ac_ids): re-derive FRESH from the breakdown, not from logs", () => {
+    const brief = composeReviseBrief({ smell: "reflect-spec-defect", gate: "spec", reason });
+    expect(brief).toMatch(/acceptance criteria/);
+    // Full re-decompose: the prior ACs were cleared, so re-derive from the canonical breakdown + intake —
+    // NOT the old "PRESERVE / keep all intact" (impossible on a wiped acs/) that drove log-reconstruction.
+    expect(brief).toMatch(/cleared for this re-design[\s\S]*re-derive/i);
+    expect(brief).toMatch(/breakdown \(story\.json/);
+    expect(brief).not.toMatch(/keep all existing[\s\S]*intact/i);
+    expect(brief).not.toMatch(/ADD the specific coverage/i);
+    expect(brief).not.toMatch(/rather than fabricating/i);
+    expect(brief).toMatch(/do NOT[\s\S]*defer it to an open question/i);
+  });
+
+  it("ARCHITECTURE reflect defect routes to the architect's own product (not the PO-redundancy fall-through)", () => {
+    const brief = composeReviseBrief({
+      smell: "reflect-architecture-defect",
+      gate: "architecture",
+      reason: "AC1 architectural_notes name /skus/:sku but the IA + tests use /sku/:sku",
+    });
+    expect(brief).toContain("AC1 architectural_notes name /skus/:sku");
+    expect(brief).toMatch(/ARCHITECTURE defect/);
+    expect(brief).toMatch(/RE-ANNOTATED/);
+    expect(brief).toMatch(/acceptance criteria themselves are intact/i); // non-destructive: no AC wipe
+    expect(brief).toMatch(/REQUIRED/);
+    // must NOT fall through to the PO-redundancy brief
+    expect(brief).not.toMatch(/overlap\/redundancy/i);
+    expect(brief).not.toMatch(/rather than fabricating/i);
+  });
+
+  it("isReflectSmell recognizes all four reflect owners' smells (architecture included)", () => {
+    for (const s of ["reflect-spec-defect", "reflect-testlist-defect", "reflect-architecture-defect", "reflect-ia-defect"]) {
+      expect(isReflectSmell(s)).toBe(true);
+    }
+    expect(isReflectSmell("dead-requirement-signal")).toBe(false);
   });
 
   it("keeps the overlap/open-question wording for a non-reflect (redundancy) revise", () => {

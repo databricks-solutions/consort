@@ -1,8 +1,8 @@
 // File-kind rules shared by both sources: what counts as code vs. a process artifact, which
-// extensions are text, and the size cap for embedding a file in a response. Ported from Kevin's
-// build_dashboard.py:47-56; lived in replay.ts until the live HEAD-artifact reader needed the
-// same rules, at which point duplicating them (or importing replay into live) was the wrong
-// trade. One definition here, so the two readers can never disagree about "is this text?".
+// extensions are text, and the size cap for embedding a file in a response. Lived in replay.ts
+// until the live HEAD-artifact reader needed the same rules, at which point duplicating them (or
+// importing replay into live) was the wrong trade. One definition here, so the two readers can
+// never disagree about "is this text?".
 
 import { readFileSync, statSync } from "node:fs";
 

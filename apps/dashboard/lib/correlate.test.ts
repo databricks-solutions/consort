@@ -4,9 +4,9 @@
  * The pairing algorithm cannot detect its own failure (plan §6), so these tests do three
  * distinct jobs, in increasing order of what they'd catch:
  *
- *   1. DIFFERENTIAL vs. Kevin's original JS, transcribed verbatim below and run over the real
- *      421-event corpus. This is the guard that the port didn't change the semantics — the
- *      same technique that caught the `topology.ts` transcription risk in PR #9.
+ *   1. DIFFERENTIAL vs. an independent reference implementation of the pairing algorithm,
+ *      transcribed below and run over the real 421-event corpus. This guards that a refactor of
+ *      the production path cannot silently change the pairing semantics.
  *   2. GROUND TRUTH on the real corpus: 71/71 invoke-role turns consumed, and the 10
  *      release-engineer events classified as structural rather than as drift.
  *   3. DRIFT DETECTION on synthetic mismatches, because the healthy corpus by definition
@@ -16,7 +16,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { correlate, driftMessage, driftSeverity, kitVersionOfLog, latestTurnByRole, turnByEvent, type TurnIndexEntry } from "./correlate";
+import { correlate, driftMessage, driftSeverity, kitVersionOfLog, latestTurnByRole, latestTurnByStep, turnByEvent, type TurnIndexEntry } from "./correlate";
 import type { AgentLogEvent } from "./types";
 
 const CORPUS_DIR = join(__dirname, "__fixtures__");
@@ -44,9 +44,9 @@ const LOG = readCorpusLog();
 const TURNS = readTurns();
 
 // ---------------------------------------------------------------------------
-// 1. Differential: Kevin's algorithm, transcribed verbatim from
-// `_dashboard_template.html:312-325`. Deliberately NOT refactored — quirks included — so it
-// stands as an independent oracle rather than a paraphrase of the port.
+// 1. Differential: a reference implementation of the pairing algorithm, transcribed below.
+// Deliberately NOT refactored — quirks included — so it stands as an independent check rather
+// than a paraphrase of the production code.
 
 function kevinEventTurn(log: AgentLogEvent[], turns: TurnIndexEntry[]): Record<number, number> {
   const turnByRole: Record<string, TurnIndexEntry[]> = {};
@@ -99,7 +99,36 @@ describe("latestTurnByRole — full-corpus role → latest reached turn", () => 
   });
 });
 
-describe("correlate — differential against Kevin's original", () => {
+describe("latestTurnByStep — full-corpus STEP+STORY → latest reached turn (the lane-card resolver)", () => {
+  // The real turns/index.json shape: role + `mode` (= phase) + story. The breakdown is story-less; the
+  // per-story design turns carry their story. latestTurnByStep must key them step+story so a card opens
+  // ITS OWN step's turn for the round in view — the #0 breakdown AND an early story's spec from a late
+  // playhead — never a sibling step's or round's turn.
+  const turns: Pick<TurnIndexEntry, "ordinal" | "role" | "mode" | "story">[] = [
+    { ordinal: 0, role: "spec-author", mode: "breakdown", story: null }, // outer loop → d-breakdown, story-less
+    { ordinal: 1, role: "spec-author", mode: null, story: "S1-file-stock" }, // d-spec (S1)
+    { ordinal: 2, role: "ux-designer", mode: "ia", story: "S1-file-stock" }, // d-ux-ia (S1)
+    { ordinal: 22, role: "spec-author", mode: null, story: "S3-sku-detail-view" }, // d-spec (S3)
+    { ordinal: 25, role: "ux-designer", mode: "ia", story: "S3-sku-detail-view" }, // d-ux-ia (S3)
+  ];
+
+  it("resolves the breakdown (#0, out of any window) under its story-less key, and each story's spec to ITS own turn", () => {
+    const m = latestTurnByStep(turns, new Set([0, 1, 2, 22, 25]));
+    expect(m["d-breakdown|"]).toBe(0); // the outer-loop breakdown, resolvable whole-corpus
+    expect(m["d-spec|S1-file-stock"]).toBe(1);
+    expect(m["d-spec|S3-sku-detail-view"]).toBe(22); // S3's spec, NOT S1's — no cross-round bleed
+    expect(m["d-ux-ia|S3-sku-detail-view"]).toBe(25);
+  });
+
+  it("is scoped to reached ordinals (scrubbing back): S3's spec disappears before its turn is reached", () => {
+    const m = latestTurnByStep(turns, new Set([0, 1, 2]));
+    expect(m["d-spec|S3-sku-detail-view"]).toBeUndefined();
+    expect(m["d-spec|S1-file-stock"]).toBe(1);
+    expect(m["d-breakdown|"]).toBe(0);
+  });
+});
+
+describe("correlate — differential against the reference implementation", () => {
   it("pairs event-for-event identically over the whole corpus", () => {
     const mine = turnByEvent(correlate(LOG, TURNS, CORPUS_KIT_COMMIT));
     const theirs = kevinEventTurn(LOG, TURNS);
@@ -124,10 +153,10 @@ describe("correlate — differential against Kevin's original", () => {
     }
   });
 
-  it("differs from Kevin's ONLY by classifying structural roles, not by dropping them", () => {
-    // The one intentional deviation: he silently produces no pairing for release-engineer
-    // (its role list is empty, so `list[k]` is undefined); we record the same non-pairing but
-    // report it as `structural`. Assert the deviation is exactly that and nothing more.
+  it("differs from the reference ONLY by classifying structural roles, not by dropping them", () => {
+    // The one intentional deviation: the reference silently produces no pairing for
+    // release-engineer (its role list is empty, so `list[k]` is undefined); we record the same
+    // non-pairing but report it as `structural`. Assert the deviation is exactly that and nothing more.
     const report = correlate(LOG, TURNS, CORPUS_KIT_COMMIT);
     const theirs = kevinEventTurn(LOG, TURNS);
     for (const s of report.structural) {
@@ -413,7 +442,7 @@ describe("correlate — story scope confines a phantom phase.start", () => {
   });
 
   it("a role-ONLY cursor WOULD mis-pair S2 — which is exactly what the story scope prevents", () => {
-    // Kevin's original transcription (the oracle kept in this file) pairs by role order alone: the
+    // The reference transcription (kept in this file) pairs by role order alone: the
     // 5th S1 phase.start grabs S2's turn and S2's own phase.start is left with nothing.
     const theirs = kevinEventTurn(events, turns);
     expect(theirs[4]).toBe(104); // S1's phantom phase.start wrongly took S2's turn

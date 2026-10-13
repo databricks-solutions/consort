@@ -27,7 +27,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { basename, join, relative, resolve } from "node:path";
 import { resolveContained } from "../safepath";
 import { classify, readTextFile } from "../filekind";
-import { correlate, driftMessage, driftSeverity, latestTurnByRole, type CorrelationReport, type TurnIndexEntry } from "../correlate";
+import { correlate, driftMessage, driftSeverity, latestTurnByRole, latestTurnByStep, type CorrelationReport, type TurnIndexEntry } from "../correlate";
 import { RECENT_EVENT_TAIL } from "../reducer";
 import { CAPABILITIES, foldSource, type Capability, type DashboardSource } from "../source";
 import { loadPlanning } from "../planning";
@@ -105,7 +105,7 @@ export interface TurnDetail {
   transcript?: { role?: string; model?: string; toolCount?: number; finalTextChars?: number };
 }
 
-/** A transcript split into its three sections, as Kevin's `parse_transcript` did. */
+/** A transcript split into its three sections: prompt, tools, and reasoning. */
 export interface ParsedTranscript {
   prompt: string;
   tools: string[];
@@ -118,10 +118,10 @@ export interface ParsedTranscript {
 export { classify };
 
 /**
- * Split `transcript.md` into prompt / tools / reasoning. Ported from `parse_transcript`.
+ * Split `transcript.md` into prompt / tools / reasoning.
  *
- * Kept faithful to the original's section handling, including stripping a ``` fence around
- * the prompt, because the corpus's transcripts are written to match it.
+ * The section handling strips a ``` fence around the prompt, matching how the corpus's
+ * transcripts are written.
  */
 export function parseTranscript(md: string): ParsedTranscript {
   let prompt = "";
@@ -174,7 +174,7 @@ export function parseTranscript(md: string): ParsedTranscript {
   return { prompt, tools, reasoning };
 }
 
-/** A produced file's snapshot content, or why it isn't available. Ported from `read_file_content`. */
+/** A produced file's snapshot content, or why it isn't available. */
 export function readFileContent(
   turnDir: string,
   rel: string,
@@ -529,6 +529,7 @@ export class ReplaySource implements DashboardSource {
       kitVersionMatch: r.kitVersionMatch,
       recentTurns,
       latestTurnByRole: latestTurnByRole(this.turns(), reached),
+      latestTurnByStep: latestTurnByStep(this.turns(), reached),
     };
   }
 
@@ -588,6 +589,7 @@ export class ReplaySource implements DashboardSource {
       direction: e.direction,
       phase: e.phase,
       kind: e.kind,
+      role: e.role,
       by: e.by,
       // The request is the substance for orchestrator prompts; a kickoff/intake's human reply
       // (responseMd) is the interesting half, so prefer it when the request carried no markdown.

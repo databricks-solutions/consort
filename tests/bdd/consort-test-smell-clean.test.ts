@@ -60,6 +60,44 @@ describe("checkTestSmells", () => {
     expect(r.violations[0].detail).toMatch(/UUID/);
   });
 
+  it("flags a create-flow e2e spec with no per-run-unique key seed (fixed-key-e2e)", () => {
+    const dir = mkProject();
+    write(dir, "client/tests/e2e/file-stock.spec.ts",
+      `test('files a stock record', async ({ page }) => {\n` +
+      `  await page.goto('/');\n` +
+      `  await page.getByLabel('SKU').fill('WIDGET-001');\n` +
+      `  await page.getByLabel('Quantity').fill('10');\n` +
+      `  await page.getByRole('button', { name: 'File record' }).click();\n` +
+      `  await expect(page.getByRole('row', { name: 'WIDGET-001' })).toBeVisible();\n` +
+      `});\n`);
+    const r = checkTestSmells({ projectDir: dir });
+    expect(r.clean).toBe(false);
+    expect(r.violations.some((v) => v.smell === "fixed-key-e2e")).toBe(true);
+    expect(r.violations.find((v) => v.smell === "fixed-key-e2e")!.detail).toMatch(/randomUUID|per-run-unique/i);
+  });
+
+  it("does NOT flag a create-flow e2e spec that seeds a per-run-unique key", () => {
+    const dir = mkProject();
+    write(dir, "client/tests/e2e/file-stock.spec.ts",
+      `test('files a stock record', async ({ page }) => {\n` +
+      `  const sku = 'SKU-' + crypto.randomUUID().slice(0, 8);\n` +
+      `  await page.getByLabel('SKU').fill(sku);\n` +
+      `  await page.getByRole('button', { name: 'File record' }).click();\n` +
+      `  await expect(page.getByRole('row', { name: sku })).toBeVisible();\n` +
+      `});\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "fixed-key-e2e")).toBe(false);
+  });
+
+  it("does NOT flag a read-only e2e spec (no create flow, no collision risk)", () => {
+    const dir = mkProject();
+    write(dir, "client/tests/e2e/stock-list.spec.ts",
+      `test('lists stock', async ({ page }) => {\n` +
+      `  await page.goto('/stock');\n` +
+      `  await expect(page.getByRole('heading', { name: 'Stock' })).toBeVisible();\n` +
+      `});\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "fixed-key-e2e")).toBe(false);
+  });
+
   it("flags a vi.mock factory closing over a top-level const (TDZ) but not a vi.hoisted one", () => {
     const dir = mkProject();
     write(dir, "client/tests/pages/list.test.tsx",

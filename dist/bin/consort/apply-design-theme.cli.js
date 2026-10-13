@@ -133,6 +133,7 @@ ${lines.join("\n")}
 }
 
 // consort/architecture/apply-theme.ts
+var CLIENT_THEME_CSS = join3("client", "src", "styles", "theme.css");
 var THEME_HEADER = `/*
  * DESIGN TOKENS \u2014 GENERATED from .consort/design/design-guide.json.
  * Do NOT hand-edit the :root block: edit the design guide and re-run
@@ -154,7 +155,7 @@ function applyDesignGuideTheme(projectDir) {
     );
   }
   const guide = JSON.parse(readFileSync3(guidePath, "utf8"));
-  const themePath = join3(projectDir, "client", "src", "styles", "theme.css");
+  const themePath = join3(projectDir, CLIENT_THEME_CSS);
   const css = buildThemeCss(guide);
   writeFileSync3(themePath, css);
   let iconInstalled = false;

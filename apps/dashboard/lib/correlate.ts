@@ -1,10 +1,10 @@
 // Log ↔ corpus pairing: which recorded turn produced each log event.
 //
 // This is the fragile part of replay mode, and the plan's §6 names it the top risk. The
-// algorithm is Kevin's, transcribed from `_dashboard_template.html:312-325`: walk the log in
-// order, and for each `phase.start` carrying a non-orchestrator role, take that role's next
-// unconsumed `invoke-role` turn WITH THE SAME STORY. A per-(role, story) cursor — falling back
-// to plain role order for a story-less event or a role whose turns carry no story stamp.
+// algorithm: walk the log in order, and for each `phase.start` carrying a non-orchestrator role,
+// take that role's next unconsumed `invoke-role` turn WITH THE SAME STORY. A per-(role, story)
+// cursor — falling back to plain role order for a story-less event or a role whose turns carry
+// no story stamp.
 //
 // The story scope is load-bearing: a phantom `phase.start` (a role turn that started but recorded
 // NO `invoke-role` turn — a died/retried turn) would, under a role-ONLY cursor, slide every later
@@ -23,6 +23,7 @@
 // corpus has legitimately unpaired events, so "unpaired > 0" is NOT a drift signal on its own.
 
 import type { AgentLogEvent } from "./types";
+import { laneStepForTurn } from "./topology";
 
 /**
  * A turn as it appears in `turns/index.json`.
@@ -258,6 +259,31 @@ export function latestTurnByRole(
   for (const t of turns) {
     if (!t.role || !reached.has(t.ordinal)) continue;
     if (out[t.role] === undefined || t.ordinal > out[t.role]) out[t.role] = t.ordinal;
+  }
+  return out;
+}
+
+/**
+ * Each lane STEP → its latest reached turn ordinal, keyed `"<stepId>|<story ?? ''>"` over the WHOLE
+ * turn index (not just the recent-events window), scoped to the turns the playhead has reached. This is
+ * what lets a lane card resolve its OWN step's turn — correctly per story — even when that turn scrolled
+ * out of the window (e.g. the "break into stories" breakdown at #0, or an early story's spec from a late
+ * playhead). Unlike `latestTurnByRole` (role-keyed → a multi-step role's LATEST turn, which bled a
+ * sibling step/round), this is step+story precise: an inner-loop step resolves to ITS round's turn, and
+ * the story-less outer-loop breakdown resolves under the `<step>|` key. A turn that maps to no step
+ * (gates, revise-route, structural) is skipped.
+ */
+export function latestTurnByStep(
+  turns: readonly Pick<TurnIndexEntry, "ordinal" | "role" | "mode" | "story">[],
+  reached: ReadonlySet<number>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const t of turns) {
+    if (!reached.has(t.ordinal)) continue;
+    const step = laneStepForTurn({ role: t.role, mode: t.mode });
+    if (!step) continue;
+    const key = `${step}|${t.story ?? ""}`;
+    if (out[key] === undefined || t.ordinal > out[key]) out[key] = t.ordinal;
   }
   return out;
 }

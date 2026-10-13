@@ -3,8 +3,8 @@
 import { useEffect, useRef } from "react";
 import { font, radius } from "@/lib/theme";
 
-// Transport bar: play/pause, step, speed, scrub over the event log — Kevin's most valuable
-// interaction, re-skinned to Cathy's light theme.
+// Transport bar: play/pause, step, speed, scrub over the event log — the most valuable
+// interaction, in the dashboard's light theme.
 //
 // The scrub position is an event COUNT (how many events are folded), matching the fold's
 // `upTo` semantics: 0 = nothing folded, totalEventCount = the live edge. `at === null`

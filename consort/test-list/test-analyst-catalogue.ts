@@ -64,13 +64,19 @@ export interface TestAnalystCatalogueEntry {
  *  KIND-LOCAL id (the supervisor assigns final feature-flat T-ids on merge); `ac_id` is the EXACT id
  *  of an existing story AC; one observable behavior per item (no "and"); do NOT order; do NOT set
  *  `ordered_for`. Return the slice as a fenced JSON array in your final message. */
-const SLICE_CONTRACT =
+export const SLICE_CONTRACT =
   "Return an UNORDERED JSON array of test-list items as the LAST thing in your reply, fenced as " +
   "```json ... ```. Each item is { \"id\": \"<kind-local id, e.g. bhv-1>\", \"description\": " +
   "\"<one observable behavior, no 'and'>\", \"ac_id\": \"<EXACT id of an existing story AC file>\", " +
   "\"status\": \"pending\", \"kind\": \"<your kind>\" }. Do NOT order the items and do NOT set " +
   "ordered_for – the supervisor orders the merged master and assigns the final T-ids. Map every item " +
   "to a real story AC id (copy it verbatim, never re-slug).";
+
+// The kind analysts emit UNORDERED slices (SLICE_CONTRACT). Assembly — reconcile + order + feature-flat
+// T-ids — is DETERMINISTIC and runs in the fan-out orchestrator (assembleSlices), with the SEMANTIC
+// de-dup pass owned by the test-strategist. There is no dedicated assembler subagent: a model-side AUP
+// safeguard false-positive made its `claude -p` a single point of lane failure for a step whose only
+// value over the code routine was that semantic pass.
 
 export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> = {
   behavior: {
@@ -218,6 +224,10 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "`<App>`/`<Page>` with fake data) is ONLY for a pure presentation/rendering AC, NEVER for an " +
       "`E2E`-layer AC – drafting an E2E-layer AC as a mocked component test is the recurring " +
       "reflect-testlist-defect (it cannot hit the DB the layer demands). One real e2e per E2E-layer AC. " +
+      "An e2e that CREATES a record (fills a form + submits) MUST key it on a per-run-unique business " +
+      "key — a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) — used " +
+      "in BOTH the create fill AND the assertion locator, so each run owns its own row on the SHARED " +
+      "feature branch (a hardcoded key collides with a prior run / sibling story and goes perma-red). " +
       "ALSO cover NFR CLIENT-RENDER fitness functions: for every `architecture.json` NFR whose " +
       "`fitness_function` describes a CLIENT render (e.g. rendering a row with null/optional fields and " +
       "asserting a 'not tracked' indicator, or an empty/loading/error state), emit a `kind:\"client\"` " +

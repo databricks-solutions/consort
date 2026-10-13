@@ -7155,14 +7155,16 @@ function checkJsdomBrowserAssertion(testListJson) {
   const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
   const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
       violations.push(
         `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
       );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 function checkPersistenceCoverage(testListJson, architectureJson2) {
   let arch;
@@ -7325,6 +7327,16 @@ function checkDbDesign(dbDesignJson2, architectureJson2) {
     violations.push(
       `persistence_invariant(s) not realized by db-design.json realizes_invariants[]: ${uncovered.join(", ")} (the DBA must physically realize every invariant the architect declared \u2013 a table/column/constraint/index \u2013 and list its id here; see agents/dba.md)`
     );
+  }
+  const accessPatterns = (arch.access_patterns ?? []).filter((p) => p && typeof p.id === "string" && p.id.length > 0).map((p) => p.id);
+  if (accessPatterns.length > 0) {
+    const addressed = new Set((db.addresses_access_patterns ?? []).filter((x) => typeof x === "string" && x.length > 0));
+    const unaddressed = accessPatterns.filter((id) => !addressed.has(id));
+    if (unaddressed.length > 0) {
+      violations.push(
+        `access_pattern(s) not addressed by db-design.json addresses_access_patterns[]: ${unaddressed.join(", ")} (the DBA must CONSIDER each query shape the architect flagged \u2013 add an index/structure on its columns or record a deliberate no-index decision in db-design.md \u2013 and list its id here; see agents/dba.md)`
+      );
+    }
   }
   return violations.length > 0 ? { ok: false, violations } : { ok: true };
 }
@@ -7563,6 +7575,7 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
     const layer = acLayerById[it.ac_id];
@@ -7570,9 +7583,10 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
       violations.push(
         `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
       );
+      acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
 // consort/logging/gate-decision-log.ts

@@ -17,6 +17,10 @@ import { join } from "node:path";
 import { renderThemeRootCss, installBrandAsset, applyBrandIconReference, applyNavbarBranding, type DesignGuide } from "./design-adherence.js";
 import { resolveConsortDir, designGuideJson } from "../config/consort-paths.js";
 
+/** The ONE place the generated stylesheet lives (project-relative). apply-theme is its sole
+ *  writer; everything else that needs the token sheet references this constant, not a literal. */
+export const CLIENT_THEME_CSS = join("client", "src", "styles", "theme.css");
+
 const THEME_HEADER = `/*
  * DESIGN TOKENS — GENERATED from .consort/design/design-guide.json.
  * Do NOT hand-edit the :root block: edit the design guide and re-run
@@ -55,7 +59,7 @@ export function applyDesignGuideTheme(projectDir: string): ApplyThemeResult {
     );
   }
   const guide = JSON.parse(readFileSync(guidePath, "utf8")) as DesignGuide;
-  const themePath = join(projectDir, "client", "src", "styles", "theme.css");
+  const themePath = join(projectDir, CLIENT_THEME_CSS);
   const css = buildThemeCss(guide);
   writeFileSync(themePath, css);
   // Applying the design is also where the brand icon lands: a coding agent cannot copy a

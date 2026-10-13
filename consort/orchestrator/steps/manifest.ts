@@ -30,7 +30,8 @@ import architectReviewerManifest from "./manifests/architect-reviewer.json" with
 import dbaManifest from "./manifests/dba.json" with { type: "json" };
 import testStrategistManifest from "./manifests/test-strategist.json" with { type: "json" };
 import driverGreenManifest from "./manifests/driver-green.json" with { type: "json" };
-import uxDesignerManifest from "./manifests/ux-designer.json" with { type: "json" };
+import uxEstablishManifest from "./manifests/ux-establish.json" with { type: "json" };
+import uxIaManifest from "./manifests/ux-ia.json" with { type: "json" };
 // Build-turn manifests: every navigator/driver BUILD turn is now a declared step (config home
 // for its agentOptions). Their record-phase cycle CLI is DYNAMIC (loop/--ac/--repair/collapsed
 // buildMode verbs), so each declares a `@build-cycle` postTurn marker that commandsFromManifest
@@ -38,6 +39,7 @@ import uxDesignerManifest from "./manifests/ux-designer.json" with { type: "json
 import navigatorRedManifest from "./manifests/navigator-red.json" with { type: "json" };
 import navigatorReviewManifest from "./manifests/navigator-review.json" with { type: "json" };
 import navigatorReflectManifest from "./manifests/navigator-reflect.json" with { type: "json" };
+import navigatorReconcileManifest from "./manifests/navigator-reconcile.json" with { type: "json" };
 import navigatorAssessManifest from "./manifests/navigator-assess.json" with { type: "json" };
 import navigatorAssessDeployManifest from "./manifests/navigator-assess-deploy.json" with { type: "json" };
 import navigatorAssessRefactorManifest from "./manifests/navigator-assess-refactor.json" with { type: "json" };
@@ -198,10 +200,12 @@ export const SHIPPED_MANIFESTS: StepManifest[] = [
   dbaManifest as StepManifest,
   testStrategistManifest as StepManifest,
   driverGreenManifest as StepManifest,
-  uxDesignerManifest as StepManifest,
+  uxEstablishManifest as StepManifest,
+  uxIaManifest as StepManifest,
   navigatorRedManifest as StepManifest,
   navigatorReviewManifest as StepManifest,
   navigatorReflectManifest as StepManifest,
+  navigatorReconcileManifest as StepManifest,
   navigatorAssessManifest as StepManifest,
   navigatorAssessDeployManifest as StepManifest,
   navigatorAssessRefactorManifest as StepManifest,

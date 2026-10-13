@@ -1,20 +1,18 @@
-// Planning / backlog parsing — ported from Kevin's build_dashboard.py
-// (`parse_proposals`, `feature_details`, `load_planning`), the one parser set the Phase 2 port
-// left behind. Pure string/JSON work over a set of on-disk artifacts, so it lives here and is
-// unit-tested against the real files; the source layer supplies the two roots to search.
+// Planning / backlog parsing — proposals, feature details, and the sprint backlog. Pure
+// string/JSON work over a set of on-disk artifacts, so it lives here and is unit-tested against
+// the real files; the source layer supplies the two roots to search.
 //
-// The plan calls this "port parse_proposals", but a verbatim port would MISPARSE the replay
-// corpus. Kevin's regex was written against the LIVE stockflow format and never run against his
-// own recorded corpus — the two `feature-proposals.md` files disagree:
+// A parser tuned to only one spelling would MISPARSE the other corpus: the live and recorded
+// `feature-proposals.md` files disagree on their body labels:
 //
 //   live  stockflow/.sftdd/planning/feature-proposals.md
 //         `## FP1: File and view…`   body: `**One-line ask:**`  `**E2E story:**`
 //   replay recorded-artifacts/planning/feature-proposals.md
 //         `## FP1: File and view…`   body: `- **Ask:**`         `- **E2E (UI) story:**`
 //
-// Ported verbatim, the ask/rationale/e2e come out EMPTY on the replay demo — exactly the
-// Kevin-parser-vs-real-data gap this project keeps hitting (see the memory). So the header regex
-// and the body-label matcher below accept both spellings, verified against both real files.
+// A single-spelling matcher makes the ask/rationale/e2e come out EMPTY on the replay demo. So the
+// header regex and the body-label matcher below accept both spellings, verified against both
+// real files.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,8 +36,8 @@ export interface Proposal {
 /**
  * Parse feature-proposals.md into an ordered list of candidate features.
  *
- * Headers look like `## FP1: File and view stock…` (both real files) — Kevin's docstring also
- * allowed `## PF1 (candidate) …`, kept here. Non-feature sections (`## Open questions for the
+ * Headers look like `## FP1: File and view stock…` (both real files); a `## PF1 (candidate) …`
+ * form is also accepted. Non-feature sections (`## Open questions for the
  * Product Owner`) are skipped: an id must start with letters followed by a digit.
  *
  * Body labels are matched in BOTH spellings the two real files use:
@@ -138,11 +136,10 @@ export function featureDetails(roots: string[], fid: string): { title: string; s
 /**
  * Gather planning: t-shirt estimates, proposals, sprint backlog, and the plan gate.
  *
- * `roots` are searched in order (live `.sftdd` first, then recorded-artifacts) — the same
- * freshest-wins fallback Kevin used, but taking the roots as an argument so the caller owns
- * where the data is. This also sidesteps his dead `cap_dir = LOG_PATH.parent.parent`
- * (build_dashboard.py:491), which resolved to a directory with no `.sftdd/` and only worked
- * because `load_planning` fell back to recorded-artifacts anyway.
+ * `roots` are searched in order (live `.sftdd` first, then recorded-artifacts) — a freshest-wins
+ * fallback, taking the roots as an argument so the caller owns where the data is. The roots are
+ * passed in rather than derived from the log path, which would resolve to a directory with no
+ * `.sftdd/` and only work because the search falls back to recorded-artifacts anyway.
  *
  * `logEvents` is optional and used only to count spec-author `propose` rounds, which drives the
  * re-plan flag.
@@ -178,7 +175,7 @@ export function loadPlanning(roots: string[], logEvents?: AgentLogEvent[]): Plan
   }
 
   // Sprints: one dir per sprint under <root>/sprints/<sprint>/. First root that HAS a sprints
-  // dir wins (live over recorded), matching Kevin's `break`.
+  // dir wins (live over recorded): the first match stops the search.
   const sprints: PlanningSprint[] = [];
   const committed = new Set<string>();
   for (const r of roots) {
@@ -265,8 +262,8 @@ export function loadPlanning(roots: string[], logEvents?: AgentLogEvent[]): Plan
   // A later sprint is a re-plan only when we can SEE that a single proposal round fed all of
   // them. `=== 1`, not `<= 1`: zero propose rounds means the log was truncated, not passed, or
   // predates logging — that is unknown, not "one round", and must not stamp a re-plan we can't
-  // support. (Kevin's `<= 1` never bit because his log always had the one round; a truncated or
-  // omitted log would have made every later sprint claim re-plan.)
+  // support. A `<= 1` test would make every later sprint claim re-plan whenever the log is
+  // truncated or omitted.
   for (let i = 0; i < sprints.length; i++) {
     sprints[i].isReplan = i > 0 && proposeRounds === 1;
   }

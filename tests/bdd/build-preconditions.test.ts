@@ -49,6 +49,7 @@ describe("resolvePreparer / PRECONDITION_PREPARERS", () => {
       "context-pack",
       "cross-story-context",
       "green-failure-advisory",
+      "reconcile-context",
       "test-analyst-roster",
     ]);
   });

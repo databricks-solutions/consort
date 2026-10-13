@@ -10,8 +10,8 @@ export const revalidate = 0;
 // GET /api/turn/<ord>?file=<rel>       → one produced file's snapshot content
 // GET /api/turn/<ord>?mode=replay      → explicit mode (defaults as /api/state does)
 //
-// Served lazily, per the plan's decision 1: Kevin's build embeds all 126 turns into a 1.5 MB
-// single-file HTML, which is a virtue for offline sharing but the wrong runtime model. Fetching
+// Served lazily, per the plan's decision 1: a single-file HTML build embeds all 126 turns into a
+// 1.5 MB page, which is a virtue for offline sharing but the wrong runtime model. Fetching
 // one turn on demand keeps the first paint fast and lets the same UI serve live and replay.
 //
 // File contents are NOT included in the turn payload for the same reason — a turn can produce

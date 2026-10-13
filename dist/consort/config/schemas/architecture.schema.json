@@ -72,6 +72,39 @@
         "additionalProperties": false
       }
     },
+    "access_patterns": {
+      "type": "array",
+      "description": "OPTIONAL read/query access patterns a story introduces over the schema (a filter, lookup, sort, or join an AC drives) that the DBA should CONSIDER for physical tuning (an index, a covering index, materialization). Distinct from persistence_invariants (which are correctness guarantees): these are PERFORMANCE/access signals. Declaring one is the architect's deliberate nudge that a NEW query shape warrants DBA attention — NOT required for every read. Each declared pattern MUST be ADDRESSED by the DBA via db-design.json addresses_access_patterns[]; an unaddressed pattern re-triggers the DBA (dbaDesigned reads false, checkDbDesign hard-blocks) so a later read story can evolve the schema instead of the DBA being skipped once db-design.json exists. The DBA may address it by adding a structure OR recording a deliberate 'no index needed' decision in db-design.md — the gate only requires each id be addressed, not that an index exist.",
+      "items": {
+        "type": "object",
+        "required": ["id", "brief"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable id, e.g. \"AP1-stock-by-location-filter\". Referenced by db-design.json addresses_access_patterns[]."
+          },
+          "table": {
+            "type": "string",
+            "description": "The table the query reads (the index candidate's table)."
+          },
+          "columns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "The column(s) the query filters/sorts/looks up on — the index candidate."
+          },
+          "story": {
+            "type": "string",
+            "description": "The story id that introduced this access pattern."
+          },
+          "brief": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One line: the query shape (e.g. \"list stock filtered by location\", \"look up a SKU's rows by sku\")."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "nfrs": {
       "type": "array",
       "description": "Non-functional requirements proposed by the architect, adjudicated by the HIL at Gate 2. An empty array is valid (a feature may have no NFRs), but every entry that exists must be HIL-considered, not unconsidered. Each NFR states its requirement (via `brief`, or the legacy `requirement`) and, per @architectural-design-principles, NAMES the fitness function that defends it (`fitness_function`) so the Test Strategist authors it as a RED test.",

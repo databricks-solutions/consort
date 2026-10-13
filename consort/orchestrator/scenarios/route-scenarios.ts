@@ -37,7 +37,7 @@ const SPEC_AUTHOR_PROPOSE: WorkflowAction = { kind: "invoke-role", role: "spec-a
 // a revise owning_role (only spec-author/test-strategist/architect-reviewer are; its ux-adherence
 // smell is a build-lane driver refactor, not a design revise-route back to it). So: produced ->
 // the first story's design (spec-author ACs), escalate -> raise-to-hil, blocked -> bounded retry.
-const UX_DESIGNER: WorkflowAction = { kind: "invoke-role", role: "ux-designer" };
+const UX_DESIGNER: WorkflowAction = { kind: "invoke-role", role: "ux-designer", mode: "establish" };
 // The OTHER two revise-owning design roles (owning_role = spec-author | test-strategist |
 // architect-reviewer). Each per-story action's produced next-hop is the next design step; each
 // has its OWN revise smell routing back to it at its OWN gate.

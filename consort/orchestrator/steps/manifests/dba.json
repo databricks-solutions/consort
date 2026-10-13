@@ -15,7 +15,7 @@
   },
   "agentOptions": {
     "model": "opus",
-    "effort": "default",
+    "effort": "low",
     "session": "resume",
     "resumeKeyFrom": "role"
   }

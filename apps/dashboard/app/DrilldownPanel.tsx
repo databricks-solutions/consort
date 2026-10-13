@@ -23,6 +23,9 @@ import { ResizableSplit } from "./ResizableSplit";
 // How much of a clicked topology cell to reveal, per the frontier rules: a cell AT the active
 // position (live or scrubber) shows only its prompt until it completes; a cell AFTER the active
 // position shows the uninvoked state even if it ran in a prior run; a cell before it shows all.
+// "full" (before the frontier) · "prompt-only" (the active cell, until it completes) · "none" (not run
+// at the current position — EITHER after the frontier, OR reached this round but a no-turn projection /
+// skipped step; both read the same "hasn't run at the current position" body).
 export type DrilldownReveal = "full" | "prompt-only" | "none";
 
 export type DrilldownTarget =
@@ -204,7 +207,8 @@ function RoleBody({
     </>
   );
 
-  // Frontier gating (topology clicks only):
+  // Frontier gating (topology clicks only). "none" now also covers a reached-this-round no-turn
+  // projection: it resolves here (not to a prior round's turn) and reads the same uninvoked body.
   if (reveal === "none") {
     return <NotYetRunBody accent={colorForRole(role)} title={turnTitle(null, role)} onClose={onClose} />;
   }
@@ -830,7 +834,7 @@ export function TranscriptView({ turn }: { turn: TurnPayload }) {
     return <div style={{ fontSize: "0.76rem", color: "var(--text-faint)" }}>No transcript recorded for this turn (gate / dispatch / orchestrator step).</div>;
   }
   const { prompt, tools, reasoning } = turn.transcript;
-  // Frame the turn as the EXCHANGE Kevin's original made obvious: an inbound prompt sent TO the
+  // Frame the turn as an EXCHANGE: an inbound prompt sent TO the
   // role (▸), then what the role sent back (◂) — its tools and its reasoning. The direction glyphs
   // + the role name in each label make "what was passed back and forth" legible at a glance rather
   // than three flat sections a viewer has to mentally assign a direction to.

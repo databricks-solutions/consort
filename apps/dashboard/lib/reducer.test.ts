@@ -758,9 +758,9 @@ describe.skipIf(!existsSync(REAL_LOG))("fold — the reported scrub-back bug, on
 // ---------------------------------------------------------------------------
 // The MULTI-FEATURE corpus: stockflow-rerecord, 421 events, two sprints that each ship a
 // feature end-to-end (F1-stock-visibility then F6-split-tracking-code). Vendored rather
-// than read from the plugin cache because Kevin shipped it corpus-only in 6e73019 with no
+// than read from the plugin cache because it was committed corpus-only in 6e73019 with no
 // version bump, so the installed 0.3.6 cache does NOT contain it (same reasoning as the
-// committed kevin-workflow.json: pin the upstream shape we derived against).
+// committed workflow fixture: pin the upstream shape we derived against).
 //
 // Every earlier real-log test above uses `stockflow`, which is SINGLE-feature. That is
 // exactly why flat story keying survived Phase 1 undetected: both features here number

@@ -6,9 +6,9 @@ import { colorForRole, font, radius } from "@/lib/theme";
 import { activeColorForFocus } from "./active-color";
 import type { DashboardState, GateInfo } from "@/lib/types";
 
-// The Consort lifecycle graph (Figure 1), re-skinned from Kevin's dark SVG to the light
-// theme. Layout is a single horizontal spine — intake → plan → design → build → deploy →
-// promote → shipped — with gates as narrow diamonds between phases.
+// The Consort lifecycle graph (Figure 1), rendered in the light theme. Layout is a single
+// horizontal spine — intake → plan → design → build → deploy → promote → shipped — with gates
+// as narrow diamonds between phases.
 //
 // Node lighting comes straight from lib/topology.ts:
 //   passed  → a phase this run has reached (green)

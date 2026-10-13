@@ -165,25 +165,25 @@ describe("theme — palette integrity", () => {
   });
 });
 
-describe("theme — dark theme (Kevin's palette)", () => {
-  it("ports Kevin's warm surfaces and tan text", () => {
+describe("theme — dark theme palette", () => {
+  it("uses the warm surfaces and tan text of the dark palette", () => {
     expect(surfaceDark.page).toBe("#0d0d0d");
     expect(surfaceDark.card).toBe("#1a1a19");
     expect(surfaceDark.inset).toBe("#222220");
     expect(surfaceDark.code).toBe("#2a2a28");
     expect(textDark.strong).toBe("#ffffff");
-    expect(textDark.body).toBe("#c3c2b7"); // Kevin --text-secondary
-    expect(textDark.muted).toBe("#898781"); // Kevin --muted
+    expect(textDark.body).toBe("#c3c2b7"); // --text-secondary
+    expect(textDark.muted).toBe("#898781"); // --muted
     expect(borderDark.default).toBe("rgba(255,255,255,0.10)");
   });
 
-  it("uses Kevin's good/warning/critical base colors", () => {
+  it("uses the good/warning/critical base colors", () => {
     expect(statusDark.good).toBe("#0ca30c");
     expect(statusDark.warning).toBe("#fab219");
     expect(statusDark.critical).toBe("#d03b3b");
   });
 
-  it("maps roles to Kevin's c1…c10 hues, keeping navigator orange and driver green", () => {
+  it("maps roles to the c1…c10 hues, keeping navigator orange and driver green", () => {
     expect(roleColorDark.navigator).toBe("#d95926"); // c6, orange like the light theme
     expect(roleColorDark.driver).toBe("#008300"); // c2, green like the light theme
     expect(roleColorDark.orchestrator).toBe("#94A3B8"); // slate (cool blue-grey)

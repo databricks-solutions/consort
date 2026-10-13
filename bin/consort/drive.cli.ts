@@ -249,7 +249,10 @@ function withBuildRecording(inner: DriveEffects, cfg: DriveEffectsConfig): Drive
     performViaExecutor: inner.performViaExecutor ? (a, s, r) => inner.performViaExecutor!(a, s, r) : undefined,
     async perform(action) {
       await inner.perform(action);
-      if (action.kind === "invoke-role" && (action.role === "navigator" || action.role === "driver")) {
+      if (action.kind === "invoke-role" && (action.role === "navigator" || action.role === "driver") && "story" in action) {
+        // The feature-complete reconcile turn is story-less (a feature-level design turn, not a per-story
+        // build turn), so it is not recorded on the per-story build-turn ledger. `"story" in action` also
+        // narrows the union so action.story resolves below.
         // Seed the ordinal PER-STORY from disk (not a per-process counter): a
         // resumed drive continues the story's sequence instead of restarting at 1
         // and writing a stray 001-… dir that sorts before the earlier turns and
@@ -298,6 +301,7 @@ function projectCorrespondence(
   fresh: import("../../consort/logging/agent-log.js").AgentLogEvent[],
   isGate: boolean,
   recordDir: string,
+  gateSurfacedTs?: string,
 ): [CorrespondenceEntry, CorrespondenceEntry] {
   const phase = (state as { phase?: string }).phase;
   const kind: CorrespondenceEntry["request"]["kind"] = isGate ? "gate" : "author-requests";
@@ -318,6 +322,13 @@ function projectCorrespondence(
   // entry. null only if nothing was recorded (should not happen for a HIL touchpoint).
   const ordinal = lastRecordedOrdinal(recordDir);
   const at = new Date().toISOString();
+  // Timestamp each beat from its agent-log TWIN so the conversation interleaves with the events it
+  // mirrors instead of clumping after perform(): the ASK sits at `gate.surfaced` (passed in from the
+  // FULL log — the gate is surfaced on an EARLIER turn than it is approved, so it is NOT in this
+  // approve turn's `fresh` slice), the ANSWER at `gate.approved`. So ask ALWAYS precedes answer; the
+  // ask NEVER falls back to now() (that was the bug that sorted the ask after the answer).
+  const answerAt = isGate ? gateEv?.timestamp ?? at : at;
+  const askAt = isGate ? gateSurfacedTs ?? answerAt : at;
   const askPrompt = isGate
     ? `orchestrator presents ${describeAction(action)} for HIL approval`
     : `orchestrator asks the PO to author the sprint's feature-requests (${describeAction(action)})`;
@@ -333,9 +344,11 @@ function projectCorrespondence(
     direction: "orch-to-hil",
     ordinal,
     iteration,
-    at,
+    at: askAt,
     ...(phase ? { phase } : {}),
-    request: { kind, prompt: askPrompt, presentation: { format: "markdown", rendered: askRendered } },
+    // role mirrors the agent-log twin (`gate.surfaced` is role=orchestrator) so the dashboard
+    // brackets + colours it exactly as the event row does — one role→colour door, no parsing.
+    request: { kind, role: "orchestrator", prompt: askPrompt, presentation: { format: "markdown", rendered: askRendered } },
     response: { by: "orchestrator" },
     outcome: { validated: true },
   };
@@ -344,9 +357,11 @@ function projectCorrespondence(
     direction: "hil-to-orch",
     ordinal,
     iteration,
-    at,
+    at: answerAt,
     ...(phase ? { phase } : {}),
-    request: { kind, prompt: askPrompt, presentation: { format: "markdown", rendered: askRendered } },
+    // role mirrors the agent-log twin (`gate.approved` is role=product-owner — the HIL approving
+    // as PO), so the beat brackets + colours identically to that event row.
+    request: { kind, role: "product-owner", prompt: askPrompt, presentation: { format: "markdown", rendered: askRendered } },
     response: {
       by: "human-proxy",
       ...(submitted.length ? { submitted } : {}),
@@ -414,8 +429,14 @@ function withTurnRecording(inner: DriveEffects, cfg: DriveEffectsConfig): DriveE
       if (!isGate && !isInput) return;
       const after = readAgentLog({ consortDir: cfg.consortDir });
       const fresh = after.slice(logLenBeforePerform); // entries the proxy appended this turn
+      // The gate is SURFACED on an earlier turn than it is APPROVED, so gate.surfaced is NOT in this
+      // (approve) turn's `fresh` slice — read its real timestamp from the FULL log so the ASK beat
+      // precedes the ANSWER (else it would fall back to now() and sort after the answer).
+      const gateSurfacedTs = isGate
+        ? [...after].reverse().find((e) => e.event === "gate.surfaced")?.timestamp
+        : undefined;
       // Two beats per exchange: the orchestrator's ASK (orch-to-hil) + the HIL's ANSWER (hil-to-orch).
-      const beats = projectCorrespondence(corrSeq, iteration, action, state, fresh, isGate, recordDir);
+      const beats = projectCorrespondence(corrSeq, iteration, action, state, fresh, isGate, recordDir, gateSurfacedTs);
       for (const beat of beats) recordCorrespondence(recordDir, beat);
       corrSeq += beats.length;
     },

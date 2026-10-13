@@ -71,6 +71,9 @@ describe("reflect revise re-runs the full design lane and co-heals per story", (
   it("classifies the reflect smells", () => {
     expect(isReflectSmell("reflect-spec-defect")).toBe(true);
     expect(isReflectSmell("reflect-testlist-defect")).toBe(true);
+    // reflect-ia-defect shares the per-story reflect budget + co-heal so an ia-surface
+    // gap couples with any spec/test-list finding in one re-design (not the generic per-smell cap).
+    expect(isReflectSmell("reflect-ia-defect")).toBe(true);
     expect(isReflectSmell("cycle-stall")).toBe(false);
   });
 

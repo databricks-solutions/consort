@@ -100,7 +100,7 @@ describe.skipIf(!CORPUS)("loadPlanning — the real stockflow-rerecord corpus", 
     // FP1..FP5 from the proposals doc, then the committed F1/F6 (estimate-only, no FP entry).
     const fps = p.candidates.filter((c) => c.id.startsWith("FP"));
     expect(fps.map((c) => c.id)).toEqual(["FP1", "FP2", "FP3", "FP4", "FP5"]);
-    // The both-format fix: asks/titles are non-empty on the replay corpus (a verbatim port left them blank).
+    // The both-format fix: asks/titles are non-empty on the replay corpus (a single-format parser left them blank).
     expect(fps[0].title).toBeTruthy();
     expect(fps[0].ask).toBeTruthy();
     expect(fps[0].size).toBe("M"); // FP1 is sized M in estimates.json

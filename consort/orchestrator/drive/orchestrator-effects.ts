@@ -28,9 +28,9 @@ import { deriveDriveState, effectiveLoopForStory } from "../state/orchestrator-d
 import { diskArtifactProbe, readDriveContext } from "../state/orchestrator-probe.js";
 import { readPipeline } from "../../pipeline/story-pipeline.js";
 import {
-  storyJson, designGuideJson, handbackFile, storyAcIds, architectureJson, readAcLayer,
+  storyJson, designGuideJson, iaMd, handbackFile, storyAcIds, architectureJson, readAcLayer,
   featureProposalsMd, featureSpecJson, featureTestListJson, acsDir, planningEstimatesJson, cycleDir,
-  featureDeployReverifyMarkerJson,
+  featureDeployReverifyMarkerJson, testListPatchJson,
 } from "../../config/consort-paths.js";
 import { kitRoot } from "../../config/kit-bin.js";
 import type { TurnKey } from "./turn-key.js";
@@ -326,6 +326,38 @@ const STATE_OWNERSHIP_CANON =
   " assert absolute whole-table state (e.g. len(all) == 0): SCOPE to per-run-unique keys – assert only your own" +
   " seeded rows, or query a per-run-unique slice that is genuinely empty – or explicitly clear the aggregate you" +
   " claim empty. Also revert/roll back rows a test writes so it never leaks state into another test.";
+
+/** Appended to the architect + test-strategist directives so a REVISE re-run knows its cleared prior
+ *  is the self-heal's doing, not data loss. On a reflect-revise the co-heal (revise.ts) clears this
+ *  story's architectural_notes + per-story test-list items (so the architect re-tags against the fixed
+ *  IA and the test-list re-derives); without this note the re-run role read the empty/missing state as
+ *  loss ("annotations gone missing", "test-list empty again") and rebuilt blind + uncertain. States the
+ *  mechanism + the expected state, not a reassurance. */
+const coHealFreshNote = (artifact: string, against: string): string =>
+  ` Author this story's ${artifact} FRESH from the ${against} on disk this turn. On a reflect-revise re-run` +
+  ` the self-heal clears this story's prior ${artifact} BY DESIGN, so an absent/empty prior is the expected` +
+  ` revise state — re-derive against the corrected ${against}.`;
+
+/** The story's AC ids that currently LACK a non-empty architectural_notes field on disk — the exact set
+ *  the architect must (re-)annotate THIS turn. On a scoped revise the self-heal cleared ONLY the changed
+ *  AC(s)' notes, so this returns just those; a first annotate (or a full clear) returns every id. Injected
+ *  verbatim into the architect directive so the scope is DETERMINISTIC (the ids), not a prose "annotate the
+ *  un-noted ones" the LLM re-reads by re-annotating every AC and churning the downstream test-list (#4). */
+function unNotedAcIds(consortDir: string, featureId: string, story: string): string[] {
+  const dir = acsDir(consortDir, featureId, story);
+  const out: string[] = [];
+  for (const ac of storyAcIds(consortDir, featureId, story)) {
+    try {
+      const j = JSON.parse(fs.readFileSync(join(dir, `${ac}.json`), "utf8")) as { architectural_notes?: unknown };
+      const n = j.architectural_notes;
+      const hasNotes = typeof n === "string" ? n.trim().length > 0 : n !== undefined && n !== null;
+      if (!hasNotes) out.push(ac);
+    } catch {
+      out.push(ac); // unreadable/absent ⇒ needs annotation
+    }
+  }
+  return out;
+}
 
 function nextPendingTestDirective(
   consortDir: string,
@@ -686,8 +718,29 @@ function roleTaskBody(
         );
     }
   }
-  // UX Designer (UI track): translate the design brief into the project style
-  // guide. Project-level, no story scope, so handle it before reading a story.
+  // UX Designer IA refinement (UI track, per story): refine ia.md for THIS story's
+  // user-facing surfaces, before the architect tags E2E layers against them.
+  if (action.role === "ux-designer" && action.mode === "ia") {
+    const uxStory = action.story;
+    return (
+      `Refine the information architecture (${root}/design/ia.md) for story ${uxStory}'s user-facing surfaces.` +
+      ` Read this story's acceptance criteria (its E2E / client ACs name the screens, forms, and flows a user` +
+      ` operates) and the established style system (${root}/design/design-guide.json — the component vocabulary +` +
+      ` tokens the surfaces compose from).` +
+      ` ADD this story's surfaces to ia.md's existing sections (Screens / Navigation / User flows): each screen or` +
+      ` form the story introduces with its route + data-testid seams, its place in the navigation, and the user flow` +
+      ` it participates in. APPEND each new user flow at the END of the numbered list, keeping the numbers sequential.` +
+      ` When a flow or CTA links to ANOTHER screen with a query param (e.g. a Receive CTA to \`/receive?sku=<sku>\`),` +
+      ` that target screen's Screens-table row must declare the param it accepts (e.g. \`/receive\` (\`?sku=\`)).` +
+      ` The refinement is ADDITIVE — extend the existing sections and compose new surfaces from` +
+      ` the established component vocabulary; the style system (design-guide.json) is read-only context here, authored` +
+      ` at establish. Reconcile ALL of this story's user-facing ACs on every run, including a re-run after a reflect` +
+      ` finding: before finishing, confirm EVERY one of this story's E2E / client ACs maps to a screen or form NAMED` +
+      ` in ia.md — an AC with no IA surface is the defect this step closes.`
+    );
+  }
+  // UX Designer ESTABLISH (UI track): translate the design brief into the project style
+  // guide + initial IA skeleton. Project-level, no story scope, so handle it before reading a story.
   if (action.role === "ux-designer") {
     return (
       `Translate the HIL design brief (${root}/design/design-brief.md) into the project design system:` +
@@ -710,7 +763,7 @@ function roleTaskBody(
       ` names is missing from the design-guide – a missing status state, asset, token level, or component is a defect.`
     );
   }
-  const s = action.story;
+  const s = "story" in action ? action.story : ""; // the reconcile turn is story-less (handled in case "navigator")
   switch (action.role) {
     case "spec-author":
       // Scope the draft to ONE story, by handing it only this story's stub +
@@ -734,13 +787,31 @@ function roleTaskBody(
       );
     case "architect-reviewer": {
       const arAcIds = storyAcIds(consortDir, featureId, s);
-      const arAcScope = arAcIds.length ? ` Story ${s}'s ACs are: ${arAcIds.join(", ")}.` : "";
+      const unNoted = unNotedAcIds(consortDir, featureId, s);
+      // DETERMINISTIC scope (#4): the EXACT ACs lacking notes on disk right now. On a scoped revise that is
+      // just the changed AC(s); on a first annotate / full clear it is all of them. Enumerating the ids (not
+      // a prose "annotate the un-noted ones") is what keeps the architect from re-annotating every AC and
+      // churning the downstream test-list — the prompt-nudge version did not hold.
+      const noted = arAcIds.filter((a) => !unNoted.includes(a));
+      const arAcScope =
+        unNoted.length === 0
+          ? arAcIds.length
+            ? ` Story ${s}'s ACs (${arAcIds.join(", ")}) all already carry architectural_notes; author none this turn.`
+            : ""
+          : unNoted.length === arAcIds.length
+            ? ` Author architectural_notes for ALL of story ${s}'s ACs: ${unNoted.join(", ")}.`
+            : ` Author architectural_notes for EXACTLY these un-noted AC(s): ${unNoted.join(", ")}.` +
+              ` Story ${s}'s remaining ACs (${noted.join(", ")}) already carry valid notes and are OUT of scope this turn.`;
       return (
         `Annotate story ${s}'s acceptance criteria + nfrs.md coverage.${arAcScope}` +
-        ` For EVERY one of this story's ACs, write a non-empty "architectural_notes" field into its acs/<AC>.json` +
-        ` (the layer it lives in + how it realizes the design). This is your distinctive per-AC product; the design gate` +
-        ` verifies every AC carries it and the spec-author's "layer" field does NOT count. architectural_notes are per-AC,` +
-        ` so annotate this story's ACs even when the feature-level architecture.json already exists from an earlier story.` +
+        ` Every one of this story's ACs MUST end up with a non-empty "architectural_notes" field in its acs/<AC>.json` +
+        ` (the layer it lives in + how it realizes the design) — the design gate verifies that, and the spec-author's` +
+        ` "layer" field does NOT count. architectural_notes are per-AC, so author the scoped ACs above even when the` +
+        ` feature-level architecture.json already exists from an earlier story.` +
+        ` For every E2E AC, ALSO pass consort-annotate-ac --ui-seams with the ia.md data-testid seam token(s) the AC's` +
+        ` UI drives — the column / cell / region / empty-state / form field it asserts (e.g. "stock-cell-tracking,stock-not-tracked").` +
+        ` A deterministic gate checks each seam is named in ${root}/design/ia.md; if the AC needs a surface the IA does not yet` +
+        ` name, declare the seam you need anyway and the gate routes the ux-designer to add it to ia.md.` +
         ` In architecture.json, make an EXPLICIT service_backed call (required): set service_backed:true if the` +
         ` feature persists data (a DB table/migration) or carries business logic, and then you MUST declare boundary,` +
         ` service, and repository layers (plus a "models" PACKAGE app/models/, one module per domain object, NOT a flat` +
@@ -750,7 +821,14 @@ function roleTaskBody(
         ` schema enforces (each with id, type one of unique|foreign_key|cascade|not_null|check|transactional|migration_reversible,` +
         ` table, and a one-line brief), covering unique/composite keys, foreign keys + cascade rules, NOT NULL / CHECK constraints,` +
         ` any transactional-atomicity boundary, and migration reversibility. The test-strategist must cover each with a real-branch` +
-        ` test; a service_backed feature with no persistence_invariants hard-blocks the gate.${architectConventionsDirective(consortDir)}` +
+        ` test; a service_backed feature with no persistence_invariants hard-blocks the gate.` +
+        ` When THIS story introduces a NEW read/query shape over the schema — a filter, lookup, sort, or join an AC drives` +
+        ` (e.g. "list stock filtered by location", "look up a SKU's rows by sku") that is an INDEX candidate — declare it in` +
+        ` architecture.json access_patterns[] (id, a one-line brief, and the table + column(s) it reads) so the DBA is pulled` +
+        ` back in to reconsider the physical design for it; this is how a later READ story evolves the schema, since a story` +
+        ` that adds no persistence_invariant would otherwise skip the DBA. Declare an access_pattern ONLY for a genuinely new` +
+        ` query shape (not for every read, and not for one already covered by a prior story's pattern or a primary-key lookup).${architectConventionsDirective(consortDir)}` +
+        coHealFreshNote("architectural_notes", "ACs + IA") +
         designRootNote(root, featureId, s)
       );
     }
@@ -766,6 +844,7 @@ function roleTaskBody(
         const arch = JSON.parse(fs.readFileSync(architectureJson(consortDir, featureId), "utf8")) as {
           service_backed?: boolean;
           persistence_invariants?: Array<{ id?: string; type?: string; table?: string; brief?: string }>;
+          access_patterns?: Array<{ id?: string; table?: string; columns?: string[]; brief?: string }>;
           layers?: Array<{ role?: string; module?: string }>;
         };
         if (arch.service_backed === true) {
@@ -775,6 +854,15 @@ function roleTaskBody(
                 .map((i) => `${i.id}${i.type ? ` [${i.type}${i.table ? ` on ${i.table}` : ""}]` : ""}${i.brief ? ` (${i.brief})` : ""}`)
                 .join("; ")}.`
             : "";
+          // The architect's PERFORMANCE/access signal: a new read/query shape a story introduced. ADDRESS
+          // each — add an index/structure on its columns, OR record a deliberate no-index decision in
+          // db-design.md — and list its id in addresses_access_patterns[]. An unaddressed pattern re-runs you.
+          const ap = (arch.access_patterns ?? []).filter((p) => p && typeof p.id === "string");
+          const apList = ap.length
+            ? ` ADDRESS EVERY declared access_pattern and list its id in addresses_access_patterns[]: ${ap
+                .map((p) => `${p.id}${p.table ? ` [on ${p.table}${p.columns?.length ? `(${p.columns.join(", ")})` : ""}]` : ""}${p.brief ? ` (${p.brief})` : ""}`)
+                .join("; ")}. For each, either add an index/structure on its column(s) OR record a deliberate no-index decision (e.g. small table, covered by the primary key) in db-design.md — the gate requires each id be addressed, not that an index exist.`
+            : "";
           const models = (arch.layers ?? []).find((l) => l.role === "models");
           const modelsNote = models?.module ? ` Mirror the architect's models package (${models.module}), one table per domain object.` : "";
           // A service does not always mean a database: no declared invariants =>
@@ -783,7 +871,7 @@ function roleTaskBody(
             ? ""
             : ` This service declares NO persistence_invariants (a non-persisting service – compute/proxy/aggregator); an empty or absent db-design.json is acceptable, do not invent tables.`;
           contract =
-            ` This feature is service_backed.${modelsNote}${invList}${nonPersistingNote}`;
+            ` This feature is service_backed.${modelsNote}${invList}${apList}${nonPersistingNote}`;
         } else if (arch.service_backed === false) {
           contract = ` This feature is not service_backed (a trivial static/read-through endpoint); an empty or absent db-design.json is acceptable.`;
         }
@@ -798,72 +886,114 @@ function roleTaskBody(
         ` Declare tables[] (columns with explicit type/nullable/default, primary_key, unique_constraints, foreign_keys, checks, indexes)` +
         ` and this story's schema_changes[] (the per-story migration plan the build lane authors the Alembic migration from; keep an` +
         ` expand/contract column split or drop reversible). Populate realizes_invariants[] as a flat array of the architecture.json` +
-        ` persistence_invariant id STRINGS (bare ids, not objects) – an uncovered invariant hard-blocks the spec gate.${contract}` +
+        ` persistence_invariant id STRINGS (bare ids, not objects) – an uncovered invariant hard-blocks the spec gate.` +
+        ` Likewise populate addresses_access_patterns[] with the architecture.json access_pattern id STRINGS you addressed` +
+        ` (add the index/structure to the relevant tables[].indexes, or note a deliberate no-index decision in db-design.md) –` +
+        ` an unaddressed access_pattern hard-blocks the spec gate and re-runs you on a later read story.${contract}` +
         designRootNote(root, featureId, s)
       );
     }
     case "test-strategist": {
-      // Pass the story's AC ids INLINE so the strategist does not re-scan the
-      // acs/ dir to re-derive them (a slow, error-prone step that, on a small
-      // model, was the design lane's worst outlier, a single test-list took
-      // ~200s of haiku thrashing on the structured output). The ids are the
-      // EXACT contract the response-formatter + the per-story test-list scoping
-      // enforce, so stating them up front both speeds convergence and pins the
-      // ac_id mapping. Absent ids (no acs/ on disk yet) fall back to the bare
-      // directive, the role still reads them from disk as before.
+      // DETERMINISTIC fan-out (locked (b)): the test-strategist no longer Task-spawns the roster at its
+      // OWN discretion — the live review found it skipped the mandated fan-out and solo-authored the
+      // first authoring even with an explicit prompt. It RUNS the consort-fan-out-analysts bin, which
+      // spawns the enabled per-kind analysts (behavior/fitness/client) and DETERMINISTICALLY assembles
+      // their slices IN-PROCESS (coverage + order + feature-flat T-ids + exact/per-invariant dedup) —
+      // there is no assembler subagent (a model AUP false-positive made its claude -p a single point of
+      // lane failure). The one thing code assembly cannot do — SEMANTIC de-dup (differently-worded
+      // duplicate behaviors, cross-kind overlap) — is the test-strategist's final pass before it APPENDS
+      // to the master (restoring what the supervisor owned before the split). The per-kind authoring
+      // guidance lives in the analysts' focusPrompts the bin injects — NOT in this directive. AC ids ride
+      // as append-verification context. The test_list gate (B4) blocks if analyst-ordered.json is absent.
       const acIds = storyAcIds(consortDir, featureId, s);
       const acScope = acIds.length
-        ? ` The story's ACs are: ${acIds.join(", ")}. Map every test's ac_id to one of these EXACT ids` +
-          ` (verbatim, never a bare slug or an invented id), and cover each AC at least once.`
+        ? ` (Story ${s}'s ACs are ${acIds.join(", ")}; every appended item's ac_id must be one of these.)`
         : "";
-      // Author the FEATURE MASTER (append this story; keep other stories' items).
-      // The orchestration generates the per-story + per-AC views FROM the master
-      // (consort-test-list), so a per-story file the role writes is
-      // regenerated, author the master, not the per-story file.
-      // Persistence coverage: a service-backed feature declares persistence_invariants
-      // (the DB-level guarantees the schema enforces); the test-list must cover EVERY
-      // one with a real-branch test tagged invariant_id, or the design gate blocks.
-      // These are `fitness` tests that verify the MIGRATION realized the invariant
-      // against the branch + the repository honors it – NOT the ORM's generic CRUD.
-      // Best-effort: omit when there is no architecture.json yet (the gate still
-      // enforces at submit time).
-      let dbScope = "";
-      try {
-        const arch = JSON.parse(fs.readFileSync(architectureJson(consortDir, featureId), "utf8")) as {
-          service_backed?: boolean;
-          persistence_invariants?: Array<{ id?: string; brief?: string }>;
-        };
-        if (arch.service_backed === true) {
-          const inv = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string");
-          const list = inv.length
-            ? ` The declared persistence invariants are: ${inv.map((i) => `${i.id}${i.brief ? ` (${i.brief})` : ""}`).join("; ")}.`
-            : "";
-          dbScope =
-            ` This feature is service-backed. Cover EVERY architecture.json persistence_invariant with >=1 test that` +
-            ` sets "invariant_id" to that invariant's id and exercises it DIRECTLY against the branch database (a real DB` +
-            ` session, never a mock): verify the MIGRATION actually realized the guarantee (e.g. inserting a duplicate raises` +
-            ` an IntegrityError, a NOT NULL/CHECK rejects a bad row, a down-then-up migration round-trips) and that the` +
-            ` repository honors it. Do NOT write a test of the ORM's generic add/commit/query round-trip – that tests the` +
-            ` library, not your schema.${list} The DBA's db-design.json (features/${featureId}/db-design.json) has the concrete` +
-            ` table/column/constraint definitions realizing these invariants – read it for precise schema assertions.` +
-            ` EVERY test that WRITES to the DB (a create/POST test, a content-type or validation test that sends a real body,` +
-            ` a retrieve test that seeds a fixture) MUST own its state: use a per-run-UNIQUE key (a uuid-suffixed sku/location,` +
-            ` e.g. f"SKU-{uuid.uuid4().hex[:8]}"), OR delete/upsert the fixed key before the write AND clean up after. A test` +
-            ` that writes a FIXED key with no cleanup passes alone + on its own isolated build branch but COLLIDES in the` +
-            ` full-suite deploy-verify against the shared feature-branch DB (a duplicate-key error surfacing as a non-JSON/500),` +
-            ` halting the feature ship – the shared-state-write defect. Do NOT assume an empty table or an untouched fixed key.`;
+      const ordered = `${root}/features/${featureId}/stories/${s}/analyst-ordered.json`;
+      // DIRECTED PATCH revise (Option A): a clean, AC-scoped reflect-testlist defect names the exact fix,
+      // so the revise left analyst-ordered.json in place + dropped a patch marker. EDIT that list in place
+      // — do NOT re-run the fan-out, which re-derives + re-rolls the whole scope nondeterministically (the
+      // observed 33→22 swing + repeated reflect bounces). No coHealFreshNote here: the prior is NOT cleared.
+      const patchMarker = testListPatchJson(consortDir, featureId, s);
+      if (fs.existsSync(patchMarker)) {
+        let flagged = "";
+        try {
+          const ids = (JSON.parse(fs.readFileSync(patchMarker, "utf8")) as { ac_ids?: string[] }).ac_ids ?? [];
+          flagged = ids.length ? ` (the flagged AC(s): ${ids.join(", ")})` : "";
+        } catch {
+          /* unreadable marker → still a patch, just no id list in the directive */
         }
-      } catch {
-        /* no architecture.json yet -> omit; the test_list gate still enforces it */
+        return (
+          `DIRECTED test-list revise — apply ONLY the specific fix named in your revise brief${flagged}. Do NOT run ` +
+          `the fan-out (consort-fan-out-analysts): the test list is already authored and the fix is targeted, so a ` +
+          `re-derive would re-roll the whole scope nondeterministically and lose coverage. The current ordered list ` +
+          `is on disk — EDIT it in place.\n` +
+          `1. Open ${ordered} and apply the brief's named change to ONLY the item(s) it calls out: change/re-slice/` +
+          `relabel the exact test(s) named, or ADD the single test the brief requires. Keep every OTHER item and its ` +
+          `T-id byte-identical.\n` +
+          `2. APPEND the edited ${ordered} items to the feature master ${root}/features/${featureId}/test-list.json, ` +
+          `keeping every OTHER story's items (the master's prior copy of THIS story's items was cleared for the ` +
+          `revise); never author a test-list-per-story.json (the orchestration regenerates the per-story + per-AC ` +
+          `views from the master).${acScope}\n` +
+          `3. Self-check: ./scripts/lk consort-response-formatter --role test-strategist --feature ${featureId} --story ${s} ` +
+          `— fix + re-run until it passes.`
+        );
       }
       return (
-        `Produce story ${s}'s ordered tests and APPEND them to the feature master test list` +
-        ` ${root}/features/${featureId}/test-list.json, keep every item already there for the other` +
-        ` stories and add this story's. Do NOT author any test-list-per-story.json (the orchestration` +
-        ` generates the per-story + per-AC views from the master).${acScope}${dbScope}`
+        `Produce story ${s}'s test list via the DETERMINISTIC analyst fan-out — do NOT author the items yourself.\n` +
+        `1. Run as its own command (headless, the kit CLI is granted standalone): ` +
+        `./scripts/lk consort-fan-out-analysts --feature ${featureId} --story ${s} — it spawns the enabled per-kind ` +
+        `analysts and DETERMINISTICALLY assembles their slices (coverage, order, feature-flat T-ids, exact + ` +
+        `per-invariant dedup), WRITING the ordered per-story list to ${ordered}.\n` +
+        `2. REFINE pass (your authoring job — code assembly did only MECHANICAL order + EXACT-duplicate removal). ` +
+        `FIRST read the FULL description of EVERY item from ${ordered} ON DISK — NEVER judge from the fan-out's ` +
+        `console summary, which TRUNCATES (a removal decided on a cut-off description silently drops coverage that no ` +
+        `gate catches: the self-check only checks >=1 item per AC, not that distinct behaviors survive). Then: ` +
+        `(a) SEMANTIC de-dup — remove an item ONLY when, from BOTH full descriptions, you have CONFIRMED it asserts the ` +
+        `IDENTICAL observable behavior as another surviving item (same ac_id, same assertion, same mechanism), or is ` +
+        `cross-kind overlap of one. If there is ANY doubt — a different input, edge case, layer, or mechanism — KEEP ` +
+        `it: coverage is sacrosanct, a redundant test merely runs, a dropped DISTINCT test is a defect nothing catches. ` +
+        `Keep FULL AC coverage and exactly one fitness item per invariant_id. LOG every removal so it is auditable — ` +
+        `for EACH deleted item run as its own command: ./scripts/lk consort-log --role test-strategist --event ` +
+        `reasoning --feature ${featureId} --message "[dedup] removed <id> — identical to <surviving id>: <the one ` +
+        `behavior they share>". (b) RE-ORDER the survivors for BUILD MOMENTUM — the sequence that builds the story's ` +
+        `capability incrementally (schema/migration + core behavior BEFORE the UI that depends on it), interleaving ` +
+        `across ACs where that reads better than strict AC order. Edit ${ordered} in place; KEEP each surviving item's ` +
+        `T<n> id byte-identical (the id is a stable identity, not a position — the build lane reads list order; ids ` +
+        `stay unique, need not be monotonic or contiguous).\n` +
+        `3. APPEND every item from ${ordered} to the feature master ${root}/features/${featureId}/test-list.json, ` +
+        `keeping every OTHER story's items; never author a test-list-per-story.json (the orchestration generates the ` +
+        `per-story + per-AC views from the master).${acScope}\n` +
+        `4. Self-check: ./scripts/lk consort-response-formatter --role test-strategist --feature ${featureId} --story ${s} ` +
+        `— fix + re-run until it passes.`
+        // NO coHealFreshNote here: under the deterministic fan-out the test-strategist does NOT author the
+        // items (the bin + its analysts do), so "Author this story's test-list items FRESH" CONTRADICTS
+        // "run the bin / do NOT author the items yourself" and confused the role when the fan-out failed.
+        // The cleared-prior-is-expected signal the note carried is handled by the bin (re-derive) and the
+        // Option-A patch directive; the architect keeps coHealFreshNote because it DOES author its notes.
       );
     }
     case "navigator":
+      if (action.buildMode === "reconcile") {
+        // Feature-complete SYMMETRIC cross-story reconciliation (story-less, like the breakdown). The
+        // reconcile-context precondition injects ALL stories' ACs + open_decisions + mandated fields; the
+        // critic writes ONLY the feature verdict (the deterministic reconcile-gate turns a blocking
+        // finding into the owning story's revise — it does not route here).
+        return (
+          `FEATURE-COMPLETE RECONCILIATION for ${featureId}: every story is now designed + gated. ` +
+          `Independently check the WHOLE set of stories against ITSELF — symmetrically, every story vs every ` +
+          `other, INCLUDING the first-designed story (which was never checked against its later siblings). The ` +
+          `cross-story context (all stories' ACs + the architecture's open_decisions + its mandated not-null ` +
+          `fields) is injected below. Look ONLY for CROSS-STORY defects: an AC that contradicts another story's ` +
+          `gated AC; a mandated (not-null) field no story's submit AC supplies; two stories' ACs overlapping on the ` +
+          `same observable behavior; a persistence invariant anchored to the wrong story. Do NOT re-review a single ` +
+          `story in isolation — each already passed its own reflect + gate. Write the verdict to ` +
+          `${root}/features/${featureId}/reconcile-verdict.json: ` +
+          `{"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist"|"architect-reviewer"|"ux-designer","story":"<the OWNING story to change>","detail":"<the cross-story defect>","ac_ids":["<exact AC id(s)>"],"severity":"blocking"|"advisory"}]}. ` +
+          `Use passed:true with findings:[] when the stories are mutually consistent. Each finding names the OWNING ` +
+          `story (the one reopened + changed) and its author. Produce ONLY the verdict file, then stop.`
+        );
+      }
       if (action.buildMode === "reflect") {
         // Pre-build reflection: an INDEPENDENT critique of the story's spec slice
         // + test-list BEFORE the build lane (the Navigator did NOT author either,
@@ -876,7 +1006,8 @@ function roleTaskBody(
           `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice ` +
           `(${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list ` +
           `(${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture ` +
-          `(${root}/features/${featureId}/architecture.md/.json) + NFRs.` +
+          `(${root}/features/${featureId}/architecture.md/.json), the NFRs (${root}/nfrs.md — a project-level ` +
+          `file, NOT under the feature dir), and the information architecture (${root}/design/ia.md).` +
           contextRubric(consortDir, featureId, s, "") +
           ` Look ONLY for design-time defects that would waste a build cycle. The DETERMINISTIC ` +
           `pre-reflect gate has ALREADY verified the structural classes — client-kind↔AC-layer ` +
@@ -890,7 +1021,12 @@ function roleTaskBody(
           `(e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + ` +
           `design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide ` +
           `class / data-testid): such a test hard-codes the very inline style the design lane then refactors ` +
-          `into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell).` +
+          `into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell); ` +
+          `(8) for EACH user-facing AC (declared layer E2E or client): read ${root}/design/ia.md and locate ` +
+          `the screen, form, or data-testid seam that AC asserts among the IA's Screens, Navigation, and User ` +
+          `flows — emit a ux-designer finding naming every asserted surface the IA leaves out, because the ` +
+          `architect would otherwise tag an E2E layer against a screen the IA does not define (the ia ` +
+          `refinement adds the missing surface).` +
           ` Do NOT critique implementation, style, or scope, only buildability + internal ` +
           `consistency of THIS story's artifacts.` +
           ` BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued — run EVERY check against ` +
@@ -902,11 +1038,18 @@ function roleTaskBody(
           `and escalates after a few laps, so a piecemeal reflect burns that budget on repeated ` +
           `revise→re-test→reflect laps and can hand the human a still-defective design.` +
           ` Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as ` +
-          `{"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist","detail":"<the defect>"}]}. ` +
+          `{"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist"|"architect-reviewer"|"ux-designer","detail":"<the defect>","ac_ids":["<exact story AC id(s) this finding is about>"]}]}. ` +
           `passed:true with findings:[] when the spec + test-list are consistent + buildable (the common ` +
-          `case, do NOT invent defects). Attribute each finding to spec-author (an AC/spec defect) or ` +
-          `test-strategist (a test-list/coverage defect). Write ONLY that file; the orchestrator routes any ` +
-          `fix deterministically.`
+          `case, do NOT invent defects). Attribute each finding to its OWNING role so the fix routes to the ` +
+          `right gate: spec-author (an AC/spec defect — the given/when/then or scope); architect-reviewer ` +
+          `(an ARCHITECTURE defect — checks 4 and 5, i.e. a wrong layer tag, OR a route/path/contract in an ` +
+          `AC's architectural_notes that disagrees with the IA or the tests, OR a persistence invariant that ` +
+          `contradicts the AC; this is the architect's product, NOT the spec-author's, so do NOT attribute a ` +
+          `notes/layer defect to spec-author); test-strategist (a test-list/coverage defect); ux-designer (a ` +
+          `user-facing AC whose surface the IA does not name — defect 8). Set "ac_ids" to the EXACT story AC id(s) the finding concerns ` +
+          `(verbatim, from this story's acs/) — the revise re-derives ONLY those ACs' test items; omit ac_ids ` +
+          `(or []) ONLY for a whole-story defect that needs the entire test-list rebuilt. ` +
+          `Write ONLY that file; the orchestrator routes any fix deterministically.`
         );
       }
       if (action.buildMode === "assess") {
@@ -1184,6 +1327,7 @@ const APPLY_DESIGN_THEME_BIN = "consort-apply-design-theme";
 const DEPLOY_BIN = "consort-deploy";
 const GATE_CONFORMANCE_BIN = "consort-gate-conformance";
 const CANON_NOTES_BIN = "consort-canon-notes";
+const IA_NOTES_BIN = "consort-ia-notes";
 // Promote phase, the SCM workflow CLIs (lakebase-scm-workflows). They read +
 // advance the SCM ladder in .lakebase/workflow-state.json, so they take
 // --project-dir (the project root), NOT --feature/--tdd-dir.
@@ -1233,10 +1377,12 @@ function designArtifactExpectation(
     if (action.role === "spec-author" && action.mode === "propose") return { anyOf: [featureProposalsMd(consortDir)], label: "planning/feature-proposals.md" };
     if (action.role === "architect-reviewer" && (action.mode === "estimate" || action.mode === "estimate-committed")) return { anyOf: [planningEstimatesJson(consortDir)], label: "planning/estimates.json" };
     if (action.role === "spec-author" && action.mode === "breakdown") return { anyOf: [featureSpecJson(consortDir, featureId)], label: "feature-spec.json" };
+    // ux establish authors the design system (design-guide.json); the per-story ia refinement authors ia.md.
+    if (action.role === "ux-designer" && action.mode === "establish") return { anyOf: [designGuideJson(consortDir)], label: "design/design-guide.json" };
+    if (action.role === "ux-designer" && action.mode === "ia") return { anyOf: [iaMd(consortDir)], label: "design/ia.md" };
     return null; // author-requests = human input, no role artifact
   }
-  if (action.role === "ux-designer") return { anyOf: [designGuideJson(consortDir)], label: "design/design-guide.json" };
-  const s = action.story;
+  const s = "story" in action ? action.story : undefined; // reconcile is story-less → no per-story artifact to reveal
   if (!s) return null;
   if (action.role === "spec-author") return { anyOf: [acsDir(consortDir, featureId, s)], label: `stories/${s}/acs/*.json` };
   if (action.role === "architect-reviewer") return { anyOf: [architectureJson(consortDir, featureId)], label: "architecture.json" };
@@ -1399,6 +1545,11 @@ function buildCycleCommand(
     "story" in action ? effectiveLoopForStory(cfg.loopGranularity ?? "story", action.story) : cfg.loopGranularity;
 
   // Navigator build turns.
+  if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "reconcile") {
+    // Feature-complete reconciliation gate (feature-scoped — NO story): flag each cross-story defect's
+    // OWNING-story reflect smell so the revise-route reopens it. Mirrors reflect-gate, one level up.
+    return { kind: "cli", bin: CYCLE_BIN, args: ["reconcile-gate", "--feature", f, "--tdd-dir", cfg.consortDir] };
+  }
   if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "reflect") {
     return { kind: "cli", bin: CYCLE_BIN, args: ["reflect-gate", "--feature", f, "--story", action.story, "--tdd-dir", cfg.consortDir] };
   } else if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "assess") {
@@ -1728,11 +1879,26 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
         { kind: "cli", bin: LOG_BIN, args: ["--reconcile", ...tdd] },
       ];
 
+    case "project-ia-notes":
+      // Deterministic (no ux turn): record this story's IA coverage marker — its
+      // surfaces are already named in ia.md (a sibling story reconciled the
+      // feature) — then reconcile for observability parity with a live ux ia turn.
+      return [
+        { kind: "cli", bin: IA_NOTES_BIN, args: ["--story", action.story, ...tdd] },
+        { kind: "cli", bin: LOG_BIN, args: ["--reconcile", ...tdd] },
+      ];
+
     case "flag-testlist-nonconformance":
       // Deterministic pre-reflect gate (no LLM turn): flag the reflect-testlist-defect
       // smell from the structural conformance checks; the existing escalation →
       // revise-route machinery bounds + routes it, exactly as it does the reflect gate.
       return [{ kind: "cli", bin: CYCLE_BIN, args: ["testlist-gate", "--story", action.story, ...tdd] }];
+
+    case "flag-ia-nonconformance":
+      // Deterministic pre-reflect AC↔IA gate (#3, no LLM turn): flag the reflect-ia-defect
+      // smell when an E2E AC's declared ui_seams are not all named in ia.md; the existing
+      // escalation → revise-route machinery routes it to the ia refinement (ux-designer).
+      return [{ kind: "cli", bin: CYCLE_BIN, args: ["ia-gate", "--story", action.story, ...tdd] }];
 
     case "surface-gate":
       return [{ kind: "cli", bin: PIPELINE_BIN, args: ["surface", "--story", action.story, ...tdd] }];
@@ -2201,7 +2367,7 @@ export { executorDispatched } from "./executor-dispatch.js";
 
 /** The bin-token -> resolved-bin map the executor-dispatch post-turn expander shares with
  *  commandsFromManifest (one source of the resolved names). */
-const POST_TURN_BIN_TOKENS: Record<string, string> = { PIPELINE_BIN, CYCLE_BIN, HUMAN_PROXY_BIN, LOG_BIN, TEST_LIST_BIN, APPLY_DESIGN_THEME_BIN };
+const POST_TURN_BIN_TOKENS: Record<string, string> = { PIPELINE_BIN, CYCLE_BIN, HUMAN_PROXY_BIN, LOG_BIN, TEST_LIST_BIN, APPLY_DESIGN_THEME_BIN, IA_NOTES_BIN };
 
 /** Build a DriveEffects bound to a project: readState from disk, perform via
  *  commandsForAction + the injected runner. */

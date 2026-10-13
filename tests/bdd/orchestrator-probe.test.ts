@@ -9,6 +9,7 @@ import { join } from "node:path";
 
 import { diskArtifactProbe, readDriveContext } from "../../consort/orchestrator/state/orchestrator-probe";
 import { writeCycleArtifact, type CycleArtifact } from "../../consort/pipeline/run-cycle";
+import { markSmellResolved, priorReviseCount, writeSmellsLog } from "../../consort/smells/smells";
 
 let consortDir: string;
 const FEATURE = "F1";
@@ -49,6 +50,11 @@ function writeTestList(story: string, items: unknown[]): void {
   mkdirSync(storyDir(story), { recursive: true });
   writeFileSync(join(storyDir(story), "test-list-per-story.json"), JSON.stringify({ items }));
 }
+/** The deterministic fan-out's ordered-list artifact — B4: testListReady requires it (the bin ran). */
+function writeAnalystOrdered(story: string): void {
+  mkdirSync(storyDir(story), { recursive: true });
+  writeFileSync(join(storyDir(story), "analyst-ordered.json"), JSON.stringify({ items: [{ id: "T1" }] }));
+}
 function cycle(story: string, ac: string, id: string, extra: Partial<CycleArtifact>): void {
   writeCycleArtifact(
     { consortDir, feature_id: FEATURE, story_id: story, ac_id: ac },
@@ -72,6 +78,21 @@ describe("diskArtifactProbe: design facts", () => {
     expect(probe.hasAcs("S1")).toBe(true);
     writeStory("S2", []);
     expect(probe.hasAcs("S2")).toBe(false);
+  });
+
+  it("specRevisePending re-invokes the spec-author while a scope-marked AC file is missing, and self-clears once re-authored", () => {
+    const probe = diskArtifactProbe(consortDir, FEATURE);
+    writeStory("S4", ["AC1", "AC2"]);
+    writeAcLayer("S4", "AC1", "API");
+    writeAcLayer("S4", "AC2", "API");
+    expect(probe.specRevisePending("S4")).toBe(false); // no marker
+    // a scoped spec revise cleared AC2 and recorded it; AC2.json is absent → pending
+    rmSync(join(storyDir("S4"), "acs", "AC2.json"), { force: true });
+    writeFileSync(join(storyDir("S4"), "spec-revise-scope.json"), JSON.stringify({ ac_ids: ["AC2"] }));
+    expect(probe.specRevisePending("S4")).toBe(true);
+    // the spec-author re-authors AC2 → the marked AC is present again → no longer pending
+    writeAcLayer("S4", "AC2", "API");
+    expect(probe.specRevisePending("S4")).toBe(false);
   });
 
   it("hasAcs detects acs/<AC>.json files even when story.json acs is not backfilled", () => {
@@ -111,12 +132,93 @@ describe("diskArtifactProbe: design facts", () => {
     expect(probe.architectAnnotated("S1")).toBe(true);
   });
 
-  it("testListReady requires a non-empty test list", () => {
+  it("iaRefined: the per-story IA coverage marker, with coverage-by-presence back-compat", () => {
+    const probe = diskArtifactProbe(consortDir, FEATURE);
+    const iaMdPath = join(consortDir, "design", "ia.md");
+    const marker = (story: string) => join(storyDir(story), "ia-coverage.json");
+    writeStory("S1", ["AC1"]);
+    // No ia.md skeleton yet -> never refined (the establish/lazy-fallback runs first).
+    expect(probe.iaRefined("S1")).toBe(false);
+    mkdirSync(join(consortDir, "design"), { recursive: true });
+    writeFileSync(iaMdPath, "# IA\n## Screens\n## Navigation\n## User flows\n");
+    // ia.md exists but this story has no marker and is not yet architected -> needs ux-ia.
+    expect(probe.iaRefined("S1")).toBe(false);
+    // The per-story coverage marker (a live ux ia turn, or project-ia-notes) -> refined.
+    writeFileSync(marker("S1"), JSON.stringify({ story: "S1", reconciled_at: "2026-01-01T00:00:00Z" }));
+    expect(probe.iaRefined("S1")).toBe(true);
+    // Coverage-by-presence back-compat: a story the architect ALREADY annotated (an older kit, no
+    // marker) counts as refined, so the new kit does NOT re-run ux-ia on already-designed stories.
+    writeStory("S2", ["AC1"]);
+    writeAcNotes("S2", "AC1", "API", "boundary validates + delegates to the service");
+    writeArchitecture();
+    expect(probe.architectAnnotated("S2")).toBe(true);
+    expect(probe.iaRefined("S2")).toBe(true); // no marker, but architected -> covered by presence
+  });
+
+  it("iaProjectable: a feature's first UI story runs a live ux turn, later stories project", () => {
+    const probe = diskArtifactProbe(consortDir, FEATURE);
+    mkdirSync(join(consortDir, "design"), { recursive: true });
+    writeFileSync(join(consortDir, "design", "ia.md"), "# IA\n## Screens\n## Navigation\n## User flows\n");
+    writeStory("S1", ["AC1"]);
+    writeStory("S2", ["AC1"]);
+    // No sibling covered yet -> the first story is NOT projectable (runs a live ux ia turn).
+    expect(probe.iaProjectable("S1")).toBe(false);
+    // Once a sibling story is covered, the rest PROJECT (no turn) — surfaces already named.
+    writeFileSync(join(storyDir("S1"), "ia-coverage.json"), JSON.stringify({ story: "S1" }));
+    expect(probe.iaProjectable("S2")).toBe(true);
+    expect(probe.iaProjectable("S1")).toBe(false); // already covered -> nothing to project
+  });
+
+  it("iaProjectable: a UI story (story.json requires_e2e) does NOT project even when a sibling is covered (the S2/S3 lap fix)", () => {
+    // Live-caught churn: S2/S3 each PROJECTED (sibling S1 covered) → the architect declared seams the
+    // projected ia.md did not name → the IA gate flagged → a full revise lap. A UI story must run the ux
+    // ia turn LIVE, like the first story. The signal is story.json `requires_e2e` (the PO's flag, set at
+    // breakdown + readable here) — NOT the AC `layer`, which the architect assigns in a LATER step (so it
+    // is unset at this decision point; checking it was a no-op that left the laps in).
+    mkdirSync(join(consortDir, "design"), { recursive: true });
+    writeFileSync(join(consortDir, "design", "ia.md"), "# IA\n## Screens\n");
+    writeStory("S1", ["AC1"]);
+    writeFileSync(join(storyDir("S1"), "ia-coverage.json"), JSON.stringify({ story: "S1" })); // sibling covered
+    // A NON-UI story (no requires_e2e) still projects — nothing to add to ia.md.
+    writeStory("S3", ["AC1"]);
+    expect(diskArtifactProbe(consortDir, FEATURE).iaProjectable("S3")).toBe(true);
+    // A UI story (requires_e2e:true on story.json) does NOT project — it must refine ia.md live.
+    mkdirSync(storyDir("S2"), { recursive: true });
+    writeFileSync(join(storyDir("S2"), "story.json"), JSON.stringify({ id: "S2", acs: ["AC1"], requires_e2e: true }));
+    expect(diskArtifactProbe(consortDir, FEATURE).iaProjectable("S2")).toBe(false);
+  });
+
+  it("iaProjectable: a story sent back on a reflect-ia-defect revise is NOT projectable (forces a live ux ia turn to heal ia.md)", () => {
+    // The bug this guards (found live): the reflect critic flags a story's E2E ACs asserting a surface
+    // ia.md does not name (reflect-ia-defect -> revise -> ux-designer). On the next derivation the
+    // no-turn projection re-stamps the coverage marker WITHOUT adding the missing surface, so the next
+    // reflect re-flags the same gap and the loop burns revise laps to HIL healing nothing. Mirror
+    // architectProjectable's architect-canon-gap guard: once revised, the ux ia turn must run LIVE.
+    const probe = diskArtifactProbe(consortDir, FEATURE);
+    mkdirSync(join(consortDir, "design"), { recursive: true });
+    writeFileSync(join(consortDir, "design", "ia.md"), "# IA\n## Screens\n## Navigation\n## User flows\n");
+    writeStory("S1", ["AC1"]);
+    writeStory("S2", ["AC1"]);
+    // S1 covered -> S2 would normally PROJECT (its surface already named by a sibling).
+    writeFileSync(join(storyDir("S1"), "ia-coverage.json"), JSON.stringify({ story: "S1" }));
+    expect(probe.iaProjectable("S2")).toBe(true);
+    // But once S2 was sent back on a reflect-ia-defect revise, the projection heals nothing -> live turn.
+    writeSmellsLog(consortDir, [{ smell: "reflect-ia-defect", cycle_ids: [], story_id: "S2", detail: "ia gap" }]);
+    markSmellResolved(consortDir, "reflect-ia-defect", { story_id: "S2", kind: "revised" });
+    expect(priorReviseCount(consortDir, "reflect-ia-defect", "S2")).toBe(1);
+    expect(diskArtifactProbe(consortDir, FEATURE).iaProjectable("S2")).toBe(false);
+  });
+
+  it("testListReady requires a non-empty test list AND the fan-out's ordered-list artifact (B4)", () => {
     const probe = diskArtifactProbe(consortDir, FEATURE);
     expect(probe.testListReady("S1")).toBe(false);
     writeTestList("S1", []);
     expect(probe.testListReady("S1")).toBe(false);
     writeTestList("S1", [{ id: "T1" }]);
+    // B4: a non-empty master alone is NOT ready — the fan-out bin must have produced analyst-ordered.json
+    // (fail-closes the solo-author path: a hand-written master without the bin stays not-ready).
+    expect(probe.testListReady("S1")).toBe(false);
+    writeAnalystOrdered("S1");
     expect(probe.testListReady("S1")).toBe(true);
   });
 });

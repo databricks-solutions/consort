@@ -25,6 +25,8 @@ export function turnKeyForAction(action: WorkflowAction): TurnKey | undefined {
     switch (action.buildMode) {
       case "reflect":
         return "reflect"; // design-lane critic, tuned as its own turn (sweep: haiku+low)
+      case "reconcile":
+        return "reconcile"; // feature-complete symmetric cross-story reconciliation — its OWN step key (NOT red)
       case "review":
         return "review";
       case "refactor":
@@ -46,11 +48,13 @@ export function turnKeyForAction(action: WorkflowAction): TurnKey | undefined {
     if (action.role === "spec-author" && action.mode === "breakdown") return "breakdown";
     if (action.role === "spec-author" && action.mode === "propose") return "propose";
     if (action.role === "architect-reviewer" && (action.mode === "estimate" || action.mode === "estimate-committed")) return "estimate";
+    // UX Designer: establish (project-level) + per-story ia refinement both resume
+    // under the "ux" role key (per-story scoping is the manifest's resumeKeyFrom),
+    // mirroring the architect returning "architect" for every story.
+    if (action.role === "ux-designer") return "ux";
     // author-requests is human input, no agent turn – no key.
     return undefined;
   }
-  // Feature-scoped design role.
-  if (action.role === "ux-designer") return "ux";
   // Story-scoped design steps (no mode/buildMode, has a story).
   if ("story" in action && action.story) {
     if (action.role === "spec-author") return "acs";

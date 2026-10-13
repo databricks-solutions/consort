@@ -37,7 +37,10 @@ import { featuresDir as featuresDirOf } from "../../../config/consort-paths.js";
 
 export type ConformanceResult =
   | { ok: true }
-  | { ok: false; violations: string[] };
+  /** `acIds` (optional): the acceptance-criterion id(s) the violations concern, when the
+   *  check can attribute them per-AC (the pre-reflect test-list authoring checks do).
+   *  Lets the revise self-heal SCOPE the re-author to exactly those ACs — #4. */
+  | { ok: false; violations: string[]; acIds?: string[] };
 
 interface RequiredSection {
   /** Human label used in the violation message. */
@@ -648,7 +651,7 @@ export function checkE2ECoverage(testListJson: string, e2eAcIds: string[]): Conf
  * gate caught it as an LLM backstop — this flags it one step earlier, at authoring.
  */
 export function checkJsdomBrowserAssertion(testListJson: string): ConformanceResult {
-  let tl: { items?: Array<{ id?: string; description?: string; scenario_file?: string }> };
+  let tl: { items?: Array<{ id?: string; description?: string; scenario_file?: string; ac_id?: string }> };
   try {
     tl = JSON.parse(testListJson);
   } catch (err) {
@@ -664,6 +667,7 @@ export function checkJsdomBrowserAssertion(testListJson: string): ConformanceRes
   const browserOnly =
     /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
   const violations: string[] = [];
+  const acIds = new Set<string>();
   for (const it of tl.items ?? []) {
     if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
       violations.push(
@@ -672,9 +676,10 @@ export function checkJsdomBrowserAssertion(testListJson: string): ConformanceRes
           `occur — so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec ` +
           `(scenario_file under client/tests/e2e/…spec.ts) and assert navigation state via page.url() / rendered content in a real browser`,
       );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
 /**
@@ -692,7 +697,7 @@ export function checkJsdomBrowserAssertion(testListJson: string): ConformanceRes
  * it is still whole-table, not scoped to the rows THIS test seeded.
  */
 export function checkTestlistWholeTableAggregate(testListJson: string): ConformanceResult {
-  let tl: { items?: Array<{ id?: string; description?: string }> };
+  let tl: { items?: Array<{ id?: string; description?: string; ac_id?: string }> };
   try {
     tl = JSON.parse(testListJson);
   } catch (err) {
@@ -708,6 +713,7 @@ export function checkTestlistWholeTableAggregate(testListJson: string): Conforma
   const scopedOrDelta =
     /\bseed(?:s|ed|ing)?\b|\bdelta\b|\bbefore\b.*\bafter\b|\bafter\b.*\bbefore\b|count_before|count_after|probe_before|\bsubtract|\bminus\b|\bits own rows\b|\bthe (?:test'?s?|rows? it) (?:own|seed)|\bscoped to\b|\bmarker\b|\buuid\b|\bunique (?:sku|key)\b|\bper-test\b/i;
   const violations: string[] = [];
+  const acIds = new Set<string>();
   for (const it of tl.items ?? []) {
     const desc = it.description ?? "";
     if (wholeTableCount.test(desc) && !scopedOrDelta.test(desc)) {
@@ -717,9 +723,112 @@ export function checkTestlistWholeTableAggregate(testListJson: string): Conforma
           `(the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows ` +
           `(filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total`,
       );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
+ * fixed-key-e2e, at the test-LIST (design) layer — the pre-reflect complement to the code-layer
+ * `fixed-key-e2e` smell in architecture/test-smell-clean.ts (which scans the authored Playwright
+ * spec body). An E2E spec that CREATES a record keyed on a HARDCODED business key (SKU/code/name)
+ * collides on the shared feature branch — a prior run or a sibling story already holds that key, so
+ * the second run hits a unique-violation (or asserts a stale duplicate) and the row goes perma-red
+ * on a correct app, costing a reflect/assess lap. Caught here it is a scoped test-list revise instead.
+ *
+ * Scoped to a `client`-kind item whose AC is `E2E` (the Playwright surface, via acLayerById — the
+ * SAME lookup checkClientKindLayerCoherence uses). KEPT TIGHT (positive-signal, like the whole-table
+ * check, NOT absence-based): flag only when the description describes a CREATE/write flow AND names a
+ * hardcoded key literal (>=2 letters + >=2 digits, e.g. SKU-100 — so location codes A1/B2 and HTTP
+ * statuses 200/404 do NOT trip it) or an explicit "fixed/shared/same key" phrase, AND carries no
+ * per-run uniqueness escape (uuid/randomUUID/unique/fresh/per-run). Reflect stays the backstop for a
+ * cross-item shared-key case no single description reveals. Fail-open: no E2E client items ⇒ vacuous.
+ */
+const E2E_WRITE_FLOW = /\b(?:re)?fil(?:e|es|ed|ing)\b|\bcreat\w*|\badd(?:s|ed|ing)?\b|\bsubmit\w*|\bregister\w*|\bsave[sd]?\b|\binsert\w*/i;
+const HARDCODED_KEY =
+  /\b[A-Z]{2,}[-_]?\d{2,}\b|\b(?:fixed|hard-?coded|shared|the same)\s+(?:business\s+)?(?:key|sku|code|identity|identifier)\b/i;
+const PER_RUN_UNIQUE = /\bper-run\b|\bunique\b|\buuid\b|\brandomuuid\b|\bfresh\b|\bgenerated\b|\bper-test\b/i;
+
+/**
+ * ONE source of truth for the fixed-key-e2e heuristic: a test-list description is a fixed-key E2E
+ * create flow when it describes a CREATE/write flow AND names a hardcoded key literal (or an explicit
+ * fixed/shared-key phrase) AND carries no per-run uniqueness escape. Shared by the pre-reflect gate
+ * (checkTestlistFixedKeyE2e) and the fan-out client analyst's in-turn self-check (validateTestlistItems)
+ * so both apply the identical tight, positive-signal rule — fix the heuristic in one place.
+ * NOTE: the CALLER scopes to a `client`-kind item whose AC is `E2E`; this predicate reads description only.
+ */
+export function isFixedKeyE2eCreateFlow(description: string): boolean {
+  return E2E_WRITE_FLOW.test(description) && HARDCODED_KEY.test(description) && !PER_RUN_UNIQUE.test(description);
+}
+
+export function checkTestlistFixedKeyE2e(testListJson: string, acLayerById: Record<string, string>): ConformanceResult {
+  let tl: { items?: Array<{ id?: string; kind?: string; ac_id?: string; description?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    if (acLayerById[it.ac_id] !== "E2E") continue; // only the Playwright E2E surface
+    const desc = it.description ?? "";
+    if (isFixedKeyE2eCreateFlow(desc)) {
+      violations.push(
+        `test item ${it.id ?? "?"} is an E2E create flow keyed on a HARDCODED business key ("${desc.slice(0, 90)}…") with ` +
+          `no per-run uniqueness — the e2e verify runs against the SHARED feature branch, so a prior run or sibling story ` +
+          `already holds that key and the second run hits a unique-violation (or asserts a stale duplicate), going perma-red ` +
+          `on a correct app. Derive a per-run-unique key (e.g. 'SKU-' + crypto.randomUUID().slice(0,8)) and use that SAME ` +
+          `value in both the create fill and the assertion locator, so each run owns its own row`,
+      );
+      acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
+ * scenario_file coherence — a test item whose DESCRIPTION names a spec/test file DIFFERENT from its own
+ * `scenario_file` is self-inconsistent: the Navigator (which authors the file at `scenario_file`) can't
+ * tell which the item means. A deterministic pre-reflect catch for an authoring slip the LLM reflect
+ * otherwise flags as a `reflect-testlist-defect` (observed live: T28 description named
+ * `.../home-stock-table.spec.ts` while its scenario_file was `.../stock-table-rows.spec.ts`). TIGHT: only
+ * compares tokens of the SAME file suffix as `scenario_file` (so a description mentioning an unrelated
+ * `app/routes/...` path never trips it), by BASENAME (path-prefix differences are not a defect). Routes
+ * to the test-strategist (test_list gate) — the item's author. Fail-open: no scenario_file / no same-suffix
+ * token in the description ⇒ vacuous.
+ */
+export function checkTestlistScenarioFileCoherence(testListJson: string): ConformanceResult {
+  let tl: { items?: Array<{ id?: string; ac_id?: string; description?: string; scenario_file?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const base = (p: string): string => p.split("/").pop() ?? p;
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const it of tl.items ?? []) {
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    const desc = it.description ?? "";
+    if (!sf) continue;
+    const suffix = sf.match(/\.(?:spec|test)\.tsx?$|\.py$/)?.[0]; // the scenario_file's test-file suffix
+    if (!suffix) continue; // scenario_file isn't a recognized test file → nothing to compare
+    const tokenRe = new RegExp(`[\\w./-]+${suffix.replace(/\./g, "\\.")}`, "g"); // same-suffix path tokens in the description
+    for (const tok of desc.match(tokenRe) ?? []) {
+      if (base(tok) !== base(sf)) {
+        violations.push(
+          `test item ${it.id ?? "?"} description names "${tok}" but its scenario_file is "${sf}" — the Navigator cannot ` +
+            `tell which file to author. Align the description's named spec file to scenario_file (or drop the stray path).`,
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+        break; // one violation per item
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
 /**
@@ -943,7 +1052,11 @@ export function checkPlatformNfrDefended(architectureJson: string, knownGates: R
  * posture as persistence_invariants. The spec gate hard-blocks on a violation.
  */
 export function checkDbDesign(dbDesignJson: string | undefined, architectureJson: string): ConformanceResult {
-  let arch: { service_backed?: boolean; persistence_invariants?: Array<{ id?: string }> };
+  let arch: {
+    service_backed?: boolean;
+    persistence_invariants?: Array<{ id?: string }>;
+    access_patterns?: Array<{ id?: string }>;
+  };
   try {
     arch = JSON.parse(architectureJson);
   } catch {
@@ -971,7 +1084,7 @@ export function checkDbDesign(dbDesignJson: string | undefined, architectureJson
       ],
     };
   }
-  let db: { tables?: unknown[]; realizes_invariants?: string[] };
+  let db: { tables?: unknown[]; realizes_invariants?: string[]; addresses_access_patterns?: string[] };
   try {
     db = JSON.parse(dbDesignJson);
   } catch (err) {
@@ -991,6 +1104,26 @@ export function checkDbDesign(dbDesignJson: string | undefined, architectureJson
         `(the DBA must physically realize every invariant the architect declared – a table/column/constraint/index – ` +
         `and list its id here; see agents/dba.md)`,
     );
+  }
+  // Access-pattern coverage: the architect's PERFORMANCE/access signal. A story that introduces a new
+  // read/query shape (a filter/lookup/sort over existing or new tables) declares an access_pattern; the
+  // DBA must ADDRESS each (an index/structure, or a deliberate no-index decision in db-design.md) and
+  // list its id in addresses_access_patterns[]. An unaddressed pattern leaves dbaDesigned false → the DBA
+  // RE-RUNS for the later read story (instead of being skipped once db-design.json exists), giving it the
+  // chance to evolve the physical design. The gate requires the id be addressed, NOT that an index exist.
+  const accessPatterns = (arch.access_patterns ?? [])
+    .filter((p) => p && typeof p.id === "string" && p.id.length > 0)
+    .map((p) => p.id as string);
+  if (accessPatterns.length > 0) {
+    const addressed = new Set((db.addresses_access_patterns ?? []).filter((x): x is string => typeof x === "string" && x.length > 0));
+    const unaddressed = accessPatterns.filter((id) => !addressed.has(id));
+    if (unaddressed.length > 0) {
+      violations.push(
+        `access_pattern(s) not addressed by db-design.json addresses_access_patterns[]: ${unaddressed.join(", ")} ` +
+          `(the DBA must CONSIDER each query shape the architect flagged – add an index/structure on its columns or ` +
+          `record a deliberate no-index decision in db-design.md – and list its id here; see agents/dba.md)`,
+      );
+    }
   }
   return violations.length > 0 ? { ok: false, violations } : { ok: true };
 }
@@ -1589,6 +1722,7 @@ export function checkClientKindLayerCoherence(testListJson: string, acLayerById:
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
   const violations: string[] = [];
+  const acIds = new Set<string>();
   for (const it of tl.items ?? []) {
     if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
     const layer = acLayerById[it.ac_id];
@@ -1596,7 +1730,8 @@ export function checkClientKindLayerCoherence(testListJson: string, acLayerById:
       violations.push(
         `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) – a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`,
       );
+      acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }

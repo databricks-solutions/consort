@@ -51,6 +51,11 @@
       "type": "string",
       "description": "Layer assignment rationale, cross-cutting concerns touched, owner module."
     },
+    "ui_seams": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "For an E2E / client AC: the ia.md data-testid seam token(s) this AC's UI must drive (e.g. stock-cell-tracking, sku-par-level). Declared by the Architect Reviewer; the deterministic pre-reflect IA gate checks every one is named in ia.md, so an AC that asserts a surface the information architecture does not define is caught before the LLM reflect lap. Omit for a non-UI (API/Infra) AC."
+    },
     "status": {
       "type": "string",
       "enum": ["draft", "approved", "in-progress", "passing", "deprecated"]

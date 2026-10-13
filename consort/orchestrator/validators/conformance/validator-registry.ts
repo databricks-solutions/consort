@@ -320,6 +320,9 @@ export const testListConformant = conformsTo("test-list.json");
 export const productOverviewConformant = conformsTo("product-overview.md");
 export const nfrsConformant = conformsTo("nfrs.md");
 export const designBriefConformant = conformsTo("design-brief.md");
+// The UX Designer's information architecture (ia.md): the per-story `ia` refinement's gated
+// output, checked for its required sections (Screens / Navigation / User flows).
+export const iaConformant = conformsTo("ia.md");
 
 /**
  * The named-validator registry a manifest resolves against. Add an entry here (code) and
@@ -368,6 +371,7 @@ export const VALIDATOR_REGISTRY: Record<string, OutputValidator> = {
   productOverviewConformant,
   nfrsConformant,
   designBriefConformant,
+  iaConformant,
 };
 
 /**

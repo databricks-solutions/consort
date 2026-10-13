@@ -75,6 +75,7 @@ describe("reviewArtifacts COVERS the artifact channel (single source – no drif
     write("planning/estimates.json");
     write("planning/feature-proposals.md");
     write("design/design-guide.json");
+    write("design/ia.md"); // ux-ia per-story refinement (artifact channel)
     write(`features/${F}/feature-spec.json`);
     write(`features/${F}/architecture.json`);
     write(`features/${F}/db-design.json`);

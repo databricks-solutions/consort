@@ -19,14 +19,22 @@ import { reflectVerdictJson } from "../../consort/config/consort-paths.js";
 import { writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellHit, type SmellName } from "./smells.js";
 
 /** Who owns the fix for a reflection finding, and thus which smell/gate it
- *  routes to: the Spec Author (spec gate) or the Test Strategist (test_list). */
-export type ReflectOwner = "spec-author" | "test-strategist" | "architect-reviewer";
+ *  routes to: the Spec Author (spec gate), the Test Strategist (test_list), the
+ *  Architect (architecture), or the UX Designer (the ia refinement — an E2E/client
+ *  AC whose surface the IA does not name). */
+export type ReflectOwner = "spec-author" | "test-strategist" | "architect-reviewer" | "ux-designer";
 
 export interface ReflectFinding {
   /** Which author must fix it (drives the smell + the revise-route). */
   owner: ReflectOwner;
   /** The specific defect (a contradiction, coverage gap, layer conflict, ...). */
   detail: string;
+  /** The exact story AC id(s) this finding concerns, when it is AC-scoped (a test-list / IA / spec
+   *  defect about specific ACs). Lets a reflect-testlist-defect revise re-derive ONLY those ACs' items
+   *  (scoped re-derive) instead of ditching + regenerating the whole story's test-list — preserving the
+   *  unflagged items + their ids. OMIT (or []) when the finding is whole-story or a coupled root; the
+   *  co-heal then falls back to a full clear + re-derive. */
+  ac_ids?: string[];
   /** Materiality (issue #201): `blocking` = the build cannot proceed correctly
    *  (a contradiction, an unbuildable/unsatisfiable test, a wrong layer, a required
    *  clause uncovered); `advisory` = a marginal improvement (nice-to-have coverage,
@@ -46,11 +54,14 @@ export interface ReflectVerdict {
   findings: ReflectFinding[];
 }
 
-/** The smell a given owner's finding routes to (see smells.ts SMELL_CATALOG). */
-const SMELL_FOR_OWNER: Record<ReflectOwner, SmellName> = {
+/** The smell a given owner's finding routes to (see smells.ts SMELL_CATALOG). Exported so the
+ *  feature-complete reconcile gate (reconcile.ts) routes a cross-story finding to the SAME per-owner
+ *  smell + revise-route as a per-story reflect finding (one owner→smell door, no drift). */
+export const SMELL_FOR_OWNER: Record<ReflectOwner, SmellName> = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect",
   "architect-reviewer": "reflect-architecture-defect",
+  "ux-designer": "reflect-ia-defect",
 };
 
 /** Write a story's reflect verdict (the Navigator reflect turn's output). */
@@ -109,8 +120,9 @@ export function reflectionVerdictWritten(consortDir: string, feature: string, st
   return readReflectVerdict(consortDir, feature, story) !== undefined;
 }
 
-/** Every reflect smell name (both owners), for the clear-on-pass sweep. */
-const REFLECT_SMELLS: readonly SmellName[] = Object.values(SMELL_FOR_OWNER);
+/** Every reflect smell name (all owners), for the clear-on-pass sweep. Exported so the
+ *  reconcile gate drains the same set on a passing feature-complete verdict. */
+export const REFLECT_SMELLS: readonly SmellName[] = Object.values(SMELL_FOR_OWNER);
 
 /**
  * The DETERMINISTIC reflection gate: read the story's verdict and, when it did

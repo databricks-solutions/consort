@@ -13,8 +13,7 @@ import { DriftBanner, LogPane, SidePane, modeFromUrl } from "./board-parts";
 import { useTheme } from "./useTheme";
 import type { DashboardState } from "@/lib/types";
 import { colorForRole, font, radius } from "@/lib/theme";
-import { latestTurnOrdinalForRole } from "@/lib/derive";
-import { latestTurnOrdinalForStep, MULTI_STEP_ROLES } from "@/lib/topology";
+import { isOuterLoopStep } from "@/lib/topology";
 
 // The usage UNIT shown for the run's compute: token counts (default) or dollar cost. Toggled by
 // the header "usage:" control; drives both the run-vitals metric and the per-agent contribution bar.
@@ -105,29 +104,34 @@ export default function Home() {
   // still finds it). For a single-purpose role like the product-owner that IS the step's turn; only
   // a multi-step role clicked far out of window can land on a sibling step, which still beats a
   // blank shell. Last resort is the ROLE shell (its lifecycle-step deliverables).
+  // Resolve a lane card to ITS OWN step's turn, WHOLE-CORPUS (not just the recent-events window) and
+  // precise to the round's story — via the server-aligned `latestTurnByStep` ("<step>|<story>"). This
+  // replaces the old window resolver + whole-corpus `latestTurnByRole` fallback, which was role-keyed and
+  // story-blind: it bled a sibling step/round (S3's ux card showed S2's ux turn), AND it could not reach
+  // a turn that scrolled out of the window (the #0 breakdown, or an early story's spec from a late
+  // playhead). An OUTER-LOOP step (the "break into stories" breakdown) is per-feature + story-less, so it
+  // keys under `<step>|`; an inner-loop step keys under `<step>|<active story>`. With no active story (a
+  // completed run at the live edge) an inner step falls back to its LATEST round's turn.
+  const stepTurnOrdinal = (stepId: string): number | undefined => {
+    if (!state) return undefined;
+    const map = state.source?.correlation?.latestTurnByStep ?? {};
+    const outer = isOuterLoopStep(stepId);
+    const activeStory = outer ? null : state.stories?.find((s) => s.active)?.id ?? null;
+    if (outer || activeStory != null) return map[`${stepId}|${activeStory ?? ""}`];
+    // No active story (completed run): the step's latest reached turn across any story.
+    let best: number | undefined;
+    for (const [k, ord] of Object.entries(map)) {
+      if (k.startsWith(`${stepId}|`) && (best === undefined || ord > best)) best = ord;
+    }
+    return best;
+  };
+
   const onOpenRole = (role: string, stepId: string) => {
     if (!state) return;
-    const recentTurns = state.source?.correlation?.recentTurns ?? [];
-    // Resolve to the CLICKED step's own turn. The role-level fallbacks (latestTurnByRole /
-    // latestTurnOrdinalForRole) return the role's LATEST turn across ALL its steps, which for a
-    // multi-step role (navigator owns red/review/assess + reflect) is a SIBLING step — e.g. clicking
-    // navigator-red at build start would surface navigator-reflect. So use those fallbacks ONLY for
-    // single-step roles; for a multi-step role, resolve strictly by step (null → a role shell, which
-    // the frontier reveal then renders as prompt-only when the step is active, not a sibling's turn).
-    const roleFallbackSafe = !MULTI_STEP_ROLES.has(role);
-    // Only resolve a turn ordinal for a step the CURRENT pass has actually reached (or the running
-    // step). A step not yet traversed this pass must NOT inherit a prior-loop ordinal (the stale
-    // "#36 while really on #44" bug) — open its role shell instead, which revealFor renders as the
-    // uninvoked not-yet-run body. Same source of truth as the reveal, so the two can't disagree.
-    const traversed = state.topology.reachedThisPass.includes(stepId) || state.topology.laneCurrent?.step === stepId;
-    const ord = !traversed
-      ? undefined
-      : latestTurnOrdinalForStep(state.recentEvents, recentTurns, stepId) ??
-        (roleFallbackSafe ? state.source?.correlation?.latestTurnByRole?.[role] : undefined) ??
-        (roleFallbackSafe ? latestTurnOrdinalForRole(state.recentEvents, recentTurns, role) : undefined);
+    const ord = canDrillDown ? stepTurnOrdinal(stepId) : undefined;
     // Tag the target with the originating topology step so the panel can be frontier-gated (see
     // revealFor): the step id survives even when it resolves to a turn ordinal.
-    const target: DrilldownTarget = ord != null && canDrillDown ? { kind: "turn", ord, fromStep: stepId } : { kind: "role", role, fromStep: stepId };
+    const target: DrilldownTarget = ord != null ? { kind: "turn", ord, fromStep: stepId } : { kind: "role", role, fromStep: stepId };
     // TOGGLE, mirroring the workflow-graph nodes: clicking the SAME card whose panel is already open
     // slides it back out. Same target = the same turn ordinal, or the same role's shell.
     setDrilldown((cur) => {
@@ -148,11 +152,15 @@ export default function Home() {
   // `reachedThisPass` resets at the loop's first-step re-entry (b-refactor→b-red / a new story), so
   // at the start of a new cycle every later node reads "none" — nothing stale shown ahead. A
   // non-topology open (no fromStep) is never gated.
+  // The playhead's lit step → "prompt-only" (until it completes). Otherwise "full" iff this step has a
+  // turn for the round in view (same whole-corpus, step+story resolver as onOpenRole, so they agree) —
+  // else "none" (the "hasn't run at the current position" body): a step not reached at the playhead, OR
+  // reached this round but a no-turn projection / skipped role. Never a sibling step's or round's turn.
   const revealFor = (t: DrilldownTarget | null): DrilldownReveal => {
     const stepId = t && (t.kind === "turn" || t.kind === "role") ? t.fromStep : undefined;
     if (!stepId || !state) return "full";
     if (state.topology.laneCurrent?.step === stepId) return "prompt-only";
-    return state.topology.reachedThisPass.includes(stepId) ? "full" : "none";
+    return stepTurnOrdinal(stepId) != null ? "full" : "none";
   };
 
   return (

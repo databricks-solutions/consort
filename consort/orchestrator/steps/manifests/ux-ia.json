@@ -1,0 +1,27 @@
+{
+  "id": "ux-ia",
+  "role": "ux-designer",
+  "agent": { "kind": "claude", "config": { "role": "ux-designer" } },
+  "match": { "kind": "invoke-role", "role": "ux-designer", "mode": "ia" },
+  "inputs": [
+    { "id": "ia", "source": "feature:design/ia.md", "description": "The project information architecture to REFINE for this story (append its screens/forms/flows). Project-level file, augmented per story; this story's surfaces must be named here before the architect tags E2E layers." },
+    { "id": "design-guide", "source": "feature:design/design-guide.json", "description": "The established style system (tokens + component vocabulary) the new screens/forms compose from — read-only context, not re-authored here." },
+    { "id": "acs", "source": "story:acs", "description": "This story's acceptance criteria — their user-facing surfaces (E2E / client ACs) are what the IA must name." }
+  ],
+  "outputs": [
+    { "id": "ia", "filename": "ia.md", "channel": "artifact", "validator": "iaConformant", "description": "The refined information architecture (required sections: Screens / Navigation / User flows), with this story's surfaces added. Project-level file, augmented per story (additive, never a rewrite)." },
+    { "id": "agent-log", "filename": "agent-log.jsonl", "channel": "meta", "validator": "uxDesignerLoggedAuthoring", "description": "The UX Designer's structured log (shared agent-log script)." }
+  ],
+  "routing": {
+    "produced": { "next": "state-derived" }
+  },
+  "postTurn": [
+    { "bin": "IA_NOTES_BIN", "args": ["--feature", "{feature}", "--story", "{story}", "--tdd-dir", "{tddDir}"], "when": "after" }
+  ],
+  "agentOptions": {
+    "model": "opus",
+    "effort": "low",
+    "session": "resume",
+    "resumeKeyFrom": "role"
+  }
+}

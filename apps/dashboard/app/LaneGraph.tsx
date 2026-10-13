@@ -23,7 +23,7 @@ function fmtElapsed(ms: number): string {
   return s % 60 >= 30 && m < 10 ? `${m}m${s % 60}s` : `${m}m`;
 }
 
-// The per-lane inter-agent sub-workflows (Kevin's Figure 2) — what happens *inside* each
+// The per-lane inter-agent sub-workflows (Figure 2) — what happens *inside* each
 // lifecycle node the top-level WorkflowGraph shows as one box.
 //
 // Layout: the lane the playhead is in renders as a full graph; the other two collapse to a

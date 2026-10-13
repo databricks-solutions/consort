@@ -1,0 +1,631 @@
+<title>Consort Architecture Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #171b24;
+    --muted: #59616f;
+    --faint: #8b93a1;
+    --border: #e2e6ec;
+    --border-strong: #cfd5df;
+    --accent: #3f51c4;
+    --accent-ink: #2c3aa0;
+    --accent-soft: #e9ebfa;
+    --good: #1f8a4c;   --good-tint: #e7f4ec;
+    --watch: #a96e18;  --watch-tint: #f7efe0;
+    --crit: #bd3348;   --crit-tint: #f9e9ec;
+    --shadow: 0 1px 2px rgba(23,27,36,.04), 0 4px 16px rgba(23,27,36,.05);
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101219;
+      --surface: #171a22;
+      --surface-2: #1e222c;
+      --ink: #e7eaf1;
+      --muted: #a2aab9;
+      --faint: #6d7686;
+      --border: #2a2f3a;
+      --border-strong: #383e4b;
+      --accent: #8f9cf0;
+      --accent-ink: #aab4f5;
+      --accent-soft: #222840;
+      --good: #4dc681;   --good-tint: #15271d;
+      --watch: #e0a94f;  --watch-tint: #2a2314;
+      --crit: #e9697d;   --crit-tint: #2c1820;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 18px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101219;
+    --surface: #171a22;
+    --surface-2: #1e222c;
+    --ink: #e7eaf1;
+    --muted: #a2aab9;
+    --faint: #6d7686;
+    --border: #2a2f3a;
+    --border-strong: #383e4b;
+    --accent: #8f9cf0;
+    --accent-ink: #aab4f5;
+    --accent-soft: #222840;
+    --good: #4dc681;   --good-tint: #15271d;
+    --watch: #e0a94f;  --watch-tint: #2a2314;
+    --crit: #e9697d;   --crit-tint: #2c1820;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 18px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 clamp(18px, 4vw, 44px);
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  @media (min-width: 1000px) {
+    .layout { grid-template-columns: 210px minmax(0, 1fr); gap: 52px; }
+  }
+
+  /* ---- header ---- */
+  header.hero {
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(120% 140% at 88% -20%, var(--accent-soft) 0%, transparent 55%);
+  }
+  .hero-inner { padding: clamp(38px, 6vw, 66px) 0 clamp(26px, 3vw, 36px); }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .72rem;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    font-weight: 600;
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(2rem, 4.6vw, 3.1rem);
+    line-height: 1.04;
+    letter-spacing: -.02em;
+    font-weight: 700;
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+  .lede {
+    font-size: clamp(1.05rem, 1.7vw, 1.24rem);
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0;
+    text-wrap: pretty;
+  }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: 8px 10px;
+    margin-top: 26px;
+  }
+  .meta-chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .74rem;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 12px;
+  }
+  .meta-chip b { color: var(--ink); font-weight: 600; }
+
+  /* ---- side nav ---- */
+  nav.toc { display: none; }
+  @media (min-width: 1000px) {
+    nav.toc {
+      display: block;
+      position: sticky;
+      top: 0;
+      align-self: start;
+      max-height: 100vh;
+      overflow-y: auto;
+      padding: 44px 0;
+    }
+    nav.toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+    nav.toc a {
+      display: block;
+      font-size: .82rem;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 6px 10px 6px 12px;
+      border-left: 2px solid var(--border);
+      border-radius: 0 6px 6px 0;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    nav.toc a:hover { color: var(--ink); background: var(--surface-2); border-left-color: var(--accent); }
+    nav.toc .toc-num { font-family: "IBM Plex Mono", monospace; color: var(--faint); font-size: .74rem; margin-right: 7px; }
+    nav.toc .toc-label { font-family: "IBM Plex Mono", monospace; font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); padding: 14px 12px 6px; }
+  }
+
+  main { padding: 40px 0 90px; min-width: 0; }
+  section { scroll-margin-top: 24px; padding: 34px 0; border-top: 1px solid var(--border); }
+  section:first-child { border-top: none; padding-top: 8px; }
+  .sec-num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .78rem; font-weight: 600;
+    color: var(--accent-ink);
+    letter-spacing: .04em;
+  }
+  h2 {
+    font-size: clamp(1.4rem, 2.6vw, 1.85rem);
+    letter-spacing: -.015em;
+    font-weight: 700;
+    margin: 6px 0 4px;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 1.08rem;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin: 30px 0 12px;
+  }
+  h3 .mono { font-size: .95em; color: var(--accent-ink); }
+  p { margin: 0 0 15px; max-width: 72ch; }
+  .sub { color: var(--muted); }
+  strong { font-weight: 600; }
+  a { color: var(--accent-ink); }
+
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin: 4px 0 20px;
+    box-shadow: var(--shadow);
+  }
+  .callout p { margin: 0; }
+  .callout p + p { margin-top: 8px; }
+
+  /* ---- bar chart (import graph) ---- */
+  .chart {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 20px 14px;
+    box-shadow: var(--shadow);
+    margin: 6px 0 14px;
+  }
+  .bar-row {
+    display: grid;
+    grid-template-columns: 96px 1fr 34px;
+    align-items: center;
+    gap: 12px;
+    padding: 3px 0;
+  }
+  .bar-row .name { font-family: "IBM Plex Mono", monospace; font-size: .8rem; text-align: right; color: var(--ink); }
+  .bar-track { background: var(--surface-2); border-radius: 5px; height: 15px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--accent), var(--accent-ink)); }
+  .bar-row .val { font-family: "IBM Plex Mono", monospace; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar-row.floor .name { font-weight: 600; color: var(--accent-ink); }
+
+  .bands { display: flex; flex-direction: column; gap: 8px; margin: 18px 0 6px; }
+  .band {
+    display: grid; grid-template-columns: 150px 1fr; gap: 14px; align-items: baseline;
+    padding: 11px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .band .tier { font-family: "IBM Plex Mono", monospace; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-ink); font-weight: 600; }
+  .band .members { color: var(--muted); font-size: .92rem; }
+  .band .members .mono { color: var(--ink); }
+
+  /* ---- tables ---- */
+  .table-scroll { overflow-x: auto; margin: 8px 0 18px; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; background: var(--surface); }
+  caption { text-align: left; font-size: .78rem; color: var(--faint); padding: 10px 14px 0; font-family: "IBM Plex Mono", monospace; letter-spacing: .04em; }
+  th, td { text-align: left; padding: 10px 14px; vertical-align: top; border-top: 1px solid var(--border); }
+  thead th { border-top: none; background: var(--surface-2); font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; position: sticky; top: 0; }
+  tbody tr:hover { background: var(--surface-2); }
+  td .mono, th .mono { font-size: .86em; color: var(--accent-ink); }
+  td.dir { white-space: nowrap; }
+  td.dir .mono { font-weight: 600; }
+  .tag { display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: .66rem; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--muted); background: var(--bg); white-space: nowrap; }
+  .tag.op { color: var(--good); border-color: var(--good); background: var(--good-tint); }
+  .tag.off { color: var(--muted); }
+
+  /* ---- flow steppers ---- */
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 8px 0 6px; }
+  .step {
+    flex: 1 1 130px; min-width: 120px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 11px 13px; position: relative;
+  }
+  .step .k { font-family: "IBM Plex Mono", monospace; font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-ink); font-weight: 600; }
+  .step .v { font-size: .85rem; color: var(--ink); margin-top: 3px; }
+  .step .n { font-size: .74rem; color: var(--muted); margin-top: 4px; }
+  .flow-arrow { display: flex; align-items: center; color: var(--faint); font-size: 1.1rem; }
+  .loopback { font-size: .82rem; color: var(--muted); margin: 10px 0 0; display: flex; align-items: center; gap: 8px; }
+  .loopback .mono { color: var(--accent-ink); }
+
+  ul.clean { margin: 0 0 16px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 9px; }
+  ul.clean li { padding-left: 20px; position: relative; max-width: 74ch; }
+  ul.clean li::before { content: ""; position: absolute; left: 3px; top: .62em; width: 6px; height: 6px; border-radius: 2px; background: var(--accent); }
+  ul.clean li .mono { color: var(--accent-ink); font-size: .9em; }
+
+  /* ---- door list ---- */
+  .doors { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); margin: 6px 0 18px; }
+  @media (min-width: 640px) { .doors { grid-template-columns: 1fr 1fr; } }
+  .door { background: var(--surface); padding: 13px 15px; }
+  .door .fact { font-weight: 600; font-size: .92rem; }
+  .door .home { font-family: "IBM Plex Mono", monospace; font-size: .78rem; color: var(--accent-ink); margin-top: 3px; }
+
+  /* ---- finding cards ---- */
+  .findings { display: flex; flex-direction: column; gap: 12px; margin: 8px 0 8px; }
+  .finding {
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 4px solid var(--faint); border-radius: 8px; padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .finding.prose { border-left-color: var(--crit); }
+  .finding.dup { border-left-color: var(--watch); }
+  .finding.code { border-left-color: var(--watch); }
+  .finding.couple { border-left-color: var(--accent); }
+  .finding .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 5px; }
+  .finding .title { font-weight: 600; font-size: .98rem; }
+  .sev { font-family: "IBM Plex Mono", monospace; font-size: .64rem; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .sev.prose { color: var(--crit); background: var(--crit-tint); }
+  .sev.dup, .sev.code { color: var(--watch); background: var(--watch-tint); }
+  .sev.couple { color: var(--accent-ink); background: var(--accent-soft); }
+  .finding p { margin: 4px 0 0; font-size: .9rem; }
+  .finding .owners { color: var(--muted); }
+  .finding .owners .mono { color: var(--ink); font-size: .86em; }
+  .finding .fix { margin-top: 7px; font-size: .88rem; }
+  .finding .fix b { color: var(--good); }
+
+  footer { border-top: 1px solid var(--border); padding: 30px 0 70px; color: var(--muted); font-size: .86rem; }
+  footer .mono { color: var(--ink); font-size: .84rem; }
+  footer a { color: var(--accent-ink); }
+  .doclist { columns: 2; column-gap: 30px; font-family: "IBM Plex Mono", monospace; font-size: .76rem; color: var(--muted); margin: 10px 0 0; padding: 0; list-style: none; }
+  .doclist li { break-inside: avoid; padding: 2px 0; }
+  @media (max-width: 620px) { .doclist { columns: 1; } }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+</style>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-inner">
+      <p class="eyebrow">Engineering audit · consort</p>
+      <h1>Consort Architecture Map</h1>
+      <p class="lede">What every directory owns, how the deterministic orchestrator operates end to end, and — the reason this exists — where a single fact still has more than one owner. The starting point for deciding where single gates should live.</p>
+      <div class="meta-row">
+        <span class="meta-chip">repo <b>databricks-solutions/consort</b></span>
+        <span class="meta-chip">version <b>v0.3.65</b></span>
+        <span class="meta-chip">core <b>590 files · ~19 subsystems</b></span>
+        <span class="meta-chip">doors <b>47 CLIs + 25 MCP tools</b></span>
+        <span class="meta-chip">method <b>6 subsystem passes + import graph</b></span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="layout">
+    <nav class="toc" aria-label="Contents">
+      <ol>
+        <li class="toc-label">Map</li>
+        <li><a href="#what"><span class="toc-num">01</span>What consort is</a></li>
+        <li><a href="#layers"><span class="toc-num">02</span>The layer model</a></li>
+        <li><a href="#dirs"><span class="toc-num">03</span>Directory reference</a></li>
+        <li><a href="#operates"><span class="toc-num">04</span>How it operates</a></li>
+        <li class="toc-label">Gates</li>
+        <li><a href="#doors"><span class="toc-num">05</span>Single doors that exist</a></li>
+        <li><a href="#scatter"><span class="toc-num">06</span>Facts with &gt;1 owner</a></li>
+        <li><a href="#toward"><span class="toc-num">07</span>Toward single gates</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <section id="what">
+        <span class="sec-num">01</span>
+        <h2>What consort is</h2>
+        <p>Consort is a <strong>deterministic orchestrator</strong> for spec-first, test-driven development on live Lakebase branches. A pure state machine (<span class="mono">consort-drive</span>) sequences eight stateless LLM role agents through a <strong>design lane</strong> (spec → architecture → schema → test-list) and a <strong>build lane</strong> (RED → GREEN → review → refactor), running every build cycle against a real copy-on-write branch of a Postgres database. Human-in-the-loop gates fail closed.</p>
+        <p>The orchestrator is <em>not</em> an LLM. It reads state from disk, computes the single next action, dispatches one role or opens one gate, records the turn, and writes a snapshot — then loops. Role agents never call each other; every handoff is through files under <span class="mono">.consort/</span>.</p>
+        <div class="callout">
+          <p><strong>The gap this fills.</strong> The repo has ~17 focused design notes under <span class="mono">docs/design/refactor/</span>, each explaining one change. None describes the whole — what every directory owns and how they compose. That missing map is this document; the per-refactor notes become its footnotes.</p>
+        </div>
+      </section>
+
+      <section id="layers">
+        <span class="sec-num">02</span>
+        <h2>The layer model</h2>
+        <p>Layering here isn't asserted — it's measured. Counting import edges between <span class="mono">consort/</span> subdirectories gives each one an <strong>in-degree</strong>: how many modules depend on it. High in-degree = foundational; low = leaf. The shape is unambiguous.</p>
+        <div class="chart" role="img" aria-label="Import in-degree by subsystem: config 99, orchestrator 36, logging 23, gates 23, pipeline 20, smells 18, experiment 17, architecture 10, test-list 6, session 6, setup 4, lakebase 4, intake 2, deploy 2, telemetry 1.">
+          <div class="bar-row floor"><span class="name">config</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">99</span></div>
+          <div class="bar-row"><span class="name">orchestrator</span><span class="bar-track"><span class="bar-fill" style="width:36%"></span></span><span class="val">36</span></div>
+          <div class="bar-row"><span class="name">logging</span><span class="bar-track"><span class="bar-fill" style="width:23%"></span></span><span class="val">23</span></div>
+          <div class="bar-row"><span class="name">gates</span><span class="bar-track"><span class="bar-fill" style="width:23%"></span></span><span class="val">23</span></div>
+          <div class="bar-row"><span class="name">pipeline</span><span class="bar-track"><span class="bar-fill" style="width:20%"></span></span><span class="val">20</span></div>
+          <div class="bar-row"><span class="name">smells</span><span class="bar-track"><span class="bar-fill" style="width:18%"></span></span><span class="val">18</span></div>
+          <div class="bar-row"><span class="name">experiment</span><span class="bar-track"><span class="bar-fill" style="width:17%"></span></span><span class="val">17</span></div>
+          <div class="bar-row"><span class="name">architecture</span><span class="bar-track"><span class="bar-fill" style="width:10%"></span></span><span class="val">10</span></div>
+          <div class="bar-row"><span class="name">test-list</span><span class="bar-track"><span class="bar-fill" style="width:6%"></span></span><span class="val">6</span></div>
+          <div class="bar-row"><span class="name">session</span><span class="bar-track"><span class="bar-fill" style="width:6%"></span></span><span class="val">6</span></div>
+          <div class="bar-row"><span class="name">setup</span><span class="bar-track"><span class="bar-fill" style="width:4%"></span></span><span class="val">4</span></div>
+          <div class="bar-row"><span class="name">lakebase</span><span class="bar-track"><span class="bar-fill" style="width:4%"></span></span><span class="val">4</span></div>
+          <div class="bar-row"><span class="name">intake</span><span class="bar-track"><span class="bar-fill" style="width:2%"></span></span><span class="val">2</span></div>
+          <div class="bar-row"><span class="name">deploy</span><span class="bar-track"><span class="bar-fill" style="width:2%"></span></span><span class="val">2</span></div>
+          <div class="bar-row"><span class="name">telemetry</span><span class="bar-track"><span class="bar-fill" style="width:1%"></span></span><span class="val">1</span></div>
+        </div>
+        <p class="sub">Read as conceptual bands, foundation upward:</p>
+        <div class="bands">
+          <div class="band"><span class="tier">Foundation</span><span class="members"><span class="mono">config</span> — the base every module reaches into: <span class="mono">.consort</span> layout, path resolution, per-step agent config, schemas.</span></div>
+          <div class="band"><span class="tier">Engine &amp; lanes</span><span class="members"><span class="mono">orchestrator</span> (the brain), <span class="mono">gates</span> (HITL + conformance), <span class="mono">pipeline</span> (build-lane state machine).</span></div>
+          <div class="band"><span class="tier">Domain services</span><span class="members"><span class="mono">experiment</span>, <span class="mono">test-list</span>, <span class="mono">smells</span>, <span class="mono">architecture</span>, <span class="mono">intake</span> — the artifact lifecycle.</span></div>
+          <div class="band"><span class="tier">Substrate &amp; I/O</span><span class="members"><span class="mono">lakebase</span>, <span class="mono">deploy</span>, <span class="mono">setup</span>, <span class="mono">session</span> — talking to Postgres, git, and the world.</span></div>
+          <div class="band"><span class="tier">Observability</span><span class="members"><span class="mono">logging</span>, <span class="mono">telemetry</span>, <span class="mono">reports</span> — always-on and fire-and-forget; never in the critical path.</span></div>
+        </div>
+        <div class="callout" style="border-left-color: var(--watch);">
+          <p><strong>First coupling signal.</strong> <span class="mono">orchestrator ↔ gates</span> is bidirectional (orchestrator→gates 11 edges, gates→orchestrator 4), as are <span class="mono">orchestrator↔session</span> and <span class="mono">orchestrator↔telemetry</span>. Bidirectional coupling between the engine and its gate layer is exactly the "which one owns this?" ambiguity that makes a single gate-home hard to point at. First candidate to untangle.</p>
+        </div>
+      </section>
+
+      <section id="dirs">
+        <span class="sec-num">03</span>
+        <h2>Directory reference</h2>
+        <p>Every directory, what it's responsible for, its load-bearing contents, and how it's used. Grouped by the bands above.</p>
+
+        <h3>Engine &amp; control</h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Directory</th><th>Owns</th><th>Key contents</th><th>How it's used</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="dir"><span class="mono">consort/config</span></td>
+                <td>The single source for the <span class="mono">.consort</span> layout and all project settings.</td>
+                <td><span class="mono">consort-paths.ts</span> (resolveConsortDir, ARTIFACT_ROOT), <span class="mono">step-key.ts</span>, <span class="mono">project-settings.ts</span>, <span class="mono">schemas/</span></td>
+                <td>Imported by nearly everything (in-degree 99). All path + config reads route here.</td>
+              </tr>
+              <tr>
+                <td class="dir"><span class="mono">consort/orchestrator</span></td>
+                <td>The deterministic brain: derive state, choose the next action, dispatch roles, run the loop.</td>
+                <td><span class="mono">drive/</span> (nextTransition, run-loop), <span class="mono">state/</span> (derive, probe), <span class="mono">status/next.ts</span>, <span class="mono">turns/</span> (7-phase executor), <span class="mono">validators/conformance</span></td>
+                <td>Backs <span class="mono">consort-drive</span> and <span class="mono">consort-next</span>. The hub.</td>
+              </tr>
+              <tr>
+                <td class="dir"><span class="mono">consort/gates</span></td>
+                <td>HITL gate state, approval/withdrawal, artifact conformance, escalation channel, handoff expectations.</td>
+                <td><span class="mono">gates.ts</span>, <span class="mono">approve-gate.ts</span>, <span class="mono">gate-conformance-guard.ts</span>, <span class="mono">escalation.ts</span>, <span class="mono">orchestrator-expect.ts</span></td>
+                <td>Orchestrator's advance-gate phase; backs <span class="mono">consort-approve-gate</span>, <span class="mono">-withdraw-gate</span>, <span class="mono">-resolve-escalation</span>.</td>
+              </tr>
+              <tr>
+                <td class="dir"><span class="mono">consort/pipeline</span></td>
+                <td>The build-lane state machine: <span class="mono">pipeline.json</span>, RED/GREEN cycle records, design fingerprint.</td>
+                <td><span class="mono">story-pipeline.ts</span>, <span class="mono">cycle-record.ts</span>, <span class="mono">design-fingerprint.ts</span></td>
+                <td>Read/written by the orchestrator to sequence every story's build.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Artifact lifecycle</h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Directory</th><th>Owns</th><th>Key contents</th><th>How it's used</th></tr></thead>
+            <tbody>
+              <tr><td class="dir"><span class="mono">consort/intake</span></td><td>Spec/story intake and the heal-then-check narrative reconcile.</td><td><span class="mono">spec-sync.ts</span> (normalizeStoryJson, narrative parse)</td><td>Design-time breakdown hook + gate-time reconcile; backs <span class="mono">consort-intake</span>.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/experiment</span></td><td>Cut / promote / discard per-story experiments (paired git + Lakebase branch).</td><td>experiment cut with env-sync + git-ancestor + stale-branch guards</td><td>Build lane forks a fresh branch per story; backs <span class="mono">consort-experiment</span>.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/test-list</span></td><td>The test-list model and per-AC ordering.</td><td>test-list schema + item model</td><td>Test Strategist output; backs <span class="mono">consort-test-list</span>.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/smells</span></td><td>The bad-smell catalog + classification into blocking escalations; ephemeral-verify.</td><td>smell classifiers, <span class="mono">ephemeral-verify.ts</span></td><td>Raised during build/review; feeds the escalation channel.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Substrate &amp; delivery</h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Directory</th><th>Owns</th><th>Key contents</th><th>How it's used</th></tr></thead>
+            <tbody>
+              <tr><td class="dir"><span class="mono">consort/lakebase</span></td><td>Kit lifecycle (upgrade: quiesce → dual-pin → refresh → rollback), adoption, doctor gate, surface refresh.</td><td><span class="mono">upgrade.ts</span>, <span class="mono">kit-ref-pin.ts</span>, <span class="mono">create-doctor-gate.ts</span></td><td>Backs project create/adopt + <span class="mono">consort-upgrade</span>.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/deploy</span></td><td>Deploy-target resolve, reachability probe, feature-verify with ephemeral-branch isolation, deploy evidence.</td><td><span class="mono">deploy.ts</span> (ensureDeployedAndVerify)</td><td>Per-story + feature deploy gate; backs <span class="mono">consort-deploy</span>.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/architecture</span></td><td>Standing project canon + the deterministic cleaners (no LLM).</td><td><span class="mono">layering-clean</span>, <span class="mono">contract-clean</span>, <span class="mono">imports-clean</span>, <span class="mono">design-adherence</span>, <span class="mono">migration-app-clean</span></td><td>Backs the <span class="mono">*-clean</span> validator CLIs; gates design-complete + deploy.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/setup</span> · <span class="mono">session</span> · <span class="mono">update</span></td><td>Scaffold hooks; session/resume state; surface refresh on version bump.</td><td>create hooks, session readers, update-agents/-commands</td><td>Create-time + resume + kit-upgrade paths.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Observability &amp; tuning <span class="tag off">off critical path</span></h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Directory</th><th>Owns</th><th>Key contents</th><th>How it's used</th></tr></thead>
+            <tbody>
+              <tr><td class="dir"><span class="mono">consort/telemetry</span> <span class="tag op">operational</span></td><td>Privacy-safe spans on a frozen allowlist, fire-and-forget detached sender.</td><td><span class="mono">spans.ts</span>, <span class="mono">allowlist.ts</span>, <span class="mono">emitter.ts</span></td><td>Backs <span class="mono">consort-telemetry</span>/<span class="mono">-send</span>. Ingest is a separate repo.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/logging</span> <span class="tag op">operational</span></td><td>Closed-vocabulary <span class="mono">agent-log.jsonl</span> + the universal turn-recorder (one recorder feeds live drive and replay).</td><td><span class="mono">agent-log.ts</span>, <span class="mono">agent-log-events.ts</span>, <span class="mono">turn-recorder.ts</span></td><td>Every drive event + replayable corpus.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/reports</span></td><td>Post-mortem analysis: per-turn timing, tool-call breakdown, run comparison.</td><td><span class="mono">timing-report.ts</span>, <span class="mono">drive-log-report.ts</span>, <span class="mono">comparison-report.ts</span></td><td>Off-path; run after a drive completes.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/optimize</span></td><td>The champion-walk tuning harness (per-handoff lever sweep).</td><td><span class="mono">optimize-harness.ts</span>, candidates, live/apply</td><td>Separate CLI lane; backs <span class="mono">consort-optimize</span>/<span class="mono">-apply</span>.</td></tr>
+              <tr><td class="dir"><span class="mono">consort/evaluation</span></td><td>Fixed-Opus semantic judge + pinned reference corpus (~370 files).</td><td><span class="mono">semantic-gate.ts</span>, <span class="mono">reference-assets/stockflow/</span></td><td>Off-path; gates regression + optimization candidates.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Surfaces — the doors in</h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Directory</th><th>Owns</th><th>Key contents</th><th>How it's used</th></tr></thead>
+            <tbody>
+              <tr><td class="dir"><span class="mono">bin/</span></td><td>~47 CLIs (<span class="mono">consort-*</span> + <span class="mono">lakebase-*</span> + legacy aliases) — the invocation surface.</td><td>drive, next, approve-gate, deploy, experiment, the readers + validators</td><td>Should be thin wrappers over <span class="mono">consort/</span>; several are fat (see §6).</td></tr>
+              <tr><td class="dir"><span class="mono">apps/mcp-server</span></td><td>25 MCP tools (branch / PR / migration / diagnostics) over stdio — same functions as the CLIs.</td><td><span class="mono">index.ts</span>, <span class="mono">tools.ts</span></td><td>Consumed by Claude Desktop, Cursor, Codex, and the VS Code extension.</td></tr>
+              <tr><td class="dir"><span class="mono">commands/</span></td><td>The <span class="mono">/consort:start</span> entry: telemetry gate → detect → resume/create → detached drive + poll-once relay.</td><td><span class="mono">start.md</span></td><td>The human's front door; documents the relay + per-story cadence rules.</td></tr>
+              <tr><td class="dir"><span class="mono">skills/</span></td><td>The agent canon: 8 role prompts + orchestrator/test references + cross-project design principles.</td><td><span class="mono">consort/agents/*.md</span>, <span class="mono">software-/architectural-/ui-ux-design-principles</span></td><td>Loaded when the drive spawns a role; the prose rulebook.</td></tr>
+              <tr><td class="dir"><span class="mono">templates/</span></td><td>The scaffolded project surface: <span class="mono">.consort</span> bootstrap, <span class="mono">.claude/</span>, scripts, CI, app skeleton.</td><td><span class="mono">consort-bootstrap/</span>, <span class="mono">project/{common,python,nodejs,java}</span>, <span class="mono">scripts/lk</span> shim</td><td>Copied by <span class="mono">lakebase-create-project</span>; <span class="mono">{{PLACEHOLDER}}</span> substitution at create time.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Supporting</h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Directory</th><th>Owns / holds</th><th>How it's used</th></tr></thead>
+            <tbody>
+              <tr><td class="dir"><span class="mono">docs/</span></td><td>Per-refactor design notes, plans, runbooks, logo.</td><td>Reference; no wholesale overview until this map.</td></tr>
+              <tr><td class="dir"><span class="mono">tests/</span></td><td>~267 Vitest files: <span class="mono">bdd/</span>, optimization, live, integration, mcp.</td><td>Enforces allowlist reachability, gate semantics, artifact fidelity, executor equivalence. The push gate.</td></tr>
+              <tr><td class="dir"><span class="mono">scripts/</span></td><td>Build/release + live-test drivers + role tuning sweeps + skill sync.</td><td>CI + operator tooling.</td></tr>
+              <tr><td class="dir"><span class="mono">traffic/</span> · <span class="mono">dist/</span></td><td>GitHub traffic CSVs; committed build output.</td><td>Adoption reporting; <span class="mono">git add -f dist</span> at each release.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="operates">
+        <span class="sec-num">04</span>
+        <h2>How it operates</h2>
+        <p>One tick of the drive loop. The next action is <strong>derived fresh every iteration</strong> from on-disk state — there is no persisted next-action pointer, so the same state always yields the same action.</p>
+        <div class="flow">
+          <div class="step"><div class="k">Read</div><div class="v">state from disk</div><div class="n"><span class="mono">pipeline.json</span> + artifacts</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="k">Derive</div><div class="v">deriveDriveState</div><div class="n">pure projection</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="k">Decide</div><div class="v">nextTransition</div><div class="n">one action, deterministic</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="k">Act</div><div class="v">dispatch role · open gate · escalate</div><div class="n">7-phase executor</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="k">Record</div><div class="v">turn + telemetry</div><div class="n">fire-and-forget</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="k">Snapshot</div><div class="v">write next.json</div><div class="n"><span class="mono">awaiting_human?</span></div></div>
+        </div>
+        <p class="loopback">↺ &nbsp;If <span class="mono">next.json.awaiting_human === false</span>, loop. If <span class="mono">true</span>, stop and surface the decision to the human.</p>
+
+        <h3>The control signals</h3>
+        <ul class="clean">
+          <li><strong>One pause signal.</strong> <span class="mono">next.json :: awaiting_human</span> is the sole "the machine needs a person" flag — never reverse-engineered from open gates or action kind (a planning backlog pause has neither).</li>
+          <li><strong>Escalations pre-empt.</strong> An unresolved blocking problem (11 smell classes + deploy-verify failure) emits <span class="mono">raise-to-hil</span> and halts before anything else.</li>
+          <li><strong>Gates pause, then resume.</strong> The five HITL gates — <span class="mono">spec</span>, <span class="mono">plan</span>, <span class="mono">test_list</span>, <span class="mono">promote</span>, <span class="mono">deploy</span> — pause at approval and auto-resume once approved. State lives in <span class="mono">gates.json</span> (atomic) + a human-readable <span class="mono">selection-log.md</span>.</li>
+        </ul>
+
+        <h3>The per-story cadence</h3>
+        <p>A feature isn't built then shipped — each story runs the full loop on its own experiment branch, and only accepted stories merge up.</p>
+        <div class="flow">
+          <div class="step"><div class="v">Design</div><div class="n">spec · architecture · schema · tests</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="v">Spec gate</div><div class="n">PO approves structure</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="v">RED → GREEN</div><div class="n">on experiment branch</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="v">Review + refactor</div><div class="n">navigator ↔ driver</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="v">Deploy-verify</div><div class="n">ephemeral child branch</div></div>
+          <div class="flow-arrow">→</div>
+          <div class="step"><div class="v">Accept gate</div><div class="n">merge into feature</div></div>
+        </div>
+        <p class="loopback">↺ &nbsp;Repeat for each story; <strong>feature-level promote happens only after all stories are accepted.</strong> A mid-feature <span class="mono">/deploy</span> is a per-story acceptance, not a ship.</p>
+      </section>
+
+      <section id="doors">
+        <span class="sec-num">05</span>
+        <h2>Single doors that already exist</h2>
+        <p>The audit found the discipline is real in the load-bearing places. These facts already have exactly one owner — the model to extend, not fix.</p>
+        <div class="doors">
+          <div class="door"><div class="fact">The <span class="mono">.consort</span> layout &amp; all paths</div><div class="home">config/consort-paths.ts · resolveConsortDir</div></div>
+          <div class="door"><div class="fact">The next action</div><div class="home">orchestrator · nextTransition(state), derived fresh</div></div>
+          <div class="door"><div class="fact">"Needs a human" signal</div><div class="home">next.json :: awaiting_human</div></div>
+          <div class="door"><div class="fact">Build-lane state</div><div class="home">pipeline.json</div></div>
+          <div class="door"><div class="fact">Gate state (+ audit narrative)</div><div class="home">gates.json + selection-log.md, atomic</div></div>
+          <div class="door"><div class="fact">Pending escalation (the reader)</div><div class="home">gates/escalation.js · firstPendingEscalation</div></div>
+          <div class="door"><div class="fact">Per-step model / effort</div><div class="home">step-manifest agentOptions (winners written back here)</div></div>
+          <div class="door"><div class="fact">Telemetry schema</div><div class="home">telemetry/allowlist.ts — frozen, reachability-guarded</div></div>
+          <div class="door"><div class="fact">Log / turn vocabulary</div><div class="home">agent-log-events.ts (closed) + one turn-recorder</div></div>
+          <div class="door"><div class="fact">The quality bar</div><div class="home">evaluation · fixed Opus semantic judge</div></div>
+        </div>
+      </section>
+
+      <section id="scatter">
+        <span class="sec-num">06</span>
+        <h2>Where a fact still has more than one owner</h2>
+        <p>This is the payload for the gate-placement work. Each finding names the fact, its current owners, and the single home it wants. Severity stripe: <strong style="color:var(--crit)">red</strong> = honor-system only (no code enforces it), <strong style="color:var(--watch)">amber</strong> = enforced but in several places, <strong style="color:var(--accent-ink)">indigo</strong> = structural coupling.</p>
+
+        <h3>Rules that live only in agent prose</h3>
+        <p class="sub">Stated in role prompts; caught by an advisory reflect-pass at best; no gate hard-blocks them. An agent that forgets, or a hand-edited artifact, passes.</p>
+        <div class="findings">
+          <div class="finding prose"><div class="head"><span class="sev prose">honor-only</span><span class="title">AC independence</span></div><p class="owners">Owner: <span class="mono">spec-author.md</span> prose. The spec gate checks the <span class="mono">independence</span> field is <em>present</em>, not that the ACs are logically independent.</p></div>
+          <div class="finding prose"><div class="head"><span class="sev prose">honor-only</span><span class="title">Cross-story AC contradiction</span></div><p class="owners">Owner: <span class="mono">navigator.md</span> REFLECT via <span class="mono">consort-cross-story-context</span> — advisory, routes a revise; no hard stop.</p></div>
+          <div class="finding prose"><div class="head"><span class="sev prose">honor-only</span><span class="title">Field-contract gap</span></div><p class="owners">A NOT-NULL persistence field with no user-facing submit AC. Owner: <span class="mono">navigator.md</span> REFLECT — advisory; nothing scans architecture × test-list.</p></div>
+          <div class="finding prose"><div class="head"><span class="sev prose">honor-only</span><span class="title">Never weaken an AC · never mock the DB · never delete a test</span></div><p class="owners">Owners: <span class="mono">navigator.md</span>, <span class="mono">driver.md</span>, <span class="mono">product-owner.md</span>, <span class="mono">test-strategy.md</span>. No gate re-reads the Gate-1 <span class="mono">then</span> for drift; no linter catches a mocked DB or a deleted test.</p></div>
+        </div>
+
+        <h3>Canon duplicated across skill files</h3>
+        <div class="findings">
+          <div class="finding dup"><div class="head"><span class="sev dup">restated ×5</span><span class="title">The layering rule</span></div><p class="owners">Restated in <span class="mono">architectural-design-principles</span>, <span class="mono">architect-reviewer.md</span>, <span class="mono">driver.md</span>, <span class="mono">test-strategy.md</span>, and <span class="mono">test_layering.py</span>.</p><p class="fix"><b>Home →</b> one authoritative reference; every agent and the fitness test cite it. (Same pattern for config-in-env and no-mock-DB.)</p></div>
+        </div>
+
+        <h3>Resolution &amp; enforcement scattered in code</h3>
+        <div class="findings">
+          <div class="finding code"><div class="head"><span class="sev code">no single door</span><span class="title">Workspace context (host / profile / instance / database)</span></div><p class="owners">Split across scm-utils helpers, <span class="mono">provisioning/credentials.ts</span>, and <span class="mono">deploy.ts</span> reading <span class="mono">.env</span> directly. No single consort-side resolver threads all four.</p><p class="fix"><b>Home →</b> one <span class="mono">resolveWorkspaceContext(projectDir)</span> door.</p></div>
+          <div class="finding code"><div class="head"><span class="sev code">2 file homes</span><span class="title">Model / effort config</span></div><p class="owners">Read from <span class="mono">consort-config.json</span> and legacy <span class="mono">agent-config.json</span>; unified only inside <span class="mono">project-settings.modelFor()</span>.</p><p class="fix"><b>Home →</b> retire the legacy file; step-manifest agentOptions is the sole home.</p></div>
+          <div class="finding code"><div class="head"><span class="sev code">4 sites</span><span class="title">story.json conformance</span></div><p class="owners">Enforced in <span class="mono">spec-sync</span>, <span class="mono">artifact-conformance</span>, <span class="mono">story-pipeline</span>, and <span class="mono">gates/</span>.</p><p class="fix"><b>Home →</b> one heal-then-check gate (the recent <span class="mono">gate-conformance</span> move is the pattern; make it the only site).</p></div>
+          <div class="finding code"><div class="head"><span class="sev code">3 stores</span><span class="title">Test-list item status</span></div><p class="owners">Lives in <span class="mono">test-list.json</span>, cycle records, and per-story views. Cycle records are the truth, but not the single read.</p><p class="fix"><b>Home →</b> cycle records own it; views derive.</p></div>
+          <div class="finding code"><div class="head"><span class="sev code">11+ entry points</span><span class="title">Artifact validation</span></div><p class="owners"><span class="mono">response-formatter</span> (agent-side precheck) and <span class="mono">gate-conformance</span> (orch-side gate) validate overlapping artifacts with no documented division of labor, plus 9 <span class="mono">*-clean</span> validators.</p><p class="fix"><b>Home →</b> declare the precheck-vs-gate hierarchy; the gate is the authority.</p></div>
+        </div>
+
+        <h3>Structural coupling &amp; fat wrappers</h3>
+        <div class="findings">
+          <div class="finding couple"><div class="head"><span class="sev couple">cycle</span><span class="title">orchestrator ↔ gates (and ↔ session, ↔ telemetry)</span></div><p class="owners">Bidirectional imports blur which layer owns the gate decision.</p><p class="fix"><b>Fix →</b> one direction: gates depend on shared workflow vocabulary (in <span class="mono">config</span>), not on the engine.</p></div>
+          <div class="finding couple"><div class="head"><span class="sev couple">fat CLI</span><span class="title">Business logic in the bin layer</span></div><p class="owners"><span class="mono">drive.cli.ts</span> is 1462 lines; ~26 of 47 CLIs lack the <span class="mono">isCliEntry</span> guard, so logic can't be imported or tested.</p><p class="fix"><b>Fix →</b> extract <span class="mono">runXxxCli</span> pure functions to the service layer; keep bins thin.</p></div>
+        </div>
+      </section>
+
+      <section id="toward">
+        <span class="sec-num">07</span>
+        <h2>Toward single gates</h2>
+        <p>The organizing principle, and the one to hold the mapping work to: <strong>one fact = one owner = one door.</strong> A recovery path or an invariant that even its author must re-read to follow is too complex — fix by subtraction, by finding the existing common path, not by adding another latch. This table is the starting point, not the plan: each scattered fact and where its single home should be.</p>
+        <div class="table-scroll">
+          <table>
+            <caption>candidate single-homes — to be confirmed in the mapping pass</caption>
+            <thead><tr><th>Scattered fact</th><th>Proposed single home</th></tr></thead>
+            <tbody>
+              <tr><td>Design-rule invariants (AC independence, cross-story contradiction, field-contract gap, no-weaken, no-mock, no-delete)</td><td>Hard-blocking checks in the conformance/gate layer (<span class="mono">gates</span> + <span class="mono">architecture</span> cleaners); prose <em>cites</em> the code, doesn't restate it.</td></tr>
+              <tr><td>Engineering canon (layering, config-in-env, no-mock)</td><td>One authoritative reference in <span class="mono">skills/architectural-design-principles</span>; agents + fitness tests cite it.</td></tr>
+              <tr><td>Workspace context</td><td>One <span class="mono">resolveWorkspaceContext(projectDir) → {host, profile, instance, database}</span>.</td></tr>
+              <tr><td>Model / effort</td><td>Step-manifest <span class="mono">agentOptions</span> only; retire <span class="mono">agent-config.json</span>.</td></tr>
+              <tr><td>story.json conformance</td><td>One heal-then-check gate.</td></tr>
+              <tr><td>Artifact validation</td><td>Documented precheck → gate hierarchy; gate is authority.</td></tr>
+              <tr><td>CLI wrappers</td><td>Pure <span class="mono">runXxxCli</span> in service layer; bins thin + <span class="mono">isCliEntry</span>-guarded.</td></tr>
+              <tr><td>Engine ↔ gate coupling</td><td>Extract shared workflow vocabulary to <span class="mono">config</span>; make the dependency one-directional.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <p><strong>Next step.</strong> This map is the substrate for the mapping pass — walking each candidate home above, confirming the single owner, and sequencing the moves. The prose-only rules (red) are the highest-value conversions: they're the invariants the system currently trusts an agent to remember.</p>
+        </div>
+      </section>
+
+      <footer>
+        <p><span class="mono">Method:</span> six parallel read-only subsystem audits (orchestrator, artifact lifecycle, gates/config/deploy/substrate, CLI surface, agent canon, observability) plus a measured import-graph of <span class="mono">consort/**</span>. Read-only — no source changed. Compiled against <span class="mono">databricks-solutions/consort</span> at <span class="mono">v0.3.65</span>.</p>
+        <p style="margin-top:14px;">Existing per-refactor design notes this map sits above:</p>
+        <ul class="doclist">
+          <li>orchestrator-deterministic-driver.md</li>
+          <li>per-story-pipeline.md</li>
+          <li>per-story-experiments.md</li>
+          <li>executor-unification-a-full.md</li>
+          <li>per-role-agent-runtime.md</li>
+          <li>tier-hierarchy-and-handoff-contracts.md</li>
+          <li>ac-independence-and-revise-routing.md</li>
+          <li>layered-build-fitness-bdd-enforcement.md</li>
+          <li>architect-canon.md</li>
+          <li>hil-intake-interview.md</li>
+          <li>channel-model-live-proof.md</li>
+          <li>scm-workflow-state.md</li>
+        </ul>
+      </footer>
+    </main>
+  </div>
+</div>

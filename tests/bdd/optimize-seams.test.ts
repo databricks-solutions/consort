@@ -136,26 +136,26 @@ describe("P2a seam: allowed/disallowed tool scope on the claude command", () => 
 });
 
 describe("P2a seam: claudeToolArgs (pure, exported for the harness + this guard)", () => {
-  // Every spawn now pre-approves the harmless `cd` prefix (so an agent's `cd <root> && ./scripts/lk …`
-  // logging/kit call isn't permission-denied headless). It is ADDITIVE — it merges with the project
-  // settings allow-list (./scripts/lk, run-tests, npm …), it does not replace it.
-  it("default-off => the universal cd pre-approval (nothing role-specific)", () => {
+  // Every spawn pre-approves the full Bash tool + Task (so a drive-spawned role agent can run its
+  // self-check, parse/transform, kit calls, logging, and subagent fan-out headlessly). It is ADDITIVE —
+  // it merges with the project settings allow-list (./scripts/lk, run-tests, npm …), it does not replace it.
+  it("default-off => the universal Bash + Task pre-approval (nothing role-specific)", () => {
     expect(claudeToolArgs({ kind: "claude", role: "driver", model: "sonnet", task: "t" })).toEqual([
       "--allowed-tools",
-      "Bash(cd:*)",
+      "Bash,Task",
     ]);
   });
 
-  it("emits --allowed-tools with a comma-joined list (cd first, then the role's)", () => {
+  it("emits --allowed-tools with a comma-joined list (Bash + Task first, then the role's)", () => {
     expect(
       claudeToolArgs({ kind: "claude", role: "driver", model: "sonnet", task: "t", allowedTools: ["Read", "Edit"] }),
-    ).toEqual(["--allowed-tools", "Bash(cd:*),Read,Edit"]);
+    ).toEqual(["--allowed-tools", "Bash,Task,Read,Edit"]);
   });
 
-  it("emits --disallowed-tools with a comma-joined list (allowed still carries the cd baseline)", () => {
+  it("emits --disallowed-tools with a comma-joined list (allowed still carries the Bash + Task baseline)", () => {
     expect(
       claudeToolArgs({ kind: "claude", role: "driver", model: "sonnet", task: "t", disallowedTools: ["WebFetch", "WebSearch"] }),
-    ).toEqual(["--allowed-tools", "Bash(cd:*)", "--disallowed-tools", "WebFetch,WebSearch"]);
+    ).toEqual(["--allowed-tools", "Bash,Task", "--disallowed-tools", "WebFetch,WebSearch"]);
   });
 
   it("emits both when both set, allowed first", () => {
@@ -168,12 +168,12 @@ describe("P2a seam: claudeToolArgs (pure, exported for the harness + this guard)
         allowedTools: ["Read"],
         disallowedTools: ["Bash"],
       }),
-    ).toEqual(["--allowed-tools", "Bash(cd:*),Read", "--disallowed-tools", "Bash"]);
+    ).toEqual(["--allowed-tools", "Bash,Task,Read", "--disallowed-tools", "Bash"]);
   });
 
-  it("empty lists still carry the cd baseline (never fully empty)", () => {
+  it("empty lists still carry the Bash + Task baseline (never fully empty)", () => {
     expect(
       claudeToolArgs({ kind: "claude", role: "driver", model: "sonnet", task: "t", allowedTools: [], disallowedTools: [] }),
-    ).toEqual(["--allowed-tools", "Bash(cd:*)"]);
+    ).toEqual(["--allowed-tools", "Bash,Task"]);
   });
 });

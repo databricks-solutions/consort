@@ -41,6 +41,10 @@ export interface CorrespondenceEntry {
   ordinal: number | null;
   /** `request.kind`: kickoff | intake | progress | author-requests | gate | … */
   kind: string | null;
+  /** `request.role`: on a `progress` row, the role (or kind) that just completed — a STRUCTURED
+   *  field, so the UI brackets/colors it uniformly instead of parsing it back out of the prompt.
+   *  Null on rows that don't carry one (kickoff, intake, gate, older logs). */
+  role: string | null;
   /** Who answered: human-proxy, orchestrator, … */
   by: string | null;
   /** Rendered markdown of the request (falls back to the plain prompt). */
@@ -79,6 +83,7 @@ function toEntry(o: Record<string, unknown>): CorrespondenceEntry | null {
     phase: str(o.phase),
     ordinal: num(o.ordinal),
     kind: str(request.kind),
+    role: str(request.role),
     by: str(response.by),
     // rendered markdown first, plain prompt as fallback (progress rows only have the latter).
     promptMd: str(reqPres.rendered) ?? str(request.prompt),

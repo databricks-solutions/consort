@@ -89,7 +89,7 @@ describe("replay — parseTranscript", () => {
       reasoning: "",
     });
     expect(parseTranscript("")).toEqual({ prompt: "", tools: [], reasoning: "" });
-    // Headers are matched case-insensitively, as in the original.
+    // Headers are matched case-insensitively.
     expect(parseTranscript("## PROMPT\nx").prompt).toBe("x");
   });
 });

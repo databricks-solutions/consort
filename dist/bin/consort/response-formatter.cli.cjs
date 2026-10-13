@@ -6669,6 +6669,7 @@ var featureResolved = (tdd, f) => findFeatureDir(tdd, f) ?? featureDir(tdd, f);
 var featureSpecJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "feature-spec.json");
 var architectureJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "architecture.json");
 var dbDesignJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "db-design.json");
+var featureTestListJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "test-list.json");
 var storiesDir = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "stories");
 var storyDir = (tdd, f, s) => (0, import_node_path.join)(storiesDir(tdd, f), s);
 function findStoryDir(tdd, f, s) {
@@ -6683,7 +6684,6 @@ var storyResolved = (tdd, f, s) => findStoryDir(tdd, f, s) ?? storyDir(tdd, f, s
 var storyJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "story.json");
 var acsDir = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "acs");
 var acJson = (tdd, f, s, ac) => (0, import_node_path.join)(acsDir(tdd, f, s), `${ac}.json`);
-var storyTestListJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "test-list-per-story.json");
 function findFeatureDir(tdd, featureId) {
   const root = featuresDir(tdd);
   if (!fs.existsSync(root)) return void 0;
@@ -7021,6 +7021,16 @@ function checkDbDesign(dbDesignJson2, architectureJson2) {
       `persistence_invariant(s) not realized by db-design.json realizes_invariants[]: ${uncovered.join(", ")} (the DBA must physically realize every invariant the architect declared \u2013 a table/column/constraint/index \u2013 and list its id here; see agents/dba.md)`
     );
   }
+  const accessPatterns = (arch.access_patterns ?? []).filter((p) => p && typeof p.id === "string" && p.id.length > 0).map((p) => p.id);
+  if (accessPatterns.length > 0) {
+    const addressed = new Set((db.addresses_access_patterns ?? []).filter((x) => typeof x === "string" && x.length > 0));
+    const unaddressed = accessPatterns.filter((id) => !addressed.has(id));
+    if (unaddressed.length > 0) {
+      violations.push(
+        `access_pattern(s) not addressed by db-design.json addresses_access_patterns[]: ${unaddressed.join(", ")} (the DBA must CONSIDER each query shape the architect flagged \u2013 add an index/structure on its columns or record a deliberate no-index decision in db-design.md \u2013 and list its id here; see agents/dba.md)`
+      );
+    }
+  }
   return violations.length > 0 ? { ok: false, violations } : { ok: true };
 }
 function checkStoryIndependence(stories, targetStory) {
@@ -7356,6 +7366,15 @@ function checkArchitect(args, v) {
       });
     }
   }
+  const archForSchema = architectureJson(consortDir, featureId);
+  if ((0, import_node_fs2.existsSync)(archForSchema)) {
+    try {
+      const r = checkArtifactConformance(canonicalArtifactName(archForSchema), (0, import_node_fs2.readFileSync)(archForSchema, "utf8"));
+      if (!r.ok) for (const problem of r.violations) v.push({ artifact: "architecture.json", problem });
+    } catch (e) {
+      v.push({ artifact: "architecture.json", problem: `is not valid JSON (${e.message})` });
+    }
+  }
   checkNfrFitnessFunctions(consortDir, featureId, v);
 }
 function checkNfrFitnessFunctions(consortDir, featureId, v) {
@@ -7367,11 +7386,13 @@ function checkNfrFitnessFunctions(consortDir, featureId, v) {
   } catch {
     return;
   }
+  const trivial = /^(todo|tbd|tbc|fixme|placeholder|none|test|xxx|\.{2,}|\?{2,}|n\/?a)\.?$/i;
   for (const [i, n] of nfrs.entries()) {
-    if (typeof n.fitness_function !== "string" || n.fitness_function.trim() === "") {
+    const ff = typeof n.fitness_function === "string" ? n.fitness_function.trim() : "";
+    if (ff === "" || trivial.test(ff)) {
       v.push({
         artifact: "architecture.json",
-        problem: `NFR ${n.id ?? `#${i}`} is missing a non-empty \`fitness_function\` (name the concrete real-branch test that defends this NFR, so the Test Strategist authors it as a RED test). "N/A \u2013 reason" is allowed only when the NFR genuinely has no machine-checkable defense.`
+        problem: `NFR ${n.id ?? `#${i}`} has no substantive \`fitness_function\` (name the concrete real-branch test that defends this NFR, so the Test Strategist authors it as a RED test \u2014 not a placeholder like "TODO"/"TBD"). "N/A \u2013 reason" is allowed only when the NFR genuinely has no machine-checkable defense.`
       });
     }
   }
@@ -7396,48 +7417,42 @@ function checkDba(args, v) {
 function checkTestStrategist(args, v) {
   const { consortDir, featureId, story } = args;
   if (!needStory("test-strategist", story, v)) return;
-  const file = storyTestListJson(consortDir, featureId, story);
+  const file = featureTestListJson(consortDir, featureId);
   if (!(0, import_node_fs2.existsSync)(file)) {
-    v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: "per-story test list not written" });
+    v.push({ artifact: "test-list.json", problem: "test list not written" });
     return;
   }
   let parsed;
   try {
     parsed = JSON.parse((0, import_node_fs2.readFileSync)(file, "utf8"));
   } catch (e) {
-    v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
-    return;
-  }
-  const items = Array.isArray(parsed.items) ? parsed.items : [];
-  if (items.length === 0) {
-    v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: "empty `items` (expected >=1 test mapped to the story's ACs)" });
+    v.push({ artifact: "test-list.json", problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
     return;
   }
   const acIds = new Set(storyAcIds(consortDir, featureId, story));
+  const allItems = Array.isArray(parsed.items) ? parsed.items : [];
+  const items = allItems.filter((it) => typeof it.ac_id === "string" && acIds.has(it.ac_id));
+  if (items.length === 0) {
+    v.push({
+      artifact: "test-list.json",
+      problem: `no tests mapped to story ${story}'s ACs [${[...acIds].join(", ")}] (expected >=1 item whose ac_id is one of them)`
+    });
+    return;
+  }
   const covered = /* @__PURE__ */ new Set();
   items.forEach((item, i) => {
     if (item.kind === "fitness" && typeof item.scenario_file === "string" && /\.feature$/.test(item.scenario_file)) {
       v.push({
-        artifact: `stories/${story}/test-list-per-story.json`,
+        artifact: "test-list.json",
         problem: `items[${i}] (${String(item.id)}) is kind:"fitness" but its scenario_file "${item.scenario_file}" is a Gherkin .feature (mutually exclusive). A fitness item is a plain test (drop scenario_file), or make it kind:"behavior".`
       });
     }
-    const acId = item.ac_id;
-    if (typeof acId !== "string" || acId.length === 0) {
-      v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: `items[${i}] (${String(item.id)}) has null/empty ac_id` });
-    } else if (acIds.size > 0 && !acIds.has(acId)) {
-      v.push({
-        artifact: `stories/${story}/test-list-per-story.json`,
-        problem: `items[${i}] ac_id "${acId}" is not one of the story's ACs [${[...acIds].join(", ")}]`
-      });
-    } else if (typeof acId === "string") {
-      covered.add(acId);
-    }
+    covered.add(item.ac_id);
   });
   const uncovered = [...acIds].filter((id) => !covered.has(id));
   if (uncovered.length > 0) {
     v.push({
-      artifact: `stories/${story}/test-list-per-story.json`,
+      artifact: "test-list.json",
       problem: `AC(s) with no covering test: [${uncovered.join(", ")}]. Every AC needs >=1 item (a client AC needs a kind:client item; see the reflect gate).`
     });
   }

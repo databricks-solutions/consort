@@ -1,14 +1,14 @@
 {
-  "id": "ux-designer",
+  "id": "ux-establish",
   "role": "ux-designer",
   "agent": { "kind": "claude", "config": { "role": "ux-designer" } },
-  "match": { "kind": "invoke-role", "role": "ux-designer" },
+  "match": { "kind": "invoke-role", "role": "ux-designer", "mode": "establish" },
   "inputs": [
-    { "id": "design-guideline", "source": "feature:design/design-brief.md", "description": "The HIL design brief the UX Designer extracts the look FROM. Lives under design/ on the real tree (design/design-brief.md, per intake.ts)." },
+    { "id": "design-guideline", "source": "feature:design/design-brief.md", "description": "The HIL design brief the UX Designer extracts the look FROM. Lives under design/ on the real tree (design/design-brief.md, per intake.ts). A planning/intake artifact, human-approved at the intake gate." },
     { "id": "product-overview", "source": "feature:product-overview.md", "description": "The PO's product overview , which stories produce screens (product-overview.md)." }
   ],
   "outputs": [
-    { "id": "design-guide", "filename": "design-guide.json", "channel": "artifact", "validator": "designGuideConformant", "description": "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + ia.md are authored alongside but the JSON is the gated artifact." },
+    { "id": "design-guide", "filename": "design-guide.json", "channel": "artifact", "validator": "designGuideConformant", "description": "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + the initial ia.md skeleton are authored alongside; the JSON is the gated artifact. One-time bootstrap of the project style system." },
     { "id": "agent-log", "filename": "agent-log.jsonl", "channel": "meta", "validator": "uxDesignerLoggedAuthoring", "description": "The UX Designer's structured log (shared agent-log script). BROWSE PROVENANCE (a `browsed:<site>` / `browse-gap:<site>` event) is enforced DETERMINISTICALLY at the spec gate (uxDesignerBrowsedReason reads the persisted agent-log), NOT as a meta-channel output validator — the executor skips those (the resolved meta path is not the persisted log)." }
   ],
   "routing": {

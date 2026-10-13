@@ -8,8 +8,15 @@
 // and vitest do not, which is how it slipped through once.
 
 import { useEffect, useRef } from "react";
-import type { DashboardState } from "@/lib/types";
+import { ROLES, type DashboardState } from "@/lib/types";
 import { colorForRole, font, radius } from "@/lib/theme";
+
+// Only a genuine agent role may own a turn's `#ordinal` colour. A progress beat's `request.role`
+// is overloaded (correspondence.ts:44, "role OR kind"): a real role for an agent turn, but an
+// ORCHESTRATION ACTION KIND (approve-gate, surface-gate, …) for an orchestrator bookkeeping beat.
+// Admitting a kind would paint a gate approval's ordinal with a non-role (`colorForRole` ⇒
+// --text-faint) instead of its answerer, the product-owner — so turn ownership is gated on this set.
+const ROLE_SET: ReadonlySet<string> = new Set(ROLES);
 
 /**
  * `?mode=live|replay` from the page URL, so a mode is linkable.
@@ -72,9 +79,9 @@ function artifactPathOf(e: DashboardState["recentEvents"][number]): string | nul
   return typeof p === "string" && p ? p : null;
 }
 
-// Colour the STATE-TRANSITION event kinds so the stream is scannable by category — Kevin's
-// original colour-coded its timeline, which is how a demo viewer spots "a gate surfaced" or "a
-// deploy verified" at a glance instead of reading every grey line. Kept to the board's existing
+// Colour the STATE-TRANSITION event kinds so the stream is scannable by category — a
+// colour-coded timeline is how a demo viewer spots "a gate surfaced" or "a deploy verified" at a
+// glance instead of reading every grey line. Kept to the board's existing
 // semantic palette (each token is already used as text ON the dark terminal, so it's readable in
 // both themes) and to the kinds that carry meaning; the structural rows (handoff/artifact/phase/
 // intake/usage) stay neutral so the colour actually means something. `reasoning` is handled
@@ -130,11 +137,84 @@ export function EventTicker({
   // merge gives a single time-consistent window. Rows render oldest→newest, NEWEST AT THE BOTTOM
   // — a terminal log that grows downward, so the live edge is the last line.
   const corr = state.source?.correspondence?.recent ?? [];
+  // The role for a correspondence beat, derived from data ALREADY on the timeline (so it renders
+  // with no re-run) — the SAME role the event rows read off the log, never re-parsed from prose:
+  //   • a gate beat's role follows its direction — the orchestrator ASKS (orch→hil = await.gate),
+  //     the PO ANSWERS (hil→orch = response.gate), the exact pair the agent-log stamps on
+  //     gate.surfaced / gate.approved;
+  //   • any other beat (a progress/turn.complete report) takes the role of the turn it names, looked
+  //     up by ordinal from the events.
+  // A structured `c.role` (newer corpora emit it at the source) wins when present.
+  const ordinalRole = new Map<number, string>();
+  state.recentEvents.forEach((e, i) => {
+    const ord = turns[i];
+    if (ord != null && e.role) ordinalRole.set(ord, e.role);
+  });
+  const corrRole = (c: CorrItem): string | null =>
+    c.role ??
+    (c.kind === "gate"
+      ? c.direction === "hil-to-orch"
+        ? "product-owner"
+        : "orchestrator"
+      : c.ordinal != null
+        ? ordinalRole.get(c.ordinal) ?? null
+        : null);
+  // #<ordinal> is a TURN identity, so it takes ONE colour per turn — the turn OWNER's role (the role
+  // of that turn's completion/progress beat), shared by the turn's ask/answer/completion beats so one
+  // turn never renders #N in three colours. The [role] bracket still names the per-beat actor.
+  //
+  // Only a real agent role may own that colour. A progress beat's `request.role` is overloaded
+  // (correspondence.ts:44, "role OR kind"): a real role for an agent turn, but an ORCHESTRATION
+  // ACTION KIND (approve-gate/surface-gate) for a gate-approval bookkeeping beat — admitting a kind
+  // would paint the #ordinal with a non-role (colorForRole ⇒ --text-faint), so it is gated on ROLE_SET.
+  const turnOwnerRole = new Map<number, string>();
+  for (const c of corr) {
+    if (c.kind === "progress" && c.ordinal != null) {
+      const r = corrRole(c);
+      if (r && ROLE_SET.has(r)) turnOwnerRole.set(c.ordinal, r);
+    }
+  }
+  // A GATE turn (its ask/answer/completion beats) is not owned by any single agent — the orchestrator
+  // asks, the product-owner answers — so its #ordinal takes the GATE BAND colour, matching the
+  // kind label and the row's left rail (--status-gate-text) rather than one actor's role.
+  const gateTurnOrdinals = new Set<number>();
+  for (const c of corr) if (c.kind === "gate" && c.ordinal != null) gateTurnOrdinals.add(c.ordinal);
+  // The resolved #ordinal colour for a correspondence row: the gate band for a gate turn, else the
+  // turn-owner's role colour (falling back to the beat's own role when the turn has no owner beat).
+  const turnColorFor = (c: CorrItem): string =>
+    c.ordinal != null && gateTurnOrdinals.has(c.ordinal)
+      ? "var(--status-gate-text)"
+      : colorForRole(((c.ordinal != null ? turnOwnerRole.get(c.ordinal) : null) ?? corrRole(c)) ?? "");
+  // Within a SINGLE timestamp, order the gate lifecycle the way it happens, not by which stream
+  // (agent-log vs correspondence) wrote first: the orchestrator's turn.usage, then it SURFACES the
+  // gate, then ASKS (await.gate), the HIL ANSWERS (response.gate), then the approval is LOGGED
+  // (gate.approved). `gate.surfaced`/`gate.approved` land at the same sub-second as their correspondence
+  // twins, so a bare timestamp sort puts both gate.approved events before response.gate (events-first);
+  // this rank interleaves them correctly. Non-gate rows share a neutral rank (stable order preserved).
+  const lifecycleRank = (row: MergedRow): number => {
+    if (row.kind === "event") {
+      const ev = row.e.event;
+      if (ev === "turn.usage") return 0;
+      if (ev === "gate.surfaced") return 1;
+      if (ev === "gate.approved" || ev === "gate.rejected") return 4;
+      return 2;
+    }
+    // a gate correspondence beat: the ask (orch→hil) sits just after surfaced; the answer (hil→orch)
+    // just before the logged approval.
+    if (row.c.kind === "gate") return row.c.direction === "hil-to-orch" ? 3 : 2;
+    return 2;
+  };
   const merged: MergedRow[] = [
     ...state.recentEvents.map((e, i) => ({ kind: "event" as const, ts: e.timestamp, e, turn: turns[i] ?? null })),
-    ...corr.map((c) => ({ kind: "corr" as const, ts: c.at, c })),
+    ...corr.map((c) => ({
+      kind: "corr" as const,
+      ts: c.at,
+      c,
+      role: corrRole(c),
+      turnColor: turnColorFor(c),
+    })),
   ]
-    .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+    .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : lifecycleRank(a) - lifecycleRank(b)))
     .slice(-MERGED_TAIL);
 
   // Follow the live edge: keep the newest (bottom) row in view as rows arrive. Polite — only
@@ -169,7 +249,7 @@ export function EventTicker({
         .consort-open:hover { background: var(--surface-muted); }
       `}</style>
       {/* A colour key for the stream: names what the state-transition colours mean plus the 💭
-          reasoning marker, so a viewer reads the timeline at a glance (Kevin's legend). Sits above
+          reasoning marker, so a viewer reads the timeline at a glance. Sits above
           the log on the page ground, so its labels use the theme-safe muted token. */}
       {variant === "block" ? (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 6, fontSize: "0.64rem", color: "var(--text-muted)" }}>
@@ -187,7 +267,7 @@ export function EventTicker({
       ) : null}
       <div ref={scrollRef} onScroll={onScroll} style={listStyle}>
         {merged.map((row, i) => {
-          if (row.kind === "corr") return <CorrRow key={i} c={row.c} onOpenTurn={onOpenTurn} />;
+          if (row.kind === "corr") return <CorrRow key={i} c={row.c} role={row.role} turnColor={row.turnColor} onOpenTurn={onOpenTurn} />;
           const { e, turn } = row;
           const openTurn = turn !== null && !!onOpenTurn;
           // Only offer the artifact affordance when NOT already offering a turn (a recorded turn
@@ -445,7 +525,7 @@ const MERGED_TAIL = Number.POSITIVE_INFINITY;
 type CorrItem = NonNullable<NonNullable<DashboardState["source"]>["correspondence"]>["recent"][number];
 type MergedRow =
   | { kind: "event"; ts: string; e: DashboardState["recentEvents"][number]; turn: number | null }
-  | { kind: "corr"; ts: string; c: CorrItem };
+  | { kind: "corr"; ts: string; c: CorrItem; role: string | null; turnColor: string };
 
 // A correspondence row: the conversation, rendered distinctly from the machine event bus.
 //
@@ -454,39 +534,52 @@ type MergedRow =
 // badge (✓ approved / ✓ done) surfaces the per-action completion signal — the thing the agent
 // log's turn-boundary logging lags on. Clicking a row that names a turn opens that turn (ordinals
 // are 1:1 with the log's turns), the same drill-down an event row offers.
-function CorrRow({ c, onOpenTurn }: { c: CorrItem; onOpenTurn?: (ord: number) => void }) {
+function CorrRow({ c, role, turnColor, onOpenTurn }: { c: CorrItem; role: string | null; turnColor: string; onOpenTurn?: (ord: number) => void }) {
   const openTurn = c.ordinal !== null && !!onOpenTurn;
-  // "you" = the human-in-the-loop. "→you" is the orchestrator surfacing something to you; "you→"
-  // is you answering (a kickoff or a gate approval). Kept short to fit the lane column and stay
-  // aligned with the event rows; the full direction is in the row title.
-  const arrow = c.direction === "hil-to-orch" ? "you→" : c.direction === "orch-to-hil" ? "→you" : c.direction;
   const badge = c.outcome === "approved" ? "✓ approved" : c.outcome === "validated" ? "✓ done" : null;
   const badgeColor = c.outcome === "approved" ? "var(--status-good)" : "var(--text-muted)";
+  // Convention (matches the event rows at line ~240): the turn marker #<ordinal> LEADS the row in the
+  // TURN's identity colour (`turnColor`, one per ordinal — so a turn's ask/answer/completion share one
+  // colour: a gate turn takes the gate band, an agent turn its role), and the beat's own actor renders
+  // as a darker [role] tag. Both are DERIVED upstream at the merge from the same log the event rows read.
+  const agentColor = turnColor;
+  // The KIND label carries the direction (no arrow glyph): a `progress` row is a one-way completion
+  // report → `turn.complete`; a `gate` row is the two-way HIL exchange → `await.gate` when the
+  // orchestrator presents it to you (orch→hil) and `response.gate` when you answer (hil→orch). It
+  // renders bold + gate-purple, the same weight the event rows give `gate.surfaced`.
+  const kindLabel =
+    c.kind === "progress"
+      ? "turn.complete"
+      : c.kind === "gate"
+        ? c.direction === "hil-to-orch"
+          ? "response.gate"
+          : "await.gate"
+        : c.kind ?? "message";
   return (
     <div
       onClick={openTurn ? () => onOpenTurn!(c.ordinal!) : undefined}
-      title={openTurn ? `Open turn ${c.ordinal} — transcript and produced files` : `${arrow}${c.kind ? ` · ${c.kind}` : ""}`}
+      title={openTurn ? `Open turn ${c.ordinal} — transcript and produced files` : kindLabel}
       style={{
         display: "flex",
         gap: 10,
         padding: "2px 0",
         paddingLeft: 6,
         marginLeft: -6,
-        borderLeft: `2px solid var(--status-gate)`,
-        background: "var(--status-gate-tint)",
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
+        borderLeft: `2px solid var(--status-gate-text)`,
+        background: "var(--status-gate-tint-faint)",
         cursor: openTurn ? "pointer" : undefined,
       }}
     >
-      <span style={{ color: "var(--text-muted)" }}>{c.at.slice(11, 19)}</span>
-      {/* the "lane" column slot, reused to carry the direction glyph so columns align with events */}
-      <span style={{ color: "var(--status-gate)", width: 42, overflow: "hidden", textOverflow: "ellipsis" }} title={arrow}>{arrow}</span>
-      <span style={{ color: "var(--text-body)", width: 130, overflow: "hidden", textOverflow: "ellipsis" }}>{c.kind ?? "message"}</span>
-      <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis" }}>{c.text}</span>
-      {badge ? <span style={{ marginLeft: "auto", color: badgeColor, paddingLeft: 8 }}>{badge}</span> : null}
-      {openTurn && !badge ? <span style={{ marginLeft: "auto", color: "var(--status-accent)", paddingLeft: 8 }}>turn {c.ordinal} ›</span> : null}
+      <span style={{ color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>{c.at.slice(11, 19)}</span>
+      {/* One WRAPPING message column (like the event rows): #ord (agent colour) · kind (bold) · [role]
+          · text. Wrapping instead of fixed-width clipping keeps the text readable in a narrow pane. */}
+      <span style={{ flex: 1, minWidth: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {openTurn ? <span style={{ color: agentColor, fontWeight: 700 }}>#{c.ordinal} </span> : null}
+        <span style={{ color: "var(--status-gate-text)", fontWeight: 700 }}>{kindLabel}</span>{" "}
+        {role ? <span style={{ color: "var(--text-muted)" }}>[{role}] </span> : null}
+        <span style={{ color: "var(--text-body)" }}>{c.text}</span>
+      </span>
+      {badge ? <span style={{ marginLeft: "auto", color: badgeColor, paddingLeft: 8, whiteSpace: "nowrap" }}>{badge}</span> : null}
     </div>
   );
 }

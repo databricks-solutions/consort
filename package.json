@@ -1,6 +1,6 @@
 {
   "name": "@databricks-solutions/consort",
-  "version": "0.3.118",
+  "version": "0.4.0",
   "description": "Consort: a deterministic, spec-first and test-driven agent framework for building transactional applications on Lakebase (Databricks' serverless Postgres/OLTP database, not the Delta Lakehouse). Every build cycle runs against a live copy-on-write branch of a real Postgres database; human-approval gates fail closed. Not an ETL, analytics, or data-pipeline tool. Ships shared scripts, agent skills (SCM and SFTDD), an MCP server, and an OpenAI Foundry tool spec; consumed by lakebase-scm-extension and coding agents (Claude Code, Claude Desktop, OpenAI Codex, Cursor, Databricks Genie Code).",
   "type": "module",
   "private": false,
@@ -84,6 +84,7 @@
     "consort-annotate-ac": "./dist/bin/consort/annotate-ac.cli.js",
     "consort-approve-gate": "./dist/bin/consort/approve-gate.cli.js",
     "consort-canon-notes": "./dist/bin/consort/project-canon-notes.cli.js",
+    "consort-ia-notes": "./dist/bin/consort/ia-notes.cli.js",
     "consort-check-update": "./dist/bin/consort/check-update.cli.js",
     "consort-check-pin-lag": "./dist/bin/consort/check-pin-lag.cli.js",
     "consort-contract-clean": "./dist/bin/consort/contract-clean.cli.js",
@@ -97,6 +98,8 @@
     "consort-drive": "./dist/bin/consort/drive.cli.js",
     "consort-drive-log-report": "./dist/bin/consort/drive-log-report.cli.js",
     "consort-experiment": "./dist/bin/consort/story-experiment.cli.js",
+    "consort-fan-out-analysts": "./dist/bin/consort/fan-out-analysts.cli.js",
+    "consort-check-testlist": "./dist/bin/consort/check-testlist.cli.js",
     "consort-gate-conformance": "./dist/bin/consort/gate-conformance.cli.js",
     "consort-human-proxy": "./dist/bin/consort/human-proxy.cli.js",
     "consort-imports-clean": "./dist/bin/consort/imports-clean.cli.js",
@@ -208,7 +211,7 @@
     "simulate-run": "tsx tools/telemetry-collector/simulate-run.ts"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-scm-utils": "0.2.51",
+    "@databricks-solutions/lakebase-scm-utils": "0.3.0",
     "@databricks/appkit": "^0.38.1",
     "@databricks/lakebase": "^0.4.0",
     "adm-zip": "^0.5.16",

@@ -4,6 +4,20 @@ type DesignRole = "spec-author" | "architect-reviewer" | "dba" | "test-strategis
 interface StoryDesign {
     /** The Spec Author has drafted this story's acceptance criteria. */
     hasAcs: boolean;
+    /** A scoped spec revise cleared only the flagged AC file(s) (recorded in the
+     *  spec-revise-scope marker) and they are not yet re-authored — the spec-author
+     *  must re-run for just those, while the other ACs stay intact. Optional: absent
+     *  means false (no scoped spec revise is pending); production always derives it. */
+    specRevisePending?: boolean;
+    /** The UX Designer has refined ia.md for this story's declared surfaces (its
+     *  screens/forms/flows) — the per-story analogue of the architect's annotation.
+     *  Runs after the ACs, before the architect, so E2E layer tags land against
+     *  surfaces the IA already names. */
+    iaRefined: boolean;
+    /** This story's IA refinement can be PROJECTED deterministically (no ux turn):
+     *  the story introduces no surface ia.md does not already name. Mirrors
+     *  architectProjectable; only consulted while iaRefined is false. */
+    iaProjectable: boolean;
     /** The Architect Reviewer has annotated layers / NFR coverage on the ACs. */
     architectAnnotated: boolean;
     /** This story's per-AC architectural_notes can be PROJECTED deterministically
@@ -27,6 +41,12 @@ interface StoryDesign {
      *  deterministically without an LLM lap. Vacuously true when no test-list yet, so
      *  it never pre-empts before testListReady. */
     testListConforms: boolean;
+    /** Every E2E AC's declared ui_seams are named in ia.md — the DETERMINISTIC pre-reflect
+     *  AC↔IA gate (#3), run in the probe after the architect declares seams. Gates the lane
+     *  BEFORE the LLM reflect so an AC asserting a surface the IA does not define routes a
+     *  bounded ia-revise without an LLM lap. Vacuously true with no ia.md or no declared
+     *  seams (fail-open — never a false positive). */
+    iaConforms: boolean;
     /** The pre-build reflection critic (Navigator, reflect mode) has PASSED this
      *  story's spec + test-list. A missing/failed verdict is not passed: the lane
      *  runs (or re-runs) the critic, and a failed verdict drives the spec-level
@@ -53,6 +73,12 @@ type DriveAction = {
 } | {
     kind: "invoke-role";
     role: "ux-designer";
+    mode: "establish";
+} | {
+    kind: "invoke-role";
+    role: "ux-designer";
+    mode: "ia";
+    story: string;
 } | {
     kind: "invoke-role";
     role: DesignRole;
@@ -63,10 +89,20 @@ type DriveAction = {
     story: string;
     buildMode: "reflect";
 } | {
+    kind: "invoke-role";
+    role: "navigator";
+    buildMode: "reconcile";
+} | {
     kind: "flag-testlist-nonconformance";
     story: string;
 } | {
+    kind: "flag-ia-nonconformance";
+    story: string;
+} | {
     kind: "project-architect-notes";
+    story: string;
+} | {
+    kind: "project-ia-notes";
     story: string;
 } | {
     kind: "surface-gate";
@@ -286,8 +322,8 @@ interface DriveEscalation {
      *  (build-level smell, an explicit escalation file, or the revise budget spent). */
     routable?: {
         story: string;
-        owning_role: "spec-author" | "test-strategist" | "architect-reviewer";
-        gate: "spec" | "test_list" | "architecture";
+        owning_role: "spec-author" | "test-strategist" | "architect-reviewer" | "ux-designer";
+        gate: "spec" | "test_list" | "architecture" | "ia";
     };
 }
 interface DriveState {
@@ -305,6 +341,9 @@ interface DriveState {
     uiTrack?: boolean;
     /** The project design guide exists (design-guide.json on disk). */
     designGuideReady?: boolean;
+    /** Feature-complete symmetric cross-story reconciliation has passed (no blocking cross-story
+     *  defect). Gates design-complete for a multi-story feature. Feature-level; absent ⇒ not yet run. */
+    reconcilePassed?: boolean;
     /** An unresolved blocking escalation (failed-green run, blocking smell, verify
      *  fail). When set, nextTransition pre-empts everything with raise-to-hil. */
     escalation?: DriveEscalation | null;
@@ -389,8 +428,8 @@ type WorkflowAction = DriveAction | {
 } | {
     kind: "revise-route";
     story: string;
-    role: "spec-author" | "test-strategist" | "architect-reviewer";
-    gate: "spec" | "test_list" | "architecture";
+    role: "spec-author" | "test-strategist" | "architect-reviewer" | "ux-designer";
+    gate: "spec" | "test_list" | "architecture" | "ia";
     reason: string;
     source: string;
 } | {

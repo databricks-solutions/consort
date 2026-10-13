@@ -37,7 +37,10 @@ import {
 } from "../../consort/smells/supersession.js";
 import { writeEscalation } from "../../consort/gates/escalation.js";
 import { recordReflectionGate } from "../../consort/smells/reflection.js";
+import { recordReconcileGate } from "../../consort/smells/reconcile.js";
+import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 import { recordTestListGate } from "../../consort/smells/testlist-conformance.js";
+import { recordIaGate } from "../../consort/smells/ia-conformance.js";
 import {
   readDeployVerifyAssessMarker,
   readDeployVerifyScope,
@@ -110,10 +113,23 @@ function usage(msg: string): number {
   return 2;
 }
 
-async function main(): Promise<number> {
-  const a = parse(process.argv.slice(2));
-  if (!a.feature || !a.story) return usage("Error: --feature and --story are required.");
+export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+  const a = parse(argv);
+  if (!a.feature) return usage("Error: --feature is required.");
   const consortDir = a.consortDir ?? resolveConsortDir();
+  // reconcile-gate is FEATURE-scoped (the symmetric cross-story pass judges ALL stories at once) — it
+  // needs --feature but NOT --story, so it is handled BEFORE the per-story --story guard. (The live proof
+  // caught this: the drive invoked it with no --story and the old global guard exited 2 → RAISED TO HIL.)
+  if (a.cmd === "reconcile-gate") {
+    const reconHits = recordReconcileGate(consortDir, a.feature);
+    process.stdout.write(
+      reconHits.length === 0
+        ? `cycle: reconcile gate passed for ${a.feature} (stories mutually consistent)\n`
+        : `cycle: reconcile gate flagged ${reconHits.length} cross-story defect(s) for ${a.feature}: ${reconHits.map((h) => `${h.smell}@${h.story_id}`).join(", ")}\n`,
+    );
+    return 0;
+  }
+  if (!a.story) return usage("Error: --story is required.");
   const base = { consortDir, featureId: a.feature, story: a.story };
 
   switch (a.cmd) {
@@ -275,6 +291,20 @@ async function main(): Promise<number> {
       );
       return 0;
     }
+    case "ia-gate": {
+      // Deterministic pre-reflect AC↔IA gate (#3): check every E2E AC's declared ui_seams
+      // is named in ia.md and, on a gap, flag the reflect-ia-defect smell (no LLM turn) so
+      // the existing revise-route/escalation machinery routes it to the ia refinement. A
+      // conformant story self-clears any lingering smell. Fail-open (no ui_seams ⇒ passes).
+      if (!a.story) return usage("ia-gate: --story is required.");
+      const iaHits = recordIaGate(consortDir, a.feature, a.story);
+      process.stdout.write(
+        iaHits.length === 0
+          ? `cycle: ia gate passed for ${a.story} (declared UI seams all named in ia.md)\n`
+          : `cycle: ia gate flagged ${iaHits.length} IA gap(s) for ${a.story}: ${iaHits.map((h) => h.smell).join(", ")}\n`,
+      );
+      return 0;
+    }
     case "assess-green": {
       // Finalize the Navigator's assessment of a failed GREEN verify. Mark the
       // green-failure assessed (so a still-failing verify next escalates rather
@@ -425,9 +455,12 @@ async function main(): Promise<number> {
   }
 }
 
-main()
-  .then((code) => process.exit(code))
-  .catch((err) => {
-    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(1);
-  });
+// Only auto-run when invoked as the CLI (not when imported — e.g. the arg-guard test imports `main`).
+if (isCliEntry(import.meta.url)) {
+  main()
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+      process.exit(1);
+    });
+}

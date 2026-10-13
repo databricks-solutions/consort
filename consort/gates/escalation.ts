@@ -70,6 +70,11 @@ export const BLOCKING_SMELLS: ReadonlySet<SmellName> = new Set<SmellName>([
   // routes to the Architect (re-run the architecture gate) via revise-route, bounded one
   // revise then HITL. Prevents the avoidable later-story supersession + build refactor.
   "reflect-architecture-defect",
+  // The reflect critic found a user-facing AC (E2E / client) whose screen/form the IA
+  // (ia.md) does not name. Spec-level + ux-designer-owned: routes to the UX Designer (re-run
+  // the ia refinement) via revise-route, bounded one revise then HITL. The design-lane
+  // backstop to the per-story ia refinement — closes the "AC asserts a form not in the IA" gap.
+  "reflect-ia-defect",
   // The boundary/routes layer touching persistence directly (a fat controller),
   // instead of delegating to a service + repository. A build-level structural
   // defect; the Navigator flags it in REVIEW and the layering fitness test

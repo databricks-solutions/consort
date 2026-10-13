@@ -43,6 +43,25 @@ describe("stageFirstProject (first-project example seed stager)", () => {
     expect(r.staged.length).toBeGreaterThanOrEqual(4);
   });
 
+  it("stages the UX establish design system so a seeded run skips establish (guide + ia skeleton + client CSS)", () => {
+    const r = stageFirstProject({ projectDir, seedDir: SEED_DIR });
+    const c = path.join(projectDir, ".consort");
+    // Canon docs -> .consort/design/ (design-guide.json present => designGuideReady => establish skipped).
+    for (const rel of ["design/design-guide.json", "design/design-guide.md", "design/ia.md"]) {
+      expect(fs.existsSync(path.join(c, rel)), `${rel} should be staged`).toBe(true);
+    }
+    // Materialized design system -> client/src/styles/.
+    for (const rel of ["client/src/styles/theme.css", "client/src/styles/global.css"]) {
+      expect(fs.existsSync(path.join(projectDir, rel)), `${rel} should be staged`).toBe(true);
+    }
+    // The scaffold's STYLE_GUIDE.md is a general doc, NOT part of the seeded establish output.
+    expect(r.staged.some((s) => s.endsWith("STYLE_GUIDE.md"))).toBe(false);
+    // ia.md is the establish SKELETON (per-feature screens, no per-story AC refs) so per-story IA refine still runs.
+    const ia = fs.readFileSync(path.join(c, "design", "ia.md"), "utf8");
+    expect(ia).toContain("## Screens");
+    expect(/\(S\d\)|AC\d/.test(ia), "seeded ia.md must be the skeleton (no per-story AC refs)").toBe(false);
+  });
+
   it("stages one feature-request.md per seed feature, at features/<id>/feature-request.md", () => {
     const r = stageFirstProject({ projectDir, seedDir: SEED_DIR });
     // Every seed feature-request lands under its own feature dir.

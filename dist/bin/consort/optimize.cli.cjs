@@ -6658,7 +6658,7 @@ __export(optimize_cli_exports, {
 module.exports = __toCommonJS(optimize_cli_exports);
 init_cjs_shims();
 var import_util4 = require("@databricks-solutions/lakebase-scm-utils/util");
-var import_node_path32 = require("path");
+var import_node_path33 = require("path");
 
 // consort/optimize/optimize-candidates.ts
 init_cjs_shims();
@@ -7001,6 +7001,7 @@ var intakeApprovedMarker = (tdd) => (0, import_node_path.join)(tdd, "intake", "a
 var intakeApprovedOnDisk = (tdd) => fs.existsSync(intakeApprovedMarker(tdd));
 var designDir = (tdd) => (0, import_node_path.join)(tdd, "design");
 var designGuideJson = (tdd) => (0, import_node_path.join)(designDir(tdd), "design-guide.json");
+var iaMd = (tdd) => (0, import_node_path.join)(designDir(tdd), "ia.md");
 var designAssetsDir = (tdd) => (0, import_node_path.join)(designDir(tdd), "assets");
 var architectureDir = (tdd) => (0, import_node_path.join)(tdd, "architecture");
 var architectureConventionsJson = (tdd) => (0, import_node_path.join)(architectureDir(tdd), "conventions.json");
@@ -7032,7 +7033,11 @@ var storyJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, 
 var acsDir = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "acs");
 var acJson = (tdd, f, s, ac) => (0, import_node_path.join)(acsDir(tdd, f, s), `${ac}.json`);
 var storyTestListJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "test-list-per-story.json");
+var storyIaCoverageJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "ia-coverage.json");
+var specReviseScopeJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "spec-revise-scope.json");
+var testListPatchJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "test-list-patch.json");
 var reflectVerdictJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "reflect-verdict.json");
+var reconcileVerdictJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "reconcile-verdict.json");
 var handbackFile = (tdd, f, role, story) => (0, import_node_path.join)(featureDir(tdd, f), ".handback", `${role}${story ? `.${story}` : ""}.md`);
 var cycleDir = (tdd, f, s, ac) => (0, import_node_path.join)(cyclesRootDir(tdd), f, s, ac);
 var sprintDir = (tdd, sprint) => (0, import_node_path.join)(sprintsDir(tdd), sprint);
@@ -8066,7 +8071,7 @@ var dba_default = {
   },
   agentOptions: {
     model: "opus",
-    effort: "default",
+    effort: "low",
     session: "resume",
     resumeKeyFrom: "role"
   }
@@ -8098,14 +8103,7 @@ var test_strategist_default = {
       description: "The DBA's concrete tables/constraints the invariant tests assert against. Feature-scoped: {feature} expands to the run's feature id (features/<F>/db-design.json)."
     }
   ],
-  preconditions: [
-    {
-      id: "test-analyst-roster",
-      kind: "test-analyst-roster",
-      position: "append",
-      description: "The ENABLED per-kind test-analyst roster (behavior/fitness/client; client omitted when the project's uiTrack is off) + each analyst's focus prompt, projected from the TEST_ANALYST_CATALOGUE. The supervisor Task-spawns one subagent per entry, then reconciles + assembles."
-    }
-  ],
+  preconditions: [],
   outputs: [
     {
       id: "test-list",
@@ -8174,18 +8172,18 @@ var driver_green_default = {
   ]
 };
 
-// consort/orchestrator/steps/manifests/ux-designer.json
-var ux_designer_default = {
-  id: "ux-designer",
+// consort/orchestrator/steps/manifests/ux-establish.json
+var ux_establish_default = {
+  id: "ux-establish",
   role: "ux-designer",
   agent: { kind: "claude", config: { role: "ux-designer" } },
-  match: { kind: "invoke-role", role: "ux-designer" },
+  match: { kind: "invoke-role", role: "ux-designer", mode: "establish" },
   inputs: [
-    { id: "design-guideline", source: "feature:design/design-brief.md", description: "The HIL design brief the UX Designer extracts the look FROM. Lives under design/ on the real tree (design/design-brief.md, per intake.ts)." },
+    { id: "design-guideline", source: "feature:design/design-brief.md", description: "The HIL design brief the UX Designer extracts the look FROM. Lives under design/ on the real tree (design/design-brief.md, per intake.ts). A planning/intake artifact, human-approved at the intake gate." },
     { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , which stories produce screens (product-overview.md)." }
   ],
   outputs: [
-    { id: "design-guide", filename: "design-guide.json", channel: "artifact", validator: "designGuideConformant", description: "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + ia.md are authored alongside but the JSON is the gated artifact." },
+    { id: "design-guide", filename: "design-guide.json", channel: "artifact", validator: "designGuideConformant", description: "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + the initial ia.md skeleton are authored alongside; the JSON is the gated artifact. One-time bootstrap of the project style system." },
     { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "uxDesignerLoggedAuthoring", description: "The UX Designer's structured log (shared agent-log script). BROWSE PROVENANCE (a `browsed:<site>` / `browse-gap:<site>` event) is enforced DETERMINISTICALLY at the spec gate (uxDesignerBrowsedReason reads the persisted agent-log), NOT as a meta-channel output validator \u2014 the executor skips those (the resolved meta path is not the persisted log)." }
   ],
   routing: {
@@ -8198,6 +8196,35 @@ var ux_designer_default = {
     model: "opus",
     effort: "low",
     session: "fresh",
+    resumeKeyFrom: "role"
+  }
+};
+
+// consort/orchestrator/steps/manifests/ux-ia.json
+var ux_ia_default = {
+  id: "ux-ia",
+  role: "ux-designer",
+  agent: { kind: "claude", config: { role: "ux-designer" } },
+  match: { kind: "invoke-role", role: "ux-designer", mode: "ia" },
+  inputs: [
+    { id: "ia", source: "feature:design/ia.md", description: "The project information architecture to REFINE for this story (append its screens/forms/flows). Project-level file, augmented per story; this story's surfaces must be named here before the architect tags E2E layers." },
+    { id: "design-guide", source: "feature:design/design-guide.json", description: "The established style system (tokens + component vocabulary) the new screens/forms compose from \u2014 read-only context, not re-authored here." },
+    { id: "acs", source: "story:acs", description: "This story's acceptance criteria \u2014 their user-facing surfaces (E2E / client ACs) are what the IA must name." }
+  ],
+  outputs: [
+    { id: "ia", filename: "ia.md", channel: "artifact", validator: "iaConformant", description: "The refined information architecture (required sections: Screens / Navigation / User flows), with this story's surfaces added. Project-level file, augmented per story (additive, never a rewrite)." },
+    { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "uxDesignerLoggedAuthoring", description: "The UX Designer's structured log (shared agent-log script)." }
+  ],
+  routing: {
+    produced: { next: "state-derived" }
+  },
+  postTurn: [
+    { bin: "IA_NOTES_BIN", args: ["--feature", "{feature}", "--story", "{story}", "--tdd-dir", "{tddDir}"], when: "after" }
+  ],
+  agentOptions: {
+    model: "opus",
+    effort: "low",
+    session: "resume",
     resumeKeyFrom: "role"
   }
 };
@@ -8277,6 +8304,31 @@ var navigator_reflect_default = {
     effort: "default",
     session: "resume",
     resumeKeyFrom: "story"
+  },
+  postTurn: [
+    { bin: "@build-cycle", args: [], when: "after" }
+  ]
+};
+
+// consort/orchestrator/steps/manifests/navigator-reconcile.json
+var navigator_reconcile_default = {
+  id: "navigator-reconcile",
+  role: "navigator",
+  agent: { kind: "claude", config: { role: "navigator" } },
+  match: { kind: "invoke-role", role: "navigator", buildMode: "reconcile" },
+  inputs: [],
+  preconditions: [
+    { id: "reconcile", kind: "reconcile-context", position: "append", description: "The SYMMETRIC feature-complete context: EVERY story's ACs (none folded out) + the architecture's open_decisions + its mandated not-null persistence fields, injected so the reconcile turn checks the whole set against itself (every story vs every other, incl. the first-designed one) deterministically , NOT a shell-out. Empty for a <2-story feature." }
+  ],
+  outputs: [],
+  routing: {
+    produced: { next: "state-derived" }
+  },
+  agentOptions: {
+    model: "sonnet",
+    effort: "default",
+    session: "resume",
+    resumeKeyFrom: "feature"
   },
   postTurn: [
     { bin: "@build-cycle", args: [], when: "after" }
@@ -8565,10 +8617,12 @@ var SHIPPED_MANIFESTS = [
   dba_default,
   test_strategist_default,
   driver_green_default,
-  ux_designer_default,
+  ux_establish_default,
+  ux_ia_default,
   navigator_red_default,
   navigator_review_default,
   navigator_reflect_default,
+  navigator_reconcile_default,
   navigator_assess_default,
   navigator_assess_deploy_default,
   navigator_assess_refactor_default,
@@ -8653,6 +8707,9 @@ function turnKeyForAction(action) {
       case "reflect":
         return "reflect";
       // design-lane critic, tuned as its own turn (sweep: haiku+low)
+      case "reconcile":
+        return "reconcile";
+      // feature-complete symmetric cross-story reconciliation — its OWN step key (NOT red)
       case "review":
         return "review";
       case "refactor":
@@ -8673,9 +8730,9 @@ function turnKeyForAction(action) {
     if (action.role === "spec-author" && action.mode === "breakdown") return "breakdown";
     if (action.role === "spec-author" && action.mode === "propose") return "propose";
     if (action.role === "architect-reviewer" && (action.mode === "estimate" || action.mode === "estimate-committed")) return "estimate";
+    if (action.role === "ux-designer") return "ux";
     return void 0;
   }
-  if (action.role === "ux-designer") return "ux";
   if ("story" in action && action.story) {
     if (action.role === "spec-author") return "acs";
     if (action.role === "architect-reviewer") return "architect";
@@ -9406,7 +9463,7 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
 }
 function claudeToolArgs(cmd) {
   const out = [];
-  const allowed = [.../* @__PURE__ */ new Set(["Bash(cd:*)", ...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
+  const allowed = [.../* @__PURE__ */ new Set(["Bash", "Task", ...cmd.allowedTools ?? [], ...browserAllowedToolsForRole(cmd.role)])];
   if (allowed.length) out.push("--allowed-tools", allowed.join(","));
   if (cmd.disallowedTools && cmd.disallowedTools.length) out.push("--disallowed-tools", cmd.disallowedTools.join(","));
   return out;
@@ -9601,8 +9658,6 @@ function execRunner(cfg) {
         const turnMs = Date.now() - turnStart;
         if (usage) {
           if (cmd.resumeKey) sessionContext.set(cmd.resumeKey, turnContextTokens(usage));
-          process.stderr.write(`[drive] ${cmd.role} turn ${(turnMs / 1e3).toFixed(1)}s (${cmd.model})
-`);
           try {
             emitAgentLogEvent(
               {
@@ -9793,7 +9848,7 @@ function composeOnAction(...hooks) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
 var fs18 = __toESM(require("fs"), 1);
-var import_node_path27 = require("path");
+var import_node_path28 = require("path");
 
 // consort/orchestrator/drive/orchestrator-drive.ts
 init_cjs_shims();
@@ -9819,6 +9874,7 @@ function actionLane(action) {
   switch (action.kind) {
     case "invoke-role": {
       if ("mode" in action) {
+        if (action.role === "ux-designer") return action.mode === "ia" ? "design" : "planning";
         return action.mode === "breakdown" ? "design" : "planning";
       }
       return action.role === "navigator" || action.role === "driver" ? "build" : "design";
@@ -9829,7 +9885,9 @@ function actionLane(action) {
     case "planning-complete":
       return "planning";
     case "flag-testlist-nonconformance":
+    case "flag-ia-nonconformance":
     case "project-architect-notes":
+    case "project-ia-notes":
     case "surface-gate":
     case "approve-gate":
     case "design-complete":
@@ -9866,37 +9924,51 @@ function actionLane(action) {
 function uxDesignerPending(s) {
   return !!s.uiTrack && s.breakdownDone && !s.designGuideReady;
 }
-function nextDesignAction(state) {
+function nextDesignAction(state, opts = {}) {
   if (!state.breakdownDone) {
     return { kind: "invoke-role", role: "spec-author", mode: "breakdown" };
-  }
-  if (uxDesignerPending(state)) {
-    return { kind: "invoke-role", role: "ux-designer" };
   }
   for (const story of state.storyOrder) {
     const v = state.stories[story];
     if (v?.gateApproved) continue;
     const design = v?.design ?? {
       hasAcs: false,
+      specRevisePending: false,
+      iaRefined: false,
+      iaProjectable: false,
       architectAnnotated: false,
       architectProjectable: false,
       dbaDesigned: false,
       testListReady: false,
       testListConforms: true,
+      iaConforms: true,
       reflectionPassed: false,
       reflectionVerdictWritten: false
     };
-    if (!design.hasAcs) return { kind: "invoke-role", role: "spec-author", story };
+    if (!design.hasAcs || design.specRevisePending === true) return { kind: "invoke-role", role: "spec-author", story };
+    if (state.uiTrack && !design.iaRefined) {
+      if (uxDesignerPending(state)) return { kind: "invoke-role", role: "ux-designer", mode: "establish" };
+      if (design.iaProjectable) return { kind: "project-ia-notes", story };
+      return { kind: "invoke-role", role: "ux-designer", mode: "ia", story };
+    }
     if (!design.architectAnnotated) {
       if (design.architectProjectable) return { kind: "project-architect-notes", story };
       return { kind: "invoke-role", role: "architect-reviewer", story };
     }
-    if (!design.dbaDesigned) return { kind: "invoke-role", role: "dba", story };
+    if (!design.iaConforms) return { kind: "flag-ia-nonconformance", story };
+    if (!design.dbaDesigned && !v?.gateSurfaced) return { kind: "invoke-role", role: "dba", story };
     if (!design.testListReady) return { kind: "invoke-role", role: "test-strategist", story };
     if (!design.testListConforms) return { kind: "flag-testlist-nonconformance", story };
     if (!design.reflectionPassed) return { kind: "invoke-role", role: "navigator", story, buildMode: "reflect" };
     if (!v?.gateSurfaced) return { kind: "surface-gate", story };
-    return { kind: "approve-gate", story };
+    if (!opts.featureReconcile) return { kind: "approve-gate", story };
+  }
+  if (opts.featureReconcile) {
+    const pendingApproval = state.storyOrder.filter((id) => !state.stories[id]?.gateApproved);
+    if (pendingApproval.length > 0 && state.storyOrder.length >= 2 && state.reconcilePassed !== true) {
+      return { kind: "invoke-role", role: "navigator", buildMode: "reconcile" };
+    }
+    if (pendingApproval.length > 0) return { kind: "approve-gate", story: pendingApproval[0] };
   }
   return { kind: "design-complete" };
 }
@@ -9948,6 +10020,9 @@ function nextTransition(state) {
   if (state.phase === "planning") {
     const p = state.planning ?? { proposed: false, estimated: false, requestsAuthored: false };
     if (p.intakeReady === false) return { kind: "invoke-role", role: "product-owner", mode: "intake" };
+    if (p.intakeReady === true && state.uiTrack && !state.designGuideReady) {
+      return { kind: "invoke-role", role: "ux-designer", mode: "establish" };
+    }
     if (p.intakeReady === true && p.intakeApproved === false) return { kind: "approve-intake-gate" };
     if (!p.proposed) return { kind: "invoke-role", role: "spec-author", mode: "propose" };
     if (!p.skipSizing && !p.estimated) return { kind: "invoke-role", role: "architect-reviewer", mode: "estimate" };
@@ -9988,7 +10063,7 @@ function nextTransition(state) {
   }
   if (state.phase === "done") return { kind: "done" };
   if (uxDesignerPending(state)) {
-    return { kind: "invoke-role", role: "ux-designer" };
+    return { kind: "invoke-role", role: "ux-designer", mode: "establish" };
   }
   if (state.buildActive) {
     return nextBuildAction(state.buildActive, state.stories[state.buildActive].build);
@@ -10007,6 +10082,7 @@ function toDesignView(state) {
     storyOrder: state.storyOrder,
     uiTrack: state.uiTrack,
     designGuideReady: state.designGuideReady,
+    reconcilePassed: state.reconcilePassed,
     stories: Object.fromEntries(
       Object.entries(state.stories).map(([id, v]) => [
         id,
@@ -10561,14 +10637,16 @@ function checkJsdomBrowserAssertion(testListJson) {
   const isJsdomComponentTest = (sf) => typeof sf === "string" && /\.test\.(ts|tsx)$/.test(sf) && !/(^|\/)e2e\//.test(sf);
   const browserOnly = /full[-\s]?page\s+reload|\breload(s|ing|ed)?\b|without\s+(a\s+)?reload|page\.url\(|window\.location|hard\s+navigation|browser\s+(back|forward|history)/i;
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     if (isJsdomComponentTest(it.scenario_file) && browserOnly.test(it.description ?? "")) {
       violations.push(
         `test item ${it.id ?? "?"} asserts a REAL-BROWSER navigation property ("${(it.description ?? "").slice(0, 90)}\u2026") but its scenario_file is the jsdom/Vitest component harness (${it.scenario_file}), where reloads/navigation never occur \u2014 so the assertion is vacuous and cannot turn RED on a broken app. Author it as a Playwright e2e spec (scenario_file under client/tests/e2e/\u2026spec.ts) and assert navigation state via page.url() / rendered content in a real browser`
       );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 function checkTestlistWholeTableAggregate(testListJson) {
   let tl;
@@ -10580,15 +10658,74 @@ function checkTestlistWholeTableAggregate(testListJson) {
   const wholeTableCount = /\bcount\s*\(\s*\*\s*\)|\b(?:count|number|total|tally)\s+of\s+(?:all\s+)?(?:the\s+)?rows\b|\brow\s+count\b|\btotal\s+(?:number\s+of\s+)?rows\b|\breturns?\s+(?:exactly\s+)?the\s+count\b/i;
   const scopedOrDelta = /\bseed(?:s|ed|ing)?\b|\bdelta\b|\bbefore\b.*\bafter\b|\bafter\b.*\bbefore\b|count_before|count_after|probe_before|\bsubtract|\bminus\b|\bits own rows\b|\bthe (?:test'?s?|rows? it) (?:own|seed)|\bscoped to\b|\bmarker\b|\buuid\b|\bunique (?:sku|key)\b|\bper-test\b/i;
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     const desc = it.description ?? "";
     if (wholeTableCount.test(desc) && !scopedOrDelta.test(desc)) {
       violations.push(
         `test item ${it.id ?? "?"} asserts an ABSOLUTE whole-table aggregate ("${desc.slice(0, 90)}\u2026") with no own-row scoping and no delta \u2014 it passes on the isolated experiment branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total`
       );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+var E2E_WRITE_FLOW = /\b(?:re)?fil(?:e|es|ed|ing)\b|\bcreat\w*|\badd(?:s|ed|ing)?\b|\bsubmit\w*|\bregister\w*|\bsave[sd]?\b|\binsert\w*/i;
+var HARDCODED_KEY = /\b[A-Z]{2,}[-_]?\d{2,}\b|\b(?:fixed|hard-?coded|shared|the same)\s+(?:business\s+)?(?:key|sku|code|identity|identifier)\b/i;
+var PER_RUN_UNIQUE = /\bper-run\b|\bunique\b|\buuid\b|\brandomuuid\b|\bfresh\b|\bgenerated\b|\bper-test\b/i;
+function isFixedKeyE2eCreateFlow(description) {
+  return E2E_WRITE_FLOW.test(description) && HARDCODED_KEY.test(description) && !PER_RUN_UNIQUE.test(description);
+}
+function checkTestlistFixedKeyE2e(testListJson, acLayerById) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    if (acLayerById[it.ac_id] !== "E2E") continue;
+    const desc = it.description ?? "";
+    if (isFixedKeyE2eCreateFlow(desc)) {
+      violations.push(
+        `test item ${it.id ?? "?"} is an E2E create flow keyed on a HARDCODED business key ("${desc.slice(0, 90)}\u2026") with no per-run uniqueness \u2014 the e2e verify runs against the SHARED feature branch, so a prior run or sibling story already holds that key and the second run hits a unique-violation (or asserts a stale duplicate), going perma-red on a correct app. Derive a per-run-unique key (e.g. 'SKU-' + crypto.randomUUID().slice(0,8)) and use that SAME value in both the create fill and the assertion locator, so each run owns its own row`
+      );
+      acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkTestlistScenarioFileCoherence(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const base = (p) => p.split("/").pop() ?? p;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    const desc = it.description ?? "";
+    if (!sf) continue;
+    const suffix = sf.match(/\.(?:spec|test)\.tsx?$|\.py$/)?.[0];
+    if (!suffix) continue;
+    const tokenRe = new RegExp(`[\\w./-]+${suffix.replace(/\./g, "\\.")}`, "g");
+    for (const tok of desc.match(tokenRe) ?? []) {
+      if (base(tok) !== base(sf)) {
+        violations.push(
+          `test item ${it.id ?? "?"} description names "${tok}" but its scenario_file is "${sf}" \u2014 the Navigator cannot tell which file to author. Align the description's named spec file to scenario_file (or drop the stray path).`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+        break;
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 function checkPersistenceCoverage(testListJson, architectureJson2) {
   let arch;
@@ -10751,6 +10888,16 @@ function checkDbDesign(dbDesignJson2, architectureJson2) {
     violations.push(
       `persistence_invariant(s) not realized by db-design.json realizes_invariants[]: ${uncovered.join(", ")} (the DBA must physically realize every invariant the architect declared \u2013 a table/column/constraint/index \u2013 and list its id here; see agents/dba.md)`
     );
+  }
+  const accessPatterns = (arch.access_patterns ?? []).filter((p) => p && typeof p.id === "string" && p.id.length > 0).map((p) => p.id);
+  if (accessPatterns.length > 0) {
+    const addressed = new Set((db.addresses_access_patterns ?? []).filter((x) => typeof x === "string" && x.length > 0));
+    const unaddressed = accessPatterns.filter((id) => !addressed.has(id));
+    if (unaddressed.length > 0) {
+      violations.push(
+        `access_pattern(s) not addressed by db-design.json addresses_access_patterns[]: ${unaddressed.join(", ")} (the DBA must CONSIDER each query shape the architect flagged \u2013 add an index/structure on its columns or record a deliberate no-index decision in db-design.md \u2013 and list its id here; see agents/dba.md)`
+      );
+    }
   }
   return violations.length > 0 ? { ok: false, violations } : { ok: true };
 }
@@ -10989,6 +11136,7 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
     const layer = acLayerById[it.ac_id];
@@ -10996,9 +11144,10 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
       violations.push(
         `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
       );
+      acIds.add(it.ac_id);
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
@@ -11209,6 +11358,7 @@ var testListConformant = conformsTo("test-list.json");
 var productOverviewConformant = conformsTo("product-overview.md");
 var nfrsConformant = conformsTo("nfrs.md");
 var designBriefConformant = conformsTo("design-brief.md");
+var iaConformant = conformsTo("ia.md");
 var VALIDATOR_REGISTRY = {
   featureSpecNonEmptyStories,
   agentLogHasRoleEvent: (p) => agentLogHasRoleEvent(p),
@@ -11250,7 +11400,8 @@ var VALIDATOR_REGISTRY = {
   // optional, UI-only).
   productOverviewConformant,
   nfrsConformant,
-  designBriefConformant
+  designBriefConformant,
+  iaConformant
 };
 function resolveValidator(name) {
   const fn = VALIDATOR_REGISTRY[name];
@@ -12085,6 +12236,7 @@ function recordTurn(args) {
         ...manifest.step !== void 0 ? { step: String(manifest.step) } : {},
         request: {
           kind: "progress",
+          role: manifest.role ?? manifest.kind,
           prompt: progressNarration(manifest, produced.length, deleted.length)
         },
         response: { by: "orchestrator" },
@@ -12096,14 +12248,13 @@ function recordTurn(args) {
   return { ordinal, dir: dirName, produced, deleted };
 }
 function progressNarration(m, producedCount, deletedCount) {
-  const who = m.role ?? m.kind;
   const scope = [m.story, m.ac].filter(Boolean).join(" / ");
   const parts = [
-    m.mode ? `${who} ${m.mode}` : who,
+    m.mode ?? "",
     scope ? `(${scope})` : "",
-    `, ${producedCount} file(s) produced${deletedCount ? `, ${deletedCount} removed` : ""}`
+    `${producedCount} file(s) produced${deletedCount ? `, ${deletedCount} removed` : ""}`
   ];
-  return parts.filter(Boolean).join(" ").replace(" ,", ",");
+  return parts.filter(Boolean).join(" ");
 }
 
 // consort/pipeline/record-build.ts
@@ -12213,6 +12364,7 @@ function executorDispatched(action) {
     if (action.role === "architect-reviewer" && action.mode === "estimate") return true;
     if (action.role === "product-owner" && action.mode === "intake") return true;
     if (action.role === "product-owner" && action.mode === "author-requests") return true;
+    if (action.role === "ux-designer") return true;
     return false;
   }
   if (!("buildMode" in action)) {
@@ -12220,11 +12372,13 @@ function executorDispatched(action) {
       return true;
     }
     if (action.role === "dba" && "story" in action && !!action.story) return true;
-    if (action.role === "ux-designer") return true;
     if ((action.role === "navigator" || action.role === "driver") && "story" in action && !!action.story) {
       return true;
     }
     return false;
+  }
+  if ("buildMode" in action && action.role === "navigator" && action.buildMode === "reconcile") {
+    return true;
   }
   if ("story" in action && !!action.story && "buildMode" in action) {
     if (action.role === "navigator" && (action.buildMode === "assess" || action.buildMode === "assess-deploy" || action.buildMode === "assess-refactor")) {
@@ -12299,6 +12453,12 @@ function outputPathsForAction(action, consortDir, featureId, projectDir) {
     if (action.role === "product-owner" && action.mode === "intake") {
       return { "product-overview": "product-overview.md", nfrs: "nfrs.md", "design-brief": "design/design-brief.md" };
     }
+    if (action.role === "ux-designer" && action.mode === "establish") {
+      return { "design-guide": rel(designGuideJson(consortDir)), ...META };
+    }
+    if (action.role === "ux-designer" && action.mode === "ia") {
+      return { ia: rel(iaMd(consortDir)), ...META };
+    }
     return {};
   }
   if (!("buildMode" in action)) {
@@ -12313,9 +12473,6 @@ function outputPathsForAction(action, consortDir, featureId, projectDir) {
     }
     if (action.role === "test-strategist" && story) {
       return { "test-list": rel(featureTestListJson(consortDir, f)), ...META };
-    }
-    if (action.role === "ux-designer") {
-      return { "design-guide": rel(designGuideJson(consortDir)), ...META };
     }
     if (action.role === "navigator" && story) {
       return { tests: "tests", ...META };
@@ -12552,11 +12709,15 @@ function storyView(id, e, probe, loop) {
     gateSurfaced: e.gate != null || e.status === "awaiting-gate",
     design: {
       hasAcs: probe.hasAcs(id),
+      specRevisePending: probe.specRevisePending(id),
+      iaRefined: probe.iaRefined(id),
+      iaProjectable: probe.iaProjectable(id),
       architectAnnotated: probe.architectAnnotated(id),
       architectProjectable: probe.architectProjectable(id),
       dbaDesigned: probe.dbaDesigned(id),
       testListReady: probe.testListReady(id),
       testListConforms: probe.testListConforms(id),
+      iaConforms: probe.iaConforms(id),
       reflectionPassed: probe.reflectionPassed(id),
       reflectionVerdictWritten: probe.reflectionVerdictWritten(id)
     },
@@ -12606,6 +12767,7 @@ function deriveDriveState(pipeline, probe, ctx) {
     breakdownDone,
     storyOrder,
     stories,
+    reconcilePassed: probe.reconcilePassed(),
     buildActive: pipeline.build_active,
     escalation: probe.pendingEscalation()
   };
@@ -13773,6 +13935,15 @@ var SMELL_CATALOG = [
     gate_to_rerun: "architecture"
   },
   {
+    name: "reflect-ia-defect",
+    description: "The pre-build reflection critic (Navigator, reflect mode) found a user-facing AC (an E2E or client AC) whose screen or form the information architecture (ia.md) does not name \u2014 the surface the AC asserts has no home in the IA. Left unresolved the architect tags an E2E layer against a screen that does not exist, and the build drives a UI the IA never described.",
+    proposed_remediation: "Route back to the UX Designer (the ia refinement): add the AC's screen/form + flow to ia.md (additive), OR, if the capability has no standalone surface, the AC's layer is reconsidered with the spec-author. Bounded to one automatic revise per story; if the critic still finds the gap after the re-refinement, it escalates to the human.",
+    // A missing IA surface is a ux-designer fix: route back to the ia refinement.
+    level: "spec",
+    owning_role: "ux-designer",
+    gate_to_rerun: "ia"
+  },
+  {
     name: "shared-state-aggregate-assertion",
     description: "A test asserts an ABSOLUTE aggregate over the WHOLE store (an integrity/consistency probe, a global COUNT/SUM \u2013 e.g. 'the probe reports exactly 0/2/1 nonconforming rows') without owning the table state it asserts. It passes in the per-cycle build verify (an ISOLATED ephemeral branch holding only its seeded rows) but the honest-GREEN full-feature deploy-verify FAILS it, because that runs the whole suite against the SHARED feature-branch DB where other stories' rows (same nullable columns) inflate the count. A real probe over a real deployed DB can never assert an exact global total anyway.",
     proposed_remediation: "Route back to the Test Strategist (Gate 3): scope BOTH the seed AND the assertion to the test's own rows (filter the probe/count by the test's SKUs or a marker column, or assert a before-vs-after DELTA), never an absolute whole-table total. Bounded to one automatic revise per story; a second escape escalates to the human.",
@@ -13871,7 +14042,9 @@ function priorReviseCount(consortDir, smell, story_id) {
 }
 var REFLECT_SMELL_NAMES = /* @__PURE__ */ new Set([
   "reflect-spec-defect",
-  "reflect-testlist-defect"
+  "reflect-testlist-defect",
+  "reflect-architecture-defect",
+  "reflect-ia-defect"
 ]);
 function isReflectSmell(name) {
   return REFLECT_SMELL_NAMES.has(name);
@@ -13929,6 +14102,11 @@ var BLOCKING_SMELLS = /* @__PURE__ */ new Set([
   // routes to the Architect (re-run the architecture gate) via revise-route, bounded one
   // revise then HITL. Prevents the avoidable later-story supersession + build refactor.
   "reflect-architecture-defect",
+  // The reflect critic found a user-facing AC (E2E / client) whose screen/form the IA
+  // (ia.md) does not name. Spec-level + ux-designer-owned: routes to the UX Designer (re-run
+  // the ia refinement) via revise-route, bounded one revise then HITL. The design-lane
+  // backstop to the per-story ia refinement — closes the "AC asserts a form not in the IA" gap.
+  "reflect-ia-defect",
   // The boundary/routes layer touching persistence directly (a fat controller),
   // instead of delegating to a service + repository. A build-level structural
   // defect; the Navigator flags it in REVIEW and the layering fitness test
@@ -14442,7 +14620,8 @@ var import_fs16 = require("fs");
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect",
-  "architect-reviewer": "reflect-architecture-defect"
+  "architect-reviewer": "reflect-architecture-defect",
+  "ux-designer": "reflect-ia-defect"
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
@@ -14479,7 +14658,7 @@ function storyAcLayers(consortDir, featureId, story) {
   }
   return acLayerById;
 }
-function testlistConformanceReason(consortDir, featureId, story) {
+function testlistConformanceViolations(consortDir, featureId, story) {
   const tlPath = storyTestListJson(consortDir, featureId, story);
   if (!(0, import_fs17.existsSync)(tlPath)) return null;
   let testListJson;
@@ -14490,30 +14669,105 @@ function testlistConformanceReason(consortDir, featureId, story) {
   }
   const acLayerById = storyAcLayers(consortDir, featureId, story);
   const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
   for (const r of [
     checkClientKindLayerCoherence(testListJson, acLayerById),
     checkJsdomBrowserAssertion(testListJson),
-    checkTestlistWholeTableAggregate(testListJson)
+    checkTestlistWholeTableAggregate(testListJson),
+    checkTestlistFixedKeyE2e(testListJson, acLayerById),
+    checkTestlistScenarioFileCoherence(testListJson)
   ]) {
-    if (!r.ok) violations.push(...r.violations);
+    if (!r.ok) {
+      violations.push(...r.violations);
+      for (const id of r.acIds ?? []) acIds.add(id);
+    }
   }
-  return violations.length === 0 ? null : violations.join("; ");
+  return violations.length === 0 ? null : { reason: violations.join("; "), acIds: [...acIds] };
 }
 function testListConforms(consortDir, featureId, story) {
-  return testlistConformanceReason(consortDir, featureId, story) === null;
+  return testlistConformanceViolations(consortDir, featureId, story) === null;
+}
+
+// consort/smells/ia-conformance.ts
+init_cjs_shims();
+var import_fs18 = require("fs");
+var import_path15 = require("path");
+function iaNamesSeam(iaMarkdown, seam) {
+  const esc = seam.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\w-])${esc}(?![\\w-])`).test(iaMarkdown);
+}
+function storyUiSeams(consortDir, featureId, story) {
+  const out = [];
+  const dir = acsDir(consortDir, featureId, story);
+  if (!(0, import_fs18.existsSync)(dir)) return out;
+  for (const f of (0, import_fs18.readdirSync)(dir)) {
+    if (!f.endsWith(".json")) continue;
+    try {
+      const ac = JSON.parse((0, import_fs18.readFileSync)((0, import_path15.join)(dir, f), "utf8"));
+      const seams = Array.isArray(ac.ui_seams) ? ac.ui_seams.filter((s) => typeof s === "string" && s.length > 0) : [];
+      if (seams.length > 0) out.push({ id: typeof ac.id === "string" ? ac.id : f.replace(/\.json$/, ""), seams });
+    } catch {
+    }
+  }
+  return out;
+}
+function iaConformanceViolations(consortDir, featureId, story) {
+  const iaPath = iaMd(consortDir);
+  if (!(0, import_fs18.existsSync)(iaPath)) return null;
+  const acs = storyUiSeams(consortDir, featureId, story);
+  if (acs.length === 0) return null;
+  let iaMarkdown;
+  try {
+    iaMarkdown = (0, import_fs18.readFileSync)(iaPath, "utf8");
+  } catch {
+    return null;
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const { id, seams } of acs) {
+    const missing = seams.filter((s) => !iaNamesSeam(iaMarkdown, s));
+    if (missing.length > 0) {
+      violations.push(
+        `AC ${id} drives UI seam(s) the information architecture (ia.md) does not name: ${missing.join(", ")}. Add the surface (and its data-testid seam) to the AC's screen in ia.md, OR \u2014 if the capability has no standalone surface \u2014 reconsider the AC's layer with the spec-author. The architect declared these seams in the AC's ui_seams; every one must have a home in the IA before the build drives a UI the IA never described.`
+      );
+      acIds.add(id);
+    }
+  }
+  return violations.length === 0 ? null : { reason: violations.join("; "), acIds: [...acIds] };
+}
+function iaConforms(consortDir, featureId, story) {
+  return iaConformanceViolations(consortDir, featureId, story) === null;
+}
+
+// consort/smells/reconcile.ts
+init_cjs_shims();
+var import_fs19 = require("fs");
+function readReconcileVerdict(consortDir, feature) {
+  const p = reconcileVerdictJson(consortDir, feature);
+  if (!(0, import_fs19.existsSync)(p)) return void 0;
+  try {
+    return JSON.parse((0, import_fs19.readFileSync)(p, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function reconcilePassed(consortDir, feature) {
+  const v = readReconcileVerdict(consortDir, feature);
+  if (!v) return false;
+  return (v.findings ?? []).filter((f) => (f.severity ?? "blocking") === "blocking").length === 0;
 }
 
 // consort/architecture/architecture-canon.ts
 init_cjs_shims();
-var import_fs18 = require("fs");
+var import_fs20 = require("fs");
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
 function readCanon(consortDir) {
   const f = architectureCanonJson(consortDir);
-  if (!(0, import_fs18.existsSync)(f)) return void 0;
+  if (!(0, import_fs20.existsSync)(f)) return void 0;
   try {
-    return JSON.parse((0, import_fs18.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs20.readFileSync)(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -14548,7 +14802,61 @@ function architectNovelty(canon, storyAcs, storyArchitectureJsonContent) {
   return { novel: reasons.length > 0, reasons };
 }
 
+// consort/test-list/fan-out-plan.ts
+init_cjs_shims();
+var import_node_path23 = require("path");
+
+// consort/test-list/test-analyst-catalogue.ts
+init_cjs_shims();
+var SLICE_CONTRACT = 'Return an UNORDERED JSON array of test-list items as the LAST thing in your reply, fenced as ```json ... ```. Each item is { "id": "<kind-local id, e.g. bhv-1>", "description": "<one observable behavior, no \'and\'>", "ac_id": "<EXACT id of an existing story AC file>", "status": "pending", "kind": "<your kind>" }. Do NOT order the items and do NOT set ordered_for \u2013 the supervisor orders the merged master and assigns the final T-ids. Map every item to a real story AC id (copy it verbatim, never re-slug).';
+var TEST_ANALYST_CATALOGUE = {
+  behavior: {
+    kind: "behavior",
+    description: "Backend behavior/API scenarios: one observable behavior per AC through the API boundary.",
+    configSummary: "Per AC: >=1 behavior item through the API boundary (pytest-bdd .feature).",
+    model: "sonnet",
+    effort: "default",
+    toolScope: ["Read"],
+    inputs: ["story-acs", "architecture-invariants"],
+    focusPrompt: "You are the BEHAVIOR test analyst. Cover every BACKEND-layer AC (API / service / data / INFRA) whose outcome is observable through the API boundary with at least one `kind:\"behavior\"` item \u2013 one observable behavior verified through the API boundary (for Python, a pytest-bdd scenario; set `scenario_file` to `tests/features/<story>.feature`). An `Infra`-layer AC (e.g. 'distinct (sku,location) coexist', 'refile updates in place') still has an observable API behavior \u2013 it is YOURS, do not skip it as 'DB-only'. ASSERT THE AC'S CORE PROMISED OUTCOME \u2013 the actual result the AC guarantees (a refile leaves the stored quantity == the NEW value AND exactly ONE row for the pair; filing the same SKU at two DIFFERENT locations yields TWO independently-retrievable coexisting rows), NOT merely a peripheral aspect (a preserved timestamp, atomicity). For a uniqueness / multi-key invariant, cover BOTH sides: the COLLISION (same key -> rejected / stays one row) AND the DISTINCT-keys-COEXIST positive (different keys -> independent rows). A test that checks only the peripheral aspect or only the collision lets a Driver go green without the real behavior \u2013 the recurring reflect-testlist-defect. **DO NOT author a behavior item for an E2E / UI-presentation AC** (e.g. a \"filing form\" / \"home screen\" AC whose `layer` is `E2E`): those are the CLIENT analyst's Playwright job, NOT a backend pytest-bdd test. Set each item's `ac_id` ONLY to an AC whose layer permits a backend test; anchoring a 2xx / response-shape check to a UI AC (instead of the API-layer AC) is the recurring mis-route the reflect gate rejects \u2013 if an AC's observable outcome is an HTTP response shape, it belongs on the API-layer AC, never the form/screen AC. Test at the OUTERMOST public boundary matching the AC's layer. One test per scenario, never an \"and\". EVERY write-bearing test (POST/insert/seed) MUST own its state \u2013 use a per-run-unique key suffixed with the platform's BUILT-IN UUID (Python `uuid.uuid4()` from the stdlib; JS/TS `crypto.randomUUID()`; Java `java.util.UUID`) OR delete/upsert the fixed key before writing, never assume an empty table. NEVER add a UUID dependency: in JS/TS do NOT `import ... from \"uuid\"` \u2013 the `uuid` npm package is not a scaffolded dependency and fails CI with \"Cannot find package 'uuid'\". Do NOT emit fitness or client items, and do NOT set `invariant_id` (the fitness analyst owns persistence invariants). COVER THE NEGATIVE/BOUNDARY-VALIDATION PATH a constraint implies on your ACs: you are given architecture.json (NFRs + persistence_invariants), so when an AC's field is required / NOT NULL (a `not_null` invariant or a field-named-validation NFR names it), emit a behavior item that OMITS (or sends invalid) that field through the API boundary and asserts a field-named rejection \u2013 this is the boundary guard, DISTINCT from the DB constraint the fitness analyst tests. Your `behavior` item asserts ONLY an API-OBSERVABLE outcome (an HTTP status + response body through the boundary). A SERVICE-INTERNAL assertion \u2014 the service raises/rejects BEFORE the DB, the repository is never reached, the guard fires 'at the service layer' \u2014 is NOT API-observable and is NOT a behavior/.feature scenario: authored as one it gets no bindable step def and STALLS the build lane (an unbound pytest-bdd scenario). That service-layer guard is the FITNESS analyst's (a direct service-level test), so cover the negative case here ONLY in its API-observable form (POST the invalid value \u2192 4xx naming the field), and leave the 'rejects-before-the-DB / repository-not-reached' assertion to fitness. A required-field/CHECK/overcommit rejection with only a happy-path test is the recurring reflect-testlist-defect. " + SLICE_CONTRACT
+  },
+  fitness: {
+    kind: "fitness",
+    description: "Architectural fitness tests + a real-branch test per declared persistence invariant.",
+    configSummary: "Per architectural constraint + per persistence_invariant: a fitness item (invariant_id).",
+    model: "sonnet",
+    effort: "high",
+    toolScope: ["Read"],
+    inputs: ["architecture-invariants", "db-design"],
+    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (single-step downgrade/upgrade, @pytest.mark.migration, NEVER downgrade base) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after downgrade-then-upgrade (NOT that data survives). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where single-step downgrade removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: single-step downgrade drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
+  },
+  client: {
+    kind: "client",
+    description: "SPA client-harness tests for UI-presentation ACs (React component / Playwright e2e).",
+    configSummary: "Per UI-presentation AC: a client item under client/tests/ (only when uiTrack).",
+    model: "sonnet",
+    effort: "default",
+    toolScope: ["Read"],
+    inputs: ["story-acs", "architecture-invariants", "design-guide"],
+    enabledWhen: (ctx) => ctx.uiTrack === true,
+    focusPrompt: 'You are the CLIENT test analyst (this project HAS a frontend). For every UI-presentation AC the architecture routes to the SPA\'s own client harness, emit a `kind:"client"` item with `scenario_file` under `client/tests/` (e.g. `client/tests/pages/<Screen>.test.tsx`). Do NOT fold a presentation AC into the backend pytest-bdd suite \u2013 that mechanism mismatch is a defect. For an AC that OWNS a page/route, at least one client item MUST exercise the page THROUGH THE REAL `<App>` at the AC\'s route (a Playwright e2e that navigates the route, OR a component test rendering `<App>` in `<MemoryRouter initialEntries={["<the path>"]}>`) \u2013 a bare `render(<ThePage/>)` does NOT prove the page is routed; name the route in the description. Test the design-guide SEAM (assert the element carries its design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS in the source. Do NOT set `invariant_id`. MATCH THE TEST TO THE AC\'s `layer`: an AC whose `layer` is **`E2E`** is verified END-TO-END against the REAL paired-branch DB \u2013 it REQUIRES a real Playwright e2e (scenario_file under `client/tests/e2e/\u2026`) that drives the DEPLOYED app in a browser against the live DB, with NO mocked/stubbed fetch and NO in-memory data. A mocked/stubbed COMPONENT test (rendering `<App>`/`<Page>` with fake data) is ONLY for a pure presentation/rendering AC, NEVER for an `E2E`-layer AC \u2013 drafting an E2E-layer AC as a mocked component test is the recurring reflect-testlist-defect (it cannot hit the DB the layer demands). One real e2e per E2E-layer AC. An e2e that CREATES a record (fills a form + submits) MUST key it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from "uuid"`) \u2014 used in BOTH the create fill AND the assertion locator, so each run owns its own row on the SHARED feature branch (a hardcoded key collides with a prior run / sibling story and goes perma-red). ALSO cover NFR CLIENT-RENDER fitness functions: for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (e.g. rendering a row with null/optional fields and asserting a \'not tracked\' indicator, or an empty/loading/error state), emit a `kind:"client"` item that performs that render and asserts the stated outcome. These NFR-render fitness functions are YOURS, never the fitness analyst\'s (it owns service/DB guards, not the SPA); a stated client-render NFR with no client item is the recurring reflect-testlist-defect. ' + SLICE_CONTRACT
+  }
+};
+function enabledAnalysts(ctx) {
+  return Object.values(TEST_ANALYST_CATALOGUE).filter((e) => e.enabledWhen ? e.enabledWhen(ctx) : true);
+}
+
+// consort/test-list/fan-out-plan.ts
+var analystOrderedJson = (consortDir, f, s) => (0, import_node_path23.join)(storyDir(consortDir, f, s), "analyst-ordered.json");
+
 // consort/orchestrator/state/orchestrator-probe.ts
+function storyRequiresE2e(consortDir, featureId, story) {
+  try {
+    return JSON.parse(fs15.readFileSync(storyJson(consortDir, featureId, story), "utf8")).requires_e2e === true;
+  } catch {
+    return false;
+  }
+}
 function storyCycles2(consortDir, featureId, story) {
   const base = path10.join(cyclesRootDir(consortDir), featureId, story);
   if (!fs15.existsSync(base)) return [];
@@ -14643,15 +14951,55 @@ function readGateApproved(featureId, consortDir, gate) {
   }
 }
 function diskArtifactProbe(consortDir, featureId, buildActive) {
+  const isArchitectAnnotated = (story) => {
+    const acs = storyAcIds(consortDir, featureId, story);
+    if (acs.length === 0) return false;
+    const everyAcNoted = acs.every((ac) => readAcArchitecturalNotes(consortDir, featureId, ac) !== void 0);
+    return everyAcNoted && fs15.existsSync(architectureJson(consortDir, featureId));
+  };
   return {
     hasAcs(story) {
       return storyAcIds(consortDir, featureId, story).length > 0;
     },
+    specRevisePending(story) {
+      const marker = specReviseScopeJson(consortDir, featureId, story);
+      if (!fs15.existsSync(marker)) return false;
+      let ids = [];
+      try {
+        ids = JSON.parse(fs15.readFileSync(marker, "utf8")).ac_ids ?? [];
+      } catch {
+        return false;
+      }
+      const dir = acsDir(consortDir, featureId, story);
+      return ids.some((ac) => !fs15.existsSync(path10.join(dir, `${ac}.json`)));
+    },
+    iaRefined(story) {
+      if (!fs15.existsSync(iaMd(consortDir))) return false;
+      if (fs15.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return true;
+      return isArchitectAnnotated(story);
+    },
+    iaProjectable(story) {
+      if (!fs15.existsSync(iaMd(consortDir))) return false;
+      if (fs15.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return false;
+      if (priorReviseCount(consortDir, "reflect-ia-defect", story) > 0) return false;
+      if (storyRequiresE2e(consortDir, featureId, story)) return false;
+      const stories = storiesDir(consortDir, featureId);
+      if (!fs15.existsSync(stories)) return false;
+      let siblingCovered = false;
+      try {
+        for (const sib of fs15.readdirSync(stories)) {
+          if (sib === story) continue;
+          if (fs15.existsSync(storyIaCoverageJson(consortDir, featureId, sib))) {
+            siblingCovered = true;
+            break;
+          }
+        }
+      } catch {
+      }
+      return siblingCovered;
+    },
     architectAnnotated(story) {
-      const acs = storyAcIds(consortDir, featureId, story);
-      if (acs.length === 0) return false;
-      const everyAcNoted = acs.every((ac) => readAcArchitecturalNotes(consortDir, featureId, ac) !== void 0);
-      return everyAcNoted && fs15.existsSync(architectureJson(consortDir, featureId));
+      return isArchitectAnnotated(story);
     },
     dbaDesigned() {
       const archFile = architectureJson(consortDir, featureId);
@@ -14686,6 +15034,7 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       return !architectNovelty(canon, layers.map((l) => ({ layer: l }))).novel;
     },
     testListReady(story) {
+      if (!fs15.existsSync(analystOrderedJson(consortDir, featureId, story))) return false;
       const file = storyTestListJson(consortDir, featureId, story);
       if (!fs15.existsSync(file)) return false;
       try {
@@ -14697,6 +15046,12 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
     },
     testListConforms(story) {
       return testListConforms(consortDir, featureId, story);
+    },
+    iaConforms(story) {
+      return iaConforms(consortDir, featureId, story);
+    },
+    reconcilePassed() {
+      return reconcilePassed(consortDir, featureId);
     },
     designFingerprint(story) {
       return storyDesignFingerprint(consortDir, featureId, story);
@@ -14871,7 +15226,7 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
-var import_fs19 = require("fs");
+var import_fs21 = require("fs");
 
 // consort/logging/gate-decision-log.ts
 init_cjs_shims();
@@ -14888,21 +15243,21 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!(0, import_fs19.existsSync)(p)) return initPipeline(featureId);
-  return JSON.parse((0, import_fs19.readFileSync)(p, "utf8"));
+  if (!(0, import_fs21.existsSync)(p)) return initPipeline(featureId);
+  return JSON.parse((0, import_fs21.readFileSync)(p, "utf8"));
 }
 
 // consort/session/response-formatter.ts
 init_cjs_shims();
 var import_node_fs22 = require("fs");
-var import_node_path24 = require("path");
+var import_node_path25 = require("path");
 
 // consort/architecture/e2e-route-adherence.ts
 init_cjs_shims();
 var import_node_fs21 = require("fs");
-var import_node_path23 = require("path");
-var CLIENT_SRC = (0, import_node_path23.join)("client", "src");
-var E2E_DIR = (0, import_node_path23.join)("client", "tests", "e2e");
+var import_node_path24 = require("path");
+var CLIENT_SRC = (0, import_node_path24.join)("client", "src");
+var E2E_DIR = (0, import_node_path24.join)("client", "tests", "e2e");
 var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", "dist", ".venv", "__pycache__", ".git"]);
 function walk2(root, pred, out = []) {
   if (!(0, import_node_fs21.existsSync)(root)) return out;
@@ -14914,7 +15269,7 @@ function walk2(root, pred, out = []) {
   }
   for (const name of entries) {
     if (SKIP_DIRS.has(name)) continue;
-    const abs = (0, import_node_path23.join)(root, name);
+    const abs = (0, import_node_path24.join)(root, name);
     let st;
     try {
       st = (0, import_node_fs21.statSync)(abs);
@@ -14951,11 +15306,11 @@ function extractRouteGlobs(specSource) {
   return globs;
 }
 function checkE2eRouteCollision(projectDir) {
-  const srcRoot = (0, import_node_path23.join)(projectDir, CLIENT_SRC);
-  const e2eRoot = (0, import_node_path23.join)(projectDir, E2E_DIR);
+  const srcRoot = (0, import_node_path24.join)(projectDir, CLIENT_SRC);
+  const e2eRoot = (0, import_node_path24.join)(projectDir, E2E_DIR);
   if (!(0, import_node_fs21.existsSync)(srcRoot) || !(0, import_node_fs21.existsSync)(e2eRoot)) return { ok: true, violations: [] };
   const moduleUrls = walk2(srcRoot, (n) => /\.(ts|tsx|js|jsx)$/.test(n) && !/\.(test|spec|d)\.[tj]sx?$/.test(n)).map(
-    (abs) => "http://127.0.0.1:5173/src/" + (0, import_node_path23.relative)(srcRoot, abs).split(/[\\/]/).join("/")
+    (abs) => "http://127.0.0.1:5173/src/" + (0, import_node_path24.relative)(srcRoot, abs).split(/[\\/]/).join("/")
   );
   const violations = [];
   for (const spec of walk2(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
@@ -14965,7 +15320,7 @@ function checkE2eRouteCollision(projectDir) {
     } catch {
       continue;
     }
-    const specRel = (0, import_node_path23.relative)(projectDir, spec).split(/[\\/]/).join("/");
+    const specRel = (0, import_node_path24.relative)(projectDir, spec).split(/[\\/]/).join("/");
     for (const glob of extractRouteGlobs(source)) {
       if (!glob.includes("*")) continue;
       const rx = globToRegExp(glob);
@@ -14984,7 +15339,7 @@ function checkE2eRouteCollision(projectDir) {
   return { ok: violations.length === 0, violations };
 }
 function checkE2eSeedBackendDerivation(projectDir) {
-  const e2eRoot = (0, import_node_path23.join)(projectDir, E2E_DIR);
+  const e2eRoot = (0, import_node_path24.join)(projectDir, E2E_DIR);
   if (!(0, import_node_fs21.existsSync)(e2eRoot)) return { ok: true, violations: [] };
   const portSwap = /\.replace\(\s*(['"`]):?5173\1\s*,\s*(['"`]):?8000\2\s*\)/;
   const violations = [];
@@ -14995,7 +15350,7 @@ function checkE2eSeedBackendDerivation(projectDir) {
     } catch {
       continue;
     }
-    const specRel = (0, import_node_path23.relative)(projectDir, spec).split(/[\\/]/).join("/");
+    const specRel = (0, import_node_path24.relative)(projectDir, spec).split(/[\\/]/).join("/");
     source.split("\n").forEach((ln, i) => {
       if (!portSwap.test(ln)) return;
       violations.push({
@@ -15120,6 +15475,15 @@ function checkArchitect(args, v) {
       });
     }
   }
+  const archForSchema = architectureJson(consortDir, featureId);
+  if ((0, import_node_fs22.existsSync)(archForSchema)) {
+    try {
+      const r = checkArtifactConformance(canonicalArtifactName(archForSchema), (0, import_node_fs22.readFileSync)(archForSchema, "utf8"));
+      if (!r.ok) for (const problem of r.violations) v.push({ artifact: "architecture.json", problem });
+    } catch (e) {
+      v.push({ artifact: "architecture.json", problem: `is not valid JSON (${e.message})` });
+    }
+  }
   checkNfrFitnessFunctions(consortDir, featureId, v);
 }
 function checkNfrFitnessFunctions(consortDir, featureId, v) {
@@ -15131,11 +15495,13 @@ function checkNfrFitnessFunctions(consortDir, featureId, v) {
   } catch {
     return;
   }
+  const trivial = /^(todo|tbd|tbc|fixme|placeholder|none|test|xxx|\.{2,}|\?{2,}|n\/?a)\.?$/i;
   for (const [i, n] of nfrs.entries()) {
-    if (typeof n.fitness_function !== "string" || n.fitness_function.trim() === "") {
+    const ff = typeof n.fitness_function === "string" ? n.fitness_function.trim() : "";
+    if (ff === "" || trivial.test(ff)) {
       v.push({
         artifact: "architecture.json",
-        problem: `NFR ${n.id ?? `#${i}`} is missing a non-empty \`fitness_function\` (name the concrete real-branch test that defends this NFR, so the Test Strategist authors it as a RED test). "N/A \u2013 reason" is allowed only when the NFR genuinely has no machine-checkable defense.`
+        problem: `NFR ${n.id ?? `#${i}`} has no substantive \`fitness_function\` (name the concrete real-branch test that defends this NFR, so the Test Strategist authors it as a RED test \u2014 not a placeholder like "TODO"/"TBD"). "N/A \u2013 reason" is allowed only when the NFR genuinely has no machine-checkable defense.`
       });
     }
   }
@@ -15160,48 +15526,42 @@ function checkDba(args, v) {
 function checkTestStrategist(args, v) {
   const { consortDir, featureId, story } = args;
   if (!needStory("test-strategist", story, v)) return;
-  const file = storyTestListJson(consortDir, featureId, story);
+  const file = featureTestListJson(consortDir, featureId);
   if (!(0, import_node_fs22.existsSync)(file)) {
-    v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: "per-story test list not written" });
+    v.push({ artifact: "test-list.json", problem: "test list not written" });
     return;
   }
   let parsed;
   try {
     parsed = JSON.parse((0, import_node_fs22.readFileSync)(file, "utf8"));
   } catch (e) {
-    v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
-    return;
-  }
-  const items = Array.isArray(parsed.items) ? parsed.items : [];
-  if (items.length === 0) {
-    v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: "empty `items` (expected >=1 test mapped to the story's ACs)" });
+    v.push({ artifact: "test-list.json", problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
     return;
   }
   const acIds = new Set(storyAcIds(consortDir, featureId, story));
+  const allItems = Array.isArray(parsed.items) ? parsed.items : [];
+  const items = allItems.filter((it) => typeof it.ac_id === "string" && acIds.has(it.ac_id));
+  if (items.length === 0) {
+    v.push({
+      artifact: "test-list.json",
+      problem: `no tests mapped to story ${story}'s ACs [${[...acIds].join(", ")}] (expected >=1 item whose ac_id is one of them)`
+    });
+    return;
+  }
   const covered = /* @__PURE__ */ new Set();
   items.forEach((item, i) => {
     if (item.kind === "fitness" && typeof item.scenario_file === "string" && /\.feature$/.test(item.scenario_file)) {
       v.push({
-        artifact: `stories/${story}/test-list-per-story.json`,
+        artifact: "test-list.json",
         problem: `items[${i}] (${String(item.id)}) is kind:"fitness" but its scenario_file "${item.scenario_file}" is a Gherkin .feature (mutually exclusive). A fitness item is a plain test (drop scenario_file), or make it kind:"behavior".`
       });
     }
-    const acId = item.ac_id;
-    if (typeof acId !== "string" || acId.length === 0) {
-      v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: `items[${i}] (${String(item.id)}) has null/empty ac_id` });
-    } else if (acIds.size > 0 && !acIds.has(acId)) {
-      v.push({
-        artifact: `stories/${story}/test-list-per-story.json`,
-        problem: `items[${i}] ac_id "${acId}" is not one of the story's ACs [${[...acIds].join(", ")}]`
-      });
-    } else if (typeof acId === "string") {
-      covered.add(acId);
-    }
+    covered.add(item.ac_id);
   });
   const uncovered = [...acIds].filter((id) => !covered.has(id));
   if (uncovered.length > 0) {
     v.push({
-      artifact: `stories/${story}/test-list-per-story.json`,
+      artifact: "test-list.json",
       problem: `AC(s) with no covering test: [${uncovered.join(", ")}]. Every AC needs >=1 item (a client AC needs a kind:client item; see the reflect gate).`
     });
   }
@@ -15274,7 +15634,7 @@ function checkUxDesigner(args, v) {
   if (!b.ok) v.push({ artifact: "design/design-guide.json", problem: b.problem ?? "a staged brand asset is not declared as app_icon" });
 }
 function checkNavigator(args, v) {
-  const projectDir = (0, import_node_path24.dirname)(args.consortDir);
+  const projectDir = (0, import_node_path25.dirname)(args.consortDir);
   for (const x of checkE2eRouteCollision(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
   for (const x of checkE2eSeedBackendDerivation(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
 }
@@ -15295,8 +15655,8 @@ function formatRoleResponse(args) {
 
 // consort/orchestrator/status/feature-status.ts
 init_cjs_shims();
-var import_fs20 = require("fs");
-var import_path15 = require("path");
+var import_fs22 = require("fs");
+var import_path16 = require("path");
 
 // consort/gates/design-spec-gate.ts
 init_cjs_shims();
@@ -15327,10 +15687,10 @@ function deriveFeaturePhase(stories) {
   return "design";
 }
 function featureRequestTitle(featureDirPath, id) {
-  const p = (0, import_path15.join)(featureDirPath, "feature-request.md");
-  if (!(0, import_fs20.existsSync)(p)) return id;
+  const p = (0, import_path16.join)(featureDirPath, "feature-request.md");
+  if (!(0, import_fs22.existsSync)(p)) return id;
   try {
-    const h1 = (0, import_fs20.readFileSync)(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
+    const h1 = (0, import_fs22.readFileSync)(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
     return h1 ? h1.replace(/^#\s+/, "").trim() : id;
   } catch {
     return id;
@@ -15338,11 +15698,11 @@ function featureRequestTitle(featureDirPath, id) {
 }
 function deliveredFeatures(consortDir) {
   const root = featuresDir(consortDir);
-  if (!(0, import_fs20.existsSync)(root)) return [];
+  if (!(0, import_fs22.existsSync)(root)) return [];
   const out = [];
-  const ids = (0, import_fs20.readdirSync)(root).filter((d) => {
+  const ids = (0, import_fs22.readdirSync)(root).filter((d) => {
     try {
-      return (0, import_fs20.statSync)((0, import_path15.join)(root, d)).isDirectory();
+      return (0, import_fs22.statSync)((0, import_path16.join)(root, d)).isDirectory();
     } catch {
       return false;
     }
@@ -15350,7 +15710,7 @@ function deliveredFeatures(consortDir) {
   for (const id of ids) {
     const stories = summarizeStories(consortDir, id);
     if (deriveFeaturePhase(stories) !== "complete") continue;
-    out.push({ id, title: featureRequestTitle((0, import_path15.join)(root, id), id) });
+    out.push({ id, title: featureRequestTitle((0, import_path16.join)(root, id), id) });
   }
   return out;
 }
@@ -15359,7 +15719,7 @@ function deliveredFeatures(consortDir) {
 init_cjs_shims();
 var import_node_child_process8 = require("child_process");
 var fs16 = __toESM(require("fs"), 1);
-var import_node_path25 = require("path");
+var import_node_path26 = require("path");
 function artifactRoot(consortDir) {
   return consortDir;
 }
@@ -15417,7 +15777,7 @@ var defaultDbStateReader = (projectDir) => {
 };
 var defaultFailingTestReader = (projectDir, story) => {
   if (projectLanguage(projectDir) === "nodejs") return void 0;
-  const file = (0, import_node_path25.join)(projectDir, "tests", "step_defs", `test_${story.replace(/-/g, "_")}.py`);
+  const file = (0, import_node_path26.join)(projectDir, "tests", "step_defs", `test_${story.replace(/-/g, "_")}.py`);
   try {
     const body = fs16.readFileSync(file, "utf8");
     return body.length > 4e3 ? body.slice(0, 4e3) + "\n\u2026 (truncated; read the full file if needed)" : body;
@@ -15427,13 +15787,13 @@ var defaultFailingTestReader = (projectDir, story) => {
 };
 function readCtxLeverMarker(consortDir) {
   try {
-    return JSON.parse(fs16.readFileSync((0, import_node_path25.join)(consortDir, "ctx-levers.json"), "utf8"));
+    return JSON.parse(fs16.readFileSync((0, import_node_path26.join)(consortDir, "ctx-levers.json"), "utf8"));
   } catch {
     return {};
   }
 }
 function failingTestBlock(consortDir, story, reader = defaultFailingTestReader) {
-  const body = reader((0, import_node_path25.dirname)(consortDir), story);
+  const body = reader((0, import_node_path26.dirname)(consortDir), story);
   return body ? ` FAILING TEST (make THIS pass; do NOT search for it) ::
 \`\`\`python
 ${body}
@@ -15453,7 +15813,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
     parts.push(` LAYOUT (place/judge code at THESE paths, do not scan for them) :: ${layout}.`);
   }
   {
-    const language = projectLanguage((0, import_node_path25.dirname)(consortDir));
+    const language = projectLanguage((0, import_node_path26.dirname)(consortDir));
     const runHint = language === "nodejs" ? ` RUN/REACHABILITY :: node project \u2013 source under src/ (there is NO app/). To confirm the app boots or is reachable, run the project's OWN start (the package.json start/dev script, e.g. \`node src/index.js\`) and GET the health path over HTTP \u2013 do NOT assume Python or run \`python -c "import app.main"\` (it will false-fail here).` : language === "java" || language === "kotlin" ? ` RUN/REACHABILITY :: ${language} project. To confirm the app boots or is reachable, run \`./mvnw spring-boot:run\` and GET the health path over HTTP \u2013 do NOT assume Python (\`python -c "import app.main"\` false-fails here).` : ` RUN/REACHABILITY :: python project \u2013 source under app/. To confirm the app boots or is reachable, run \`uv run uvicorn app.main:app\` and GET the health path over HTTP. Reachability is an HTTP response, never just an import succeeding.`;
     parts.push(runHint);
   }
@@ -15465,7 +15825,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   const marker = readCtxLeverMarker(consortDir);
   const dbOn = opts.dbState ?? marker.dbState ?? consortEnv("CTX_DBSTATE") === "1";
   if (dbOn) {
-    const st = (opts.dbStateReader ?? defaultDbStateReader)((0, import_node_path25.dirname)(consortDir));
+    const st = (opts.dbStateReader ?? defaultDbStateReader)((0, import_node_path26.dirname)(consortDir));
     if (st && (st.current || st.heads)) {
       parts.push(
         ` DB STATE (already probed, do NOT re-run alembic current/heads) ::${st.current ? ` current=${st.current.replace(/\s+/g, " ")}` : ""}${st.heads ? ` head=${st.heads.replace(/\s+/g, " ")}` : ""}. The branch is migrated to head; iterate with \`uv run --env-file .env pytest <path>\` (no re-migrate).`
@@ -15481,7 +15841,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   if (scopeOn) parts.push(scopeNoteBlock());
   const migrationOn = opts.migration ?? marker.migration ?? consortEnv("CTX_MIGRATION") === "1";
   if (migrationOn) {
-    const language = projectLanguage((0, import_node_path25.dirname)(consortDir));
+    const language = projectLanguage((0, import_node_path26.dirname)(consortDir));
     const migrationGuide = language === "nodejs" ? ` MIGRATION :: knex migrations live in migrations/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Source/models live under src/; apply with \`npm run migrate\`.` : language === "java" || language === "kotlin" ? ` MIGRATION :: flyway migrations live in src/main/resources/db/migration/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Apply with \`./mvnw -q flyway:migrate\`.` : ` MIGRATION :: alembic migrations live in alembic/versions/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author the revision file or grep scripts/lk to find the command). ORM models are in app/models.py; apply with \`uv run --env-file .env alembic upgrade head\`.`;
     parts.push(migrationGuide);
   }
@@ -15493,48 +15853,6 @@ init_cjs_shims();
 
 // consort/test-list/test-analyst-roster.ts
 init_cjs_shims();
-
-// consort/test-list/test-analyst-catalogue.ts
-init_cjs_shims();
-var SLICE_CONTRACT = 'Return an UNORDERED JSON array of test-list items as the LAST thing in your reply, fenced as ```json ... ```. Each item is { "id": "<kind-local id, e.g. bhv-1>", "description": "<one observable behavior, no \'and\'>", "ac_id": "<EXACT id of an existing story AC file>", "status": "pending", "kind": "<your kind>" }. Do NOT order the items and do NOT set ordered_for \u2013 the supervisor orders the merged master and assigns the final T-ids. Map every item to a real story AC id (copy it verbatim, never re-slug).';
-var TEST_ANALYST_CATALOGUE = {
-  behavior: {
-    kind: "behavior",
-    description: "Backend behavior/API scenarios: one observable behavior per AC through the API boundary.",
-    configSummary: "Per AC: >=1 behavior item through the API boundary (pytest-bdd .feature).",
-    model: "sonnet",
-    effort: "default",
-    toolScope: ["Read"],
-    inputs: ["story-acs", "architecture-invariants"],
-    focusPrompt: "You are the BEHAVIOR test analyst. Cover every BACKEND-layer AC (API / service / data / INFRA) whose outcome is observable through the API boundary with at least one `kind:\"behavior\"` item \u2013 one observable behavior verified through the API boundary (for Python, a pytest-bdd scenario; set `scenario_file` to `tests/features/<story>.feature`). An `Infra`-layer AC (e.g. 'distinct (sku,location) coexist', 'refile updates in place') still has an observable API behavior \u2013 it is YOURS, do not skip it as 'DB-only'. ASSERT THE AC'S CORE PROMISED OUTCOME \u2013 the actual result the AC guarantees (a refile leaves the stored quantity == the NEW value AND exactly ONE row for the pair; filing the same SKU at two DIFFERENT locations yields TWO independently-retrievable coexisting rows), NOT merely a peripheral aspect (a preserved timestamp, atomicity). For a uniqueness / multi-key invariant, cover BOTH sides: the COLLISION (same key -> rejected / stays one row) AND the DISTINCT-keys-COEXIST positive (different keys -> independent rows). A test that checks only the peripheral aspect or only the collision lets a Driver go green without the real behavior \u2013 the recurring reflect-testlist-defect. **DO NOT author a behavior item for an E2E / UI-presentation AC** (e.g. a \"filing form\" / \"home screen\" AC whose `layer` is `E2E`): those are the CLIENT analyst's Playwright job, NOT a backend pytest-bdd test. Set each item's `ac_id` ONLY to an AC whose layer permits a backend test; anchoring a 2xx / response-shape check to a UI AC (instead of the API-layer AC) is the recurring mis-route the reflect gate rejects \u2013 if an AC's observable outcome is an HTTP response shape, it belongs on the API-layer AC, never the form/screen AC. Test at the OUTERMOST public boundary matching the AC's layer. One test per scenario, never an \"and\". EVERY write-bearing test (POST/insert/seed) MUST own its state \u2013 use a per-run-unique key suffixed with the platform's BUILT-IN UUID (Python `uuid.uuid4()` from the stdlib; JS/TS `crypto.randomUUID()`; Java `java.util.UUID`) OR delete/upsert the fixed key before writing, never assume an empty table. NEVER add a UUID dependency: in JS/TS do NOT `import ... from \"uuid\"` \u2013 the `uuid` npm package is not a scaffolded dependency and fails CI with \"Cannot find package 'uuid'\". Do NOT emit fitness or client items, and do NOT set `invariant_id` (the fitness analyst owns persistence invariants). COVER THE NEGATIVE/BOUNDARY-VALIDATION PATH a constraint implies on your ACs: you are given architecture.json (NFRs + persistence_invariants), so when an AC's field is required / NOT NULL (a `not_null` invariant or a field-named-validation NFR names it), emit a behavior item that OMITS (or sends invalid) that field through the API boundary and asserts a field-named rejection \u2013 this is the boundary guard, DISTINCT from the DB constraint the fitness analyst tests. Your `behavior` item asserts ONLY an API-OBSERVABLE outcome (an HTTP status + response body through the boundary). A SERVICE-INTERNAL assertion \u2014 the service raises/rejects BEFORE the DB, the repository is never reached, the guard fires 'at the service layer' \u2014 is NOT API-observable and is NOT a behavior/.feature scenario: authored as one it gets no bindable step def and STALLS the build lane (an unbound pytest-bdd scenario). That service-layer guard is the FITNESS analyst's (a direct service-level test), so cover the negative case here ONLY in its API-observable form (POST the invalid value \u2192 4xx naming the field), and leave the 'rejects-before-the-DB / repository-not-reached' assertion to fitness. A required-field/CHECK/overcommit rejection with only a happy-path test is the recurring reflect-testlist-defect. " + SLICE_CONTRACT
-  },
-  fitness: {
-    kind: "fitness",
-    description: "Architectural fitness tests + a real-branch test per declared persistence invariant.",
-    configSummary: "Per architectural constraint + per persistence_invariant: a fitness item (invariant_id).",
-    model: "sonnet",
-    effort: "high",
-    toolScope: ["Read"],
-    inputs: ["architecture-invariants", "db-design"],
-    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (single-step downgrade/upgrade, @pytest.mark.migration, NEVER downgrade base) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after downgrade-then-upgrade (NOT that data survives). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where single-step downgrade removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: single-step downgrade drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
-  },
-  client: {
-    kind: "client",
-    description: "SPA client-harness tests for UI-presentation ACs (React component / Playwright e2e).",
-    configSummary: "Per UI-presentation AC: a client item under client/tests/ (only when uiTrack).",
-    model: "sonnet",
-    effort: "default",
-    toolScope: ["Read"],
-    inputs: ["story-acs", "architecture-invariants", "design-guide"],
-    enabledWhen: (ctx) => ctx.uiTrack === true,
-    focusPrompt: "You are the CLIENT test analyst (this project HAS a frontend). For every UI-presentation AC the architecture routes to the SPA's own client harness, emit a `kind:\"client\"` item with `scenario_file` under `client/tests/` (e.g. `client/tests/pages/<Screen>.test.tsx`). Do NOT fold a presentation AC into the backend pytest-bdd suite \u2013 that mechanism mismatch is a defect. For an AC that OWNS a page/route, at least one client item MUST exercise the page THROUGH THE REAL `<App>` at the AC's route (a Playwright e2e that navigates the route, OR a component test rendering `<App>` in `<MemoryRouter initialEntries={[\"<the path>\"]}>`) \u2013 a bare `render(<ThePage/>)` does NOT prove the page is routed; name the route in the description. Test the design-guide SEAM (assert the element carries its design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS in the source. Do NOT set `invariant_id`. MATCH THE TEST TO THE AC's `layer`: an AC whose `layer` is **`E2E`** is verified END-TO-END against the REAL paired-branch DB \u2013 it REQUIRES a real Playwright e2e (scenario_file under `client/tests/e2e/\u2026`) that drives the DEPLOYED app in a browser against the live DB, with NO mocked/stubbed fetch and NO in-memory data. A mocked/stubbed COMPONENT test (rendering `<App>`/`<Page>` with fake data) is ONLY for a pure presentation/rendering AC, NEVER for an `E2E`-layer AC \u2013 drafting an E2E-layer AC as a mocked component test is the recurring reflect-testlist-defect (it cannot hit the DB the layer demands). One real e2e per E2E-layer AC. ALSO cover NFR CLIENT-RENDER fitness functions: for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (e.g. rendering a row with null/optional fields and asserting a 'not tracked' indicator, or an empty/loading/error state), emit a `kind:\"client\"` item that performs that render and asserts the stated outcome. These NFR-render fitness functions are YOURS, never the fitness analyst's (it owns service/DB guards, not the SPA); a stated client-render NFR with no client item is the recurring reflect-testlist-defect. " + SLICE_CONTRACT
-  }
-};
-function enabledAnalysts(ctx) {
-  return Object.values(TEST_ANALYST_CATALOGUE).filter((e) => e.enabledWhen ? e.enabledWhen(ctx) : true);
-}
-
-// consort/test-list/test-analyst-roster.ts
 function renderTestAnalystRoster(ctx, opts = {}) {
   const overrides = opts.overrides ?? {};
   const analysts = enabledAnalysts(ctx).map((e) => {
@@ -15567,13 +15885,13 @@ function renderTestAnalystRoster(ctx, opts = {}) {
 // consort/orchestrator/steps/cross-story-context.ts
 init_cjs_shims();
 var fs17 = __toESM(require("fs"), 1);
-var import_node_path26 = require("path");
+var import_node_path27 = require("path");
 var str = (v) => typeof v === "string" && v.length > 0 ? v : void 0;
 function buildCrossStoryContext(consortDir, feature, currentStory) {
   const ctx = { current_story: currentStory, sibling_stories: [], open_decisions: [], required_persistence_fields: [] };
   const currentDir = (() => {
     try {
-      return (0, import_node_path26.basename)(storyResolved(consortDir, feature, currentStory));
+      return (0, import_node_path27.basename)(storyResolved(consortDir, feature, currentStory));
     } catch {
       return currentStory;
     }
@@ -15631,6 +15949,15 @@ function renderCrossStoryContextBlock(consortDir, feature, story) {
   }
   return "CROSS-STORY CONTEXT \u2014 this story is NOT reviewed in isolation. The feature's OTHER stories' ACs, the architecture's open_decisions, and its mandated (not-null) persistence fields are below; use them for the cross-story checks (an AC contradicting a gated sibling AC; a mandated field no sibling submit AC supplies). This IS that context \u2014 do not run `consort-cross-story-context` yourself.\n\n" + JSON.stringify(ctx, null, 2);
 }
+function buildFeatureReconcileContext(consortDir, feature) {
+  const ctx = buildCrossStoryContext(consortDir, feature, "__reconcile_all__");
+  return { stories: ctx.sibling_stories, open_decisions: ctx.open_decisions, required_persistence_fields: ctx.required_persistence_fields };
+}
+function renderFeatureReconcileBlock(consortDir, feature) {
+  const ctx = buildFeatureReconcileContext(consortDir, feature);
+  if (ctx.stories.length < 2) return "";
+  return "FEATURE-COMPLETE CROSS-STORY RECONCILIATION \u2014 every story below is now designed + gated. Check the WHOLE set against ITSELF, symmetrically (every story vs every other, including the first-designed one): an AC that contradicts another story's gated AC; a mandated (not-null) field no story's submit AC supplies; two stories' ACs that overlap on the same observable behavior; an invariant anchored to the wrong story. For each defect, name the OWNING story (the one to change) + its author (owner). This IS the context \u2014 do not run `consort-cross-story-context` yourself.\n\n" + JSON.stringify(ctx, null, 2);
+}
 
 // consort/orchestrator/build/preconditions.ts
 function buildGreenFailureAdvisory(consortDir, featureId, story, ac) {
@@ -15664,6 +15991,10 @@ var PRECONDITION_PREPARERS = {
   // ride the prompt deterministically instead of depending on the agent shelling out to
   // `consort-cross-story-context`. Empty for a lone-story feature.
   "cross-story-context": (ctx) => renderCrossStoryContextBlock(ctx.consortDir, ctx.featureId, ctx.story),
+  // The SYMMETRIC feature-complete reconciliation context: EVERY story's ACs (none folded out) +
+  // open_decisions + mandated not-null fields, for the Navigator's one `reconcile` turn once all
+  // stories are gated. Feature-scoped — ignores ctx.story (the turn is story-less, like breakdown).
+  "reconcile-context": (ctx) => renderFeatureReconcileBlock(ctx.consortDir, ctx.featureId),
   // The test-analyst roster: project the ENABLED test-analyst catalogue (client gated on the
   // project's uiTrack) into the test-strategist supervisor's turn so it Task-spawns one analyst
   // subagent per enabled kind. Reads project.uiTrack from projectDir; absent => true.
@@ -15711,6 +16042,22 @@ function storyStubScope(consortDir, featureId, storyId) {
   }
 }
 var STATE_OWNERSHIP_CANON = ` TEST STATE OWNERSHIP (mandatory): each test OWNS the state it asserts on \u2013 the acceptance DB is a shared branch reused across the story's cycles and already holds rows other stories committed. For any COLLECTION or AGGREGATE assertion (an empty list/table, "returns all", a count), NEVER assume ambient state and NEVER assert absolute whole-table state (e.g. len(all) == 0): SCOPE to per-run-unique keys \u2013 assert only your own seeded rows, or query a per-run-unique slice that is genuinely empty \u2013 or explicitly clear the aggregate you claim empty. Also revert/roll back rows a test writes so it never leaks state into another test.`;
+var coHealFreshNote = (artifact, against) => ` Author this story's ${artifact} FRESH from the ${against} on disk this turn. On a reflect-revise re-run the self-heal clears this story's prior ${artifact} BY DESIGN, so an absent/empty prior is the expected revise state \u2014 re-derive against the corrected ${against}.`;
+function unNotedAcIds(consortDir, featureId, story) {
+  const dir = acsDir(consortDir, featureId, story);
+  const out = [];
+  for (const ac of storyAcIds(consortDir, featureId, story)) {
+    try {
+      const j = JSON.parse(fs18.readFileSync((0, import_node_path28.join)(dir, `${ac}.json`), "utf8"));
+      const n = j.architectural_notes;
+      const hasNotes = typeof n === "string" ? n.trim().length > 0 : n !== void 0 && n !== null;
+      if (!hasNotes) out.push(ac);
+    } catch {
+      out.push(ac);
+    }
+  }
+  return out;
+}
 function nextPendingTestDirective(consortDir, featureId, story, loop, cap) {
   return nextPendingTestDirectiveBody(consortDir, featureId, story, loop, cap) + STATE_OWNERSHIP_CANON;
 }
@@ -15828,7 +16175,7 @@ function roleTaskBody(action, featureId, uiTrack, consortDir, build, omit) {
       case "estimate-committed":
         return `Estimate the sprint's COMMITTED feature(s) with a t-shirt size (XS/S/M/L/XL). Read each committed feature's request at ${root}/features/<F>/feature-request.md, then ADD one entry per committed feature to ${root}/planning/estimates.json keyed by its REAL feature id (e.g. "F1-stock-visibility", not a "FP" candidate id), each {"feature_id":"<F>","size":"<XS|S|M|L|XL>","rationale":"<why>"}. KEEP every existing estimate already in the file (merge, do not overwrite the candidate sizes). This is the size sync-backlog stamps into the per-sprint backlog, so the committed backlog shows real sizing.`;
       case "intake": {
-        const seedIntakeDir = (0, import_node_path27.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
+        const seedIntakeDir = (0, import_node_path28.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
         const groundingClause = fs18.existsSync(seedIntakeDir) ? `Ground the shape in the canon above and the StockFlow worked example at ${seedIntakeDir} (READ the files there to learn the format + level of detail; never copy it verbatim).` : `Ground the shape in the canon above (the StockFlow worked example under the kit's examples/first-project/stockflow-seed/intake/ is unavailable here \u2013 rely on the canon).`;
         return `Author the project intake for the Product Owner, DRAFTING each artifact FRESH from the human's answers at ${root}/intake/answers.md (the interview responses; if absent or thin, draft only what the stated intent supports \u2013 never invent). WRITE:
   - ${root}/product-overview.md \u2013 who it's for, its purpose, how it grows, what to see after each sprint (H1 + body, no implementation detail).
@@ -15842,17 +16189,23 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
         return `Break feature ${featureId} down into its stories. WRITE the breakdown to ${root}: first ${root}/features/${featureId}/feature-spec.json (id, name, status "draft", tdd_mode, and a NON-EMPTY stories[] array of the story ids), then a stub dir per story under ${root}/features/${featureId}/stories/<S>/ (story.md + story.json, id + one-line scope; NO acceptance criteria here). ON EVERY STORY AFTER THE FIRST, its story.json MUST include "independence": { "distinct_from_prior": true, "rationale": "<the distinct behavior this story adds beyond the prior stories>" } \u2013 apply the story-independence test (could you build the earlier story fully and have this one still genuinely unbuilt?); if not, fold or re-scope it. A later story that omits independence hard-blocks its spec gate, so set it now. Then run the breakdown self-check (./scripts/lk consort-response-formatter --role spec-author --feature ${featureId}, NO --story) and fix anything it flags before returning. feature-spec.json is REQUIRED \u2013 a prose list of stories in your reply is NOT the breakdown, and do NOT claim it "already exists".${uiTrack ? UI_TRACK_BREAKDOWN : ""}`;
     }
   }
+  if (action.role === "ux-designer" && action.mode === "ia") {
+    const uxStory = action.story;
+    return `Refine the information architecture (${root}/design/ia.md) for story ${uxStory}'s user-facing surfaces. Read this story's acceptance criteria (its E2E / client ACs name the screens, forms, and flows a user operates) and the established style system (${root}/design/design-guide.json \u2014 the component vocabulary + tokens the surfaces compose from). ADD this story's surfaces to ia.md's existing sections (Screens / Navigation / User flows): each screen or form the story introduces with its route + data-testid seams, its place in the navigation, and the user flow it participates in. APPEND each new user flow at the END of the numbered list, keeping the numbers sequential. When a flow or CTA links to ANOTHER screen with a query param (e.g. a Receive CTA to \`/receive?sku=<sku>\`), that target screen's Screens-table row must declare the param it accepts (e.g. \`/receive\` (\`?sku=\`)). The refinement is ADDITIVE \u2014 extend the existing sections and compose new surfaces from the established component vocabulary; the style system (design-guide.json) is read-only context here, authored at establish. Reconcile ALL of this story's user-facing ACs on every run, including a re-run after a reflect finding: before finishing, confirm EVERY one of this story's E2E / client ACs maps to a screen or form NAMED in ia.md \u2014 an AC with no IA surface is the defect this step closes.`;
+  }
   if (action.role === "ux-designer") {
     return `Translate the HIL design brief (${root}/design/design-brief.md) into the project design system: write design-guide.md (visual + interaction standards), design-guide.json (the machine-checkable tokens + components), and ia.md (the information architecture: screens, navigation, flows). This is the project-level style guide the Navigator and Driver build the UI against; author it once from the brief + product-overview.md. COVER THE BRIEF EXHAUSTIVELY \u2013 read design-brief.md + product-overview.md and enumerate, then realize, EVERY named element. In particular: (a) EVERY status/state variant the brief lists (e.g. each badge/pill state) \u2013 include ALL of them, not a representative subset; (b) EVERY asset the brief names (app icon, favicon/browser-tab icon, logos) as an explicit entry; (c) EVERY level of each scalar token the brief enumerates (if it says shadows sm/md/lg, define all three; likewise every spacing/radius/type step); and (d) a design-guide.json "components" block with an entry for EACH reusable UI component the brief describes (navbar, page, card, button, form field, table, status badge, empty state, toast, app icon, and any others the brief names), each with its class + notes. Before finishing, re-read the brief and confirm nothing it names is missing from the design-guide \u2013 a missing status state, asset, token level, or component is a defect.`;
   }
-  const s = action.story;
+  const s = "story" in action ? action.story : "";
   switch (action.role) {
     case "spec-author":
       return `Draft the acceptance criteria for story ${s} and NOTHING else.${storyStubScope(consortDir, featureId, s)} Write ONE file per AC as acs/<AC>.json (+ optional acs/<AC>.md), and put NOTHING else in acs/ (no test lists, no -tests.json / -test-list.json, no scratch files, the spec gate validates every acs/*.json against the AC schema and rejects non-AC files). The AC id MUST match AC<n>-<slug>: AC1-create-form, AC2-form-accepts-input, ... (an "AC" prefix + a number, then a kebab slug). A bare slug id like "create-form-displays" FAILS the schema and hard-blocks the spec gate. The file's "id" field MUST equal its basename (acs/AC1-foo.json has {"id":"AC1-foo"}). Write only under story ${s}'s acs/ directory. Do not create, draft, or modify acceptance criteria for any other story in this feature, each other story is drafted in its own separate step that you are not performing now, and you will be invoked again, once per story, for the rest. Authoring more than ${s} here delays ${s} reaching its spec gate and build, and is rejected at the gate.` + designRootNote(root, featureId, s);
     case "architect-reviewer": {
       const arAcIds = storyAcIds(consortDir, featureId, s);
-      const arAcScope = arAcIds.length ? ` Story ${s}'s ACs are: ${arAcIds.join(", ")}.` : "";
-      return `Annotate story ${s}'s acceptance criteria + nfrs.md coverage.${arAcScope} For EVERY one of this story's ACs, write a non-empty "architectural_notes" field into its acs/<AC>.json (the layer it lives in + how it realizes the design). This is your distinctive per-AC product; the design gate verifies every AC carries it and the spec-author's "layer" field does NOT count. architectural_notes are per-AC, so annotate this story's ACs even when the feature-level architecture.json already exists from an earlier story. In architecture.json, make an EXPLICIT service_backed call (required): set service_backed:true if the feature persists data (a DB table/migration) or carries business logic, and then you MUST declare boundary, service, and repository layers (plus a "models" PACKAGE app/models/, one module per domain object, NOT a flat app/models.py, when it persists entities); set false ONLY for a trivial static/read-through endpoint. An Infra-layer AC or a migration/schema/storage NFR while service_backed is false hard-blocks the gate. When service_backed:true you MUST also declare architecture.json persistence_invariants[]: the DB-level guarantees the schema enforces (each with id, type one of unique|foreign_key|cascade|not_null|check|transactional|migration_reversible, table, and a one-line brief), covering unique/composite keys, foreign keys + cascade rules, NOT NULL / CHECK constraints, any transactional-atomicity boundary, and migration reversibility. The test-strategist must cover each with a real-branch test; a service_backed feature with no persistence_invariants hard-blocks the gate.${architectConventionsDirective(consortDir)}` + designRootNote(root, featureId, s);
+      const unNoted = unNotedAcIds(consortDir, featureId, s);
+      const noted = arAcIds.filter((a) => !unNoted.includes(a));
+      const arAcScope = unNoted.length === 0 ? arAcIds.length ? ` Story ${s}'s ACs (${arAcIds.join(", ")}) all already carry architectural_notes; author none this turn.` : "" : unNoted.length === arAcIds.length ? ` Author architectural_notes for ALL of story ${s}'s ACs: ${unNoted.join(", ")}.` : ` Author architectural_notes for EXACTLY these un-noted AC(s): ${unNoted.join(", ")}. Story ${s}'s remaining ACs (${noted.join(", ")}) already carry valid notes and are OUT of scope this turn.`;
+      return `Annotate story ${s}'s acceptance criteria + nfrs.md coverage.${arAcScope} Every one of this story's ACs MUST end up with a non-empty "architectural_notes" field in its acs/<AC>.json (the layer it lives in + how it realizes the design) \u2014 the design gate verifies that, and the spec-author's "layer" field does NOT count. architectural_notes are per-AC, so author the scoped ACs above even when the feature-level architecture.json already exists from an earlier story. For every E2E AC, ALSO pass consort-annotate-ac --ui-seams with the ia.md data-testid seam token(s) the AC's UI drives \u2014 the column / cell / region / empty-state / form field it asserts (e.g. "stock-cell-tracking,stock-not-tracked"). A deterministic gate checks each seam is named in ${root}/design/ia.md; if the AC needs a surface the IA does not yet name, declare the seam you need anyway and the gate routes the ux-designer to add it to ia.md. In architecture.json, make an EXPLICIT service_backed call (required): set service_backed:true if the feature persists data (a DB table/migration) or carries business logic, and then you MUST declare boundary, service, and repository layers (plus a "models" PACKAGE app/models/, one module per domain object, NOT a flat app/models.py, when it persists entities); set false ONLY for a trivial static/read-through endpoint. An Infra-layer AC or a migration/schema/storage NFR while service_backed is false hard-blocks the gate. When service_backed:true you MUST also declare architecture.json persistence_invariants[]: the DB-level guarantees the schema enforces (each with id, type one of unique|foreign_key|cascade|not_null|check|transactional|migration_reversible, table, and a one-line brief), covering unique/composite keys, foreign keys + cascade rules, NOT NULL / CHECK constraints, any transactional-atomicity boundary, and migration reversibility. The test-strategist must cover each with a real-branch test; a service_backed feature with no persistence_invariants hard-blocks the gate. When THIS story introduces a NEW read/query shape over the schema \u2014 a filter, lookup, sort, or join an AC drives (e.g. "list stock filtered by location", "look up a SKU's rows by sku") that is an INDEX candidate \u2014 declare it in architecture.json access_patterns[] (id, a one-line brief, and the table + column(s) it reads) so the DBA is pulled back in to reconsider the physical design for it; this is how a later READ story evolves the schema, since a story that adds no persistence_invariant would otherwise skip the DBA. Declare an access_pattern ONLY for a genuinely new query shape (not for every read, and not for one already covered by a prior story's pattern or a primary-key lookup).${architectConventionsDirective(consortDir)}` + coHealFreshNote("architectural_notes", "ACs + IA") + designRootNote(root, featureId, s);
     }
     case "dba": {
       const dbaAcIds = storyAcIds(consortDir, featureId, s);
@@ -15863,35 +16216,48 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
         if (arch.service_backed === true) {
           const inv = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string");
           const invList = inv.length ? ` Realize EVERY declared persistence_invariant and list its id in realizes_invariants[]: ${inv.map((i) => `${i.id}${i.type ? ` [${i.type}${i.table ? ` on ${i.table}` : ""}]` : ""}${i.brief ? ` (${i.brief})` : ""}`).join("; ")}.` : "";
+          const ap = (arch.access_patterns ?? []).filter((p) => p && typeof p.id === "string");
+          const apList = ap.length ? ` ADDRESS EVERY declared access_pattern and list its id in addresses_access_patterns[]: ${ap.map((p) => `${p.id}${p.table ? ` [on ${p.table}${p.columns?.length ? `(${p.columns.join(", ")})` : ""}]` : ""}${p.brief ? ` (${p.brief})` : ""}`).join("; ")}. For each, either add an index/structure on its column(s) OR record a deliberate no-index decision (e.g. small table, covered by the primary key) in db-design.md \u2014 the gate requires each id be addressed, not that an index exist.` : "";
           const models = (arch.layers ?? []).find((l) => l.role === "models");
           const modelsNote = models?.module ? ` Mirror the architect's models package (${models.module}), one table per domain object.` : "";
           const nonPersistingNote = inv.length ? "" : ` This service declares NO persistence_invariants (a non-persisting service \u2013 compute/proxy/aggregator); an empty or absent db-design.json is acceptable, do not invent tables.`;
-          contract = ` This feature is service_backed.${modelsNote}${invList}${nonPersistingNote}`;
+          contract = ` This feature is service_backed.${modelsNote}${invList}${apList}${nonPersistingNote}`;
         } else if (arch.service_backed === false) {
           contract = ` This feature is not service_backed (a trivial static/read-through endpoint); an empty or absent db-design.json is acceptable.`;
         }
       } catch {
       }
-      return `Realize the physical database schema for story ${s} into ${root}/features/${featureId}/db-design.json (+ a short db-design.md narrative).${dbaAcScope} Read architecture.json (service_backed, layers, persistence_invariants) \u2013 the architect owns that logical contract; you produce the PHYSICAL realization and do NOT re-author the invariants. Declare tables[] (columns with explicit type/nullable/default, primary_key, unique_constraints, foreign_keys, checks, indexes) and this story's schema_changes[] (the per-story migration plan the build lane authors the Alembic migration from; keep an expand/contract column split or drop reversible). Populate realizes_invariants[] as a flat array of the architecture.json persistence_invariant id STRINGS (bare ids, not objects) \u2013 an uncovered invariant hard-blocks the spec gate.${contract}` + designRootNote(root, featureId, s);
+      return `Realize the physical database schema for story ${s} into ${root}/features/${featureId}/db-design.json (+ a short db-design.md narrative).${dbaAcScope} Read architecture.json (service_backed, layers, persistence_invariants) \u2013 the architect owns that logical contract; you produce the PHYSICAL realization and do NOT re-author the invariants. Declare tables[] (columns with explicit type/nullable/default, primary_key, unique_constraints, foreign_keys, checks, indexes) and this story's schema_changes[] (the per-story migration plan the build lane authors the Alembic migration from; keep an expand/contract column split or drop reversible). Populate realizes_invariants[] as a flat array of the architecture.json persistence_invariant id STRINGS (bare ids, not objects) \u2013 an uncovered invariant hard-blocks the spec gate. Likewise populate addresses_access_patterns[] with the architecture.json access_pattern id STRINGS you addressed (add the index/structure to the relevant tables[].indexes, or note a deliberate no-index decision in db-design.md) \u2013 an unaddressed access_pattern hard-blocks the spec gate and re-runs you on a later read story.${contract}` + designRootNote(root, featureId, s);
     }
     case "test-strategist": {
       const acIds = storyAcIds(consortDir, featureId, s);
-      const acScope = acIds.length ? ` The story's ACs are: ${acIds.join(", ")}. Map every test's ac_id to one of these EXACT ids (verbatim, never a bare slug or an invented id), and cover each AC at least once.` : "";
-      let dbScope = "";
-      try {
-        const arch = JSON.parse(fs18.readFileSync(architectureJson(consortDir, featureId), "utf8"));
-        if (arch.service_backed === true) {
-          const inv = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string");
-          const list = inv.length ? ` The declared persistence invariants are: ${inv.map((i) => `${i.id}${i.brief ? ` (${i.brief})` : ""}`).join("; ")}.` : "";
-          dbScope = ` This feature is service-backed. Cover EVERY architecture.json persistence_invariant with >=1 test that sets "invariant_id" to that invariant's id and exercises it DIRECTLY against the branch database (a real DB session, never a mock): verify the MIGRATION actually realized the guarantee (e.g. inserting a duplicate raises an IntegrityError, a NOT NULL/CHECK rejects a bad row, a down-then-up migration round-trips) and that the repository honors it. Do NOT write a test of the ORM's generic add/commit/query round-trip \u2013 that tests the library, not your schema.${list} The DBA's db-design.json (features/${featureId}/db-design.json) has the concrete table/column/constraint definitions realizing these invariants \u2013 read it for precise schema assertions. EVERY test that WRITES to the DB (a create/POST test, a content-type or validation test that sends a real body, a retrieve test that seeds a fixture) MUST own its state: use a per-run-UNIQUE key (a uuid-suffixed sku/location, e.g. f"SKU-{uuid.uuid4().hex[:8]}"), OR delete/upsert the fixed key before the write AND clean up after. A test that writes a FIXED key with no cleanup passes alone + on its own isolated build branch but COLLIDES in the full-suite deploy-verify against the shared feature-branch DB (a duplicate-key error surfacing as a non-JSON/500), halting the feature ship \u2013 the shared-state-write defect. Do NOT assume an empty table or an untouched fixed key.`;
+      const acScope = acIds.length ? ` (Story ${s}'s ACs are ${acIds.join(", ")}; every appended item's ac_id must be one of these.)` : "";
+      const ordered = `${root}/features/${featureId}/stories/${s}/analyst-ordered.json`;
+      const patchMarker = testListPatchJson(consortDir, featureId, s);
+      if (fs18.existsSync(patchMarker)) {
+        let flagged = "";
+        try {
+          const ids = JSON.parse(fs18.readFileSync(patchMarker, "utf8")).ac_ids ?? [];
+          flagged = ids.length ? ` (the flagged AC(s): ${ids.join(", ")})` : "";
+        } catch {
         }
-      } catch {
+        return `DIRECTED test-list revise \u2014 apply ONLY the specific fix named in your revise brief${flagged}. Do NOT run the fan-out (consort-fan-out-analysts): the test list is already authored and the fix is targeted, so a re-derive would re-roll the whole scope nondeterministically and lose coverage. The current ordered list is on disk \u2014 EDIT it in place.
+1. Open ${ordered} and apply the brief's named change to ONLY the item(s) it calls out: change/re-slice/relabel the exact test(s) named, or ADD the single test the brief requires. Keep every OTHER item and its T-id byte-identical.
+2. APPEND the edited ${ordered} items to the feature master ${root}/features/${featureId}/test-list.json, keeping every OTHER story's items (the master's prior copy of THIS story's items was cleared for the revise); never author a test-list-per-story.json (the orchestration regenerates the per-story + per-AC views from the master).${acScope}
+3. Self-check: ./scripts/lk consort-response-formatter --role test-strategist --feature ${featureId} --story ${s} \u2014 fix + re-run until it passes.`;
       }
-      return `Produce story ${s}'s ordered tests and APPEND them to the feature master test list ${root}/features/${featureId}/test-list.json, keep every item already there for the other stories and add this story's. Do NOT author any test-list-per-story.json (the orchestration generates the per-story + per-AC views from the master).${acScope}${dbScope}`;
+      return `Produce story ${s}'s test list via the DETERMINISTIC analyst fan-out \u2014 do NOT author the items yourself.
+1. Run as its own command (headless, the kit CLI is granted standalone): ./scripts/lk consort-fan-out-analysts --feature ${featureId} --story ${s} \u2014 it spawns the enabled per-kind analysts and DETERMINISTICALLY assembles their slices (coverage, order, feature-flat T-ids, exact + per-invariant dedup), WRITING the ordered per-story list to ${ordered}.
+2. REFINE pass (your authoring job \u2014 code assembly did only MECHANICAL order + EXACT-duplicate removal). FIRST read the FULL description of EVERY item from ${ordered} ON DISK \u2014 NEVER judge from the fan-out's console summary, which TRUNCATES (a removal decided on a cut-off description silently drops coverage that no gate catches: the self-check only checks >=1 item per AC, not that distinct behaviors survive). Then: (a) SEMANTIC de-dup \u2014 remove an item ONLY when, from BOTH full descriptions, you have CONFIRMED it asserts the IDENTICAL observable behavior as another surviving item (same ac_id, same assertion, same mechanism), or is cross-kind overlap of one. If there is ANY doubt \u2014 a different input, edge case, layer, or mechanism \u2014 KEEP it: coverage is sacrosanct, a redundant test merely runs, a dropped DISTINCT test is a defect nothing catches. Keep FULL AC coverage and exactly one fitness item per invariant_id. LOG every removal so it is auditable \u2014 for EACH deleted item run as its own command: ./scripts/lk consort-log --role test-strategist --event reasoning --feature ${featureId} --message "[dedup] removed <id> \u2014 identical to <surviving id>: <the one behavior they share>". (b) RE-ORDER the survivors for BUILD MOMENTUM \u2014 the sequence that builds the story's capability incrementally (schema/migration + core behavior BEFORE the UI that depends on it), interleaving across ACs where that reads better than strict AC order. Edit ${ordered} in place; KEEP each surviving item's T<n> id byte-identical (the id is a stable identity, not a position \u2014 the build lane reads list order; ids stay unique, need not be monotonic or contiguous).
+3. APPEND every item from ${ordered} to the feature master ${root}/features/${featureId}/test-list.json, keeping every OTHER story's items; never author a test-list-per-story.json (the orchestration generates the per-story + per-AC views from the master).${acScope}
+4. Self-check: ./scripts/lk consort-response-formatter --role test-strategist --feature ${featureId} --story ${s} \u2014 fix + re-run until it passes.`;
     }
     case "navigator":
+      if (action.buildMode === "reconcile") {
+        return `FEATURE-COMPLETE RECONCILIATION for ${featureId}: every story is now designed + gated. Independently check the WHOLE set of stories against ITSELF \u2014 symmetrically, every story vs every other, INCLUDING the first-designed story (which was never checked against its later siblings). The cross-story context (all stories' ACs + the architecture's open_decisions + its mandated not-null fields) is injected below. Look ONLY for CROSS-STORY defects: an AC that contradicts another story's gated AC; a mandated (not-null) field no story's submit AC supplies; two stories' ACs overlapping on the same observable behavior; a persistence invariant anchored to the wrong story. Do NOT re-review a single story in isolation \u2014 each already passed its own reflect + gate. Write the verdict to ${root}/features/${featureId}/reconcile-verdict.json: {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist"|"architect-reviewer"|"ux-designer","story":"<the OWNING story to change>","detail":"<the cross-story defect>","ac_ids":["<exact AC id(s)>"],"severity":"blocking"|"advisory"}]}. Use passed:true with findings:[] when the stories are mutually consistent. Each finding names the OWNING story (the one reopened + changed) and its author. Produce ONLY the verdict file, then stop.`;
+      }
       if (action.buildMode === "reflect") {
-        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json) + NFRs.` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle. The DETERMINISTIC pre-reflect gate has ALREADY verified the structural classes \u2014 client-kind\u2194AC-layer coherence, E2E-layer coverage by a real Playwright spec, and that no real-browser navigation/reload assertion sits in the jsdom component harness \u2014 so do NOT spend a finding re-flagging those; focus on the SEMANTIC defects: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell). Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist","detail":"<the defect>"}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to spec-author (an AC/spec defect) or test-strategist (a test-list/coverage defect). Write ONLY that file; the orchestrator routes any fix deterministically.`;
+        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json), the NFRs (${root}/nfrs.md \u2014 a project-level file, NOT under the feature dir), and the information architecture (${root}/design/ia.md).` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle. The DETERMINISTIC pre-reflect gate has ALREADY verified the structural classes \u2014 client-kind\u2194AC-layer coherence, E2E-layer coverage by a real Playwright spec, and that no real-browser navigation/reload assertion sits in the jsdom component harness \u2014 so do NOT spend a finding re-flagging those; focus on the SEMANTIC defects: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell); (8) for EACH user-facing AC (declared layer E2E or client): read ${root}/design/ia.md and locate the screen, form, or data-testid seam that AC asserts among the IA's Screens, Navigation, and User flows \u2014 emit a ux-designer finding naming every asserted surface the IA leaves out, because the architect would otherwise tag an E2E layer against a screen the IA does not define (the ia refinement adds the missing surface). Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist"|"architect-reviewer"|"ux-designer","detail":"<the defect>","ac_ids":["<exact story AC id(s) this finding is about>"]}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to its OWNING role so the fix routes to the right gate: spec-author (an AC/spec defect \u2014 the given/when/then or scope); architect-reviewer (an ARCHITECTURE defect \u2014 checks 4 and 5, i.e. a wrong layer tag, OR a route/path/contract in an AC's architectural_notes that disagrees with the IA or the tests, OR a persistence invariant that contradicts the AC; this is the architect's product, NOT the spec-author's, so do NOT attribute a notes/layer defect to spec-author); test-strategist (a test-list/coverage defect); ux-designer (a user-facing AC whose surface the IA does not name \u2014 defect 8). Set "ac_ids" to the EXACT story AC id(s) the finding concerns (verbatim, from this story's acs/) \u2014 the revise re-derives ONLY those ACs' test items; omit ac_ids (or []) ONLY for a whole-story defect that needs the entire test-list rebuilt. Write ONLY that file; the orchestrator routes any fix deterministically.`;
       }
       if (action.buildMode === "assess") {
         const gfAssess = action.ac ? readGreenFailure(consortDir, featureId, s, action.ac) : void 0;
@@ -15903,11 +16269,11 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
 `;
         return advisory + `ASSESS a failed honest-GREEN verify for AC ${action.ac} in story ${s}. The Driver made the current test pass, but the full-suite verify against the running app FAILED, some OTHER test(s) now fail.
 ` + scanDirective + `   ./scripts/lk consort-cycle flag-superseded --feature ${featureId} --story ${s} --ac ${action.ac} --reason "<new AC + what changed>" --test <path_or_nodeid> [--test ...] --tdd-dir ${consortDir}
-   The flag-superseded command writes ${(0, import_node_path27.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
+   The flag-superseded command writes ${(0, import_node_path28.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
 (b) If instead the failure is a GENUINE REGRESSION (the AC does NOT intend to change that behavior; the Driver's code is wrong), record your ROOT-CAUSE diagnosis so it travels to the Driver / the human instead of being lost. When the Driver can fix it, ALSO give a concrete repair directive (this routes a bounded Driver repair turn):
    ./scripts/lk consort-cycle assess-regression --feature ${featureId} --story ${s} --ac ${action.ac} --diagnosis "<the WHY: which behavior broke + the root cause>" [--fix "<what the Driver should change>"] --tdd-dir ${consortDir}
    Include --fix ONLY when the fix is clear + within the Driver's reach (e.g. a wrong default, a missing filter, an off-by-one); OMIT --fix when it needs a human / a design or spec change (the orchestration then escalates carrying your diagnosis).
-CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path27.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
+CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path28.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
 Flag ONLY tests the new AC truly supersedes; never flag a test just to make a red go away. For a regression, always record a diagnosis (+ fix when driver-fixable) \u2013 never nothing.`;
       }
       if (action.buildMode === "assess-deploy") {
@@ -15985,6 +16351,7 @@ var APPLY_DESIGN_THEME_BIN = "consort-apply-design-theme";
 var DEPLOY_BIN = "consort-deploy";
 var GATE_CONFORMANCE_BIN = "consort-gate-conformance";
 var CANON_NOTES_BIN = "consort-canon-notes";
+var IA_NOTES_BIN = "consort-ia-notes";
 var SCM_PREPARE_PR_BIN = "lakebase-scm-prepare-pr";
 var SCM_WAIT_CI_BIN = "lakebase-scm-wait-ci";
 var SCM_MERGE_BIN = "lakebase-scm-merge";
@@ -15997,10 +16364,11 @@ function designArtifactExpectation(action, consortDir, featureId) {
     if (action.role === "spec-author" && action.mode === "propose") return { anyOf: [featureProposalsMd(consortDir)], label: "planning/feature-proposals.md" };
     if (action.role === "architect-reviewer" && (action.mode === "estimate" || action.mode === "estimate-committed")) return { anyOf: [planningEstimatesJson(consortDir)], label: "planning/estimates.json" };
     if (action.role === "spec-author" && action.mode === "breakdown") return { anyOf: [featureSpecJson(consortDir, featureId)], label: "feature-spec.json" };
+    if (action.role === "ux-designer" && action.mode === "establish") return { anyOf: [designGuideJson(consortDir)], label: "design/design-guide.json" };
+    if (action.role === "ux-designer" && action.mode === "ia") return { anyOf: [iaMd(consortDir)], label: "design/ia.md" };
     return null;
   }
-  if (action.role === "ux-designer") return { anyOf: [designGuideJson(consortDir)], label: "design/design-guide.json" };
-  const s = action.story;
+  const s = "story" in action ? action.story : void 0;
   if (!s) return null;
   if (action.role === "spec-author") return { anyOf: [acsDir(consortDir, featureId, s)], label: `stories/${s}/acs/*.json` };
   if (action.role === "architect-reviewer") return { anyOf: [architectureJson(consortDir, featureId)], label: "architecture.json" };
@@ -16077,6 +16445,9 @@ function buildClaudeCommand(action, cfg) {
 function buildCycleCommand(action, cfg) {
   const f = cfg.featureId;
   const storyLoop = "story" in action ? effectiveLoopForStory(cfg.loopGranularity ?? "story", action.story) : cfg.loopGranularity;
+  if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "reconcile") {
+    return { kind: "cli", bin: CYCLE_BIN, args: ["reconcile-gate", "--feature", f, "--tdd-dir", cfg.consortDir] };
+  }
   if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "reflect") {
     return { kind: "cli", bin: CYCLE_BIN, args: ["reflect-gate", "--feature", f, "--story", action.story, "--tdd-dir", cfg.consortDir] };
   } else if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "assess") {
@@ -16244,8 +16615,15 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
         { kind: "cli", bin: CANON_NOTES_BIN, args: ["--story", action.story, ...tdd] },
         { kind: "cli", bin: LOG_BIN, args: ["--reconcile", ...tdd] }
       ];
+    case "project-ia-notes":
+      return [
+        { kind: "cli", bin: IA_NOTES_BIN, args: ["--story", action.story, ...tdd] },
+        { kind: "cli", bin: LOG_BIN, args: ["--reconcile", ...tdd] }
+      ];
     case "flag-testlist-nonconformance":
       return [{ kind: "cli", bin: CYCLE_BIN, args: ["testlist-gate", "--story", action.story, ...tdd] }];
+    case "flag-ia-nonconformance":
+      return [{ kind: "cli", bin: CYCLE_BIN, args: ["ia-gate", "--story", action.story, ...tdd] }];
     case "surface-gate":
       return [{ kind: "cli", bin: PIPELINE_BIN, args: ["surface", "--story", action.story, ...tdd] }];
     case "approve-gate":
@@ -16371,7 +16749,7 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
       return deployGateCmds(f, cfg, deployTarget);
     case "deploy-verify-reverify":
       const markerFile = featureDeployReverifyMarkerJson(cfg.consortDir, f);
-      fs18.mkdirSync((0, import_node_path27.dirname)(markerFile), { recursive: true });
+      fs18.mkdirSync((0, import_node_path28.dirname)(markerFile), { recursive: true });
       fs18.writeFileSync(markerFile, JSON.stringify({ routed_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
       return deployGateCmds(f, cfg, deployTarget);
     case "approve-deploy-gate":
@@ -16507,7 +16885,7 @@ function readDriveStateFromDisk(consortDir, featureId, projectDir, opts = {}) {
   state.designGuideReady = designGuideConformance(consortDir).ok;
   return state;
 }
-var POST_TURN_BIN_TOKENS = { PIPELINE_BIN, CYCLE_BIN, HUMAN_PROXY_BIN, LOG_BIN, TEST_LIST_BIN, APPLY_DESIGN_THEME_BIN };
+var POST_TURN_BIN_TOKENS = { PIPELINE_BIN, CYCLE_BIN, HUMAN_PROXY_BIN, LOG_BIN, TEST_LIST_BIN, APPLY_DESIGN_THEME_BIN, IA_NOTES_BIN };
 function buildDriveEffects(cfg) {
   return {
     async readState() {
@@ -16558,7 +16936,7 @@ function buildDriveEffects(cfg) {
     onHandback(handoff, detail) {
       const file = handbackFile(cfg.consortDir, cfg.featureId, handoff.responder, handoff.story);
       try {
-        fs18.mkdirSync((0, import_node_path27.dirname)(file), { recursive: true });
+        fs18.mkdirSync((0, import_node_path28.dirname)(file), { recursive: true });
         fs18.writeFileSync(file, `${detail}
 `, "utf8");
       } catch {
@@ -16571,7 +16949,7 @@ function buildDriveEffects(cfg) {
 init_cjs_shims();
 var import_node_child_process9 = require("child_process");
 var import_node_fs23 = require("fs");
-var import_node_path28 = require("path");
+var import_node_path29 = require("path");
 function stepArtifactPath(base, step, featureId) {
   switch (step) {
     case "ux":
@@ -16596,8 +16974,8 @@ var REFERENCE_ASSETS_REL = "consort/evaluation/reference-assets/stockflow";
 var CANONICAL = "stockflow";
 function referenceCorpusRoot(kitRoot2) {
   const override = process.env.CONSORT_REFERENCE_CORPUS?.trim();
-  if (override) return override.startsWith("/") ? override : (0, import_node_path28.join)(kitRoot2, override);
-  return (0, import_node_path28.join)(kitRoot2, REFERENCE_ASSETS_REL);
+  if (override) return override.startsWith("/") ? override : (0, import_node_path29.join)(kitRoot2, override);
+  return (0, import_node_path29.join)(kitRoot2, REFERENCE_ASSETS_REL);
 }
 var SEMANTIC_THRESHOLD = 0.85;
 function hasDesignReference(step) {
@@ -16619,7 +16997,7 @@ function resolveStepReference(args) {
   const { kitRoot: kitRoot2, step, featureId, storyId } = args;
   if (!hasDesignReference(step)) return null;
   const corpus = CANONICAL;
-  const root = (0, import_node_path28.join)(referenceCorpusRoot(kitRoot2), "recorded-artifacts");
+  const root = (0, import_node_path29.join)(referenceCorpusRoot(kitRoot2), "recorded-artifacts");
   if (!(0, import_node_fs23.existsSync)(root)) return null;
   if (step === "acs") {
     const sdir = storiesDir(root, featureId);
@@ -16629,7 +17007,7 @@ function resolveStepReference(args) {
     for (const story of stories) {
       const adir = acsDir(root, featureId, story);
       if (!(0, import_node_fs23.existsSync)(adir)) continue;
-      for (const ac of (0, import_node_fs23.readdirSync)(adir)) if (ac.endsWith(".json")) paths.push((0, import_node_path28.join)(adir, ac));
+      for (const ac of (0, import_node_fs23.readdirSync)(adir)) if (ac.endsWith(".json")) paths.push((0, import_node_path29.join)(adir, ac));
     }
     return paths.length ? { corpus, paths, label: storyId ? `stories/${storyId}/acs/*.json` : "stories/*/acs/*.json (feature-aggregate)" } : null;
   }
@@ -16647,7 +17025,7 @@ function readCandidateArtifact(args) {
     for (const story of (0, import_node_fs23.readdirSync)(sdir)) {
       const adir = acsDir(consortDir, featureId, story);
       if (!(0, import_node_fs23.existsSync)(adir)) continue;
-      for (const ac of (0, import_node_fs23.readdirSync)(adir)) if (ac.endsWith(".json")) parts.push((0, import_node_fs23.readFileSync)((0, import_node_path28.join)(adir, ac), "utf8"));
+      for (const ac of (0, import_node_fs23.readdirSync)(adir)) if (ac.endsWith(".json")) parts.push((0, import_node_fs23.readFileSync)((0, import_node_path29.join)(adir, ac), "utf8"));
     }
     return parts.length ? parts.join("\n---\n") : null;
   }
@@ -16755,18 +17133,18 @@ function makeOpusJudge(opts) {
 init_cjs_shims();
 var import_node_fs26 = require("fs");
 var import_node_child_process10 = require("child_process");
-var import_node_path31 = require("path");
+var import_node_path32 = require("path");
 
 // consort/optimize/optimize-agent-overlay.ts
 init_cjs_shims();
 var import_node_fs24 = require("fs");
-var import_node_path29 = require("path");
+var import_node_path30 = require("path");
 function overlayAgent(args) {
   const { projectDir, role, markdown } = args;
-  const agentPath = (0, import_node_path29.join)(projectDir, ".claude", "agents", `${role}.md`);
+  const agentPath = (0, import_node_path30.join)(projectDir, ".claude", "agents", `${role}.md`);
   const hadBaseline = (0, import_node_fs24.existsSync)(agentPath);
   const baseline = hadBaseline ? (0, import_node_fs24.readFileSync)(agentPath, "utf8") : void 0;
-  (0, import_node_fs24.mkdirSync)((0, import_node_path29.dirname)(agentPath), { recursive: true });
+  (0, import_node_fs24.mkdirSync)((0, import_node_path30.dirname)(agentPath), { recursive: true });
   (0, import_node_fs24.writeFileSync)(agentPath, markdown);
   return {
     restore() {
@@ -16823,7 +17201,7 @@ function evaluateDesignGate(args) {
 init_cjs_shims();
 var import_node_fs25 = require("fs");
 var import_node_os = require("os");
-var import_node_path30 = require("path");
+var import_node_path31 = require("path");
 function captureDesignArtifacts(args) {
   const { consortDir, destDir } = args;
   (0, import_node_fs25.rmSync)(destDir, { recursive: true, force: true });
@@ -16837,8 +17215,8 @@ function restoreDesignArtifacts(args) {
 }
 function snapshotDesign(args) {
   const { consortDir } = args;
-  const backup = (0, import_node_fs25.mkdtempSync)((0, import_node_path30.join)((0, import_node_os.tmpdir)(), "optimize-design-snap-"));
-  const backupTree = (0, import_node_path30.join)(backup, (0, import_node_path30.basename)(consortDir));
+  const backup = (0, import_node_fs25.mkdtempSync)((0, import_node_path31.join)((0, import_node_os.tmpdir)(), "optimize-design-snap-"));
+  const backupTree = (0, import_node_path31.join)(backup, (0, import_node_path31.basename)(consortDir));
   (0, import_node_fs25.cpSync)(consortDir, backupTree, { recursive: true });
   return {
     restore() {
@@ -16910,10 +17288,10 @@ function applyCandidate(ctx, candidate) {
   };
 }
 function writeTrialRecord(ctx, handoff, candidate, trial, result) {
-  const dir = (0, import_node_path31.join)(ctx.experimentsDir, handoff.id, candidate.id, `trial-${trial}`);
+  const dir = (0, import_node_path32.join)(ctx.experimentsDir, handoff.id, candidate.id, `trial-${trial}`);
   (0, import_node_fs26.mkdirSync)(dir, { recursive: true });
-  (0, import_node_fs26.writeFileSync)((0, import_node_path31.join)(dir, "candidate.json"), JSON.stringify(candidate, null, 2) + "\n");
-  (0, import_node_fs26.writeFileSync)((0, import_node_path31.join)(dir, "result.json"), JSON.stringify(result, null, 2) + "\n");
+  (0, import_node_fs26.writeFileSync)((0, import_node_path32.join)(dir, "candidate.json"), JSON.stringify(candidate, null, 2) + "\n");
+  (0, import_node_fs26.writeFileSync)((0, import_node_path32.join)(dir, "result.json"), JSON.stringify(result, null, 2) + "\n");
 }
 function makeChampionWalkDeps(ctx) {
   return {
@@ -16946,7 +17324,7 @@ function makeChampionWalkDeps(ctx) {
         const tokens = ctx.readTurnTokens?.({ handoff });
         const artifactsRef = gate.passed && !isBuildHandoff(handoff) ? captureDesignArtifacts({
           consortDir: ctx.consortDir,
-          destDir: (0, import_node_path31.join)(ctx.experimentsDir, handoff.id, candidate.id, `trial-${trial}`, "artifacts")
+          destDir: (0, import_node_path32.join)(ctx.experimentsDir, handoff.id, candidate.id, `trial-${trial}`, "artifacts")
         }) : void 0;
         result = {
           gatePassed: gate.passed,
@@ -16988,7 +17366,7 @@ function makeChampionWalkDeps(ctx) {
           restoreCandidate();
         }
       }
-      const champ = (0, import_node_path31.join)(ctx.experimentsDir, "champion-walk.json");
+      const champ = (0, import_node_path32.join)(ctx.experimentsDir, "champion-walk.json");
       const prior = (0, import_node_fs26.existsSync)(champ) ? JSON.parse((0, import_node_fs26.readFileSync)(champ, "utf8")) : { winners: [] };
       prior.winners.push({ handoffId: handoff.id, candidateId: candidate.id });
       (0, import_node_fs26.mkdirSync)(ctx.experimentsDir, { recursive: true });
@@ -17304,7 +17682,7 @@ function buildCtxForHandoff(handoff, loc) {
     projectDir,
     consortDir,
     featureId,
-    experimentsDir: (0, import_node_path32.join)(projectDir, "experiments"),
+    experimentsDir: (0, import_node_path33.join)(projectDir, "experiments"),
     spawnTurn: makeLiveSpawnTurn(featureId, {
       buildCfg: (fid) => buildCfg({ feature: fid, projectDir }, fid),
       // Dispatch the PINNED turn THROUGH the executor (buildDriveEffects.performViaExecutor) ,
@@ -17370,7 +17748,7 @@ async function main() {
     process.stderr.write("usage: consort-optimize --scenario <dir> --feature <id> [--handoff <id>] [--only design|build] --candidates <spec> --trials N [--dry-run]\n");
     return 2;
   }
-  const projectDir = (0, import_node_path32.resolve)(args.projectDir ?? process.cwd());
+  const projectDir = (0, import_node_path33.resolve)(args.projectDir ?? process.cwd());
   const consortDir = resolveConsortDir(projectDir);
   const featureId = args.feature;
   const sweep = parseSweepSpec(args.candidates ?? "");

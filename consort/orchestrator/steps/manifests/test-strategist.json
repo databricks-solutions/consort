@@ -23,14 +23,7 @@
       "description": "The DBA's concrete tables/constraints the invariant tests assert against. Feature-scoped: {feature} expands to the run's feature id (features/<F>/db-design.json)."
     }
   ],
-  "preconditions": [
-    {
-      "id": "test-analyst-roster",
-      "kind": "test-analyst-roster",
-      "position": "append",
-      "description": "The ENABLED per-kind test-analyst roster (behavior/fitness/client; client omitted when the project's uiTrack is off) + each analyst's focus prompt, projected from the TEST_ANALYST_CATALOGUE. The supervisor Task-spawns one subagent per entry, then reconciles + assembles."
-    }
-  ],
+  "preconditions": [],
   "outputs": [
     {
       "id": "test-list",

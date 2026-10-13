@@ -84,6 +84,68 @@ describe("testlistConformanceReason", () => {
     expect(testlistConformanceReason(dir, F, S)).toBeNull();
   });
 
+  it("flags an E2E create flow keyed on a hardcoded business key (the S1 fixed-key-e2e lap)", () => {
+    const dir = seed(
+      [{ id: "AC1-file", layer: "E2E" }],
+      [{ id: "T26", kind: "client", ac_id: "AC1-file", scenario_file: "client/tests/e2e/file.spec.ts", description: "files SKU-100 at B2 with quantity 5 and a tracking code, then asserts the row" }],
+    );
+    const reason = testlistConformanceReason(dir, F, S);
+    expect(reason).not.toBeNull();
+    expect(reason).toMatch(/hardcoded business key|per-run uniqueness|unique-violation/i);
+  });
+
+  it("does NOT flag an E2E create flow that seeds a per-run-unique key (the fix)", () => {
+    const dir = seed(
+      [{ id: "AC1-file", layer: "E2E" }],
+      [{ id: "T26", kind: "client", ac_id: "AC1-file", scenario_file: "client/tests/e2e/file.spec.ts", description: "files a fresh per-run-unique SKU (crypto.randomUUID) at B2 with quantity 5, then asserts that same SKU" }],
+    );
+    expect(testlistConformanceReason(dir, F, S)).toBeNull();
+  });
+
+  it("does NOT flag an E2E create flow whose only literals are location codes / quantities (no false positive)", () => {
+    // A1/B2 (one letter + one digit) and quantities (12) are not business keys — the tight
+    // >=2-letters + >=2-digits literal pattern must not trip on them.
+    const dir = seed(
+      [{ id: "AC1-file", layer: "E2E" }],
+      [{ id: "T1", kind: "client", ac_id: "AC1-file", scenario_file: "client/tests/e2e/file.spec.ts", description: "files a stock record at location A1 with quantity 12 and asserts it renders" }],
+    );
+    expect(testlistConformanceReason(dir, F, S)).toBeNull();
+  });
+
+  it("does NOT flag a hardcoded key on a NON-E2E (API) client-less item (scoped to the Playwright surface)", () => {
+    const dir = seed(
+      [{ id: "AC1-file", layer: "API" }],
+      [{ id: "Tb", kind: "behavior", ac_id: "AC1-file", description: "POST /api/stock for SKU-100 at B2 returns the persisted row" }],
+    );
+    expect(testlistConformanceReason(dir, F, S)).toBeNull();
+  });
+
+  it("flags a test whose description names a DIFFERENT spec file than its scenario_file (the S2/T28 class)", () => {
+    const dir = seed(
+      [{ id: "AC1-table", layer: "E2E" }],
+      [{ id: "T28", kind: "client", ac_id: "AC1-table", scenario_file: "client/tests/e2e/stock-table-rows.spec.ts", description: "Playwright e2e in client/tests/e2e/home-stock-table.spec.ts asserts the rows render" }],
+    );
+    const reason = testlistConformanceReason(dir, F, S);
+    expect(reason).not.toBeNull();
+    expect(reason).toMatch(/scenario_file|which file to author/i);
+  });
+
+  it("does NOT flag when the description names the SAME spec file (basename match, path prefix differences OK)", () => {
+    const dir = seed(
+      [{ id: "AC1-table", layer: "E2E" }],
+      [{ id: "T28", kind: "client", ac_id: "AC1-table", scenario_file: "client/tests/e2e/stock-table-rows.spec.ts", description: "the stock-table-rows.spec.ts e2e asserts the rows render at route /" }],
+    );
+    expect(testlistConformanceReason(dir, F, S)).toBeNull();
+  });
+
+  it("does NOT flag a description that names an unrelated non-test path (tight: only same-suffix tokens compared)", () => {
+    const dir = seed(
+      [{ id: "AC1-table", layer: "E2E" }],
+      [{ id: "T1", kind: "client", ac_id: "AC1-table", scenario_file: "client/tests/e2e/stock-table-rows.spec.ts", description: "asserts the GET app/routes/stock.py handler response renders rows" }],
+    );
+    expect(testlistConformanceReason(dir, F, S)).toBeNull();
+  });
+
   it("is vacuously null when no test-list exists yet (never pre-empts before testListReady)", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "testlist-conf-"));
     tmpDirs.push(dir);
@@ -103,6 +165,25 @@ describe("recordTestListGate", () => {
     const open = readSmellsLog(dir).detected.filter((d) => d.smell === "reflect-testlist-defect" && !d.resolution);
     expect(open).toHaveLength(1);
     expect(open[0].detail).toMatch(/test-list conformance/);
+  });
+
+  it("carries the flagged ac_id(s) on the smell so the revise self-heal can scope the re-author (#4)", () => {
+    const dir = seed(
+      [
+        { id: "AC3-collision", layer: "API" },
+        { id: "AC5-clean", layer: "E2E" },
+      ],
+      [
+        { id: "T22", kind: "client", ac_id: "AC3-collision", scenario_file: "client/tests/e2e/x.spec.ts", description: "x" },
+        { id: "T5", kind: "client", ac_id: "AC5-clean", scenario_file: "client/tests/e2e/clean.spec.ts", description: "files a row" },
+      ],
+    );
+    const hits = recordTestListGate(dir, F, S);
+    expect(hits).toHaveLength(1);
+    // only the flagged AC is named — not the conformant sibling
+    expect(hits[0].ac_ids).toEqual(["AC3-collision"]);
+    const open = readSmellsLog(dir).detected.find((d) => d.smell === "reflect-testlist-defect" && !d.resolution);
+    expect(open?.ac_ids).toEqual(["AC3-collision"]);
   });
 
   it("returns [] and self-clears on a conformant test-list", () => {

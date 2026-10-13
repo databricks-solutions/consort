@@ -166,12 +166,12 @@ function runDecideEscalationCli(argv: string[]): number {
     );
     return 2;
   }
-  if (routedTo !== "spec-author" && routedTo !== "test-strategist" && routedTo !== "architect-reviewer") {
-    process.stderr.write(`Error: --routed-to must be spec-author|test-strategist|architect-reviewer (got ${routedTo}).\n`);
+  if (routedTo !== "spec-author" && routedTo !== "test-strategist" && routedTo !== "architect-reviewer" && routedTo !== "ux-designer") {
+    process.stderr.write(`Error: --routed-to must be spec-author|test-strategist|architect-reviewer|ux-designer (got ${routedTo}).\n`);
     return 2;
   }
-  if (gate !== "spec" && gate !== "test_list" && gate !== "architecture") {
-    process.stderr.write(`Error: --gate must be spec|test_list|architecture (got ${gate}).\n`);
+  if (gate !== "spec" && gate !== "test_list" && gate !== "architecture" && gate !== "ia") {
+    process.stderr.write(`Error: --gate must be spec|test_list|architecture|ia (got ${gate}).\n`);
     return 2;
   }
   try {

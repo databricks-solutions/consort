@@ -403,7 +403,7 @@ describe("executorDispatched (Stage 1): the 7 widened design turns take the exec
     ["architect estimate", { kind: "invoke-role", role: "architect-reviewer", mode: "estimate" }],
     ["dba per-story", { kind: "invoke-role", role: "dba", story: RED_STORY }],
     ["test-strategist per-story", { kind: "invoke-role", role: "test-strategist", story: RED_STORY }],
-    ["ux-designer", { kind: "invoke-role", role: "ux-designer" }],
+    ["ux-designer", { kind: "invoke-role", role: "ux-designer", mode: "establish" }],
     ["product-owner author-requests", { kind: "invoke-role", role: "product-owner", mode: "author-requests" }],
   ] as unknown as Array<[string, WorkflowAction]>;
 
@@ -444,7 +444,7 @@ describe("outputPathsForAction (Stage 1): each design turn's artifact resolves f
       { "db-design": `features/${FEATURE}/db-design.json`, "agent-log": "agent-log.jsonl" }],
     ["test-strategist", { kind: "invoke-role", role: "test-strategist", story: RED_STORY },
       { "test-list": `features/${FEATURE}/test-list.json`, "agent-log": "agent-log.jsonl" }],
-    ["ux-designer", { kind: "invoke-role", role: "ux-designer" },
+    ["ux-designer", { kind: "invoke-role", role: "ux-designer", mode: "establish" },
       { "design-guide": "design/design-guide.json", "agent-log": "agent-log.jsonl" }],
     ["navigator RED (product)", { kind: "invoke-role", role: "navigator", story: RED_STORY },
       { tests: "tests", "agent-log": "agent-log.jsonl" }],
@@ -540,7 +540,7 @@ describe("performViaExecutor (Stage 1b): the 7 design roles run FULL through the
     ["test-strategist per-story", { kind: "invoke-role", role: "test-strategist", story: RED_STORY } as WorkflowAction,
       (c) => { seed(c, join(STORY_ACS, "AC1-x.json"), AC); seed(c, join(FS, "architecture.json"), ARCH); seed(c, join(FS, "db-design.json"), DBD); },
       join(FS, "test-list.json"), TL, []], // labels asserted specially (extra test-list CLI)
-    ["ux-designer", { kind: "invoke-role", role: "ux-designer" } as WorkflowAction,
+    ["ux-designer", { kind: "invoke-role", role: "ux-designer", mode: "establish" } as WorkflowAction,
       (c) => { seed(c, join("design", "design-brief.md")); seed(c, "product-overview.md"); },
       join("design", "design-guide.json"), DG, ["claude:ux-designer", "cli:log:--reconcile"]],
     ["spec-author propose (plan lane)", { kind: "invoke-role", role: "spec-author", mode: "propose" } as WorkflowAction,

@@ -1,0 +1,203 @@
+{
+  "app_name": "StockFlow",
+  "app_icon": {
+    "source": ".consort/design/assets/warehouse.png",
+    "install_to": "client/public/warehouse.png"
+  },
+  "typography": {
+    "font_family": "'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    "font_mono": "'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
+    "scale": {
+      "text-xs": "10px",
+      "text-sm": "13px",
+      "text-base": "15px",
+      "text-md": "16px",
+      "text-lg": "20px",
+      "text-xl": "24px",
+      "text-xxl": "29px"
+    },
+    "line_heights": {
+      "body": "1.5",
+      "heading": "1.25",
+      "tight": "1.1"
+    },
+    "font_weights": {
+      "regular": "400",
+      "medium": "500",
+      "semibold": "600",
+      "bold": "700"
+    }
+  },
+  "colors": {
+    "brand": {
+      "brand": "#FF3621",
+      "brand-hover": "#EB1600",
+      "brand-light": "rgba(255,54,33,0.08)"
+    },
+    "navy": {
+      "navy-900": "#1B3139",
+      "navy-700": "#1B5162",
+      "navy-500": "#618794",
+      "navy-400": "#90A5B1",
+      "navy-300": "#C4CCD6",
+      "navy-200": "#E5EAF1",
+      "navy-100": "#EDF2F8"
+    },
+    "semantic": {
+      "success": "#2E844A",
+      "success-light": "rgba(46,132,74,0.10)",
+      "warning": "#FFAB00",
+      "warning-light": "rgba(255,171,0,0.12)",
+      "info": "#0176D3",
+      "info-light": "rgba(1,118,211,0.10)",
+      "error": "#FF3621",
+      "error-light": "rgba(255,54,33,0.08)"
+    },
+    "surface": {
+      "card": "#FFFFFF",
+      "page": "#F9F7F4",
+      "cool": "#F0F2F5"
+    },
+    "text": {
+      "text": "#1B3139",
+      "text-secondary": "#1B5162",
+      "text-tertiary": "#618794",
+      "text-disabled": "#90A5B1",
+      "text-inverse": "#FFFFFF"
+    }
+  },
+  "spacing": {
+    "space-0": "0px",
+    "space-1": "4px",
+    "space-2": "8px",
+    "space-3": "12px",
+    "space-4": "16px",
+    "space-5": "20px",
+    "space-6": "24px",
+    "space-8": "32px",
+    "space-10": "40px",
+    "space-12": "48px",
+    "content-max-width": "960px",
+    "narrow-max-width": "560px",
+    "navbar-height": "64px",
+    "tap-target": "44px",
+    "border-width": "1px",
+    "border-accent": "2px",
+    "focus-ring": "2px",
+    "lift": "-2px",
+    "icon-sm": "16px",
+    "icon-md": "24px",
+    "icon-brand": "32px",
+    "icon-empty": "48px"
+  },
+  "radius": {
+    "radius-none": "0px",
+    "radius-sm": "4px",
+    "radius-md": "8px",
+    "radius-lg": "12px",
+    "radius-xl": "15px",
+    "radius-pill": "999px"
+  },
+  "shadows": {
+    "shadow-sm": "0 2px 8px rgba(27,49,57,0.06)",
+    "shadow-md": "0 4px 16px rgba(27,49,57,0.08)",
+    "shadow-lg": "0 2px 4px rgba(27,49,57,0.04), 0 8px 24px rgba(27,49,57,0.10), 0 16px 48px rgba(27,49,57,0.08)",
+    "shadow-navbar": "0 2px 12px rgba(27,49,57,0.24)"
+  },
+  "breakpoints": {
+    "mobile": "480px",
+    "tablet": "768px",
+    "desktop": "1024px"
+  },
+  "motion": {
+    "transition-fast": "0.15s ease",
+    "transition-base": "0.2s ease",
+    "toast-dismiss": "3s"
+  },
+  "components": {
+    "navbar": {
+      "class": "navbar",
+      "notes": "navy-900 64px bar, 2px brand-red bottom border, --shadow-navbar; navbar__brand (navbar__icon + 'StockFlow') left, navbar__links right; navbar__link--active in brand red"
+    },
+    "app_icon": {
+      "class": "navbar__icon",
+      "notes": "warehouse.png at --icon-brand; also page__icon next to page titles and the favicon"
+    },
+    "favicon": {
+      "class": "favicon",
+      "notes": "index.html <link rel=icon href=/warehouse.png>"
+    },
+    "page": {
+      "class": "page",
+      "variants": "page--narrow (single column for detail + forms)",
+      "notes": "warm-oat bg, centered --content-max-width column; page__header with page__icon + page__title + page__subtitle"
+    },
+    "card": {
+      "class": "card",
+      "notes": "white, --radius-lg, --shadow-sm, --space-5 padding; hover lifts --lift with --shadow-md; card__title"
+    },
+    "button": {
+      "class": "btn",
+      "variants": "btn--primary (brand red, --radius-none), btn--secondary (navy-200 outline), btn--ghost, btn--danger, btn--danger-outline, btn--sm; btn__spinner while in flight (disabled)",
+      "notes": "min --tap-target"
+    },
+    "form": {
+      "class": "form",
+      "notes": "stacked fields, form__actions row; inline alert on failure"
+    },
+    "form_input": {
+      "class": "field",
+      "variants": "field--error (error border + error-light fill)",
+      "notes": "field__label persistent, field__input, focus ring --color-info, field__error names the field, field__hint"
+    },
+    "table": {
+      "class": "stock-table",
+      "notes": "cool uppercase --text-xs header, navy-200 row separators, navy-100 hover; stock-table__num right-aligned --font-mono tabular-nums; stock-table__row--flash success flash on in-place update"
+    },
+    "status_badge": {
+      "class": "badge",
+      "variants": "badge--in-stock (success), badge--low (warning), badge--out (error), badge--on-order (info), badge--quarantined (navy-500)",
+      "notes": "pill, --text-xs uppercase, text label always present (never color alone)"
+    },
+    "empty_state": {
+      "class": "empty-state",
+      "notes": "empty-state__icon + empty-state__title + empty-state__copy + CTA btn"
+    },
+    "not_tracked": {
+      "class": "not-tracked",
+      "notes": "explicit 'Not tracked' for SKUs with no batch/serial, never blank"
+    },
+    "toast": {
+      "class": "toast",
+      "variants": "toast--success (auto-dismiss --toast-dismiss), toast--error (persistent, toast__close)",
+      "notes": "inside fixed top-right toast-region (aria-live); no layout shift"
+    },
+    "alert": {
+      "class": "alert",
+      "variants": "alert--error, alert--success",
+      "notes": "role=alert; page-load failure + form validation only"
+    },
+    "confirmation": {
+      "class": "confirmation",
+      "notes": "post-submit confirmation view, confirmation__icon + summary + next action"
+    },
+    "scan_zone": {
+      "class": "scan-zone",
+      "variants": "scan-zone--success (green flash), scan-zone--error (red flash + persistent toast)",
+      "notes": "barcode input focus target, min --tap-target"
+    },
+    "search": {
+      "class": "search",
+      "notes": "search__input with label, search__results list of SKUs"
+    },
+    "spinner": {
+      "class": "spinner",
+      "notes": "loading state with data-testid, --transition-base"
+    },
+    "icon": {
+      "class": "icon",
+      "variants": "icon--sm, icon--md",
+      "notes": "single line-style set: inbound, outbound, scan, warehouse, stock states"
+    }
+  }
+}

@@ -41,6 +41,8 @@ import { firstPendingEscalation } from "../../gates/escalation.js";
 import { specLevelSmell, priorReviseCount, isBuildRefactorRoutableSmell, isReflectSmell, priorReflectReviseCount, REFLECT_REVISE_CAP, storyTestListFingerprint, lastReflectReviseFingerprint } from "../../smells/smells.js";
 import { reflectionPassed, reflectionVerdictWritten } from "../../smells/reflection.js";
 import { testListConforms as testListConformsFor } from "../../smells/testlist-conformance.js";
+import { iaConforms as iaConformsFor } from "../../smells/ia-conformance.js";
+import { reconcilePassed as reconcilePassedFor } from "../../smells/reconcile.js";
 import { readCanon, architectNovelty } from "../../architecture/architecture-canon.js";
 import {
   cyclesRootDir,
@@ -57,8 +59,26 @@ import {
   dbDesignJson,
   intakeReadyOnDisk,
   intakeApprovedOnDisk,
+  iaMd,
+  storyIaCoverageJson,
+  specReviseScopeJson,
+  acsDir,
+  storiesDir,
+  storyJson,
 } from "../../config/consort-paths.js";
+import { analystOrderedJson } from "../../test-list/fan-out-plan.js";
 import { checkDbDesign } from "../validators/conformance/artifact-conformance.js";
+
+/** True iff the story is a UI story — its story.json carries the PO's human-authoritative
+ *  `requires_e2e: true` (set at breakdown). Available BEFORE the architect assigns AC layers, so
+ *  it is the correct "this renders a surface" signal at the ia-projection decision point. */
+function storyRequiresE2e(consortDir: string, featureId: string, story: string): boolean {
+  try {
+    return (JSON.parse(fs.readFileSync(storyJson(consortDir, featureId, story), "utf8")) as { requires_e2e?: unknown }).requires_e2e === true;
+  } catch {
+    return false;
+  }
+}
 
 /** Every recorded cycle artifact for a story, across all of its ACs. */
 function storyCycles(consortDir: string, featureId: string, story: string): CycleArtifact[] {
@@ -238,24 +258,97 @@ export function diskArtifactProbe(
   featureId: string,
   buildActive?: string | null,
 ): StoryArtifactProbe {
+  // The Architect is "done" with a story only once its DISTINCTIVE outputs are on disk, NOT merely
+  // the AC `layer` (a REQUIRED ac.schema field the SPEC-AUTHOR fills). Key on the architect's own
+  // products: architectural_notes on every AC + the feature architecture.json. Shared by
+  // architectAnnotated AND iaRefined's coverage-by-presence back-compat.
+  const isArchitectAnnotated = (story: string): boolean => {
+    const acs = storyAcIds(consortDir, featureId, story);
+    if (acs.length === 0) return false; // no ACs yet -> nothing to annotate
+    const everyAcNoted = acs.every((ac) => readAcArchitecturalNotes(consortDir, featureId, ac) !== undefined);
+    return everyAcNoted && fs.existsSync(architectureJson(consortDir, featureId));
+  };
   return {
     hasAcs(story) {
       return storyAcIds(consortDir, featureId, story).length > 0;
     },
 
+    specRevisePending(story) {
+      // A SCOPED spec revise cleared ONLY the flagged AC file(s) and recorded them in the marker; the
+      // other ACs stay on disk so hasAcs cannot see the gap. Re-invoke the spec-author while any marked
+      // ac_id's file is still absent; self-clears once they are re-authored (then the architect re-tags).
+      const marker = specReviseScopeJson(consortDir, featureId, story);
+      if (!fs.existsSync(marker)) return false;
+      let ids: string[] = [];
+      try {
+        ids = (JSON.parse(fs.readFileSync(marker, "utf8")) as { ac_ids?: string[] }).ac_ids ?? [];
+      } catch {
+        return false; // an unreadable marker is not a pending signal
+      }
+      const dir = acsDir(consortDir, featureId, story);
+      return ids.some((ac) => !fs.existsSync(path.join(dir, `${ac}.json`)));
+    },
+
+    iaRefined(story) {
+      // The IA analogue of architectAnnotated: this story's surfaces are reconciled
+      // into ia.md, marked by its per-story coverage file (written by a live ux `ia`
+      // turn or by project-ia-notes). Keyed on the marker + ia.md existing (the
+      // establish seeds ia.md; no skeleton yet -> not refined, so the lazy-establish
+      // fallback runs first).
+      if (!fs.existsSync(iaMd(consortDir))) return false;
+      if (fs.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return true;
+      // Coverage-by-presence (back-compat): a story the architect has ALREADY annotated was
+      // designed before the per-story IA refinement existed (an older kit, or a mid-flight story
+      // at upgrade) — the IA already covers it, so it does not need (and must not re-run) ux-ia.
+      // In the NEW order the architect runs AFTER ux-ia, so a new-kit story only reaches
+      // architectAnnotated via a stamped marker anyway; this only changes migrated/in-flight stories.
+      return isArchitectAnnotated(story);
+    },
+
+    iaProjectable(story) {
+      // Mirror architectProjectable: a feature's FIRST UI story runs a LIVE ux `ia`
+      // turn to reconcile the feature's surfaces into ia.md; once ANY sibling story
+      // of this feature is covered, the rest PROJECT (no turn) — their surfaces are
+      // already named. Not projectable until the IA skeleton exists (establish
+      // first) or if this story is already covered.
+      if (!fs.existsSync(iaMd(consortDir))) return false;
+      if (fs.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return false;
+      // A story already sent back on a reflect-ia-defect revise must NOT be
+      // re-projected: the no-turn projection re-stamps the coverage marker without
+      // adding the surface ia.md lacks, so the next reflect re-flags the same gap
+      // and the loop burns revise laps to HIL healing nothing. Force the ux-designer
+      // ia turn to run LIVE so it actually names the missing surface (mirrors
+      // architectProjectable's architect-canon-gap guard).
+      if (priorReviseCount(consortDir, "reflect-ia-defect", story) > 0) return false;
+      // A UI story must run the ux `ia` turn LIVE, not project: sibling-coverage is screen-level, but
+      // each UI story typically ADDS seams (a column, a region, an empty state) the sibling's ia.md does
+      // not yet name. Projecting re-stamps coverage WITHOUT those seams, so the architect's declared
+      // ui_seams then miss and the deterministic IA gate bounces a revise lap (the live S2/S3 churn: both
+      // projected + both lapped; S1 ran live + was clean). The "UI story" signal MUST be one that exists
+      // at THIS point — before the architect. The AC `layer` is assigned by the ARCHITECT (a later step),
+      // so it is not yet readable here (checking it was a no-op that left the laps in). `requires_e2e` is
+      // the PO's human-authoritative flag set at breakdown on story.json, available now. A story without
+      // it (a non-UI/backend story) has no surface to add and may still project.
+      if (storyRequiresE2e(consortDir, featureId, story)) return false;
+      const stories = storiesDir(consortDir, featureId);
+      if (!fs.existsSync(stories)) return false;
+      let siblingCovered = false;
+      try {
+        for (const sib of fs.readdirSync(stories)) {
+          if (sib === story) continue;
+          if (fs.existsSync(storyIaCoverageJson(consortDir, featureId, sib))) {
+            siblingCovered = true;
+            break;
+          }
+        }
+      } catch {
+        /* unreadable stories dir -> not projectable (run the live turn) */
+      }
+      return siblingCovered;
+    },
+
     architectAnnotated(story) {
-      const acs = storyAcIds(consortDir, featureId, story);
-      if (acs.length === 0) return false; // no ACs yet -> nothing to annotate
-      // The Architect is "done" with a story only once its DISTINCTIVE outputs
-      // are on disk, NOT merely the AC `layer`. `layer` is a REQUIRED ac.schema
-      // field the SPEC-AUTHOR fills, so keying on it made architectAnnotated true
-      // the moment the spec-author wrote the ACs -> the architect-reviewer was
-      // ALWAYS skipped (no architecture.json, no architectural_notes, and the
-      // layering/NFR/service_backed gate checks had nothing to validate). Key on
-      // the architect's own products: architectural_notes on every AC + the
-      // feature architecture.json (service_backed + layers + nfrs).
-      const everyAcNoted = acs.every((ac) => readAcArchitecturalNotes(consortDir, featureId, ac) !== undefined);
-      return everyAcNoted && fs.existsSync(architectureJson(consortDir, featureId));
+      return isArchitectAnnotated(story);
     },
 
     dbaDesigned() {
@@ -322,6 +415,12 @@ export function diskArtifactProbe(
       // one scoped test item. Path + field both come from the single source of
       // truth so producer + probe cannot drift (the old code read a different
       // file name AND a non-existent `tests` field, so it never saw the list).
+      // B4 (deterministic fan-out): the step is NOT ready unless the fan-out bin produced its ordered
+      // list (analyst-ordered.json). This fail-closes the solo-author path — the test-strategist cannot
+      // advance past the test_list step by hand-writing the master; it must run consort-fan-out-analysts
+      // (which the revise co-heal clears, so a revise re-runs it). Checked BEFORE the item check so a
+      // skipped-bin hand-written master still reads not-ready and re-routes the test-strategist.
+      if (!fs.existsSync(analystOrderedJson(consortDir, featureId, story))) return false;
       const file = storyTestListJson(consortDir, featureId, story);
       if (!fs.existsSync(file)) return false;
       try {
@@ -339,6 +438,22 @@ export function diskArtifactProbe(
       // testListReady). A false here routes flag-testlist-nonconformance BEFORE the
       // LLM reflect, so a structural defect never costs an LLM lap.
       return testListConformsFor(consortDir, featureId, story);
+    },
+
+    iaConforms(story) {
+      // The DETERMINISTIC pre-reflect AC↔IA gate (#3): every E2E AC's declared ui_seams
+      // must be named in ia.md. Vacuously true when there is no ia.md, or no AC declares
+      // ui_seams (fail-open — never a false positive). A false here routes
+      // flag-ia-nonconformance to the ia refinement BEFORE the LLM reflect lap.
+      return iaConformsFor(consortDir, featureId, story);
+    },
+
+    reconcilePassed() {
+      // Feature-level: the symmetric cross-story reconciliation turn has produced a verdict with NO
+      // blocking cross-story defect. False until it runs (so the design lane runs it once every story
+      // is gated); a blocking verdict stays false + its reconcile-gate smell routes the owning story's
+      // revise, so the lane only advances to design-complete once the whole set is mutually consistent.
+      return reconcilePassedFor(consortDir, featureId);
     },
 
     designFingerprint(story) {

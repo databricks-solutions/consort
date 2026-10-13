@@ -107,6 +107,11 @@
       "type": "array",
       "description": "The architecture.json persistence_invariants[].id values this physical design realizes. Every declared invariant id MUST appear here; the spec gate cross-checks coverage.",
       "items": { "type": "string" }
+    },
+    "addresses_access_patterns": {
+      "type": "array",
+      "description": "The architecture.json access_patterns[].id values this physical design has ADDRESSED. Every declared access_pattern id MUST appear here; the spec gate (checkDbDesign) cross-checks coverage, which is what re-triggers the DBA for a later read story. Listing an id means the DBA CONSIDERED that query shape and either added a structure (an index on the pattern's columns, a covering index, materialization) or made a deliberate 'no index needed' decision recorded in db-design.md — the gate requires the id be addressed, not that an index exist.",
+      "items": { "type": "string" }
     }
   }
 }

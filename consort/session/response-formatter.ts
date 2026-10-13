@@ -17,7 +17,7 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { storyAcIds, readAcLayer, readAcArchitecturalNotes, storyTestListJson, acsDir, designGuideJson, designAssetsDir, architectureJson, dbDesignJson, featureSpecJson, storiesDir } from "../../consort/config/consort-paths.js";
+import { storyAcIds, readAcLayer, readAcArchitecturalNotes, featureTestListJson, acsDir, designGuideJson, designAssetsDir, architectureJson, dbDesignJson, featureSpecJson, storiesDir } from "../../consort/config/consort-paths.js";
 import { checkArtifactConformance, canonicalArtifactName, checkDbDesign, checkStoryIndependence } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { checkE2eRouteCollision, checkE2eSeedBackendDerivation } from "../../consort/architecture/e2e-route-adherence.js";
 import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "../../consort/gates/registered-breakdown.js";
@@ -214,6 +214,18 @@ function checkArchitect(args: FormatArgs, v: FormatViolation[]): void {
   // required per NFR, so enforce it HERE, or a cheap model silently drops it +
   // still passes every gate (the regression the architect optimize-sweep surfaced:
   // a semantic-gate-passing architecture.json with 0 fitness_functions).
+  // The architect's OWN feature artifact: validate architecture.json conforms to its schema HERE in the
+  // self-check (not only at the downstream gate), so the architect confirms it in-turn instead of hitting a
+  // gate-time PROTOCOL VIOLATION after a green self-check. Per-feature, so only once architecture.json exists.
+  const archForSchema = architectureJson(consortDir, featureId);
+  if (existsSync(archForSchema)) {
+    try {
+      const r = checkArtifactConformance(canonicalArtifactName(archForSchema), readFileSync(archForSchema, "utf8"));
+      if (!r.ok) for (const problem of r.violations) v.push({ artifact: "architecture.json", problem });
+    } catch (e) {
+      v.push({ artifact: "architecture.json", problem: `is not valid JSON (${(e as Error).message})` });
+    }
+  }
   checkNfrFitnessFunctions(consortDir, featureId, v);
 }
 
@@ -229,11 +241,16 @@ function checkNfrFitnessFunctions(consortDir: string, featureId: string, v: Form
   } catch {
     return; // architecture.json schema conformance is checked elsewhere
   }
+  // A trivial placeholder (`TODO`, `TBD`, a bare `N/A`) is NOT a fitness function: the Test Strategist
+  // reads this text as the test's acceptance criterion, so a placeholder produces an untestable test and
+  // still passes the gate. Require a substantive clause, or an explicit "N/A – <reason>".
+  const trivial = /^(todo|tbd|tbc|fixme|placeholder|none|test|xxx|\.{2,}|\?{2,}|n\/?a)\.?$/i;
   for (const [i, n] of nfrs.entries()) {
-    if (typeof n.fitness_function !== "string" || n.fitness_function.trim() === "") {
+    const ff = typeof n.fitness_function === "string" ? n.fitness_function.trim() : "";
+    if (ff === "" || trivial.test(ff)) {
       v.push({
         artifact: "architecture.json",
-        problem: `NFR ${n.id ?? `#${i}`} is missing a non-empty \`fitness_function\` (name the concrete real-branch test that defends this NFR, so the Test Strategist authors it as a RED test). "N/A – reason" is allowed only when the NFR genuinely has no machine-checkable defense.`,
+        problem: `NFR ${n.id ?? `#${i}`} has no substantive \`fitness_function\` (name the concrete real-branch test that defends this NFR, so the Test Strategist authors it as a RED test — not a placeholder like "TODO"/"TBD"). "N/A – reason" is allowed only when the NFR genuinely has no machine-checkable defense.`,
       });
     }
   }
@@ -260,32 +277,45 @@ function checkDba(args: FormatArgs, v: FormatViolation[]): void {
   if (!r.ok) v.push({ artifact: "db-design.json", problem: r.violations.join("; ") });
 }
 
-/** test-strategist (per story): the per-story test list exists, parses, has >=1
- *  item, and EVERY item's ac_id maps to one of the story's ACs. The S2 live
- *  stall was exactly this: items with ac_id:null / unmapped -> empty scope. */
+/** test-strategist (per story): the MASTER test list exists, parses, has >=1 item mapped to this
+ *  story's ACs, and EVERY story AC carries a covering item. Validated against the master (the
+ *  agent's output), scoped to the story's ACs — NOT the orchestration-derived per-story view, which
+ *  is written by a postTurn AFTER the turn (requiring it mid-turn false-failed the self-check). */
 function checkTestStrategist(args: FormatArgs, v: FormatViolation[]): void {
   const { consortDir, featureId, story } = args;
   if (!needStory("test-strategist", story, v)) return;
-  const file = storyTestListJson(consortDir, featureId, story);
+  // Validate the Test Strategist's AUTHORITATIVE output — the MASTER test-list, scoped to THIS
+  // story's ACs — NOT the per-story view. The per-story file (test-list-per-story.json) is DERIVED by
+  // the orchestration's postTurn AFTER the turn (writeStoryTestList), so requiring it in the agent's
+  // mid-turn self-check false-failed on a file the agent is explicitly told not to author. The master
+  // filtered by ac_id is exactly what that postTurn splits out, so this validates the SAME content
+  // without the timing false-failure.
+  const file = featureTestListJson(consortDir, featureId);
   if (!existsSync(file)) {
-    v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: "per-story test list not written" });
+    v.push({ artifact: "test-list.json", problem: "test list not written" });
     return;
   }
   let parsed: { items?: unknown };
   try {
     parsed = JSON.parse(readFileSync(file, "utf8")) as { items?: unknown };
   } catch (e) {
-    v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
-    return;
-  }
-  const items = Array.isArray(parsed.items)
-    ? (parsed.items as Array<{ id?: unknown; ac_id?: unknown; kind?: unknown; scenario_file?: unknown }>)
-    : [];
-  if (items.length === 0) {
-    v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: "empty `items` (expected >=1 test mapped to the story's ACs)" });
+    v.push({ artifact: "test-list.json", problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
     return;
   }
   const acIds = new Set(storyAcIds(consortDir, featureId, story));
+  const allItems = Array.isArray(parsed.items)
+    ? (parsed.items as Array<{ id?: unknown; ac_id?: unknown; kind?: unknown; scenario_file?: unknown }>)
+    : [];
+  // THIS story's items: the master items mapped to one of the story's ACs — exactly the set
+  // writeStoryTestList carves into the per-story view.
+  const items = allItems.filter((it) => typeof it.ac_id === "string" && acIds.has(it.ac_id as string));
+  if (items.length === 0) {
+    v.push({
+      artifact: "test-list.json",
+      problem: `no tests mapped to story ${story}'s ACs [${[...acIds].join(", ")}] (expected >=1 item whose ac_id is one of them)`,
+    });
+    return;
+  }
   const covered = new Set<string>();
   items.forEach((item, i) => {
     // A `kind:"fitness"` item is a plain architectural/DB test, NOT a Gherkin
@@ -295,21 +325,11 @@ function checkTestStrategist(args: FormatArgs, v: FormatViolation[]): void {
     // gate raises this as a reflect-testlist-defect; enforce it in-turn.
     if (item.kind === "fitness" && typeof item.scenario_file === "string" && /\.feature$/.test(item.scenario_file)) {
       v.push({
-        artifact: `stories/${story}/test-list-per-story.json`,
+        artifact: "test-list.json",
         problem: `items[${i}] (${String(item.id)}) is kind:"fitness" but its scenario_file "${item.scenario_file}" is a Gherkin .feature (mutually exclusive). A fitness item is a plain test (drop scenario_file), or make it kind:"behavior".`,
       });
     }
-    const acId = item.ac_id;
-    if (typeof acId !== "string" || acId.length === 0) {
-      v.push({ artifact: `stories/${story}/test-list-per-story.json`, problem: `items[${i}] (${String(item.id)}) has null/empty ac_id` });
-    } else if (acIds.size > 0 && !acIds.has(acId)) {
-      v.push({
-        artifact: `stories/${story}/test-list-per-story.json`,
-        problem: `items[${i}] ac_id "${acId}" is not one of the story's ACs [${[...acIds].join(", ")}]`,
-      });
-    } else if (typeof acId === "string") {
-      covered.add(acId);
-    }
+    covered.add(item.ac_id as string);
   });
   // REVERSE coverage: every AC of the story must carry >=1 test item. The
   // reflection gate enforces this downstream (an uncovered AC is a
@@ -323,7 +343,7 @@ function checkTestStrategist(args: FormatArgs, v: FormatViolation[]): void {
   const uncovered = [...acIds].filter((id) => !covered.has(id));
   if (uncovered.length > 0) {
     v.push({
-      artifact: `stories/${story}/test-list-per-story.json`,
+      artifact: "test-list.json",
       problem: `AC(s) with no covering test: [${uncovered.join(", ")}]. Every AC needs >=1 item (a client AC needs a kind:client item; see the reflect gate).`,
     });
   }

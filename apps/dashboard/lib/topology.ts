@@ -1,13 +1,9 @@
-// The Consort workflow topology: the lifecycle graph (Figure 1) and the per-lane
-// inter-agent sub-workflows (Figure 2, honest-GREEN).
+// The Consort workflow topology: the lifecycle graph and the per-lane inter-agent
+// sub-workflows (the honest-GREEN cycle).
 //
-// Ported from Kevin Hartman's build_dashboard.py:384-485 (WORKFLOW) plus the matching
-// predicate evaluator in _dashboard_template.html:539-573. This is pure data + pure
-// functions over events: no I/O, no corpus, no React. It is mode-independent — the same
-// topology lights up from a live tail or a finished replay log.
-//
-// The authoritative order comes from scripts/sftdd/orchestrator-drive.ts
-// (deriveDesignAction / deriveBuildAction) and papers/introducing-consort.md. Gates are
+// This is pure data + pure functions over events: no I/O, no corpus, no React. It is
+// mode-independent — the same topology lights up from a live tail or a finished replay log.
+// The orchestrator drives the design and build lanes in this step order; the gates are
 // human-decided and fail closed.
 
 import type { AgentLogEvent, LaneStepMeta, Role } from "./types";
@@ -68,6 +64,10 @@ export interface LaneStep {
   gate?: boolean;
   branch?: boolean; // a fail/side path rather than the happy path
   escalation?: boolean; // a terminal raise-to-HIL node (critical, no single owner)
+  // An OUTER-LOOP step: it runs ONCE per feature, not per story (the design lane's "break into stories"
+  // breakdown). Its turn is story-less, so the per-story round scoping (reachedThisPass + the active-story
+  // turn filter) must NOT apply — its result is always shown regardless of which story's round is in view.
+  outerLoop?: boolean;
   match: StepMatch | null; // null = never lit from an event (human-decided gates)
 }
 
@@ -91,23 +91,15 @@ export const LANE_IDS: readonly LaneId[] = ["plan", "design", "build", "deploy"]
 
 // Which lifecycle node each log phase (metadata.phase) belongs to.
 //
-// Two deliberate departures from the Python original, both evidence-driven — verified
-// against the 421-event stockflow-rerecord corpus log and the 380-event live log:
-//
-//   1. `assess` / `assess-refactor` map to "build", not "plan". Kevin's table sent
-//      `assess` to "plan". Every `assess*` event in both logs is navigator or
-//      orchestrator carrying `buildMode: assess*` — it is the honest-GREEN
-//      "regression or supersession?" decision inside the build lane (see b-assess
-//      below, which already matched it there). Mapping it to "plan" made the top-level
-//      graph jump back to Plan mid-build. `assess-refactor` was absent entirely.
-//   2. No `"estimate "` (trailing space) or `"RED"` key. Those were spelling defenses;
-//      `nodeForPhase` normalizes instead, which covers them and anything similar.
+// `assess` / `assess-refactor` map to "build": every `assess*` event is a navigator or
+// orchestrator turn carrying `buildMode: assess*` — the honest-GREEN "regression or
+// supersession?" decision inside the build lane (see b-assess below, which matches it there).
+// There is no whitespace- or casing-variant key (e.g. `"estimate "`, `"RED"`): nodeForPhase
+// normalizes the phase first, which covers those and anything similar.
 export const PHASE_TO_NODE: Record<string, string> = {
   // intake: the metered Product Owner intake turn (phase="intake") drafts product-overview/nfrs/
   // design-brief. Maps to the Intake lifecycle node so the current-sprint graph lights the Intake
-  // box while the PO drafts. A dashboard-native addition (declared in topology.test's
-  // INTENTIONAL_DEVIATIONS): Kevin's Python had no intake phase (intake was event-driven via
-  // intake.supplied, which still lights the same node).
+  // box while the PO drafts. The seed's event-driven intake.supplied lights the same node.
   intake: "intake",
   // plan: feature proposal, sizing, request authoring, backlog breakdown
   propose: "plan",
@@ -115,18 +107,22 @@ export const PHASE_TO_NODE: Record<string, string> = {
   "estimate-committed": "plan",
   "author-requests": "plan",
   // breakdown is a DESIGN-lane construct: the kit runs it per-feature at the design entry (after the
-  // plan gate), so it lights the design node + lane, not plan. Declared vs Kevin's Python (which
-  // routed it to plan) in topology.test's INTENTIONAL_DEVIATIONS.
+  // plan gate), so it lights the design node + lane, not plan.
   breakdown: "design",
+  // establish: the UX Designer's one-time style + IA bootstrap runs UNDER the intake gate in
+  // planning, so it lights the plan lane. ia: the per-story IA refinement runs in the design lane.
+  establish: "plan",
+  ia: "design",
   feature: "plan",
   workflow: "plan",
   // design: spec-first, per story. `reflect` is the Navigator's critique of the ASSEMBLED design
-  // (the design→reflect→revise loop before the spec gate), so it lights the DESIGN node/lane — the
-  // design lane's d-nav step matches the same {navigator, buildMode:reflect, phase:reflect} turn.
-  // (Was "build": it is a navigator buildMode like assess/review, but unlike those it runs in DESIGN,
-  // not the honest-GREEN cycle — mapping it to build lit build during design + polluted passedNodes.)
+  // (the design→reflect→revise loop before the spec gate); `reconcile` is its FEATURE-complete symmetric
+  // cross-story pass (once every story is designed, before the gated approval). Both light the DESIGN
+  // node/lane — the design lane's d-nav step matches the same {navigator, buildMode:reflect|reconcile}
+  // turn. They are navigator buildModes like assess/review, but run in DESIGN, not the honest-GREEN cycle.
   design: "design",
   reflect: "design",
+  reconcile: "design",
   // build: the honest-GREEN cycle
   build: "build",
   red: "build",
@@ -274,10 +270,9 @@ export const STEP_OUTPUTS: Record<string, StepOutputSpec[]> = {
 
 const NODES: WorkflowNode[] = [
   // intake carries the product-owner (its role dot): the metered PO intake turn drafts the intake.
-  // A dashboard-native departure from Kevin's Python (roleless there) – declared in topology.test.
   { id: "intake", label: "Intake", roles: ["product-owner"], type: "phase" },
   // The intake gate diamond, between intake and plan: the HITL review of the drafted intake before
-  // planning. Dashboard-native added node (declared in topology.test's ADDED_NODES).
+  // planning.
   { id: "intakegate", label: "intake gate", roles: [], type: "gate" },
   { id: "plan", label: "Plan", roles: ["spec-author", "architect-reviewer", "product-owner"], type: "phase" },
   { id: "plangate", label: "plan gate", roles: [], type: "gate" },
@@ -291,7 +286,7 @@ const NODES: WorkflowNode[] = [
   { id: "build", label: "Build lane", roles: ["navigator", "driver"], type: "phase" },
   // The acceptance gate diamond, between build and deploy: the PO accepts each story's experiment
   // (the per-story acceptance gate) before the feature deploys. Represented as one spine diamond the
-  // way specgate stands in for the per-story spec gates. Dashboard-native added node (topology.test).
+  // way specgate stands in for the per-story spec gates.
   { id: "acceptancegate", label: "acceptance gate", roles: [], type: "gate" },
   { id: "deploy", label: "Deploy", roles: ["release-engineer"], type: "phase" },
   { id: "deploygate", label: "deploy gate", roles: [], type: "gate" },
@@ -331,10 +326,21 @@ const PLAN_LANE: Lane = {
       match: { role: "product-owner", eventPrefix: "intake", phaseAny: ["intake"] },
     },
     {
-      // Dashboard-native gate step (declared in topology.test.ts ADDED_STEPS): the intake gate – the
-      // HITL checkpoint AFTER the PO drafts product-overview/nfrs/design-brief and BEFORE the Spec
-      // Author proposes. Human reviews / edits / approves. Lights (purple) from the run's intake gate
-      // state, like p-gate does for the plan gate. Closes the INTAKE side of the split lane.
+      // The UX Designer ESTABLISH runs UNDER the intake gate: after the PO drafts the brief +
+      // product-overview, before the human approves intake — so the project style system
+      // (design-guide.json) + the initial ia.md skeleton are approved WITH the brief they derive
+      // from. A planning-lane step (no new gate); its sibling is the per-story d-ux-ia refinement.
+      id: "p-ux-establish",
+      role: "ux-designer",
+      label: "UX designer",
+      sub: "establish style + IA",
+      match: { role: "ux-designer", phase: "establish" },
+    },
+    {
+      // The intake gate: the HITL checkpoint AFTER the PO drafts product-overview/nfrs/design-brief
+      // and BEFORE the Spec Author proposes. Human reviews / edits / approves. Lights (purple) from
+      // the run's intake gate state, like p-gate does for the plan gate. Closes the INTAKE side of
+      // the split lane.
       id: "p-intake-gate",
       role: null,
       label: "Intake gate",
@@ -358,9 +364,9 @@ const PLAN_LANE: Lane = {
     },
     {
       // The Backlog gate: after sizing, the human picks WHICH proposed features enter the sprint (the
-      // drive surfaces gate.surfaced(backlog); the human commits). A dashboard-native gate step
-      // (ADDED_STEPS) that lights purple from the run's backlog gate state — exactly like
-      // p-intake-gate. Distinct from the PO authoring turn below: this is the SELECTION.
+      // drive surfaces gate.surfaced(backlog); the human commits). A gate step that lights purple
+      // from the run's backlog gate state — exactly like p-intake-gate. Distinct from the PO
+      // authoring turn below: this is the SELECTION.
       id: "p-backlog-gate",
       role: null,
       label: "Backlog gate",
@@ -371,7 +377,7 @@ const PLAN_LANE: Lane = {
     {
       // The Product Owner authors a feature-request.md per COMMITTED feature — a metered product-owner
       // turn (phase author-requests), which is why it reads in the PO's colour and shows its elapsed.
-      // This is Kevin's ported PO plan step; it lights from the author-requests turn.
+      // It lights from the author-requests turn.
       id: "p-req",
       role: "product-owner",
       label: "Product owner",
@@ -388,7 +394,8 @@ const PLAN_LANE: Lane = {
     },
   ],
   edges: [
-    ["p-intake", "p-intake-gate"],
+    ["p-intake", "p-ux-establish"],
+    ["p-ux-establish", "p-intake-gate"],
     ["p-intake-gate", "p-propose"],
     ["p-propose", "p-size"],
     ["p-size", "p-backlog-gate"],
@@ -414,14 +421,10 @@ const DESIGN_LANE: Lane = {
       role: "spec-author",
       label: "Spec author",
       sub: "break into stories",
+      // OUTER LOOP: runs once per feature (decomposes it into stories) BEFORE the per-story rounds, so
+      // its result is shown regardless of the story in view — not scoped/hidden by the per-story round.
+      outerLoop: true,
       match: { role: "spec-author", phase: "breakdown" },
-    },
-    {
-      id: "d-ux",
-      role: "ux-designer",
-      label: "UX designer",
-      sub: "design guide (once)",
-      match: { role: "ux-designer" },
     },
     {
       id: "d-spec",
@@ -431,6 +434,17 @@ const DESIGN_LANE: Lane = {
       // spec-author also acts in the plan lane; exclude those phases so its design
       // work doesn't light both lanes.
       match: { role: "spec-author", phaseNot: ["propose", "estimate", "author-requests", "breakdown"] },
+    },
+    {
+      // The UX Designer IA refinement runs PER STORY, after the ACs and BEFORE the architect, so
+      // E2E layers land against surfaces the IA already names. The establish is a planning-lane
+      // step (p-ux-establish); this is the per-story normal state (projectable→no-turn when the
+      // feature's surfaces are already named, else a live turn).
+      id: "d-ux-ia",
+      role: "ux-designer",
+      label: "UX designer",
+      sub: "refine IA (per story)",
+      match: { role: "ux-designer", phase: "ia" },
     },
     {
       id: "d-arch",
@@ -452,7 +466,11 @@ const DESIGN_LANE: Lane = {
       role: "navigator",
       label: "Navigator",
       sub: "reflect / critique",
-      match: { role: "navigator", buildMode: "reflect", phase: "reflect" },
+      // Lights on the per-story reflect/critique turn AND the feature-complete symmetric cross-story
+      // reconcile turn (both are navigator design-lane turns; no build turn carries these buildModes).
+      // The card label stays "reflect / critique" — the reconcile turn lights the SAME step without
+      // adding a word to the card.
+      match: { role: "navigator", buildModeAny: ["reflect", "reconcile"], phaseAny: ["reflect", "reconcile"] },
     },
     { id: "d-gate", role: null, label: "Spec gate", sub: "human approves", gate: true, match: null },
     {
@@ -465,16 +483,18 @@ const DESIGN_LANE: Lane = {
     },
   ],
   edges: [
-    ["d-breakdown", "d-ux"],
-    ["d-ux", "d-spec"],
-    ["d-spec", "d-arch"],
+    ["d-breakdown", "d-spec"],
+    ["d-spec", "d-ux-ia"],
+    ["d-ux-ia", "d-arch"],
     ["d-arch", "d-dba"],
     ["d-dba", "d-ts"],
     ["d-ts", "d-nav"],
     ["d-nav", "d-gate"],
   ] as const,
-  // reflect findings route back to the owning author (bounded revise), or – when a
-  // spec defect can't be auto-resolved – escalate to the human
+  // reflect findings route back to the owning author (bounded revise) — the spec-author (an
+  // AC/spec defect), the UX designer (an E2E/client AC whose surface the IA does not name, the
+  // reflect-ia-defect route), or the architect — shown generically as one "revise on findings"
+  // back-edge; or, when it can't be auto-resolved, escalate to the human.
   backEdges: [
     ["d-nav", "d-spec", "revise on findings"],
     ["d-nav", "d-hil", "escalate"],
@@ -513,10 +533,9 @@ const BUILD_LANE: Lane = {
     {
       id: "b-verify",
       // VERIFY (build-cycle AND deploy) is release work, so the dashboard attributes it to the
-      // release-engineer for lane colouring. Kevin's Python left it ownerless; this is a declared
-      // dashboard-side departure (see STEP_DEVIATIONS in topology.test.ts). It keeps its
-      // verify-prefix match, so it still lights from events and `isHumanGate` stays false — it
-      // takes the release-engineer's light-blue, not the purple human-gate colour.
+      // release-engineer for lane colouring. It keeps its verify-prefix match, so it still lights
+      // from events and `isHumanGate` stays false — it takes the release-engineer's light-blue, not
+      // the purple human-gate colour.
       role: "release-engineer",
       label: "Verify",
       sub: "run vs real branch",
@@ -598,11 +617,11 @@ const BUILD_LANE: Lane = {
   ] as const,
 };
 
-// The combined ship lane. Unlike plan/design/build (ported verbatim from Kevin's Python
-// WORKFLOW), this lane is dashboard-native: deploy and promote are DETERMINISTIC CLI effects run
-// by the orchestrator, not an LLM agent, so they had no per-lane sub-workflow in the Python. The
-// dashboard attributes every deterministic step to the `release-engineer` role (light-blue) for
-// labelling; the two human gates carry `match: null` so `isHumanGate` keeps them purple.
+// The combined ship lane. Unlike the plan/design/build lanes, deploy and promote are DETERMINISTIC
+// CLI effects run by the orchestrator, not an LLM agent, so this lane has no inter-agent
+// sub-workflow. The dashboard attributes every deterministic step to the `release-engineer` role
+// (light-blue) for labelling; the two human gates carry `match: null` so `isHumanGate` keeps them
+// purple.
 //
 // It reads as two phases — a Deploy section (deploy → verify → deploy gate) and a Promote section
 // (prepare-pr → wait-ci → promote gate → merge), which LaneGraph draws with a separator between
@@ -728,6 +747,17 @@ export const WORKFLOW: WorkflowTopology = {
 
 export function nodeById(id: string): WorkflowNode | null {
   return NODES.find((n) => n.id === id) ?? null;
+}
+
+/** True for an OUTER-LOOP lane step (currently the design lane's "break into stories" breakdown): a
+ *  per-feature step whose result must NOT be hidden by the per-story round scoping. Keyed off the lane
+ *  defs so it can't drift from where `outerLoop` is declared. */
+export function isOuterLoopStep(stepId: string): boolean {
+  for (const lane of Object.values(WORKFLOW.lanes)) {
+    const s = lane.steps.find((st) => st.id === stepId);
+    if (s) return s.outerLoop === true;
+  }
+  return false;
 }
 
 // The lifecycle node whose recorded deliverables a role AUTHORS — the first node (in lifecycle
@@ -876,7 +906,7 @@ const GATE_STEP_IDS: ReadonlySet<string> = new Set(
 );
 
 // First sub-step (lanes in plan→design→build order, steps in declared order) that this
-// event lights, or null. First match wins, as in the original.
+// event lights, or null. First match wins.
 export function laneStepForEvent(e: AgentLogEvent | null | undefined): LaneHit | null {
   if (!e) return null;
   for (const lane of LANE_IDS) {
@@ -885,6 +915,24 @@ export function laneStepForEvent(e: AgentLogEvent | null | undefined): LaneHit |
     }
   }
   return null;
+}
+
+/** Map a recorded TURN (from turns/index.json: role + `mode` = its phase) to its lane step, so a
+ *  WHOLE-CORPUS step→turn map can be built from the index (not just the recent-events window). A turn's
+ *  `mode` is the phase a step matches on (breakdown → d-breakdown, ia → d-ux-ia; a null mode on a design
+ *  spec/architect turn still matches its phaseNot step). Synthesizes the minimal phase.start the step
+ *  matcher reads, reusing `laneStepForEvent` so turn→step and event→step cannot disagree. */
+export function laneStepForTurn(turn: { role?: string | null; mode?: string | null; label?: string | null }): string | null {
+  if (!turn.role) return null;
+  const synthetic: AgentLogEvent = {
+    timestamp: "",
+    level: "info",
+    role: turn.role,
+    event: "phase.start",
+    message: turn.label ?? "",
+    metadata: turn.mode ? { phase: turn.mode } : {},
+  };
+  return laneStepForEvent(synthetic)?.step ?? null;
 }
 
 // Per-step agent metrics for the step cards, folded over the whole event stream: model + effort from
@@ -933,21 +981,31 @@ export function latestTurnOrdinalForStep(
   recentEvents: AgentLogEvent[],
   recentTurns: (number | null)[],
   stepId: string,
+  // STORY SCOPE: when given, credit ONLY turns taken for THIS story. The resolver is otherwise
+  // role→step keyed and story-blind, so a per-story step (ux-designer-ia, test-strategist) would
+  // resolve to that role's LATEST turn in ANY story — e.g. clicking S3's ux card (a no-turn
+  // project-ia-notes projection) returned S2's ux turn. Scoping to the round's story makes a step
+  // the current round did not actually invoke resolve to null → "not invoked this round".
+  story?: string | null,
 ): number | null {
   const stepForRole: Record<string, string> = {};
+  const storyForRole: Record<string, string> = {};
   let latest: number | null = null;
   for (let i = 0; i < recentEvents.length; i++) {
     const e = recentEvents[i];
     if (e.event === "phase.start") {
       const hit = laneStepForEvent(e);
       if (hit) stepForRole[e.role] = hit.step;
+      const st = (e.metadata as Record<string, unknown> | undefined)?.story;
+      if (typeof st === "string" && st) storyForRole[e.role] = st;
     }
     const ord = recentTurns[i];
     if (ord != null) {
       // Credit this turn-begin event to the role's current step (or the event's own match, if it
       // carries enough to map on its own — e.g. a phase.start that IS the turn-begin).
       const step = stepForRole[e.role] ?? laneStepForEvent(e)?.step ?? null;
-      if (step === stepId) latest = ord;
+      const matchesStory = story == null || (storyForRole[e.role] ?? null) === story;
+      if (step === stepId && matchesStory) latest = ord;
     }
   }
   return latest;

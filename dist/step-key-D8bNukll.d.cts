@@ -12,7 +12,7 @@
  *   reflect (the design-lane critic that grades completed code) is its own tunable turn:
  *     the optimize sweep measured it distinctly (haiku+low won), so it keys separately
  *     rather than riding the navigator scalar. */
-type BuildTurn = "red" | "green" | "review" | "refactor" | "assess" | "repair" | "reflect";
+type BuildTurn = "red" | "green" | "review" | "refactor" | "assess" | "repair" | "reflect" | "reconcile";
 /** The DESIGN/planning steps a role can be invoked for. A role runs different
  *  TASKS across these steps (spec-author BREAKDOWN vs per-story AC authoring;
  *  architect ESTIMATE vs per-story ARCHITECT notes), so a lever that wins on one

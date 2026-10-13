@@ -115,3 +115,31 @@ describe("checkDbDesign: invariant realization (physical counterpart to checkPer
     expect(r.ok ? "" : r.violations.join(" ")).toMatch(/PI2-fk-order-user/);
   });
 });
+
+describe("checkDbDesign: access-pattern coverage (the DBA re-trigger for a later read story)", () => {
+  const accessPatterns = [{ id: "AP1-stock-by-location", table: "stock", columns: ["location"], brief: "filter stock by location" }];
+  const withAp = (dbExtra: Record<string, unknown>): string =>
+    JSON.stringify({ ...JSON.parse(conformantDbDesign), ...dbExtra });
+
+  it("ok when the feature declares NO access_patterns (back-compat: a story that adds no new query shape)", () => {
+    expect(checkDbDesign(conformantDbDesign, arch({ persistence_invariants: invariants }))).toEqual({ ok: true });
+  });
+
+  it("ok when every declared access_pattern id is addressed", () => {
+    const db = withAp({ addresses_access_patterns: ["AP1-stock-by-location"] });
+    expect(checkDbDesign(db, arch({ persistence_invariants: invariants, access_patterns: accessPatterns }))).toEqual({ ok: true });
+  });
+
+  it("FAILS (naming the id) when a declared access_pattern is not addressed — this is what re-runs the DBA", () => {
+    // db-design.json realizes the invariants but addresses no access pattern (the DBA ran before this
+    // story's query shape existed) -> uncovered -> dbaDesigned reads false -> the DBA re-runs.
+    const r = checkDbDesign(conformantDbDesign, arch({ persistence_invariants: invariants, access_patterns: accessPatterns }));
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.violations.join(" ")).toMatch(/AP1-stock-by-location/);
+  });
+
+  it("a db-design.json carrying addresses_access_patterns validates against its schema", () => {
+    const db = withAp({ addresses_access_patterns: ["AP1-stock-by-location"] });
+    expect(checkArtifactConformance("db-design.json", db)).toEqual({ ok: true });
+  });
+});

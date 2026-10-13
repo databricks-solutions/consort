@@ -18,7 +18,7 @@ import { deriveDriveState } from "../../consort/orchestrator/state/orchestrator-
 import { diskArtifactProbe, readDriveContext } from "../../consort/orchestrator/state/orchestrator-probe";
 import type { WorkflowAction } from "../../consort/orchestrator/drive/orchestrator-drive";
 import { writeCycleArtifact } from "../../consort/pipeline/run-cycle";
-import { acReviewJson, storyReviewJson } from "../../consort/config/consort-paths";
+import { acReviewJson, storyReviewJson, reconcileVerdictJson } from "../../consort/config/consort-paths";
 import {
   readPipeline,
   writePipeline,
@@ -95,11 +95,15 @@ function replayEffects(feature: string, stories: string[]) {
               }
               syncBreakdownToPipeline(consortDir, feature);
             }
-            // propose / author-requests: planning, not exercised here
+            // propose / author-requests + ux establish/ia: planning / UI track, not exercised here
             return;
           }
-          // ux-designer (UI track) has no story; not exercised in this e2e.
-          if (action.role === "ux-designer") return;
+          if ("buildMode" in action && action.buildMode === "reconcile") {
+            // Feature-complete reconciliation (story-less): simulate a passing verdict so the drive
+            // advances to design-complete (the happy path — stories mutually consistent).
+            writeJson(reconcileVerdictJson(consortDir, feature), { version: 1, passed: true, findings: [] });
+            return;
+          }
           const s = action.story;
           if (action.role === "spec-author") {
             // draft ACs (story.json acs + the AC file, no layer yet)
@@ -138,10 +142,14 @@ function replayEffects(feature: string, stories: string[]) {
               realizes_invariants: [],
             });
           } else if (action.role === "test-strategist") {
-            // The real flow: the role writes the feature master, then the
-            // driver's deterministic scope step produces the canonical per-story
-            // list (storyTestListJson = test-list-per-story.json, field `items`)
-            // the testListReady probe reads. Replay the net artifact directly.
+            // The real flow: the role RUNS the consort-fan-out-analysts bin (which writes the ordered
+            // list analyst-ordered.json — testListReady's B4 precondition) then appends to the master;
+            // the driver's deterministic scope step produces the canonical per-story list
+            // (storyTestListJson = test-list-per-story.json, field `items`) the probe reads. Replay
+            // BOTH net artifacts directly (the bin's ordered list + the per-story view).
+            writeJson(join(storyDir(feature, s), "analyst-ordered.json"), {
+              items: [{ id: "T1", description: "t", ac_id: ac(s), status: "pending" }],
+            });
             writeJson(join(storyDir(feature, s), "test-list-per-story.json"), {
               feature_id: feature,
               story_id: s,

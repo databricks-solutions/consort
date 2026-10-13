@@ -288,6 +288,10 @@ export interface CorrespondenceEntry {
     kind: "kickoff" | "intake" | "intake-interview" | "gate" | "author-requests" | "progress";
     /** A human-readable rendering of the ask/notice (the command, the gate presentation, the progress line). */
     prompt: string;
+    /** For a `progress` notice: the role (or kind) that just completed its turn, carried as a STRUCTURED
+     *  field so a reader renders it uniformly (bracketed, role-colored) without parsing it back out of
+     *  `prompt`. The sole source of the role on a progress row; `prompt` carries only the detail. */
+    role?: string;
     /** For an intake interview: the question set posed to the HIL. */
     questions?: string[];
     /** The RICH presentation of the ask exactly as SHOWN (formatting/fonts/highlighting preserved). */
@@ -807,6 +811,7 @@ export function recordTurn(args: RecordTurnArgs): RecordedTurn {
         ...(manifest.step !== undefined ? { step: String(manifest.step) } : {}),
         request: {
           kind: "progress",
+          role: manifest.role ?? manifest.kind,
           prompt: progressNarration(manifest, produced.length, deleted.length),
         },
         response: { by: "orchestrator" },
@@ -820,20 +825,21 @@ export function recordTurn(args: RecordTurnArgs): RecordedTurn {
   return { ordinal, dir: dirName, produced, deleted };
 }
 
-/** A one-line human-readable status for a recorded turn, the orch->HIL progress notice's prompt. Built
- *  purely from the manifest so it needs no extra state – "what just happened" a human would see scroll
- *  by: the role/kind + mode + story/ac scope + the size of the delta it produced. */
+/** The DETAIL half of a recorded turn's orch->HIL progress notice: "what just happened" a human would
+ *  see scroll by – the mode + story/ac scope + the size of the delta it produced. The role itself rides
+ *  the correspondence's STRUCTURED `role` field (not this string), so a reader brackets/colors it
+ *  uniformly; this prompt carries only the detail, never leads with the role. Built purely from the
+ *  manifest so it needs no extra state. */
 function progressNarration(
   m: { kind: string; role?: string; mode?: string; story?: string; ac?: string; label: string },
   producedCount: number,
   deletedCount: number,
 ): string {
-  const who = m.role ?? m.kind;
   const scope = [m.story, m.ac].filter(Boolean).join(" / ");
   const parts = [
-    m.mode ? `${who} ${m.mode}` : who,
+    m.mode ?? "",
     scope ? `(${scope})` : "",
-    `, ${producedCount} file(s) produced${deletedCount ? `, ${deletedCount} removed` : ""}`,
+    `${producedCount} file(s) produced${deletedCount ? `, ${deletedCount} removed` : ""}`,
   ];
-  return parts.filter(Boolean).join(" ").replace(" ,", ",");
+  return parts.filter(Boolean).join(" ");
 }

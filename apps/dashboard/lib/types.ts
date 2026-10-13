@@ -199,6 +199,13 @@ export interface SourceMeta {
      * Aligned server-side for the same off-by-one reason as `recentTurns`.
      */
     latestTurnByRole?: Record<string, number>;
+    /**
+     * Each lane STEP → its latest reached turn ordinal, keyed `"<stepId>|<story ?? ''>"`, over the WHOLE
+     * corpus scoped to the playhead's reached turns. The step+story-precise resolver a lane card uses so
+     * it opens ITS OWN step's turn for the round in view — not a sibling step's or a prior round's — even
+     * when that turn scrolled out of the `recentTurns` window (e.g. the breakdown at #0).
+     */
+    latestTurnByStep?: Record<string, number>;
   } | null;
 
   /**
@@ -217,6 +224,10 @@ export interface SourceMeta {
       direction: string;
       phase: string | null;
       kind: string | null;
+      /** On a `progress` row, the role (or kind) that just completed its turn — a STRUCTURED field
+       *  so the ticker brackets/colors it uniformly instead of parsing it out of `text`. Null on
+       *  rows that carry no role (kickoff/intake/gate, and older corpora recorded before this field). */
+      role: string | null;
       by: string | null;
       /** Rendered markdown of the exchange (request, or response when that's the substance). */
       text: string;

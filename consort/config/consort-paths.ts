@@ -120,6 +120,10 @@ export const designBriefMd = (tdd: string): string => join(designDir(tdd), "desi
  *  authored once from the design brief; gates the UI build (design-guide.md is
  *  its human-readable sibling, ia.md the information architecture). */
 export const designGuideJson = (tdd: string): string => join(designDir(tdd), "design-guide.json");
+/** The UX Designer's project-level information architecture (screens / navigation /
+ *  flows), seeded at the establish and refined per story. Prose markdown; the
+ *  single source for screen/form names + their data-testid seams. */
+export const iaMd = (tdd: string): string => join(designDir(tdd), "ia.md");
 /** The staged brand/design assets dir (`.consort/design/assets/`): where the intake
  *  stages an app icon / logo (e.g. `warehouse.png`) for the UX Designer to declare via
  *  the guide's `app_icon` and the kit to install the real bytes from. A staged asset
@@ -211,12 +215,42 @@ export const acJson = (tdd: string, f: string, s: string, ac: string): string =>
 export const storyTestListJson = (tdd: string, f: string, s: string): string =>
   join(storyResolved(tdd, f, s), "test-list-per-story.json");
 export const storyPlanJson = (tdd: string, f: string, s: string): string => join(storyResolved(tdd, f, s), "plan.json");
+/** Per-story IA coverage marker (the IA analogue of per-AC architectural_notes):
+ *  written when a story's surfaces have been reconciled into ia.md — by a live
+ *  ux-designer `ia` turn (a feature's first UI story) or deterministically by
+ *  project-ia-notes (later stories). `iaRefined` keys on its existence. */
+export const storyIaCoverageJson = (tdd: string, f: string, s: string): string =>
+  join(storyResolved(tdd, f, s), "ia-coverage.json");
+/** Per-story SCOPED spec-revise marker: on a reflect-spec-defect the owning
+ *  author re-authors ONLY its flagged AC(s), so the revise clears just those AC
+ *  files and records their ids here — the OTHER ACs (and their architect notes)
+ *  stay on disk. `specRevisePending` keys on this: it re-invokes the spec-author
+ *  while any listed ac_id is still absent, and self-clears once they are rewritten
+ *  (so the whole-story `hasAcs`, which cannot see a single missing AC, is not
+ *  overloaded). The analogue of the per-AC architectural_notes staleness, but for
+ *  a scoped AC-file clear. */
+export const specReviseScopeJson = (tdd: string, f: string, s: string): string =>
+  join(storyResolved(tdd, f, s), "spec-revise-scope.json");
+/** Per-story DIRECTED test-list PATCH marker: on a clean, AC-scoped reflect-testlist defect the
+ *  revise is a targeted PATCH, not a fan-out re-derive — the reflect finding already names the exact
+ *  fix (rename a scenario_file, fix a literal, add one named test). This marker records the flagged
+ *  ac_ids and makes the test-strategist directive EDIT the existing ordered list in place (keeping every
+ *  other item + its T-id) instead of re-running the fan-out (which re-rolls the whole scope
+ *  nondeterministically — the observed 33→22→30→28→34 swing + repeated reflect bounces). Written ONLY by
+ *  the scoped test_list revise; cleared by every other revise, so its presence always means "patch". */
+export const testListPatchJson = (tdd: string, f: string, s: string): string =>
+  join(storyResolved(tdd, f, s), "test-list-patch.json");
 /** The pre-build reflection critic's verdict for one story (the Navigator's
  *  reflect turn). Design-lane + per-story, so it is naturally feature+story
  *  isolated (parallel stories/features write independent verdicts, no shared
  *  reflect state). Shape in reflection.ts (ReflectVerdict). */
 export const reflectVerdictJson = (tdd: string, f: string, s: string): string =>
   join(storyResolved(tdd, f, s), "reflect-verdict.json");
+/** The feature-complete symmetric cross-story RECONCILIATION verdict (the Navigator's
+ *  reconcile turn, run once every story is gated — before design-complete). Feature-level
+ *  (not per-story): it judges ALL stories against each other. Shape in reconcile.ts. */
+export const reconcileVerdictJson = (tdd: string, f: string): string =>
+  join(featureResolved(tdd, f), "reconcile-verdict.json");
 /** The hand-back note for a role's retry: the orchestrator writes it (what the
  *  role's prior turn failed to return) and the role's next prompt CONSUMES it
  *  (reads + deletes). Keyed by role (+ story when per-story) so concurrent

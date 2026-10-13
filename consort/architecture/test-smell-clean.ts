@@ -49,6 +49,7 @@ export type TestSmellName =
   | "broad-integrity-except"
   | "schema-unsatisfiable-ref"
   | "whole-table-aggregate"
+  | "fixed-key-e2e"
   | "migration-marker-presence"
   | "relative-migration-revision"
   | "reversible-invariant-round-trip"
@@ -145,6 +146,8 @@ const SMELL_FIX: Record<TestSmellName, string> = {
     "the test references a table NO migration creates, so it is unsatisfiable (UndefinedTable on every run) – fix the table name (see the known tables below) or add the migration; never paper it over with a broad except",
   "whole-table-aggregate":
     "an ABSOLUTE whole-table COUNT/SUM with no seed-scope and no delta passes on the isolated branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total",
+  "fixed-key-e2e":
+    "this Playwright e2e spec CREATES a record (fills a form + submits) but seeds no per-run-unique key, so it uses a HARDCODED business key (SKU/code/name). The e2e verify runs against the SHARED feature branch, which already holds the row a prior run/sibling story created with that same key — so the second run hits a unique-violation (or asserts a stale duplicate) and the row goes perma-red, costing a reflect/assess lap on a correct app. Derive a per-run-unique key (e.g. `const sku = 'SKU-' + crypto.randomUUID().slice(0, 8)`) and use that SAME value in both the create fill and the assertion locator, so each run owns its own row",
   "migration-marker-presence":
     "a downgrade/upgrade test without @pytest.mark.migration runs on the SHARED verify DB and drops/alters its live schema for every other test. Add @pytest.mark.migration so the verify harness routes it to its OWN ephemeral branch (single-step downgrade -1 + upgrade head, never downgrade base)",
   "relative-migration-revision":
@@ -496,6 +499,25 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
           "(file)",
           `asserts ${col ? `'${col[1]}'` : "a named column"} absent after a relative 'downgrade -N' – pin the migration's own revision (down_revision + revision), not -N/head`,
         );
+      }
+
+      // fixed-key-e2e (file level, Playwright e2e spec): a spec that CREATES a record (fills a form +
+      // clicks a create/add/file/save/submit control) but contains NO per-run uniqueness source anywhere,
+      // so it necessarily uses a HARDCODED business key. The e2e verify runs on the SHARED feature branch,
+      // which already holds the row a prior run/sibling seeded with that same key — the second run hits a
+      // unique-violation (or asserts a stale duplicate) and the row goes perma-red on a correct app. Scoped
+      // strictly to real e2e specs (jsdom component tests mock the backend, so no DB collision). Requires
+      // BOTH the fill AND the submit control so a read-only navigation spec is never flagged.
+      const isE2eSpec = isJs && /(^|\/)e2e\/[^/]*\.spec\.(ts|tsx|js|jsx|mjs)$/.test(file.replace(/\\/g, "/"));
+      if (isE2eSpec) {
+        const hasFill = /\.fill\s*\(/.test(body);
+        const hasSubmit =
+          /getByRole\(\s*["']button["'][\s\S]{0,80}?\b(create|add|new|file|save|submit|register|record)\b/i.test(body) ||
+          /getByText\(\s*["'`\/][^)]{0,40}\b(create|add|new|file|save|submit|register)\b/i.test(body);
+        const uniquenessSource = /randomUUID|crypto\b|Date\.now|\buuid\b|performance\.now|Math\.random|nanoid|new Date\(|getTime\(/i.test(body);
+        if (hasFill && hasSubmit && !uniquenessSource) {
+          push("fixed-key-e2e", rel, 1, "(file)", "a create-flow e2e spec with no per-run-unique key seed (crypto.randomUUID)");
+        }
       }
     }
   }

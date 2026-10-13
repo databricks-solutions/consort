@@ -27,6 +27,7 @@ import {
   dbDesignJson,
   featureTestListJson,
   designGuideJson,
+  iaMd,
   acsDir,
   featureProposalsMd,
   planningEstimatesJson,
@@ -107,6 +108,9 @@ export function executorDispatched(action: WorkflowAction): boolean {
     // copied at the backlog gate is skipped (byte-identical replay: requestsAuthored is already true,
     // so the turn never fires); only ABSENT (live) requests are authored. Planning mode (no reconcile).
     if (action.role === "product-owner" && action.mode === "author-requests") return true;
+    // ux-designer: establish (project-level, home: the intake gate) + per-story ia
+    // refinement. Both have a shipped manifest with an artifact output.
+    if (action.role === "ux-designer") return true;
     return false; // estimate-committed + any other mode: legacy path.
   }
   // The per-story / feature design turns carry NO mode and NO buildMode. Distinguish them from the
@@ -116,10 +120,9 @@ export function executorDispatched(action: WorkflowAction): boolean {
     if ((action.role === "spec-author" || action.role === "architect-reviewer" || action.role === "test-strategist") && "story" in action && !!action.story) {
       return true;
     }
-    // dba is story-scoped in the per-story lane; ux-designer is feature-scoped (no story). Both have
-    // a shipped manifest with an artifact output.
+    // dba is story-scoped in the per-story lane. (ux-designer is handled in the mode
+    // block above — both establish and the per-story ia refinement carry a mode.)
     if (action.role === "dba" && "story" in action && !!action.story) return true;
-    if (action.role === "ux-designer") return true;
     // ── BUILD LANE ─────────────────────────────────────────────────────────────────────────────
     // navigator RED + driver GREEN: the plain story turn (no mode/buildMode, carries a story) ,
     // exactly what nextBuildAction emits for `!testsWritten` / `!codeWritten`. RED runs lean; GREEN's
@@ -131,6 +134,13 @@ export function executorDispatched(action: WorkflowAction): boolean {
     return false;
   }
   // ── BUILD SELF-HEAL LANE (turns carrying a buildMode) ────────────────────────────────────────
+  // Feature-complete symmetric reconciliation: feature-scoped (the real drive emits it STORY-LESS, like
+  // the spec-author breakdown). It writes the feature reconcile-verdict + is verified by its @build-cycle
+  // record (the reconcile-gate), no static artifact. Matched by its buildMode alone — before the
+  // story-requiring branch — so it dispatches whether or not a (spurious) story rides the action.
+  if ("buildMode" in action && action.role === "navigator" && action.buildMode === "reconcile") {
+    return true;
+  }
   if ("story" in action && !!action.story && "buildMode" in action) {
     // The navigator ASSESS turns (assess / assess-deploy / assess-refactor): judgment turns verified
     // by their @build-cycle record + state-derived route (NO static artifact output), the first
@@ -321,6 +331,14 @@ export function outputPathsForAction(action: WorkflowAction, consortDir: string,
     if (action.role === "product-owner" && action.mode === "intake") {
       return { "product-overview": "product-overview.md", nfrs: "nfrs.md", "design-brief": "design/design-brief.md" };
     }
+    // ux-designer: establish authors the design system (design-guide.json); the
+    // per-story ia refinement authors the information architecture (ia.md).
+    if (action.role === "ux-designer" && action.mode === "establish") {
+      return { "design-guide": rel(designGuideJson(consortDir)), ...META };
+    }
+    if (action.role === "ux-designer" && action.mode === "ia") {
+      return { ia: rel(iaMd(consortDir)), ...META };
+    }
     return {};
   }
   if (!("buildMode" in action)) {
@@ -341,10 +359,7 @@ export function outputPathsForAction(action: WorkflowAction, consortDir: string,
     if (action.role === "test-strategist" && story) {
       return { "test-list": rel(featureTestListJson(consortDir, f)), ...META };
     }
-    // ux-designer (feature-scoped, no story): the design system.
-    if (action.role === "ux-designer") {
-      return { "design-guide": rel(designGuideJson(consortDir)), ...META };
-    }
+    // (ux-designer establish + per-story ia refinement are handled in the mode block above.)
     // ── BUILD LANE (product channel -> project root) ───────────────────────────────────────────
     // navigator RED: the PRODUCT tests/ tree at the project root + the meta agent-log.
     if (action.role === "navigator" && story) {
@@ -614,12 +629,12 @@ export async function performTurnViaExecutor(
   const turnStart = Date.now();
   const result = await execute(step, ctx, executorDeps);
 
-  // Per-turn completion line for the log narrator. The executor does NOT go through the legacy
-  // claude-runner timing emit, so without this a finished agent turn never appears as
-  // "[drive] <role> turn <N>s" in drive-live.log – and consort-watch's turn-done rule + its per-turn
-  // IDE open (openRoleArtifacts) never fire for it. So the product-owner's intake docs (and every
-  // other role's artifacts) are revealed in the editor when the turn completes, same as before the
-  // executor became the sole agent path. Same format watch-classify.ts's turn-done regex expects.
+  // Per-turn completion line for the log narrator — the SINGLE "[drive] <role> turn <N>s" emit, so a
+  // finished agent turn appears in drive-live.log and consort-watch's turn-done rule + its per-turn IDE
+  // open (openRoleArtifacts) fire (the product-owner's intake docs + every role's artifacts reveal on
+  // completion). Unconditional for an invoke-role turn, so it covers a turn whose usage did not parse;
+  // the claude-runner records the structured turn.usage event (duration_ms) but does NOT also narrate,
+  // so the line prints exactly once. Same format watch-classify.ts's turn-done regex expects.
   if (action.kind === "invoke-role") {
     const doneModel = (manifest.agentOptions?.model as string | undefined) ?? "live";
     process.stderr.write(`[drive] ${action.role} turn ${((Date.now() - turnStart) / 1000).toFixed(1)}s (${doneModel})\n`);

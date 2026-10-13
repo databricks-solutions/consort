@@ -163,3 +163,33 @@ export function renderCrossStoryContextBlock(consortDir: string, feature: string
     JSON.stringify(ctx, null, 2)
   );
 }
+
+/** The SYMMETRIC, feature-complete context: EVERY story's ACs (none folded out) + the open_decisions +
+ *  the mandated not-null fields. Fed to the Navigator's one `reconcile` turn once all stories are gated,
+ *  so it checks the whole set against itself — closing the asymmetry where the first-designed story was
+ *  never checked against its later siblings. Reuses buildCrossStoryContext with a sentinel "current" that
+ *  matches no real story, so sibling_stories = ALL stories. */
+export function buildFeatureReconcileContext(
+  consortDir: string,
+  feature: string,
+): { stories: SiblingStory[]; open_decisions: OpenDecision[]; required_persistence_fields: RequiredField[] } {
+  const ctx = buildCrossStoryContext(consortDir, feature, "__reconcile_all__");
+  return { stories: ctx.sibling_stories, open_decisions: ctx.open_decisions, required_persistence_fields: ctx.required_persistence_fields };
+}
+
+/** The feature-complete reconciliation context as a prompt BLOCK for the Navigator's reconcile turn.
+ *  Empty when there is nothing to reconcile (fewer than two stories carry ACs), so a lone-story feature
+ *  injects nothing and the reconcile turn is skipped by the drive. */
+export function renderFeatureReconcileBlock(consortDir: string, feature: string): string {
+  const ctx = buildFeatureReconcileContext(consortDir, feature);
+  if (ctx.stories.length < 2) return "";
+  return (
+    "FEATURE-COMPLETE CROSS-STORY RECONCILIATION — every story below is now designed + gated. Check the " +
+    "WHOLE set against ITSELF, symmetrically (every story vs every other, including the first-designed one): " +
+    "an AC that contradicts another story's gated AC; a mandated (not-null) field no story's submit AC supplies; " +
+    "two stories' ACs that overlap on the same observable behavior; an invariant anchored to the wrong story. " +
+    "For each defect, name the OWNING story (the one to change) + its author (owner). This IS the context — do " +
+    "not run `consort-cross-story-context` yourself.\n\n" +
+    JSON.stringify(ctx, null, 2)
+  );
+}

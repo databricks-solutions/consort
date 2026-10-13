@@ -21,6 +21,7 @@ import { nextTransition } from "../../consort/orchestrator/drive/orchestrator-dr
 import type { StoryPipeline, StoryEntry } from "../../consort/pipeline/story-pipeline.js";
 import { writeReflectVerdict } from "../../consort/smells/reflection.js";
 import { storyAcIds, acsDir, storyTestListJson } from "../../consort/config/consort-paths.js";
+import { analystOrderedJson } from "../../consort/test-list/fan-out-plan.js";
 
 // A readable, self-contained copy of the recorded F1 design (architecture + test-list +
 // per-story ACs) lives under tests/fixtures/, so this test OWNS its input and never reaches
@@ -93,6 +94,9 @@ function scopePerStoryTestList(story: string): void {
     storyTestListJson(tdd, FEATURE, story),
     JSON.stringify({ feature_id: FEATURE, story_id: story, items }, null, 2),
   );
+  // B4: testListReady also requires the deterministic fan-out's ordered-list artifact (the bin's
+  // output). A real replay writes it when the test-strategist runs the bin; reproduce it here.
+  writeFileSync(analystOrderedJson(tdd, FEATURE, story), JSON.stringify({ items }, null, 2));
 }
 
 /** Story ids present in the recorded F1 corpus, in directory order. */

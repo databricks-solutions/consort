@@ -5,6 +5,11 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://www.skillsdirectory.com/skills/databricks-solutions-consort"><img src="https://www.skillsdirectory.com/api/skills/databricks-solutions-consort/badge" alt="Security: A — Skills Directory"></a>
+  <a href="https://github.com/hesreallyhim/awesome-claude-code"><img src="https://awesome.re/mentioned-badge.svg" alt="Mentioned in Awesome Claude Code"></a>
+</p>
+
 **Consort keeps AI-written code clean and correct: spec-first and test-driven, driven by a deterministic state machine with human-approval gates and immutable tests. Engineering discipline is no longer left to chance at the whim of a model. Every green is a real test run on a live branch of a real Lakebase database, enforced by contract, not suggestions.**
 
 Consort takes its name from the field of music. A *consort* is an ensemble that plays in concert: each musician holds one part, and a conductor keeps them in time. Consort is that, applied to building software. A set of agents each take on one familiar role from the software lifecycle — a spec author, an architect, a DBA, a test strategist, a UX designer, and a navigator/driver pair at the keyboard — while the product owner is the human's own seat (you, or a Human Proxy standing in headless), a deterministic conductor keeps them in sequence, and the human approves every gate. No agent plays another's part.

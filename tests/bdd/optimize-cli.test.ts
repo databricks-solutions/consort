@@ -98,7 +98,7 @@ describe("actionToHandoffPlan", () => {
   });
 
   it("maps a design feature turn (ux-designer, no story)", () => {
-    const p = actionToHandoffPlan({ kind: "invoke-role", role: "ux-designer" });
+    const p = actionToHandoffPlan({ kind: "invoke-role", role: "ux-designer", mode: "establish" });
     expect(p).toMatchObject({ id: "ux-designer", role: "ux-designer" });
   });
 

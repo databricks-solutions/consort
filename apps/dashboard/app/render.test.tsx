@@ -315,12 +315,12 @@ describe("render — LaneGraph", () => {
     const markup = renderToStaticMarkup(
       <LaneGraph state={withTopology({ passedNodes: [], activeNode: null, laneCurrent: null })} />,
     );
-    expect(markup).toContain("6/7 steps"); // design: 7 lightable (d-gate + d-hil excluded; d-breakdown is a new lightable step this pre-breakdown fixture doesn't light), 6 lit
+    expect(markup).toContain("5/7 steps"); // design: 7 lightable (d-gate + d-hil excluded; d-breakdown + the per-story d-ux-ia aren't lit by this old-corpus fixture), 5 lit
     expect(markup).toContain("7/8 steps"); // build: 8 lightable (b-verify, an automated role-owned gate, still counts); lit 7
-    // Plan reads 2/4: p-intake, p-propose, p-size, p-req (the PO authoring turn) — the Backlog gate is
-    // excluded (human gate), and breakdown is now a DESIGN-lane step (d-breakdown), not plan. This
-    // pre-p-intake render-state snapshot lit only p-propose + p-size.
-    expect(markup).toContain("2/4 steps");
+    // Plan reads 2/5: p-intake, p-ux-establish, p-propose, p-size, p-req (the PO authoring turn) — the
+    // Backlog gate is excluded (human gate), and breakdown is now a DESIGN-lane step (d-breakdown), not
+    // plan. This pre-p-intake render-state snapshot lit only p-propose + p-size.
+    expect(markup).toContain("2/5 steps");
   });
 
   it("a gate's colour comes from the parked-gate focus, not its gate state", () => {
@@ -442,7 +442,7 @@ describe("render — LaneGraph", () => {
     const markup = renderToStaticMarkup(<LaneGraph state={empty} />);
     expect((markup.match(/<svg/g) ?? []).length).toBe(4); // all lanes render even when empty
     expect(markup).toContain("not started");
-    expect(markup).toContain("0/4 steps"); // plan: 4 lightable steps (p-intake/propose/size/req; Backlog gate excluded, breakdown moved to design), none reached
+    expect(markup).toContain("0/5 steps"); // plan: 5 lightable steps (p-intake, p-ux-establish, p-propose, p-size, p-req; the two human gates excluded, breakdown is a design step), none reached
   });
 });
 
@@ -606,6 +606,50 @@ describe("render — EventTicker turn affordance", () => {
     // Escape as React does for text nodes, so a message with &/</> in a future corpus still matches.
     const firstReasoning = state.recentEvents.find((e) => e.event === "reasoning")!;
     expect(markup).toContain(escapeHtml(firstReasoning.message));
+  });
+
+  // Regression: a feature-complete /design run defers approvals, so each gate-approval ordinal
+  // carries three correspondence beats — await.gate (ask), response.gate (answer), and a
+  // turn.complete `progress` marker whose `request.role` is the ACTION KIND "approve-gate" (not an
+  // agent role). All three #ordinal markers share ONE colour: the GATE BAND (--status-gate-text),
+  // matching the kind label + left rail. The approve-gate kind must NEVER leak through as a role
+  // colour / --text-faint (the pre-fix bug the user caught at live turn #32).
+  it("colours a gate-approval turn's #ordinal with the gate band, not a role or the approve-gate kind", () => {
+    const base = { phase: "design", by: null, text: "GATE spec", outcome: null as "approved" | "validated" | null };
+    const s = withSource({
+      correlation: health(),
+      correspondence: {
+        recent: [
+          { ...base, at: "2026-10-12T02:11:50.000Z", direction: "orch-to-hil", kind: "progress", role: "approve-gate", ordinal: 32, outcome: "validated" },
+          { ...base, at: "2026-10-12T02:11:51.000Z", direction: "orch-to-hil", kind: "gate", role: null, ordinal: 32 },
+          { ...base, at: "2026-10-12T02:11:51.000Z", direction: "hil-to-orch", kind: "gate", role: null, ordinal: 32, outcome: "approved" },
+        ],
+      },
+    });
+    const markup = renderToStaticMarkup(<EventTicker state={s} onOpenTurn={() => {}} />);
+    expect(markup).toContain(">#32 </span>"); // the affordance renders
+    const prefixes = markup.match(/<span style="color:([^;]+);font-weight:700">#32 <\/span>/g) ?? [];
+    expect(prefixes.length).toBe(3); // all three beats of the gate turn carry a #32 marker
+    for (const p of prefixes) expect(p).toContain("var(--status-gate-text)");
+    expect(markup).not.toContain("var(--role-approve-gate)"); // not a role; never a CSS var
+    expect(markup).not.toContain('color:var(--role-product-owner);font-weight:700">#32'); // not an actor's role either
+  });
+
+  it("colours a non-gate agent turn's #ordinal with the owning role", () => {
+    // The gate-band rule is scoped to gate turns — an agent turn's correspondence beats still take
+    // the owning role's colour from its progress beat.
+    const base = { phase: "design", by: null, text: "architect notes", outcome: null as "approved" | "validated" | null };
+    const s = withSource({
+      correlation: health(),
+      correspondence: {
+        recent: [
+          { ...base, at: "2026-10-12T02:10:00.000Z", direction: "orch-to-hil", kind: "progress", role: "architect-reviewer", ordinal: 19, outcome: "validated" },
+        ],
+      },
+    });
+    const markup = renderToStaticMarkup(<EventTicker state={s} onOpenTurn={() => {}} />);
+    expect(markup).toContain('color:var(--role-architect-reviewer);font-weight:700">#19 ');
+    expect(markup).not.toContain('color:var(--status-gate-text);font-weight:700">#19 ');
   });
 });
 

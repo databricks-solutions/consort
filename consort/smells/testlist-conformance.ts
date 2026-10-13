@@ -6,8 +6,8 @@
 // reflect lap the deterministic checks were built to save.
 //
 // This module runs the deterministic AUTHORING-SMELL checks (checkClientKindLayerCoherence /
-// checkJsdomBrowserAssertion / checkTestlistWholeTableAggregate) over the per-story
-// test-list EARLIER:
+// checkJsdomBrowserAssertion / checkTestlistWholeTableAggregate / checkTestlistFixedKeyE2e /
+// checkTestlistScenarioFileCoherence) over the per-story test-list EARLIER:
 // `testlistConformanceReason` is the pure predicate the probe reads
 // (testListConforms), and `recordTestListGate` is the deterministic gate CLI step
 // that flags the SAME `reflect-testlist-defect` smell the reflect gate uses — so
@@ -36,6 +36,8 @@ import {
   checkClientKindLayerCoherence,
   checkJsdomBrowserAssertion,
   checkTestlistWholeTableAggregate,
+  checkTestlistFixedKeyE2e,
+  checkTestlistScenarioFileCoherence,
 } from "../orchestrator/validators/conformance/artifact-conformance.js";
 import { writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellHit } from "./smells.js";
 
@@ -62,11 +64,18 @@ function storyAcLayers(consortDir: string, featureId: string, story: string): Re
 }
 
 /**
- * The deterministic structural violations of a story's test-list, or null when it
- * conforms (or no test-list exists yet — vacuously conformant, so the gate never
- * pre-empts before the test-list is authored). Pure: reads only on-disk artifacts.
+ * The deterministic structural violations of a story's test-list + the ac_id(s) they
+ * concern, or null when it conforms (or no test-list exists yet — vacuously conformant,
+ * so the gate never pre-empts before the test-list is authored). The acIds let the
+ * revise self-heal SCOPE the re-author to exactly the flagged ACs (#4): a conformance
+ * flag that names its ACs becomes a targeted patch, NOT a whole-story clear that
+ * needlessly re-annotates every architect note. Pure: reads only on-disk artifacts.
  */
-export function testlistConformanceReason(consortDir: string, featureId: string, story: string): string | null {
+export function testlistConformanceViolations(
+  consortDir: string,
+  featureId: string,
+  story: string,
+): { reason: string; acIds: string[] } | null {
   const tlPath = storyTestListJson(consortDir, featureId, story);
   if (!existsSync(tlPath)) return null;
   let testListJson: string;
@@ -77,19 +86,30 @@ export function testlistConformanceReason(consortDir: string, featureId: string,
   }
   const acLayerById = storyAcLayers(consortDir, featureId, story);
   const violations: string[] = [];
+  const acIds = new Set<string>();
   for (const r of [
     checkClientKindLayerCoherence(testListJson, acLayerById),
     checkJsdomBrowserAssertion(testListJson),
     checkTestlistWholeTableAggregate(testListJson),
+    checkTestlistFixedKeyE2e(testListJson, acLayerById),
+    checkTestlistScenarioFileCoherence(testListJson),
   ]) {
-    if (!r.ok) violations.push(...r.violations);
+    if (!r.ok) {
+      violations.push(...r.violations);
+      for (const id of r.acIds ?? []) acIds.add(id);
+    }
   }
-  return violations.length === 0 ? null : violations.join("; ");
+  return violations.length === 0 ? null : { reason: violations.join("; "), acIds: [...acIds] };
+}
+
+/** The deterministic structural violations as a single string, or null when conformant. */
+export function testlistConformanceReason(consortDir: string, featureId: string, story: string): string | null {
+  return testlistConformanceViolations(consortDir, featureId, story)?.reason ?? null;
 }
 
 /** True iff the story's test-list passes the deterministic structural checks. */
 export function testListConforms(consortDir: string, featureId: string, story: string): boolean {
-  return testlistConformanceReason(consortDir, featureId, story) === null;
+  return testlistConformanceViolations(consortDir, featureId, story) === null;
 }
 
 /**
@@ -101,8 +121,8 @@ export function testListConforms(consortDir: string, featureId: string, story: s
  * which does not spend the revise budget), exactly like a passing reflect verdict.
  */
 export function recordTestListGate(consortDir: string, featureId: string, story: string): SmellHit[] {
-  const reason = testlistConformanceReason(consortDir, featureId, story);
-  if (reason === null) {
+  const found = testlistConformanceViolations(consortDir, featureId, story);
+  if (found === null) {
     resolveOpenSmells(consortDir, TESTLIST_SMELL, {
       story_id: story,
       kind: "cleared",
@@ -113,8 +133,11 @@ export function recordTestListGate(consortDir: string, featureId: string, story:
   const hit: SmellHit = {
     smell: TESTLIST_SMELL,
     cycle_ids: [],
-    detail: `test-list conformance: ${reason}`,
+    detail: `test-list conformance: ${found.reason}`,
     story_id: story,
+    // Carry the flagged ac_id(s) so the revise self-heal scopes the re-author to
+    // exactly those ACs (a targeted patch, no whole-story architect re-annotate) — #4.
+    ...(found.acIds.length > 0 ? { ac_ids: found.acIds } : {}),
   };
   // Idempotent: a re-run against the same non-conformant test-list re-detects the
   // same defect; only write it when not already open for this story.

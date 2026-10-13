@@ -30,7 +30,7 @@ See [`agents/navigator.md`](agents/navigator.md) and [`agents/driver.md`](agents
 
 Consort is **spec-first and test-driven**: it composes two disciplines back to back. The **design lane is spec-driven** – spec drafting, architectural review, test-list construction, all driven by `/design` – and the **build lane is test-driven** – the RED → GREEN → REVIEW → REFACTOR cycles driven by `/build`. Spec-first means the design lane freezes the spec at the `spec` + `test_list` gates; the build lane only starts once they are approved, so the build always runs against a reviewed spec.
 
-**Iterative and evolutionary.** The freeze is per increment, not forever. Across increments, all three dimensions evolve and are never treated as static: the **spec and features** are living , each sprint the PO re-plans, folding in what the last working software revealed; the **architecture** evolves under fitness functions (`@architectural-design-principles/evolutionary-architecture.md`); and the **database** evolves by migration on the paired branch, diffed against its parent (`@architectural-design-principles/evolutionary-database-design.md`). The rule is: spec-first within an increment, evolutionary across increments.
+**Iterative and evolutionary.** The freeze is per increment, not forever. Across increments, all three dimensions evolve and are never treated as static: the **spec and features** are living – each sprint the PO re-plans, folding in what the last working software revealed; the **architecture** evolves under fitness functions (`@architectural-design-principles/evolutionary-architecture.md`); and the **database** evolves by migration on the paired branch, diffed against its parent (`@architectural-design-principles/evolutionary-database-design.md`). The rule is: spec-first within an increment, evolutionary across increments.
 
 Gates are keyed (not numbered): `spec` / `plan` / `test_list` / `promote` / `deploy`. The SDD lane runs PER STORY (it streams), and experiments + plans are per-story.
 
@@ -88,6 +88,8 @@ Beyond the gates, the Human Proxy stands in wherever the path needs human input 
 
 Check the mode with `[ "$LAKEBASE_CONSORT_HUMAN_PROXY" = "1" ]`. Absent/unset = normal HITL.
 
+**Running commands headless.** A role turn runs with artifact edits auto-accepted and a fixed Bash allow-list: the kit CLIs (`./scripts/lk …`), `npm …`, `uv run …`, `npx playwright …`, and `cd …`. Make every artifact edit with the file-edit tool (auto-accepted), and run each kit command — your self-check included — as its own command so it matches a granted prefix. The permission matcher evaluates a compound (`a && b`) by every segment and grants it only when all of them are granted, so a kit command keeps its grant when it stands alone.
+
 ## Configuration (one source of truth per setting)
 
 Every knob has exactly ONE home; see [`CONFIG.md`](CONFIG.md) for the full table + writers. In brief:
@@ -126,7 +128,7 @@ The **orchestrator** is the deterministic driver (`consort-drive`), **not an LLM
 
 Every AC declares a `layer` ("API" / "E2E" / "Infra" in `ac.schema.json`). The Driver dispatches to the runner that matches the current cycle's layer, not a single uniform `npm test`. The kit enforces this: `markGreen` refuses to advance a layer-tagged cycle until `recordRunnerOutcome` has logged at least one run for the matching tag.
 
-A test-list item's `kind` refines this: a **`kind:"client"`** item (a UI-presentation AC the architecture routes to the SPA's own harness) runs through the CLIENT toolchain regardless of layer , `npm --prefix client test` (Vitest component test) or `npm --prefix client run test:e2e` (Playwright spec), authored under `client/tests/`. `behavior`/`fitness` items run through the layer runner below.
+A test-list item's `kind` refines this: a **`kind:"client"`** item (a UI-presentation AC the architecture routes to the SPA's own harness) runs through the CLIENT toolchain regardless of layer – `npm --prefix client test` (Vitest component test) or `npm --prefix client run test:e2e` (Playwright spec), authored under `client/tests/`. `behavior`/`fitness` items run through the layer runner below.
 
 | AC.layer | tag | Default runner | Notes |
 |---|---|---|---|

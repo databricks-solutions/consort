@@ -39,6 +39,11 @@ export type SmellName =
   | "reflect-spec-defect"
   | "reflect-testlist-defect"
   | "reflect-architecture-defect"
+  // The reflect critic found a user-facing AC (E2E / client) whose screen/form the IA
+  // (ia.md) does not name. Spec-level + ux-designer-owned: routes to the UX Designer to
+  // re-run the ia refinement (bounded one revise) then HITL. The backstop to the per-story
+  // ia refinement.
+  | "reflect-ia-defect"
   // The deterministic architect-notes projection (FEIP-7902) found a story whose
   // AC layers / architecture dimensions the project canon does not cover: a blind
   // projection would guess, so route to the Architect (re-annotate + amend the
@@ -57,11 +62,11 @@ export interface SmellDefinition {
   level?: "spec" | "build";
   /** For a `spec`-level smell: the design-lane author whose remediation it is
    *  (the verdict routes here on `revise`). */
-  owning_role?: "spec-author" | "test-strategist" | "architect-reviewer";
+  owning_role?: "spec-author" | "test-strategist" | "architect-reviewer" | "ux-designer";
   /** For a `spec`-level smell: the gate to re-open + re-run (Gate 1 spec / Gate 2
-   *  architecture / Gate 3 test_list). The story re-enters the design lane at that
-   *  author. */
-  gate_to_rerun?: "spec" | "test_list" | "architecture";
+   *  architecture / Gate 3 test_list / the ia refinement). The story re-enters the
+   *  design lane at that author. */
+  gate_to_rerun?: "spec" | "test_list" | "architecture" | "ia";
 }
 
 export const SMELL_CATALOG: SmellDefinition[] = [
@@ -222,6 +227,23 @@ export const SMELL_CATALOG: SmellDefinition[] = [
     level: "spec",
     owning_role: "architect-reviewer",
     gate_to_rerun: "architecture",
+  },
+  {
+    name: "reflect-ia-defect",
+    description:
+      "The pre-build reflection critic (Navigator, reflect mode) found a user-facing AC (an E2E or " +
+      "client AC) whose screen or form the information architecture (ia.md) does not name — the " +
+      "surface the AC asserts has no home in the IA. Left unresolved the architect tags an E2E layer " +
+      "against a screen that does not exist, and the build drives a UI the IA never described.",
+    proposed_remediation:
+      "Route back to the UX Designer (the ia refinement): add the AC's screen/form + flow to ia.md " +
+      "(additive), OR, if the capability has no standalone surface, the AC's layer is reconsidered with " +
+      "the spec-author. Bounded to one automatic revise per story; if the critic still finds the gap " +
+      "after the re-refinement, it escalates to the human.",
+    // A missing IA surface is a ux-designer fix: route back to the ia refinement.
+    level: "spec",
+    owning_role: "ux-designer",
+    gate_to_rerun: "ia",
   },
   {
     name: "shared-state-aggregate-assertion",
@@ -402,6 +424,10 @@ export interface SmellHit {
   story_id?: string;
   /** AC the smell concerns, when applicable (carried into the revise brief). */
   ac_id?: string;
+  /** AC id(s) the smell concerns when it can span several (the deterministic
+   *  test-list conformance flag names every flagged item's AC). Lets the revise
+   *  self-heal SCOPE the re-author to exactly these ACs — #4. */
+  ac_ids?: string[];
 }
 
 /** The revise-routing taxonomy for a smell, or null if it is build-level
@@ -409,8 +435,8 @@ export interface SmellHit {
 export function specLevelSmell(
   name: string,
 ): {
-  owning_role: "spec-author" | "test-strategist" | "architect-reviewer";
-  gate_to_rerun: "spec" | "test_list" | "architecture";
+  owning_role: "spec-author" | "test-strategist" | "architect-reviewer" | "ux-designer";
+  gate_to_rerun: "spec" | "test_list" | "architecture" | "ia";
 } | null {
   const def = SMELL_CATALOG.find((s) => s.name === name);
   if (!def || def.level !== "spec" || !def.owning_role || !def.gate_to_rerun) return null;
@@ -436,26 +462,104 @@ export function specLevelSmell(
  * path) share ONE brief, instead of the string living in the smoke-only Human
  * Proxy.
  */
-export function composeReviseBrief(input: { smell: string; gate: string; reason: string }): string {
+export function composeReviseBrief(input: { smell: string; gate: string; reason: string; scoped?: boolean; acIds?: string[] }): string {
   const artifact =
     input.gate === "spec"
       ? "acceptance criteria"
       : input.gate === "architecture"
         ? "architectural annotations + architecture.json"
-        : "ordered test list";
+        : input.gate === "ia"
+          ? "information architecture (ia.md) screen/form/flow"
+          : "ordered test list";
   const isCoverageDefect =
-    input.smell === "reflect-testlist-defect" || input.smell === "reflect-spec-defect";
+    input.smell === "reflect-testlist-defect" ||
+    input.smell === "reflect-spec-defect" ||
+    input.smell === "reflect-architecture-defect";
   if (isCoverageDefect) {
-    return (
-      `REVISE (reflection gate): ${input.reason}\n\n` +
-      `PRESERVE every ${artifact} item this story ALREADY has – they passed prior gates and MUST remain. ` +
-      `This is an ADDITIVE revise: keep all existing files/entries intact (do not delete, rename, ` +
-      `renumber, merge, or overwrite them) and ADD the specific coverage named above alongside them. ` +
-      `The named coverage is REQUIRED: add the missing test(s)/criterion that assert the exact behavior ` +
-      `described – do NOT omit it, weaken it, or defer it to an open question. If the stated behavior ` +
-      `genuinely cannot be tested as written, name the concrete blocker; do not punt. After writing, the ` +
-      `story's ${artifact} set = every prior item PLUS the added one(s).`
-    );
+    // A reflect ARCHITECTURE defect routes to the architect-reviewer at the `architecture` gate (its own
+    // product): the per-AC architectural_notes were cleared (clearArchitecturalNotes), NOT the ACs — so
+    // this is non-destructive (no AC wipe). The architect re-annotates to resolve the named inconsistency
+    // (a wrong layer tag, a route/path/contract in the notes that disagreed with the IA/tests, or an
+    // invariant contradicting the AC) — this is why the slot exists: such a defect must NOT be
+    // mis-attributed to the spec-author, which would delete the AC.
+    if (input.gate === "architecture") {
+      return (
+        `REVISE (reflection gate): ${input.reason}\n\n` +
+        `This is a reflect ARCHITECTURE defect on the architect's own product: the flagged AC's ` +
+        `architectural_notes (its layer, the route/path/contract, or a persistence invariant) were cleared ` +
+        `and must be RE-ANNOTATED to resolve it — re-derive them against the ACs, the IA (ia.md), and ` +
+        `architecture.json so the layer tag, the route/path, and the invariants agree with the IA and the ` +
+        `tests. The acceptance criteria themselves are intact; author the architectural annotations only. ` +
+        `The named fix is REQUIRED: the re-annotation MUST resolve the exact inconsistency described – do ` +
+        `NOT omit it, weaken it, or defer it to an open question. If it genuinely cannot be resolved as ` +
+        `written, name the concrete blocker; do not punt.`
+      );
+    }
+    // The ordered test list is produced by the DETERMINISTIC analyst fan-out, NOT hand-authored, so a
+    // test_list coverage revise is RE-DERIVED by re-running the bin — the brief must NOT tell the
+    // test-strategist to hand-preserve / keep-intact / add-alongside. That manual-edit instruction both
+    // contradicted the co-heal's "cleared BY DESIGN, re-derive FRESH" directive (observed live: the
+    // test-strategist had to reason its way out of the conflict) AND described an authoring model the
+    // fan-out replaced. The run-14 AC-loss failure mode it was guarding is now prevented by the MACHINERY:
+    // the scoped co-heal preserves the unaffected items (ids kept) + clears only the flagged AC(s), and
+    // the bin merges the preserved sidecar onto the fresh scope; a full revise clears the whole list.
+    if (input.gate === "test_list") {
+      // DIRECTED PATCH (scoped): the reflect finding names the EXACT fix (rename a scenario_file, fix a
+      // literal, add one named test), so the test-strategist EDITS the existing ordered list in place
+      // (its directive carries the no-fan-out patch steps) instead of re-running the fan-out — which
+      // re-rolls the whole scope nondeterministically (the 33→22 swing + repeated reflect bounces).
+      if (input.scoped) {
+        return (
+          `REVISE (reflection gate): ${input.reason}\n\n` +
+          `This is a DIRECTED test-list fix — apply the SPECIFIC change named above to the flagged item(s) in the ` +
+          `existing ordered list (your directive has the exact edit steps); do NOT re-run the fan-out, and keep ` +
+          `every OTHER item + its T-id byte-identical. The named fix is REQUIRED: make the exact change described ` +
+          `– do NOT omit it, weaken it, or defer it to an open question. If it genuinely cannot be made as written, ` +
+          `name the concrete blocker; do not punt.`
+        );
+      }
+      // FULL (whole-story/coupled): the test list is re-derived by RE-RUNNING the fan-out.
+      return (
+        `REVISE (reflection gate): ${input.reason}\n\n` +
+        `This is a reflect COVERAGE defect on the ordered test list, which is produced by the DETERMINISTIC ` +
+        `analyst fan-out — re-derive it by RE-RUNNING the fan-out per your directive; do NOT hand-edit, ` +
+        `hand-preserve, or hand-renumber the list. This story's prior test list was cleared, so the fan-out ` +
+        `re-derives the full list. The named coverage is REQUIRED: the re-derived items MUST assert the exact ` +
+        `behavior described above – do NOT omit it, weaken it, or defer it to an open question. If the stated ` +
+        `behavior genuinely cannot be tested as written, name the concrete blocker; do not punt.`
+      );
+    }
+    // A reflect SPEC defect. The revise clears the flagged AC file(s), so the brief must NOT tell the
+    // spec-author to "PRESERVE / keep all intact" — on a wiped acs/ that lie drove it to reconstruct the
+    // prior ACs (and the architect's notes, and feature-spec) from the drive log (observed live: AC drift,
+    // architecture.md edits, a suppressed architect re-run). SCOPED (ac_ids): only the flagged AC(s) were
+    // cleared and every other AC — with its architect notes — stays on disk, so re-author ONLY those.
+    // Whole-story (no ac_ids): the ACs were fully cleared, so re-derive FRESH from the canonical breakdown
+    // + intake, not the log. Either way the architect re-annotates the layers/notes afterward.
+    if (input.gate === "spec") {
+      const ids = input.acIds ?? [];
+      if (ids.length > 0) {
+        return (
+          `REVISE (reflection gate): ${input.reason}\n\n` +
+          `Re-author ONLY the flagged acceptance criterion(a): ${ids.join(", ")}, editing it/them to address ` +
+          `the defect above. The story's OTHER ACs are PRESERVED on disk with the architect's notes intact; ` +
+          `the architect re-annotates the layers/notes afterward. The named coverage is REQUIRED: the ` +
+          `re-authored AC(s) MUST assert the exact behavior described – do NOT omit it, weaken it, or defer it ` +
+          `to an open question. If the stated behavior genuinely cannot be tested as written, name the ` +
+          `concrete blocker; do not punt.`
+        );
+      }
+      return (
+        `REVISE (reflection gate): ${input.reason}\n\n` +
+        `The prior acceptance criteria were cleared for this re-design — re-derive this story's acceptance ` +
+        `criteria FRESH from the breakdown (story.json: asA/iWantTo/soThat) and the feature intake on disk, ` +
+        `addressing the defect above; the architect re-annotates the layers/notes afterward. The named ` +
+        `coverage is REQUIRED: the re-derived criteria MUST assert the exact behavior described – do NOT omit ` +
+        `it, weaken it, or defer it to an open question. If the stated behavior genuinely cannot be tested as ` +
+        `written, name the concrete blocker; do not punt.`
+      );
+    }
+    // No other coverage-defect gate reaches here (reflect-testlist/spec only).
   }
   return (
     `REVISE (Product Owner): ${input.reason}\n\n` +
@@ -859,6 +963,21 @@ export function resolveAllOpenSmellsForStory(
   return cleared;
 }
 
+/** The union of ac_id(s) carried by the OPEN (unresolved) entries for a (smell,
+ *  story) — both the singular `ac_id` and the plural `ac_ids`. The revise self-heal
+ *  reads this to scope a deterministic FLAG revise (one with no reflect verdict on
+ *  disk, so there are no findings to scope from) to exactly the flagged ACs — #4.
+ *  Empty when nothing is flagged with an AC. */
+export function openSmellScopeAcIds(consortDir: string, smell: string, story_id?: string): string[] {
+  const ids = new Set<string>();
+  for (const d of readSmellsLog(consortDir).detected) {
+    if (d.resolution || !smellMatches(d, smell, story_id)) continue;
+    if (typeof d.ac_id === "string" && d.ac_id.length > 0) ids.add(d.ac_id);
+    for (const id of d.ac_ids ?? []) if (typeof id === "string" && id.length > 0) ids.add(id);
+  }
+  return [...ids];
+}
+
 /** How many times this (smell, story) has already been revised: the
  *  count of resolved-as-`revised` entries. The one-revise-per-(smell,story) bound
  *  compares against this so a re-fired-then-revised smell can't loop forever. */
@@ -868,12 +987,18 @@ export function priorReviseCount(consortDir: string, smell: string, story_id?: s
   ).length;
 }
 
-/** The reflect-gate smell names (the pre-build reflection critic's spec + test-list
- *  defects). Budgeted per-STORY, not per-smell: one full design re-run heals all of
- *  a reflection's coupled findings together. */
+/** The reflect-gate smell names (the pre-build reflection critic's spec, test-list,
+ *  and ia defects). Budgeted per-STORY, not per-smell: one full design re-run heals
+ *  all of a reflection's coupled findings together — e.g. a verdict that flags BOTH
+ *  an ia-surface gap (ux-designer) and a test-list gap (test-strategist) re-authors
+ *  both owners in ONE re-design against one per-story budget. reflect-architecture-defect
+ *  is intentionally absent: the reflect owner model routes architecture under-declarations
+ *  through the spec/test-list owners and co-heals the architect (see revise.ts). */
 const REFLECT_SMELL_NAMES: ReadonlySet<string> = new Set([
   "reflect-spec-defect",
   "reflect-testlist-defect",
+  "reflect-architecture-defect",
+  "reflect-ia-defect",
 ]);
 export function isReflectSmell(name: string): boolean {
   return REFLECT_SMELL_NAMES.has(name);

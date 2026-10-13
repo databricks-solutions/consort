@@ -10,6 +10,8 @@ import { join } from "node:path";
 import {
   featureTestListJson,
   storyTestListJson,
+  storyIaCoverageJson,
+  testListPatchJson,
   acsDir,
   acJson,
   handbackFile,
@@ -23,7 +25,10 @@ import {
   readSmellsLog,
   resolveOpenReflectSmellsForStory,
   storyTestListFingerprint,
+  writeSmellsLog,
+  openSmellScopeAcIds,
 } from "../../consort/smells/smells";
+import { analystOrderedJson } from "../../consort/test-list/fan-out-plan";
 import { recordBlockingSmellFlag, writeEscalation, readEscalations } from "../../consort/gates/escalation";
 import { nextTransition, nextDesignOnlyTransition, actionLane, type DriveState } from "../../consort/orchestrator/drive/orchestrator-drive";
 import { commandsForAction, type DriveEffectsConfig } from "../../consort/orchestrator/drive/orchestrator-effects";
@@ -365,6 +370,67 @@ describe("applyReviseSelfHeal (the revise self-heal transition)", () => {
     expect(readFileSync(hb, "utf8")).toMatch(/T1 already green/);
   });
 
+  it("ia-gate revise clears the IA coverage marker + architect notes (ux re-refines, architect re-tags), KEEPS the ACs", () => {
+    // The reflect-ia-defect backstop: the IA gained a surface, so the per-story ia refinement
+    // must re-run (marker cleared -> iaRefined false) AND the architect must re-tag E2E layers
+    // against it (architectural_notes cleared -> architectAnnotated false). The ACs are preserved.
+    writeFileSync(storyIaCoverageJson(tdd, FEATURE, STORY), JSON.stringify({ story: STORY, reconciled_at: "2026-01-01T00:00:00Z" }) + "\n");
+    writeFileSync(
+      acJson(tdd, FEATURE, STORY, "AC1-x"),
+      JSON.stringify({ id: "AC1-x", layer: "E2E", given: "g", when: "w", then: "t", status: "draft", architectural_notes: "E2E via the file-stock form" }) + "\n",
+    );
+    applyReviseSelfHeal({
+      featureId: FEATURE, story: STORY, smell: "reflect-ia-defect",
+      routedTo: "ux-designer", gate: "ia", reason: "AC1 asserts a surface ia.md does not name", consortDir: tdd,
+    });
+    expect(existsSync(storyIaCoverageJson(tdd, FEATURE, STORY))).toBe(false); // marker cleared -> ux ia re-runs
+    const ac = JSON.parse(readFileSync(acJson(tdd, FEATURE, STORY, "AC1-x"), "utf8")) as { id: string; architectural_notes?: string };
+    expect(ac.id).toBe("AC1-x"); // the AC itself is preserved
+    expect(ac.architectural_notes ?? "").toBe(""); // notes cleared -> architect re-tags
+    const hb = handbackFile(tdd, FEATURE, "ux-designer", STORY);
+    expect(readFileSync(hb, "utf8")).toMatch(/ia\.md does not name/);
+    // Co-heal is scoped to the ARCHITECT (re-tag E2E layers against the new IA) — NOT the test-strategist,
+    // which can't fix ia.md in a test list and would just hedge "the seams still need a home" (confusing
+    // narration for no work). So the architect gets a brief; the test-strategist does not.
+    expect(existsSync(handbackFile(tdd, FEATURE, "architect-reviewer", STORY))).toBe(true);
+    expect(existsSync(handbackFile(tdd, FEATURE, "test-strategist", STORY))).toBe(false);
+  });
+
+  it("#4 — a DETERMINISTIC test_list conformance flag (ac_ids, no reflect verdict) revises SCOPED: patch marker + no architect re-annotate", () => {
+    // The pre-reflect conformance gate flags reflect-testlist-defect with the offending AC id(s) but writes
+    // NO reflect verdict. Before #4 that empty-findings path cleared the WHOLE story (every architect note
+    // re-annotated). Now the self-heal reads the flag's ac_id(s) and takes the SCOPED patch path.
+    const flaggedAc = "AC1-x";
+    const otherAc = "AC2-y";
+    writeFileSync(
+      acJson(tdd, FEATURE, STORY, flaggedAc),
+      JSON.stringify({ id: flaggedAc, layer: "E2E", given: "g", when: "w", then: "t", architectural_notes: "notes-AC1" }) + "\n",
+    );
+    writeFileSync(
+      acJson(tdd, FEATURE, STORY, otherAc),
+      JSON.stringify({ id: otherAc, layer: "API", given: "g", when: "w", then: "t", architectural_notes: "notes-AC2" }) + "\n",
+    );
+    // analyst-ordered.json present so the scoped PATCH path can keep it (edit in place, no fan-out re-roll).
+    writeFileSync(analystOrderedJson(tdd, FEATURE, STORY), JSON.stringify({ items: [{ id: "T1", ac_id: flaggedAc }] }) + "\n");
+    // The deterministic flag: ac_ids, no reflect verdict on disk.
+    writeSmellsLog(tdd, [{ smell: "reflect-testlist-defect", cycle_ids: [], detail: "test-list conformance: …", story_id: STORY, ac_ids: [flaggedAc] }]);
+    expect(openSmellScopeAcIds(tdd, "reflect-testlist-defect", STORY)).toEqual([flaggedAc]);
+
+    applyReviseSelfHeal({
+      featureId: FEATURE, story: STORY, smell: "reflect-testlist-defect",
+      routedTo: "test-strategist", gate: "test_list", reason: "test-list conformance: client test on a backend AC", consortDir: tdd,
+    });
+
+    // SCOPED patch: the ordered list is kept + the patch marker names exactly the flagged AC.
+    expect(existsSync(analystOrderedJson(tdd, FEATURE, STORY))).toBe(true);
+    const marker = testListPatchJson(tdd, FEATURE, STORY);
+    expect(existsSync(marker)).toBe(true);
+    expect(JSON.parse(readFileSync(marker, "utf8")).ac_ids).toEqual([flaggedAc]);
+    // The churn fix: NO architect re-annotate — both ACs keep their notes (the full-clear path is skipped).
+    expect(JSON.parse(readFileSync(acJson(tdd, FEATURE, STORY, flaggedAc), "utf8")).architectural_notes).toBe("notes-AC1");
+    expect(JSON.parse(readFileSync(acJson(tdd, FEATURE, STORY, otherAc), "utf8")).architectural_notes).toBe("notes-AC2");
+  });
+
   it("invalidates the stale reflect verdict so the re-dispatched Navigator recomputes fresh (Finding 9)", () => {
     // A prior reflect turn judged the PRE-fix test-list and failed it.
     writeReflectVerdict(tdd, FEATURE, STORY, {
@@ -417,7 +483,11 @@ describe("reviseStoryWithSelfHeal (operator pipeline revise)", () => {
     expect(existsSync(hb)).toBe(true);
     const brief = readFileSync(hb, "utf8");
     expect(brief).toMatch(/DELETE on stock_adjustments is rejected/);
-    expect(brief).toMatch(/ADD the specific coverage/);
+    // The test list is fan-out-produced: the brief re-DERIVES via the bin (no hand-edit), it does NOT
+    // hand the test-strategist the old manual "ADD the specific coverage / keep all existing intact".
+    expect(brief).toMatch(/RE-?RUN/i);
+    expect(brief).toMatch(/do NOT hand-edit/i);
+    expect(brief).not.toMatch(/ADD the specific coverage/);
     // The story is back in the design lane.
     expect(readPipeline(tdd, FEATURE).stories[STORY].status).toBe("designing");
   });

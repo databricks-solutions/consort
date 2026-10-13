@@ -33,6 +33,18 @@ import type {
 export interface StoryArtifactProbe {
   /** The Spec Author has drafted this story's ACs (stories/<S>/story.json). */
   hasAcs(story: string): boolean;
+  /** A SCOPED spec revise cleared only the flagged AC file(s) (recorded in the
+   *  spec-revise-scope marker) and they are not yet re-authored — re-invoke the
+   *  spec-author for just those, while the other ACs stay intact on disk. */
+  specRevisePending(story: string): boolean;
+  /** The UX Designer refined ia.md for this story's declared surfaces (its
+   *  screens/forms/flows are named in ia.md). Runs after the ACs, before the
+   *  architect. */
+  iaRefined(story: string): boolean;
+  /** This story's IA refinement can be projected (no ux turn): the story
+   *  introduces no surface ia.md does not already name. Only consulted while
+   *  iaRefined is false. */
+  iaProjectable(story: string): boolean;
   /** The Architect annotated layers / NFR coverage on this story's ACs. */
   architectAnnotated(story: string): boolean;
   /** This story's per-AC notes can be projected from the canon (no architect
@@ -49,6 +61,13 @@ export interface StoryArtifactProbe {
    *  (client-kind↔layer, e2e coverage, jsdom-vacuous assertion). Vacuously true
    *  with no test-list. Gates the lane before the LLM reflect. */
   testListConforms(story: string): boolean;
+  /** Every E2E AC's declared ui_seams are named in ia.md (the DETERMINISTIC pre-reflect
+   *  AC↔IA gate, #3). Vacuously true with no ia.md or no declared seams (fail-open).
+   *  Gates the lane after the architect, before the LLM reflect. */
+  iaConforms(story: string): boolean;
+  /** Feature-level: the symmetric cross-story reconciliation verdict has no BLOCKING defect
+   *  (the design lane may advance to design-complete). False until the reconcile turn runs. */
+  reconcilePassed(): boolean;
   /** The pre-build reflection critic PASSED this story's spec + test-list
    *  (reflect-verdict.json passed:true). A missing/failed verdict is false. */
   reflectionPassed(story: string): boolean;
@@ -206,11 +225,15 @@ function storyView(
     gateSurfaced: e.gate != null || e.status === "awaiting-gate",
     design: {
       hasAcs: probe.hasAcs(id),
+      specRevisePending: probe.specRevisePending(id),
+      iaRefined: probe.iaRefined(id),
+      iaProjectable: probe.iaProjectable(id),
       architectAnnotated: probe.architectAnnotated(id),
       architectProjectable: probe.architectProjectable(id),
       dbaDesigned: probe.dbaDesigned(id),
       testListReady: probe.testListReady(id),
       testListConforms: probe.testListConforms(id),
+      iaConforms: probe.iaConforms(id),
       reflectionPassed: probe.reflectionPassed(id),
       reflectionVerdictWritten: probe.reflectionVerdictWritten(id),
     },
@@ -278,6 +301,7 @@ export function deriveDriveState(
     breakdownDone,
     storyOrder,
     stories,
+    reconcilePassed: probe.reconcilePassed(),
     buildActive: pipeline.build_active,
     escalation: probe.pendingEscalation(),
   };

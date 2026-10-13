@@ -49,11 +49,16 @@ var LAYERS = ["API", "E2E", "Infra"];
 var HELP = `consort-annotate-ac \u2013 safely add the Architect's layer + architectural_notes to an AC
 
 Usage:
-  consort-annotate-ac --feature <F> --story <S> --ac <AC> --layer <API|E2E|Infra> --notes "<text>" [--consort-dir <dir>]
+  consort-annotate-ac --feature <F> --story <S> --ac <AC> --layer <API|E2E|Infra> --notes "<text>" \\
+    [--ui-seams "seam-a,seam-b"] [--consort-dir <dir>]
 
-Reads acs/<AC>.json, merges { layer, architectural_notes } ON TOP of the existing
-object (every prior field preserved), and writes valid JSON. Use this instead of
-hand-editing the AC file, so a dropped brace can never corrupt it.
+Reads acs/<AC>.json, merges { layer, architectural_notes[, ui_seams] } ON TOP of the
+existing object (every prior field preserved), and writes valid JSON. Use this instead
+of hand-editing the AC file, so a dropped brace can never corrupt it.
+
+--ui-seams (E2E / client ACs): a comma-separated list of the ia.md data-testid seam
+tokens this AC's UI must drive (e.g. "stock-cell-tracking,stock-not-tracked"). The
+deterministic pre-reflect IA gate checks each is named in ia.md.
 `;
 function parseArgs(argv) {
   const out = {};
@@ -74,6 +79,9 @@ function parseArgs(argv) {
       case "--notes":
         out.notes = argv[++i];
         break;
+      case "--ui-seams":
+        out.uiSeams = argv[++i];
+        break;
       case "--consort-dir":
       case "--tdd-dir":
         out.consortDir = argv[++i];
@@ -92,7 +100,12 @@ function mergeAcAnnotation(raw, fields) {
   const obj = JSON.parse(raw);
   if (fields.layer) obj.layer = fields.layer;
   obj.architectural_notes = fields.notes;
+  if (fields.uiSeams !== void 0) obj.ui_seams = fields.uiSeams;
   return JSON.stringify(obj, null, 2) + "\n";
+}
+function parseUiSeams(raw) {
+  if (raw === void 0) return void 0;
+  return [...new Set(raw.split(",").map((s) => s.trim()).filter((s) => s.length > 0))];
 }
 function main(argv) {
   const args = parseArgs(argv);
@@ -123,7 +136,7 @@ ${HELP}`);
   }
   let merged;
   try {
-    merged = mergeAcAnnotation(fs2.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes });
+    merged = mergeAcAnnotation(fs2.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes, uiSeams: parseUiSeams(args.uiSeams) });
   } catch (e) {
     process.stderr.write(
       `Error: ${file} is not valid JSON (${e instanceof Error ? e.message : String(e)}). Fix the existing file's syntax first (this tool preserves fields; it won't overwrite a corrupt AC blindly).
@@ -141,5 +154,6 @@ if (isCliEntry(import.meta.url)) {
 }
 export {
   mergeAcAnnotation,
-  parseArgs
+  parseArgs,
+  parseUiSeams
 };

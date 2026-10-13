@@ -18,6 +18,9 @@ function fakeProbe(facts: Record<string, Partial<Record<keyof StoryArtifactProbe
   const get = (s: string, k: keyof StoryArtifactProbe) => facts[s]?.[k] === true;
   return {
     hasAcs: (s) => get(s, "hasAcs"),
+    specRevisePending: (s) => get(s, "specRevisePending"),
+    iaRefined: (s) => get(s, "iaRefined"),
+    iaProjectable: (s) => get(s, "iaProjectable"),
     architectAnnotated: (s) => get(s, "architectAnnotated"),
     architectProjectable: (s) => get(s, "architectProjectable"),
     dbaDesigned: (s) => get(s, "dbaDesigned"),
@@ -26,6 +29,8 @@ function fakeProbe(facts: Record<string, Partial<Record<keyof StoryArtifactProbe
     // it false, so existing fixtures keep the pre-gate flow; a new test opts in with
     // { testListConforms: false } to exercise the deterministic pre-reflect gate.
     testListConforms: (s) => facts[s]?.testListConforms !== false,
+    iaConforms: (s) => facts[s]?.iaConforms !== false,
+    reconcilePassed: () => true, // feature-level; default passed so existing design-complete tests converge
     reflectionPassed: (s) => get(s, "reflectionPassed"),
     reflectionVerdictWritten: (s) => get(s, "reflectionVerdictWritten"),
     testsWritten: (s) => get(s, "testsWritten"),
@@ -157,6 +162,18 @@ describe("deriveDriveState + nextTransition: realistic on-disk situations", () =
       FEATURE,
     );
     expect(nextTransition(state)).toEqual({ kind: "flag-testlist-nonconformance", story: "S1" });
+  });
+
+  it("design lane: once the architect has annotated, a seam the IA does not name flags ia-nonconformance BEFORE the dba/reflect (#3)", () => {
+    const p = pipeline({ S1: { status: "designing" } });
+    const state = deriveDriveState(
+      p,
+      // architectAnnotated:true (ui_seams declared) but iaConforms:false -> the deterministic AC↔IA
+      // gate pre-empts the dba/test-strategist/reflect run (no LLM reflect lap for an IA-seam gap).
+      fakeProbe({ S1: { hasAcs: true, iaRefined: true, architectAnnotated: true, iaConforms: false } }),
+      FEATURE,
+    );
+    expect(nextTransition(state)).toEqual({ kind: "flag-ia-nonconformance", story: "S1" });
   });
 
   it("design lane: once reflection PASSES, the story advances to the spec gate", () => {
