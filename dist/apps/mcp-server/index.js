@@ -7014,8 +7014,8 @@ import {
 
 // consort/orchestrator/status/feature-status.ts
 init_esm_shims();
-import { existsSync as existsSync30, readFileSync as readFileSync31, readdirSync as readdirSync20, statSync as statSync12 } from "fs";
-import { dirname as dirname17, join as join28 } from "path";
+import { existsSync as existsSync31, readFileSync as readFileSync32, readdirSync as readdirSync21, statSync as statSync13 } from "fs";
+import { dirname as dirname17, join as join29 } from "path";
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_esm_shims();
@@ -7356,12 +7356,35 @@ init_esm_shims();
 import { existsSync as existsSync19, readFileSync as readFileSync20, readdirSync as readdirSync14, writeFileSync as writeFileSync16, mkdirSync as mkdirSync15, copyFileSync as copyFileSync3 } from "fs";
 import { join as join19, dirname as dirname13, basename } from "path";
 
+// consort/architecture/layering-clean.ts
+init_esm_shims();
+import { existsSync as existsSync20, readFileSync as readFileSync21, readdirSync as readdirSync15, statSync as statSync7 } from "fs";
+import { join as join20 } from "path";
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs9 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname14, join as join20 } from "path";
+import { dirname as dirname14, join as join21 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7374,8 +7397,8 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync21, readFileSync as readFileSync22, readdirSync as readdirSync15, statSync as statSync7 } from "fs";
-import { join as join21, relative, extname } from "path";
+import { existsSync as existsSync22, readFileSync as readFileSync23, readdirSync as readdirSync16, statSync as statSync8 } from "fs";
+import { join as join22, relative, extname } from "path";
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -7391,19 +7414,19 @@ import * as path8 from "path";
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync23, readFileSync as readFileSync24, readdirSync as readdirSync16, statSync as statSync8 } from "fs";
-import { join as join23, relative as relative2, extname as extname2 } from "path";
+import { existsSync as existsSync24, readFileSync as readFileSync25, readdirSync as readdirSync17, statSync as statSync9 } from "fs";
+import { join as join24, relative as relative2, extname as extname2 } from "path";
 
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
 import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync as existsSync24 } from "fs";
-import { join as join24 } from "path";
+import { existsSync as existsSync25 } from "fs";
+import { join as join25 } from "path";
 
 // consort/architecture/test-smell-clean.ts
 init_esm_shims();
-import { existsSync as existsSync25, readFileSync as readFileSync25, readdirSync as readdirSync17, statSync as statSync9 } from "fs";
-import { join as join25, relative as relative3, extname as extname3 } from "path";
+import { existsSync as existsSync26, readFileSync as readFileSync26, readdirSync as readdirSync18, statSync as statSync10 } from "fs";
+import { join as join26, relative as relative3, extname as extname3 } from "path";
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
@@ -7431,7 +7454,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_esm_shims();
 import { createHash as createHash2 } from "crypto";
-import { readFileSync as readFileSync26 } from "fs";
+import { readFileSync as readFileSync27 } from "fs";
 
 // consort/gates/workflow-phase.ts
 init_esm_shims();
@@ -7465,7 +7488,7 @@ init_esm_shims();
 
 // consort/test-list/fan-out-plan.ts
 init_esm_shims();
-import { join as join26 } from "path";
+import { join as join27 } from "path";
 
 // consort/test-list/test-analyst-catalogue.ts
 init_esm_shims();
@@ -7578,7 +7601,7 @@ function readGateApproved(featureId, consortDir, gate) {
 
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync28, readFileSync as readFileSync29, writeFileSync as writeFileSync20, mkdirSync as mkdirSync19 } from "fs";
+import { appendFileSync, existsSync as existsSync29, readFileSync as readFileSync30, writeFileSync as writeFileSync20, mkdirSync as mkdirSync19 } from "fs";
 
 // consort/experiment/spike-carryforward.ts
 init_esm_shims();
@@ -7586,13 +7609,13 @@ init_esm_shims();
 // consort/gates/design-spec-gate.ts
 function readPlan(consortDir, featureId, storyId) {
   const planPath = storyPlanJson(consortDir, featureId, storyId);
-  if (!existsSync28(planPath)) return null;
-  return JSON.parse(readFileSync29(planPath, "utf8"));
+  if (!existsSync29(planPath)) return null;
+  return JSON.parse(readFileSync30(planPath, "utf8"));
 }
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync29, readFileSync as readFileSync30, writeFileSync as writeFileSync21, mkdirSync as mkdirSync20, readdirSync as readdirSync19, statSync as statSync11, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync30, readFileSync as readFileSync31, writeFileSync as writeFileSync21, mkdirSync as mkdirSync20, readdirSync as readdirSync20, statSync as statSync12, rmSync as rmSync6 } from "fs";
 
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
@@ -7609,24 +7632,24 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!existsSync29(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync30(p, "utf8"));
+  if (!existsSync30(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync31(p, "utf8"));
 }
 
 // consort/orchestrator/status/feature-status.ts
 var MAX_RECENT_LOG_ENTRIES = 5;
 function readJsonIfExists(path10) {
-  if (!existsSync30(path10)) return null;
-  return JSON.parse(readFileSync31(path10, "utf8"));
+  if (!existsSync31(path10)) return null;
+  return JSON.parse(readFileSync32(path10, "utf8"));
 }
 function listFeatureStories(consortDir, featureId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
-  if (!existsSync30(storiesDir2)) return [];
-  return readdirSync20(storiesDir2).filter((d) => statSync12(join28(storiesDir2, d)).isDirectory()).sort();
+  if (!existsSync31(storiesDir2)) return [];
+  return readdirSync21(storiesDir2).filter((d) => statSync13(join29(storiesDir2, d)).isDirectory()).sort();
 }
 function timelineCycleCount(experimentDir2) {
   const timeline = readJsonIfExists(
-    join28(experimentDir2, "timeline.json")
+    join29(experimentDir2, "timeline.json")
   );
   return timeline?.entries?.length ?? 0;
 }
@@ -7653,9 +7676,9 @@ function summarizeTestList(consortDir, featureId) {
   }
 }
 function readSelectionLogRecent(consortDir, limit) {
-  const path10 = join28(consortDir, "selection-log.md");
-  if (!existsSync30(path10)) return [];
-  const text = readFileSync31(path10, "utf8");
+  const path10 = join29(consortDir, "selection-log.md");
+  if (!existsSync31(path10)) return [];
+  const text = readFileSync32(path10, "utf8");
   const entries = [];
   const headingRe = /^##\s+(\S+T\S+?)\s+–\s+(.+?)$/gm;
   let match;
@@ -7682,7 +7705,7 @@ function readGatesSummary(consortDir, featureId) {
   }
 }
 function readWorkflowState2(consortDir) {
-  const state = readJsonIfExists(join28(consortDir, "workflow-state.json"));
+  const state = readJsonIfExists(join29(consortDir, "workflow-state.json"));
   if (!state) return { phase: null, pointer: null };
   return {
     phase: state.phase ?? null,

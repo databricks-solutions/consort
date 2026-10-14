@@ -7484,12 +7484,35 @@ init_esm_shims();
 import { existsSync as existsSync13, readFileSync as readFileSync13, readdirSync as readdirSync8, writeFileSync as writeFileSync9, mkdirSync as mkdirSync7, copyFileSync } from "fs";
 import { join as join14, dirname as dirname10, basename as basename2 } from "path";
 
+// consort/architecture/layering-clean.ts
+init_esm_shims();
+import { existsSync as existsSync14, readFileSync as readFileSync14, readdirSync as readdirSync9, statSync as statSync6 } from "fs";
+import { join as join15 } from "path";
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs3 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname11, join as join15 } from "path";
+import { dirname as dirname11, join as join16 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7502,8 +7525,8 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync15, readFileSync as readFileSync15, readdirSync as readdirSync9, statSync as statSync6 } from "fs";
-import { join as join16, relative as relative2, extname } from "path";
+import { existsSync as existsSync16, readFileSync as readFileSync16, readdirSync as readdirSync10, statSync as statSync7 } from "fs";
+import { join as join17, relative as relative2, extname } from "path";
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -7519,19 +7542,19 @@ import * as path3 from "path";
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync17, readFileSync as readFileSync17, readdirSync as readdirSync10, statSync as statSync7 } from "fs";
-import { join as join18, relative as relative3, extname as extname2 } from "path";
+import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync11, statSync as statSync8 } from "fs";
+import { join as join19, relative as relative3, extname as extname2 } from "path";
 
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
 import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync as existsSync18 } from "fs";
-import { join as join19 } from "path";
+import { existsSync as existsSync19 } from "fs";
+import { join as join20 } from "path";
 
 // consort/architecture/test-smell-clean.ts
 init_esm_shims();
-import { existsSync as existsSync19, readFileSync as readFileSync18, readdirSync as readdirSync11, statSync as statSync8 } from "fs";
-import { join as join20, relative as relative4, extname as extname3 } from "path";
+import { existsSync as existsSync20, readFileSync as readFileSync19, readdirSync as readdirSync12, statSync as statSync9 } from "fs";
+import { join as join21, relative as relative4, extname as extname3 } from "path";
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts

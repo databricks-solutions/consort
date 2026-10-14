@@ -7452,12 +7452,35 @@ init_cjs_shims();
 var import_node_fs4 = require("fs");
 var import_node_path5 = require("path");
 
+// consort/architecture/layering-clean.ts
+init_cjs_shims();
+var import_node_fs5 = require("fs");
+var import_node_path6 = require("path");
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs4 = __toESM(require("fs"), 1);
 var import_node_child_process3 = require("child_process");
 var import_node_crypto2 = require("crypto");
-var import_node_path6 = require("path");
+var import_node_path7 = require("path");
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7470,8 +7493,8 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs5 = require("fs");
-var import_node_path7 = require("path");
+var import_node_fs6 = require("fs");
+var import_node_path8 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -7487,19 +7510,19 @@ var path2 = __toESM(require("path"), 1);
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs6 = require("fs");
-var import_node_path8 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path9 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process4 = require("child_process");
-var import_node_fs7 = require("fs");
-var import_node_path9 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path10 = require("path");
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs8 = require("fs");
-var import_node_path10 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path11 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
@@ -7598,7 +7621,7 @@ async function mergeAndAcceptStory(args, ops = realExperimentOps) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto3 = require("crypto");
-var import_node_fs9 = require("fs");
+var import_node_fs10 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -7617,7 +7640,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs9.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs10.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });

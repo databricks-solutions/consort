@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { testlistConformanceReason, recordTestListGate } from "../../consort/smells/testlist-conformance.js";
-import { checkTestlistEndpointCoherence, checkTestlistE2eSpecSuffix } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
+import { checkTestlistEndpointCoherence, checkTestlistE2eSpecSuffix, checkTestlistMigrationRevision } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { readSmellsLog } from "../../consort/smells/smells.js";
 
 const F = "F1";
@@ -226,6 +226,40 @@ describe("checkTestlistE2eSpecSuffix (Fix: an e2e-dir scenario_file Playwright w
   it("does NOT flag a .e2e.ts token that is not under a tests/e2e/ dir, nor an item with no scenario_file", () => {
     expect(checkTestlistE2eSpecSuffix(tl([item({ scenario_file: "client/tests/misc/file-stock.e2e.ts" })])).ok).toBe(true);
     expect(checkTestlistE2eSpecSuffix(tl([item({})])).ok).toBe(true);
+  });
+});
+
+describe("checkTestlistMigrationRevision (relative `downgrade -1` reversibility tests are fragile)", () => {
+  const item = (over: Record<string, unknown> = {}): Record<string, unknown> => ({ id: "T6", kind: "fitness", ac_id: "AC1-file-stock-record", ...over });
+  const tl = (its: Array<Record<string, unknown>>): string => JSON.stringify({ items: its });
+
+  it("flags the live S1 T6: `alembic downgrade -1 then upgrade head recreates stock_records` (relative, head-moves)", () => {
+    const r = checkTestlistMigrationRevision(tl([item({ description: "On the paired branch, alembic downgrade -1 then upgrade head recreates stock_records with columns sku, location, quantity and the constraints present again" })]));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/relative step|downgrade -1|own revision/i);
+      expect(r.acIds).toEqual(["AC1-file-stock-record"]);
+    }
+  });
+
+  it("flags the S2 T39 'single-step alembic downgrade -1' reversibility test", () => {
+    expect(checkTestlistMigrationRevision(tl([item({ id: "T39", ac_id: "AC3-empty-location-state", description: "Migration reversibility: on the paired branch a single-step alembic downgrade -1 then upgrade head recreates index ix_stock_records_location_sku" })])).ok).toBe(false);
+  });
+
+  it("flags the S2 T40 data-preservation test that survives a `single-step downgrade -1`", () => {
+    expect(checkTestlistMigrationRevision(tl([item({ id: "T40", ac_id: "AC3-empty-location-state", description: "Data preservation: stock_records rows survive a single-step downgrade -1 then upgrade head of the additive index migration with their original values" })])).ok).toBe(false);
+  });
+
+  it("does NOT flag the FIX: downgrade pinned to the migration's own explicit revision", () => {
+    expect(checkTestlistMigrationRevision(tl([item({ description: "On the paired branch, alembic downgrade to 20261014070350-1 (the create-table migration's parent) then upgrade head recreates stock_records with its columns and constraints" })])).ok).toBe(true);
+  });
+
+  it("does NOT flag a reversibility test that names down_revision explicitly", () => {
+    expect(checkTestlistMigrationRevision(tl([item({ description: "downgrade to the create-table migration's down_revision, assert stock_records absent, then upgrade head and re-assert the schema" })])).ok).toBe(true);
+  });
+
+  it("is vacuously OK for a non-migration test that happens to mention nothing of downgrades", () => {
+    expect(checkTestlistMigrationRevision(tl([item({ kind: "behavior", description: "PUT /api/stock/SKU-100/A-01 returns created:true" })])).ok).toBe(true);
   });
 });
 

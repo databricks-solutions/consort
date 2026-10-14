@@ -18,7 +18,8 @@
 // With --architecture, service_backed + the boundary/repository module paths are
 // read from architecture.json `layers`; explicit flags override.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import {
   checkLayeringClean,
   checkImportLayering,
@@ -30,6 +31,42 @@ import {
   layeringConfigFromArchitecture,
   type LayeringCleanArgs,
 } from "../../consort/architecture/layering-clean.js";
+import { resolveConsortDir, featuresDir } from "../../consort/config/consort-paths.js";
+
+/**
+ * Auto-resolve the feature's architecture.json from the project when `--architecture`
+ * was not passed. WHY: without architecture.json the gate can't see `service_backed`
+ * and silently skips the import-layering/ORM checks entirely (reporting "not
+ * service-backed") — the live gap where a route→model layering violation shipped
+ * because the per-turn directive ran `consort-layering-clean --project-dir .` with no
+ * `--architecture`. Resolve the single in-flight feature's architecture.json so a bare
+ * `--project-dir` run checks layering; stay fail-closed on ambiguity (warn, never a
+ * false "clean"); return undefined only for a genuinely architecture-less project.
+ */
+function autoResolveArchitecture(projectDir: string): { path?: string; ambiguous?: string[] } {
+  let consortDir: string;
+  try {
+    consortDir = resolveConsortDir(projectDir);
+  } catch {
+    return {};
+  }
+  const root = featuresDir(consortDir);
+  if (!existsSync(root)) return {};
+  const withArch = readdirSync(root)
+    .map((f) => ({ f, arch: join(root, f, "architecture.json") }))
+    .filter((e) => existsSync(e.arch));
+  if (withArch.length === 0) return {};
+  if (withArch.length === 1) return { path: withArch[0].arch };
+  // More than one feature carries an architecture — prefer the in-flight one from next.json.
+  try {
+    const next = JSON.parse(readFileSync(join(consortDir, "next.json"), "utf8")) as { feature?: string };
+    const hit = next.feature && withArch.find((e) => e.f === next.feature);
+    if (hit) return { path: hit.arch };
+  } catch {
+    /* no next.json / unreadable — fall through to the ambiguous report */
+  }
+  return { ambiguous: withArch.map((e) => e.f) };
+}
 
 interface Parsed {
   projectDir: string;
@@ -76,6 +113,22 @@ let boundary = p.boundary;
 let repository = p.repository;
 let allModules: Array<{ role: string; module: string }> = [];
 let rendersVia: string | undefined;
+// Fail-closed auto-resolve: without an explicit --architecture (and no explicit
+// --service-backed / module flags), find the in-flight feature's architecture.json so a
+// bare `--project-dir` run still checks layering instead of silently exempting.
+if (!p.architecture && p.serviceBacked === undefined && p.boundary.length === 0 && p.repository.length === 0) {
+  const resolved = autoResolveArchitecture(p.projectDir);
+  if (resolved.path) {
+    p.architecture = resolved.path;
+    process.stderr.write(`layering-clean: no --architecture given; auto-resolved ${resolved.path}\n`);
+  } else if (resolved.ambiguous) {
+    process.stderr.write(
+      `layering-clean: layering NOT checked — ${resolved.ambiguous.length} features carry an architecture.json ` +
+        `(${resolved.ambiguous.join(", ")}) and none is the in-flight feature in next.json. Pass ` +
+        `--architecture <feature>/architecture.json so the import-layering/ORM checks actually run.\n`,
+    );
+  }
+}
 if (p.architecture) {
   let archJson = "";
   try {

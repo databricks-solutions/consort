@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-10-14
+
+- **Migration-reversibility test-list gate.** A new deterministic pre-reflect check flags a migration-reversibility / data-preservation test that downgrades by a *relative* step (`alembic downgrade -1`, "single-step downgrade") instead of pinning the migration-under-test's own revision. A relative `-1` reverts whatever is `head`, so it passes on the isolated experiment branch but silently targets the wrong migration once a later story adds one — the churn that cost an extra assess + superseded-green lap in a live run. Fail-open (a pinned `down_revision` / explicit revision escapes).
+- **Layering gate is fail-closed.** `consort-layering-clean --project-dir .` (what the refactor directive runs) no longer silently exempts a service-backed feature when `--architecture` is omitted: it auto-resolves the in-flight feature's `architecture.json` and runs the import-layering/ORM checks. On an ambiguous resolution it reports "layering NOT checked" rather than a false clean. The refactor directive also passes `--architecture` explicitly.
+- **Deterministic layering review backstop.** The REVIEW step now runs the layering checks against the feature's architecture regardless of the Navigator's verdict (mirroring the existing ux-adherence backstop), so a rubber-stamp `refactor:false` review can no longer let a boundary→model layering violation ship — a violation flags the routable `layering-violation` smell, which forces the Driver's refactor.
+
+## [0.4.2] - 2026-10-14
+
+- Repoint `@databricks-solutions/lakebase-scm-utils` 0.3.0 → 0.3.1 (the scaffold now generates and registry-normalizes the client's `package-lock.json` at create time). Repoint-only; no consort source change.
+
 ## [0.4.1] - 2026-10-13
 
 - **Deterministic design-drive bound.** A bare `consort-drive --feature <F>` with no `--only` is refused (name the phase: `/design` | `/build` | `/deploy`), and the implicit `lane_intents` inheritance is removed — "invoke a design loop" can no longer silently become a build.

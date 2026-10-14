@@ -41,6 +41,7 @@ import {
   checkTestlistScenarioFileCoherence,
   checkTestlistEndpointCoherence,
   checkTestlistE2eSpecSuffix,
+  checkTestlistMigrationRevision,
   extractApiEndpoints,
 } from "../orchestrator/validators/conformance/artifact-conformance.js";
 import { writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellHit } from "./smells.js";
@@ -123,6 +124,7 @@ export function testlistConformanceViolations(
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
+    checkTestlistMigrationRevision(testListJson),
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);

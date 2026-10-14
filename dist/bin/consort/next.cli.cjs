@@ -8265,6 +8265,31 @@ function checkTestlistE2eSpecSuffix(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkTestlistMigrationRevision(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const mentionsDowngrade = /\bdowngrade\b/i;
+  const reversibilityContext = /\bdowngrade\b[\s\S]*?\bupgrade\b|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
+  const relativeStep = /\bdowngrade\s+-\s*\d+\b|\bsingle-step\s+(?:alembic\s+)?downgrade\b|\bdowngrade\s+(?:by\s+)?one\s+step\b/i;
+  const pinned = /\bdown_revision\b|\bits own revision\b|\bexplicit(?:ly)?\b[\s\S]{0,30}\brevision\b|\bdowngrade\s+(?:to\s+)?(?:revision\s+)?["'`]?[0-9a-f]{6,}/i;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (!mentionsDowngrade.test(desc) || !reversibilityContext.test(desc)) continue;
+    if (relativeStep.test(desc) && !pinned.test(desc)) {
+      violations.push(
+        `test item ${it.id ?? "?"} is a migration-reversibility/data-preservation test that downgrades by a RELATIVE step ("${desc.slice(0, 90)}\u2026"). \`downgrade -1\` reverts whatever is HEAD, so it passes on the isolated experiment branch but silently targets the WRONG migration once a later story adds one (head moved). Pin it to the migration-under-test's OWN revision: downgrade to that revision's parent/down_revision (an explicit revision id), assert the schema change reverted, then upgrade head \u2014 never a relative \`downgrade -1\`.`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
   try {
@@ -9466,14 +9491,37 @@ init_cjs_shims();
 var import_node_fs6 = require("fs");
 var import_node_path6 = require("path");
 
+// consort/architecture/layering-clean.ts
+init_cjs_shims();
+var import_node_fs7 = require("fs");
+var import_node_path7 = require("path");
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs6 = __toESM(require("fs"), 1);
 var import_node_child_process4 = require("child_process");
 var import_node_crypto2 = require("crypto");
-var import_node_path7 = require("path");
+var import_node_path8 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
-  return (0, import_node_path7.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -9509,7 +9557,7 @@ function hasPendingSupersession(tdd, feature, story, ac) {
   return s !== void 0 && s.refactored !== true;
 }
 function greenFailureJson(tdd, feature, story, ac) {
-  return (0, import_node_path7.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -9537,7 +9585,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs6.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState((0, import_node_path7.dirname)(tdd));
+      const cur = computeTreeState((0, import_node_path8.dirname)(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs6.rmSync(file, { force: true });
         return void 0;
@@ -9569,13 +9617,13 @@ function specDefectFromRole(tdd, feature, story, ac) {
   return gf?.specDefect?.fromRole ?? "test-strategist";
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return (0, import_node_path7.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path8 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path9 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -9613,19 +9661,19 @@ function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs8 = require("fs");
-var import_node_path9 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path10 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process5 = require("child_process");
-var import_node_fs9 = require("fs");
-var import_node_path10 = require("path");
+var import_node_fs10 = require("fs");
+var import_node_path11 = require("path");
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs10 = require("fs");
-var import_node_path11 = require("path");
+var import_node_fs11 = require("fs");
+var import_node_path12 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
@@ -9874,7 +9922,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto3 = require("crypto");
-var import_node_fs11 = require("fs");
+var import_node_fs12 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -9893,7 +9941,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs11.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs12.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
@@ -9993,7 +10041,8 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     checkTestlistFixedKeyE2e(testListJson, acLayerById),
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
-    checkTestlistE2eSpecSuffix(testListJson)
+    checkTestlistE2eSpecSuffix(testListJson),
+    checkTestlistMigrationRevision(testListJson)
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);
@@ -10122,7 +10171,7 @@ function architectNovelty(canon, storyAcs, storyArchitectureJsonContent) {
 
 // consort/test-list/fan-out-plan.ts
 init_cjs_shims();
-var import_node_path12 = require("path");
+var import_node_path13 = require("path");
 
 // consort/test-list/test-analyst-catalogue.ts
 init_cjs_shims();
@@ -10162,7 +10211,7 @@ var TEST_ANALYST_CATALOGUE = {
 };
 
 // consort/test-list/fan-out-plan.ts
-var analystOrderedJson = (consortDir, f, s) => (0, import_node_path12.join)(storyDir(consortDir, f, s), "analyst-ordered.json");
+var analystOrderedJson = (consortDir, f, s) => (0, import_node_path13.join)(storyDir(consortDir, f, s), "analyst-ordered.json");
 
 // consort/orchestrator/state/orchestrator-probe.ts
 function storyRequiresE2e(consortDir, featureId, story) {
@@ -10593,35 +10642,35 @@ function deriveFeaturePhase(stories) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
 var fs19 = __toESM(require("fs"), 1);
-var import_node_path28 = require("path");
+var import_node_path29 = require("path");
 
 // consort/orchestrator/drive/executor-dispatch.ts
 init_cjs_shims();
 var fs16 = __toESM(require("fs"), 1);
-var import_node_path22 = require("path");
+var import_node_path23 = require("path");
 
 // consort/orchestrator/turns/step-executor.ts
 init_cjs_shims();
-var import_node_fs12 = require("fs");
-var import_node_path13 = require("path");
+var import_node_fs13 = require("fs");
+var import_node_path14 = require("path");
 
 // consort/orchestrator/provisioning/channels.ts
 init_cjs_shims();
 
 // consort/orchestrator/steps/step.ts
 init_cjs_shims();
-var import_node_path15 = require("path");
-var import_node_fs14 = require("fs");
+var import_node_path16 = require("path");
+var import_node_fs15 = require("fs");
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
 init_cjs_shims();
-var import_node_fs13 = require("fs");
-var import_node_path14 = require("path");
+var import_node_fs14 = require("fs");
+var import_node_path15 = require("path");
 function conformsTo(artifactName) {
   return (producedPath) => {
     let content;
     try {
-      content = (0, import_node_fs13.readFileSync)(producedPath, "utf8");
+      content = (0, import_node_fs14.readFileSync)(producedPath, "utf8");
     } catch {
       return { ok: false, violations: [`${artifactName} not readable at ${producedPath}`] };
     }
@@ -10643,8 +10692,8 @@ init_cjs_shims();
 
 // consort/orchestrator/agents/agent-catalogue.ts
 init_cjs_shims();
-var import_node_path20 = require("path");
-var import_node_fs19 = require("fs");
+var import_node_path21 = require("path");
+var import_node_fs20 = require("fs");
 
 // consort/orchestrator/agents/claude-step-agent.ts
 init_cjs_shims();
@@ -10679,8 +10728,8 @@ var import_node_child_process6 = require("child_process");
 
 // consort/config/kit-ref.ts
 init_cjs_shims();
-var import_node_fs15 = require("fs");
-var import_node_path16 = require("path");
+var import_node_fs16 = require("fs");
+var import_node_path17 = require("path");
 
 // consort/lakebase/update-commands.ts
 init_cjs_shims();
@@ -10690,8 +10739,8 @@ var path7 = __toESM(require("path"), 1);
 // consort/lakebase/kit-ref-pin.ts
 init_cjs_shims();
 var import_node_url2 = require("url");
-var import_node_path17 = require("path");
-var import_node_fs16 = require("fs");
+var import_node_path18 = require("path");
+var import_node_fs17 = require("fs");
 
 // consort/lakebase/upgrade.ts
 var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
@@ -10733,8 +10782,8 @@ var import_lakebase10 = require("@databricks-solutions/lakebase-scm-utils/lakeba
 
 // consort/setup/stray-artifact-recovery.ts
 init_cjs_shims();
-var import_node_fs17 = require("fs");
-var import_node_path18 = require("path");
+var import_node_fs18 = require("fs");
+var import_node_path19 = require("path");
 
 // consort/orchestrator/turns/turn-monitor.ts
 init_cjs_shims();
@@ -10747,8 +10796,8 @@ var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e
 
 // consort/orchestrator/agents/mock-replay-agent.ts
 init_cjs_shims();
-var import_node_fs18 = require("fs");
-var import_node_path19 = require("path");
+var import_node_fs19 = require("fs");
+var import_node_path20 = require("path");
 
 // consort/orchestrator/agents/replay-recorder-wrapper.ts
 init_cjs_shims();
@@ -10756,38 +10805,38 @@ init_cjs_shims();
 // consort/logging/turn-recorder.ts
 init_cjs_shims();
 var import_node_crypto6 = require("crypto");
-var import_node_fs20 = require("fs");
-var import_node_path21 = require("path");
+var import_node_fs21 = require("fs");
+var import_node_path22 = require("path");
 
 // consort/pipeline/record-build.ts
 init_cjs_shims();
 
 // consort/orchestrator/steps/assert-route-satisfiable.ts
 init_cjs_shims();
-var import_node_fs21 = require("fs");
-var import_node_path23 = require("path");
+var import_node_fs22 = require("fs");
+var import_node_path24 = require("path");
 
 // consort/session/response-formatter.ts
 init_cjs_shims();
-var import_node_fs23 = require("fs");
-var import_node_path25 = require("path");
+var import_node_fs24 = require("fs");
+var import_node_path26 = require("path");
 
 // consort/architecture/e2e-route-adherence.ts
 init_cjs_shims();
-var import_node_fs22 = require("fs");
-var import_node_path24 = require("path");
-var CLIENT_SRC = (0, import_node_path24.join)("client", "src");
-var E2E_DIR = (0, import_node_path24.join)("client", "tests", "e2e");
+var import_node_fs23 = require("fs");
+var import_node_path25 = require("path");
+var CLIENT_SRC = (0, import_node_path25.join)("client", "src");
+var E2E_DIR = (0, import_node_path25.join)("client", "tests", "e2e");
 
 // consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs23.existsSync)(file)) {
+  if (!(0, import_node_fs24.existsSync)(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = (0, import_node_fs23.readFileSync)(file, "utf8");
+    content = (0, import_node_fs24.readFileSync)(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -10799,7 +10848,7 @@ function designGuideConformance(consortDir) {
 init_cjs_shims();
 var import_node_child_process8 = require("child_process");
 var fs17 = __toESM(require("fs"), 1);
-var import_node_path26 = require("path");
+var import_node_path27 = require("path");
 
 // consort/orchestrator/build/preconditions.ts
 init_cjs_shims();
@@ -10810,7 +10859,7 @@ init_cjs_shims();
 // consort/orchestrator/steps/cross-story-context.ts
 init_cjs_shims();
 var fs18 = __toESM(require("fs"), 1);
-var import_node_path27 = require("path");
+var import_node_path28 = require("path");
 
 // consort/orchestrator/drive/orchestrator-effects.ts
 var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");

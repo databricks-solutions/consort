@@ -8369,6 +8369,31 @@ function checkTestlistE2eSpecSuffix(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkTestlistMigrationRevision(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const mentionsDowngrade = /\bdowngrade\b/i;
+  const reversibilityContext = /\bdowngrade\b[\s\S]*?\bupgrade\b|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
+  const relativeStep = /\bdowngrade\s+-\s*\d+\b|\bsingle-step\s+(?:alembic\s+)?downgrade\b|\bdowngrade\s+(?:by\s+)?one\s+step\b/i;
+  const pinned = /\bdown_revision\b|\bits own revision\b|\bexplicit(?:ly)?\b[\s\S]{0,30}\brevision\b|\bdowngrade\s+(?:to\s+)?(?:revision\s+)?["'`]?[0-9a-f]{6,}/i;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (!mentionsDowngrade.test(desc) || !reversibilityContext.test(desc)) continue;
+    if (relativeStep.test(desc) && !pinned.test(desc)) {
+      violations.push(
+        `test item ${it.id ?? "?"} is a migration-reversibility/data-preservation test that downgrades by a RELATIVE step ("${desc.slice(0, 90)}\u2026"). \`downgrade -1\` reverts whatever is HEAD, so it passes on the isolated experiment branch but silently targets the WRONG migration once a later story adds one (head moved). Pin it to the migration-under-test's OWN revision: downgrade to that revision's parent/down_revision (an explicit revision id), assert the schema change reverted, then upgrade head \u2014 never a relative \`downgrade -1\`.`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
   try {
@@ -8895,14 +8920,37 @@ init_cjs_shims();
 var import_node_fs5 = require("fs");
 var import_node_path7 = require("path");
 
+// consort/architecture/layering-clean.ts
+init_cjs_shims();
+var import_node_fs6 = require("fs");
+var import_node_path8 = require("path");
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs5 = __toESM(require("fs"), 1);
 var import_node_child_process5 = require("child_process");
 var import_node_crypto3 = require("crypto");
-var import_node_path8 = require("path");
+var import_node_path9 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
-  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return (0, import_node_path9.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -8938,7 +8986,7 @@ function hasPendingSupersession(tdd, feature, story, ac) {
   return s !== void 0 && s.refactored !== true;
 }
 function greenFailureJson(tdd, feature, story, ac) {
-  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return (0, import_node_path9.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -8966,7 +9014,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs5.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState((0, import_node_path8.dirname)(tdd));
+      const cur = computeTreeState((0, import_node_path9.dirname)(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs5.rmSync(file, { force: true });
         return void 0;
@@ -8998,13 +9046,13 @@ function specDefectFromRole(tdd, feature, story, ac) {
   return gf?.specDefect?.fromRole ?? "test-strategist";
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return (0, import_node_path9.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs6 = require("fs");
-var import_node_path9 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path10 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -9042,19 +9090,19 @@ function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path10 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path11 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process6 = require("child_process");
-var import_node_fs8 = require("fs");
-var import_node_path11 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path12 = require("path");
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs9 = require("fs");
-var import_node_path12 = require("path");
+var import_node_fs10 = require("fs");
+var import_node_path13 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
@@ -9880,8 +9928,8 @@ function featureOf(state) {
 
 // consort/orchestrator/steps/assert-route-satisfiable.ts
 init_cjs_shims();
-var import_node_fs10 = require("fs");
-var import_node_path13 = require("path");
+var import_node_fs11 = require("fs");
+var import_node_path14 = require("path");
 
 // consort/orchestrator/steps/turn-events.ts
 init_cjs_shims();
@@ -9938,17 +9986,17 @@ function eventArtifactPath(event, action, ctx) {
   const f = ctx.featureId;
   switch (scope) {
     case "feature":
-      return (0, import_node_path13.join)(featuresDir(ctx.consortDir), f, spec.filename);
+      return (0, import_node_path14.join)(featuresDir(ctx.consortDir), f, spec.filename);
     case "story":
-      if (!story) return (0, import_node_path13.join)(ctx.consortDir, spec.filename);
-      return (0, import_node_path13.join)(cyclesRootDir(ctx.consortDir), f, story, spec.filename);
+      if (!story) return (0, import_node_path14.join)(ctx.consortDir, spec.filename);
+      return (0, import_node_path14.join)(cyclesRootDir(ctx.consortDir), f, story, spec.filename);
     case "ac":
     case "cycle":
-      if (!story || !ac) return (0, import_node_path13.join)(ctx.consortDir, spec.filename);
-      return (0, import_node_path13.join)(cycleDir(ctx.consortDir, f, story, ac), spec.filename);
+      if (!story || !ac) return (0, import_node_path14.join)(ctx.consortDir, spec.filename);
+      return (0, import_node_path14.join)(cycleDir(ctx.consortDir, f, story, ac), spec.filename);
   }
 }
-function assertRouteSatisfiable(action, step, ctx, exists = import_node_fs10.existsSync) {
+function assertRouteSatisfiable(action, step, ctx, exists = import_node_fs11.existsSync) {
   for (const event of step.requiresEvents(action)) {
     const p = eventArtifactPath(event, action, ctx);
     if (!exists(p)) throw new RouteContractError(action, event, p);
@@ -10281,7 +10329,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto4 = require("crypto");
-var import_node_fs11 = require("fs");
+var import_node_fs12 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -10300,7 +10348,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs11.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs12.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
@@ -10432,7 +10480,8 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     checkTestlistFixedKeyE2e(testListJson, acLayerById),
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
-    checkTestlistE2eSpecSuffix(testListJson)
+    checkTestlistE2eSpecSuffix(testListJson),
+    checkTestlistMigrationRevision(testListJson)
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);
@@ -10561,7 +10610,7 @@ function architectNovelty(canon, storyAcs, storyArchitectureJsonContent) {
 
 // consort/test-list/fan-out-plan.ts
 init_cjs_shims();
-var import_node_path14 = require("path");
+var import_node_path15 = require("path");
 
 // consort/test-list/test-analyst-catalogue.ts
 init_cjs_shims();
@@ -10604,7 +10653,7 @@ function enabledAnalysts(ctx) {
 }
 
 // consort/test-list/fan-out-plan.ts
-var analystOrderedJson = (consortDir, f, s) => (0, import_node_path14.join)(storyDir(consortDir, f, s), "analyst-ordered.json");
+var analystOrderedJson = (consortDir, f, s) => (0, import_node_path15.join)(storyDir(consortDir, f, s), "analyst-ordered.json");
 
 // consort/orchestrator/state/orchestrator-probe.ts
 function storyRequiresE2e(consortDir, featureId, story) {
@@ -11066,12 +11115,12 @@ function deliveredFeatures(consortDir) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
 var fs19 = __toESM(require("fs"), 1);
-var import_node_path29 = require("path");
+var import_node_path30 = require("path");
 
 // consort/orchestrator/steps/manifest.ts
 init_cjs_shims();
-var import_node_fs12 = require("fs");
-var import_node_path15 = require("path");
+var import_node_fs13 = require("fs");
+var import_node_path16 = require("path");
 
 // consort/orchestrator/steps/manifests/product-owner-intake.json
 var product_owner_intake_default = {
@@ -11902,12 +11951,12 @@ function manifestForAction(action, manifests = SHIPPED_MANIFESTS) {
 // consort/orchestrator/drive/executor-dispatch.ts
 init_cjs_shims();
 var fs16 = __toESM(require("fs"), 1);
-var import_node_path24 = require("path");
+var import_node_path25 = require("path");
 
 // consort/orchestrator/turns/step-executor.ts
 init_cjs_shims();
-var import_node_fs13 = require("fs");
-var import_node_path16 = require("path");
+var import_node_fs14 = require("fs");
+var import_node_path17 = require("path");
 
 // consort/orchestrator/provisioning/channels.ts
 init_cjs_shims();
@@ -11969,8 +12018,8 @@ async function execute(step, ctx, deps) {
   for (const spec of outputSpecs) {
     const rel = outputPaths?.[spec.id] ?? spec.filename;
     const root = resolveChannelRoot(spec.channel, { workspaceDir, artifactDir, metaDir });
-    const abs = producedPaths.find((p) => p.endsWith(rel)) ?? (0, import_node_path16.join)(root, rel);
-    if (!(0, import_node_fs13.existsSync)(abs)) {
+    const abs = producedPaths.find((p) => p.endsWith(rel)) ?? (0, import_node_path17.join)(root, rel);
+    if (!(0, import_node_fs14.existsSync)(abs)) {
       if (!spec.optional && runResult.produced) violations.push(`declared output "${spec.id}" (${spec.filename}) was not produced`);
       continue;
     }
@@ -11988,17 +12037,17 @@ async function execute(step, ctx, deps) {
 
 // consort/orchestrator/steps/step.ts
 init_cjs_shims();
-var import_node_path18 = require("path");
-var import_node_fs15 = require("fs");
+var import_node_path19 = require("path");
+var import_node_fs16 = require("fs");
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
 init_cjs_shims();
-var import_node_fs14 = require("fs");
-var import_node_path17 = require("path");
+var import_node_fs15 = require("fs");
+var import_node_path18 = require("path");
 function featureSpecNonEmptyStories(producedPath) {
   let content;
   try {
-    content = (0, import_node_fs14.readFileSync)(producedPath, "utf8");
+    content = (0, import_node_fs15.readFileSync)(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`feature-spec.json not readable at ${producedPath}`] };
   }
@@ -12017,7 +12066,7 @@ function featureSpecNonEmptyStories(producedPath) {
 function agentLogHasRoleEvent(producedPath, role = "spec-author") {
   let raw;
   try {
-    raw = (0, import_node_fs14.readFileSync)(producedPath, "utf8");
+    raw = (0, import_node_fs15.readFileSync)(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`agent-log.jsonl not readable at ${producedPath} (the agent must log what it did via the shared agent-log script)`] };
   }
@@ -12050,7 +12099,7 @@ function agentLogHasRoleEvent(producedPath, role = "spec-author") {
 function nonEmptyFile(producedPath) {
   let content;
   try {
-    content = (0, import_node_fs14.readFileSync)(producedPath, "utf8");
+    content = (0, import_node_fs15.readFileSync)(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`file not readable at ${producedPath}`] };
   }
@@ -12062,7 +12111,7 @@ function nonEmptyFile(producedPath) {
 function designGuideConformant(producedPath) {
   let content;
   try {
-    content = (0, import_node_fs14.readFileSync)(producedPath, "utf8");
+    content = (0, import_node_fs15.readFileSync)(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`design-guide.json not readable at ${producedPath}`] };
   }
@@ -12073,7 +12122,7 @@ function conformsTo(artifactName) {
   return (producedPath) => {
     let content;
     try {
-      content = (0, import_node_fs14.readFileSync)(producedPath, "utf8");
+      content = (0, import_node_fs15.readFileSync)(producedPath, "utf8");
     } catch {
       return { ok: false, violations: [`${artifactName} not readable at ${producedPath}`] };
     }
@@ -12082,13 +12131,13 @@ function conformsTo(artifactName) {
   };
 }
 function navigatorTestsAuthored(producedPath) {
-  if (!(0, import_node_fs14.existsSync)(producedPath) || !(0, import_node_fs14.statSync)(producedPath).isDirectory()) {
+  if (!(0, import_node_fs15.existsSync)(producedPath) || !(0, import_node_fs15.statSync)(producedPath).isDirectory()) {
     return { ok: false, violations: [`navigator RED wrote no tests/ tree at ${producedPath}`] };
   }
   const isTest = (n) => /\.(py|ts|tsx|js|jsx)$/.test(n);
   const walk2 = (dir) => {
-    for (const e of (0, import_node_fs14.readdirSync)(dir, { withFileTypes: true })) {
-      const abs = (0, import_node_path17.join)(dir, e.name);
+    for (const e of (0, import_node_fs15.readdirSync)(dir, { withFileTypes: true })) {
+      const abs = (0, import_node_path18.join)(dir, e.name);
       if (e.isDirectory()) {
         if (walk2(abs)) return true;
       } else if (isTest(e.name)) {
@@ -12100,13 +12149,13 @@ function navigatorTestsAuthored(producedPath) {
   return walk2(producedPath) ? { ok: true, violations: [] } : { ok: false, violations: [`navigator RED tests/ tree at ${producedPath} has no test file (.py/.ts/.tsx/.js/.jsx)`] };
 }
 function driverCodePresent(producedPath) {
-  if (!(0, import_node_fs14.existsSync)(producedPath) || !(0, import_node_fs14.statSync)(producedPath).isDirectory()) {
+  if (!(0, import_node_fs15.existsSync)(producedPath) || !(0, import_node_fs15.statSync)(producedPath).isDirectory()) {
     return { ok: false, violations: [`driver GREEN wrote no product tree (app/ or src/) at ${producedPath}`] };
   }
   const isSource = (n) => /\.(py|ts|tsx|js|jsx)$/.test(n);
   const walk2 = (dir) => {
-    for (const e of (0, import_node_fs14.readdirSync)(dir, { withFileTypes: true })) {
-      const abs = (0, import_node_path17.join)(dir, e.name);
+    for (const e of (0, import_node_fs15.readdirSync)(dir, { withFileTypes: true })) {
+      const abs = (0, import_node_path18.join)(dir, e.name);
       if (e.isDirectory()) {
         if (walk2(abs)) return true;
       } else if (isSource(e.name)) {
@@ -12118,16 +12167,16 @@ function driverCodePresent(producedPath) {
   return walk2(producedPath) ? { ok: true, violations: [] } : { ok: false, violations: [`driver GREEN product tree at ${producedPath} has no source file (.py/.ts/.tsx/.js/.jsx)`] };
 }
 function assessMarkerWritten(producedPath) {
-  const sup = (0, import_node_path17.join)(producedPath, "superseded-tests.json");
-  const reg = (0, import_node_path17.join)(producedPath, "regression-assessment.json");
-  const hasSup = (0, import_node_fs14.existsSync)(sup);
-  const hasReg = (0, import_node_fs14.existsSync)(reg);
+  const sup = (0, import_node_path18.join)(producedPath, "superseded-tests.json");
+  const reg = (0, import_node_path18.join)(producedPath, "regression-assessment.json");
+  const hasSup = (0, import_node_fs15.existsSync)(sup);
+  const hasReg = (0, import_node_fs15.existsSync)(reg);
   if (!hasSup && !hasReg) {
     return { ok: false, violations: [`assess wrote no marker (expected superseded-tests.json OR regression-assessment.json) in ${producedPath}`] };
   }
   if (hasSup) {
     try {
-      const j = JSON.parse((0, import_node_fs14.readFileSync)(sup, "utf8"));
+      const j = JSON.parse((0, import_node_fs15.readFileSync)(sup, "utf8"));
       if (!Array.isArray(j.tests) || j.tests.length === 0 || typeof j.reason !== "string" || !j.reason.trim()) {
         return { ok: false, violations: [`superseded-tests.json malformed (need non-empty tests[] + a reason) in ${producedPath}`] };
       }
@@ -12137,7 +12186,7 @@ function assessMarkerWritten(producedPath) {
   }
   if (hasReg) {
     try {
-      const j = JSON.parse((0, import_node_fs14.readFileSync)(reg, "utf8"));
+      const j = JSON.parse((0, import_node_fs15.readFileSync)(reg, "utf8"));
       if (typeof j.diagnosis !== "string" || !j.diagnosis.trim()) {
         return { ok: false, violations: [`regression-assessment.json malformed (need a non-empty diagnosis) in ${producedPath}`] };
       }
@@ -12148,10 +12197,10 @@ function assessMarkerWritten(producedPath) {
   return { ok: true, violations: [] };
 }
 function acsDirConformant(producedPath) {
-  if (!(0, import_node_fs14.existsSync)(producedPath) || !(0, import_node_fs14.statSync)(producedPath).isDirectory()) {
+  if (!(0, import_node_fs15.existsSync)(producedPath) || !(0, import_node_fs15.statSync)(producedPath).isDirectory()) {
     return { ok: false, violations: [`spec-author wrote no acs/ dir at ${producedPath} (expected >=1 acs/<AC>.json)`] };
   }
-  const acFiles = (0, import_node_fs14.readdirSync)(producedPath).filter((n) => n.endsWith(".json"));
+  const acFiles = (0, import_node_fs15.readdirSync)(producedPath).filter((n) => n.endsWith(".json"));
   if (acFiles.length === 0) {
     return { ok: false, violations: [`acs/ dir at ${producedPath} holds no AC file (expected >=1 acs/<AC>.json)`] };
   }
@@ -12159,7 +12208,7 @@ function acsDirConformant(producedPath) {
   for (const name of acFiles) {
     let content;
     try {
-      content = (0, import_node_fs14.readFileSync)((0, import_node_path17.join)(producedPath, name), "utf8");
+      content = (0, import_node_fs15.readFileSync)((0, import_node_path18.join)(producedPath, name), "utf8");
     } catch {
       violations.push(`acs/${name} not readable`);
       continue;
@@ -12172,7 +12221,7 @@ function acsDirConformant(producedPath) {
 function deployVerifyScopeConformant(producedPath) {
   let content;
   try {
-    content = (0, import_node_fs14.readFileSync)(producedPath, "utf8");
+    content = (0, import_node_fs15.readFileSync)(producedPath, "utf8");
   } catch {
     return { ok: false, violations: [`deploy-verify-scope.json not readable at ${producedPath}`] };
   }
@@ -12264,7 +12313,7 @@ var Step = class {
   constructor(manifest, agent, exists) {
     this.manifest = manifest;
     this.agent = agent;
-    this.exists = exists ?? import_node_fs15.existsSync;
+    this.exists = exists ?? import_node_fs16.existsSync;
   }
   manifest;
   agent;
@@ -12370,7 +12419,7 @@ var Step = class {
     let primaryPresent = false;
     for (const spec of specs) {
       const rel = provided.outputPaths?.[spec.id] ?? spec.filename;
-      const p = (0, import_node_path18.join)(rootFor(spec.channel), rel);
+      const p = (0, import_node_path19.join)(rootFor(spec.channel), rel);
       if (this.exists(p)) {
         producedPaths.push(p);
         if (spec.id === primary) primaryPresent = true;
@@ -12440,8 +12489,8 @@ var Step = class {
 
 // consort/orchestrator/agents/agent-catalogue.ts
 init_cjs_shims();
-var import_node_path23 = require("path");
-var import_node_fs20 = require("fs");
+var import_node_path24 = require("path");
+var import_node_fs21 = require("fs");
 
 // consort/orchestrator/agents/claude-step-agent.ts
 init_cjs_shims();
@@ -12525,17 +12574,17 @@ var import_node_child_process7 = require("child_process");
 
 // consort/config/kit-ref.ts
 init_cjs_shims();
-var import_node_fs16 = require("fs");
-var import_node_path19 = require("path");
+var import_node_fs17 = require("fs");
+var import_node_path20 = require("path");
 var KIT_REF_FILE = "kit-ref";
 var KIT_REF_LOCAL_FILE = "kit-ref.local";
 function lakebaseFile(projectDir, name) {
-  return (0, import_node_path19.join)(projectDir, ".lakebase", name);
+  return (0, import_node_path20.join)(projectDir, ".lakebase", name);
 }
 function readTrimmed(file) {
-  if (!(0, import_node_fs16.existsSync)(file)) return void 0;
+  if (!(0, import_node_fs17.existsSync)(file)) return void 0;
   try {
-    const v = (0, import_node_fs16.readFileSync)(file, "utf8").trim();
+    const v = (0, import_node_fs17.readFileSync)(file, "utf8").trim();
     return v.length > 0 ? v : void 0;
   } catch {
     return void 0;
@@ -12557,8 +12606,8 @@ function pinRunKitRef(projectDir, ref) {
   const file = lakebaseFile(projectDir, KIT_REF_LOCAL_FILE);
   const previous = readTrimmed(file);
   if (previous === ref) return { pinned: false, ref };
-  (0, import_node_fs16.mkdirSync)((0, import_node_path19.dirname)(file), { recursive: true });
-  (0, import_node_fs16.writeFileSync)(file, ref + "\n", "utf8");
+  (0, import_node_fs17.mkdirSync)((0, import_node_path20.dirname)(file), { recursive: true });
+  (0, import_node_fs17.writeFileSync)(file, ref + "\n", "utf8");
   return { pinned: true, ref, ...previous ? { previous } : {} };
 }
 function kitRefDriftWarning(projectDir, launchRef) {
@@ -12575,8 +12624,8 @@ var path6 = __toESM(require("path"), 1);
 // consort/lakebase/kit-ref-pin.ts
 init_cjs_shims();
 var import_node_url2 = require("url");
-var import_node_path20 = require("path");
-var import_node_fs17 = require("fs");
+var import_node_path21 = require("path");
+var import_node_fs18 = require("fs");
 
 // consort/lakebase/upgrade.ts
 var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
@@ -13034,19 +13083,19 @@ var import_lakebase10 = require("@databricks-solutions/lakebase-scm-utils/lakeba
 
 // consort/setup/stray-artifact-recovery.ts
 init_cjs_shims();
-var import_node_fs18 = require("fs");
-var import_node_path21 = require("path");
+var import_node_fs19 = require("fs");
+var import_node_path22 = require("path");
 function malformedSiblingRoot(projectDir) {
   const p = projectDir.replace(/\/+$/, "");
-  return `${(0, import_node_path21.dirname)(p)}-${(0, import_node_path21.basename)(p)}`;
+  return `${(0, import_node_path22.dirname)(p)}-${(0, import_node_path22.basename)(p)}`;
 }
 function listFilesRel(dir) {
   const out = [];
   const walk2 = (abs, rel) => {
-    for (const entry of (0, import_node_fs18.readdirSync)(abs)) {
-      const childAbs = (0, import_node_path21.join)(abs, entry);
-      const childRel = rel ? (0, import_node_path21.join)(rel, entry) : entry;
-      if ((0, import_node_fs18.statSync)(childAbs).isDirectory()) walk2(childAbs, childRel);
+    for (const entry of (0, import_node_fs19.readdirSync)(abs)) {
+      const childAbs = (0, import_node_path22.join)(abs, entry);
+      const childRel = rel ? (0, import_node_path22.join)(rel, entry) : entry;
+      if ((0, import_node_fs19.statSync)(childAbs).isDirectory()) walk2(childAbs, childRel);
       else out.push(childRel);
     }
   };
@@ -13055,19 +13104,19 @@ function listFilesRel(dir) {
 }
 function relocateStrayDesignArtifacts(projectDir) {
   const sibling = malformedSiblingRoot(projectDir);
-  if (!(0, import_node_fs18.existsSync)(sibling)) return { relocated: false, moved: [] };
+  if (!(0, import_node_fs19.existsSync)(sibling)) return { relocated: false, moved: [] };
   const moved = [];
   for (const artRoot of ALL_ARTIFACT_ROOTS) {
-    const strayRoot = (0, import_node_path21.join)(sibling, artRoot);
-    if (!(0, import_node_fs18.existsSync)(strayRoot)) continue;
-    for (const rel of listFilesRel(strayRoot)) moved.push((0, import_node_path21.join)(artRoot, rel));
-    const realRoot = (0, import_node_path21.join)(projectDir, artRoot);
-    (0, import_node_fs18.mkdirSync)(realRoot, { recursive: true });
-    (0, import_node_fs18.cpSync)(strayRoot, realRoot, { recursive: true, force: true });
-    (0, import_node_fs18.rmSync)(strayRoot, { recursive: true, force: true });
+    const strayRoot = (0, import_node_path22.join)(sibling, artRoot);
+    if (!(0, import_node_fs19.existsSync)(strayRoot)) continue;
+    for (const rel of listFilesRel(strayRoot)) moved.push((0, import_node_path22.join)(artRoot, rel));
+    const realRoot = (0, import_node_path22.join)(projectDir, artRoot);
+    (0, import_node_fs19.mkdirSync)(realRoot, { recursive: true });
+    (0, import_node_fs19.cpSync)(strayRoot, realRoot, { recursive: true, force: true });
+    (0, import_node_fs19.rmSync)(strayRoot, { recursive: true, force: true });
   }
   try {
-    if ((0, import_node_fs18.readdirSync)(sibling).length === 0) (0, import_node_fs18.rmSync)(sibling, { recursive: true, force: true });
+    if ((0, import_node_fs19.readdirSync)(sibling).length === 0) (0, import_node_fs19.rmSync)(sibling, { recursive: true, force: true });
   } catch {
   }
   return moved.length > 0 ? { relocated: true, from: sibling, moved } : { relocated: false, moved: [] };
@@ -13880,27 +13929,27 @@ ${instructions.guidelines.map((g) => `- ${g}`).join("\n")}` : "";
 
 // consort/orchestrator/agents/mock-replay-agent.ts
 init_cjs_shims();
-var import_node_fs19 = require("fs");
-var import_node_path22 = require("path");
+var import_node_fs20 = require("fs");
+var import_node_path23 = require("path");
 function makeMockReplayAgent(opts) {
   const role = opts.role ?? "product-owner";
   return {
     async invoke(invocation) {
       const materialized = [];
       for (const seed of opts.seeds) {
-        const src = (0, import_node_path22.join)(opts.corpusRoot, seed.from);
-        if (!(0, import_node_fs19.existsSync)(src)) {
+        const src = (0, import_node_path23.join)(opts.corpusRoot, seed.from);
+        if (!(0, import_node_fs20.existsSync)(src)) {
           throw new Error(
             `ReplayPoMockAgent: recorded seed for "${seed.outputId}" not found at ${src} \u2013 a replay cannot fabricate it. Check the corpus root + recorded path.`
           );
         }
-        const dst = (0, import_node_path22.join)(invocation.workspaceDir, seed.to);
+        const dst = (0, import_node_path23.join)(invocation.workspaceDir, seed.to);
         if (seed.kind === "tree") {
-          (0, import_node_fs19.mkdirSync)(dst, { recursive: true });
-          (0, import_node_fs19.cpSync)(src, dst, { recursive: true, force: true, filter: codeTreeFilter(src) });
+          (0, import_node_fs20.mkdirSync)(dst, { recursive: true });
+          (0, import_node_fs20.cpSync)(src, dst, { recursive: true, force: true, filter: codeTreeFilter(src) });
         } else {
-          (0, import_node_fs19.mkdirSync)((0, import_node_path22.dirname)(dst), { recursive: true });
-          (0, import_node_fs19.writeFileSync)(dst, (0, import_node_fs19.readFileSync)(src, "utf8"));
+          (0, import_node_fs20.mkdirSync)((0, import_node_path23.dirname)(dst), { recursive: true });
+          (0, import_node_fs20.writeFileSync)(dst, (0, import_node_fs20.readFileSync)(src, "utf8"));
         }
         materialized.push(seed.to);
       }
@@ -13911,9 +13960,9 @@ function makeMockReplayAgent(opts) {
         event: "artifact.written",
         message: `replayed PO authoring: ${materialized.join(", ")}`
       };
-      const logPath = (0, import_node_path22.join)(invocation.workspaceDir, "agent-log.jsonl");
-      const prior = (0, import_node_fs19.existsSync)(logPath) ? (0, import_node_fs19.readFileSync)(logPath, "utf8") : "";
-      (0, import_node_fs19.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
+      const logPath = (0, import_node_path23.join)(invocation.workspaceDir, "agent-log.jsonl");
+      const prior = (0, import_node_fs20.existsSync)(logPath) ? (0, import_node_fs20.readFileSync)(logPath, "utf8") : "";
+      (0, import_node_fs20.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
     }
   };
 }
@@ -13923,10 +13972,10 @@ function actionSignature(a) {
   return JSON.stringify(a);
 }
 function resolveTurnsDir(corpusRoot) {
-  const here = (0, import_node_path22.join)(corpusRoot, "turns");
-  if ((0, import_node_fs19.existsSync)(here)) return here;
-  const parent = (0, import_node_path22.join)((0, import_node_path22.dirname)(corpusRoot), "turns");
-  if ((0, import_node_fs19.existsSync)(parent)) return parent;
+  const here = (0, import_node_path23.join)(corpusRoot, "turns");
+  if ((0, import_node_fs20.existsSync)(here)) return here;
+  const parent = (0, import_node_path23.join)((0, import_node_path23.dirname)(corpusRoot), "turns");
+  if ((0, import_node_fs20.existsSync)(parent)) return parent;
   return void 0;
 }
 function loadCursor(corpusRoot) {
@@ -13939,12 +13988,12 @@ function loadCursor(corpusRoot) {
     );
   }
   const turns = [];
-  for (const name of (0, import_node_fs19.readdirSync)(turnsDir).sort()) {
-    const dir = (0, import_node_path22.join)(turnsDir, name);
-    const tj = (0, import_node_path22.join)(dir, "turn.json");
-    if (!(0, import_node_fs19.existsSync)(tj) || !(0, import_node_fs19.statSync)(dir).isDirectory()) continue;
+  for (const name of (0, import_node_fs20.readdirSync)(turnsDir).sort()) {
+    const dir = (0, import_node_path23.join)(turnsDir, name);
+    const tj = (0, import_node_path23.join)(dir, "turn.json");
+    if (!(0, import_node_fs20.existsSync)(tj) || !(0, import_node_fs20.statSync)(dir).isDirectory()) continue;
     try {
-      const parsed = JSON.parse((0, import_node_fs19.readFileSync)(tj, "utf8"));
+      const parsed = JSON.parse((0, import_node_fs20.readFileSync)(tj, "utf8"));
       if (parsed.action) turns.push({ dir, action: parsed.action });
     } catch {
     }
@@ -13960,26 +14009,26 @@ function isBuildTurn(a) {
   return a.kind === "invoke-role" && (a.role === "navigator" || a.role === "driver") && "story" in a && typeof a.story === "string" && !!a.story && !("buildMode" in a && a.buildMode === "reflect");
 }
 function remapArtifactRoot(rel) {
-  const parts = rel.split(import_node_path22.sep);
+  const parts = rel.split(import_node_path23.sep);
   if (parts.length > 0 && LEGACY_ARTIFACT_ROOTS.includes(parts[0])) {
     parts[0] = ARTIFACT_ROOT;
-    return parts.join(import_node_path22.sep);
+    return parts.join(import_node_path23.sep);
   }
   return rel;
 }
 function materializeFiles(filesDir, workspaceDir) {
   const out = [];
   const walk2 = (abs) => {
-    for (const name of (0, import_node_fs19.readdirSync)(abs)) {
-      const src = (0, import_node_path22.join)(abs, name);
-      if ((0, import_node_fs19.statSync)(src).isDirectory()) {
+    for (const name of (0, import_node_fs20.readdirSync)(abs)) {
+      const src = (0, import_node_path23.join)(abs, name);
+      if ((0, import_node_fs20.statSync)(src).isDirectory()) {
         walk2(src);
         continue;
       }
-      const rel = remapArtifactRoot((0, import_node_path22.relative)(filesDir, src));
-      const dst = (0, import_node_path22.join)(workspaceDir, rel);
-      (0, import_node_fs19.mkdirSync)((0, import_node_path22.dirname)(dst), { recursive: true });
-      (0, import_node_fs19.writeFileSync)(dst, (0, import_node_fs19.readFileSync)(src));
+      const rel = remapArtifactRoot((0, import_node_path23.relative)(filesDir, src));
+      const dst = (0, import_node_path23.join)(workspaceDir, rel);
+      (0, import_node_fs20.mkdirSync)((0, import_node_path23.dirname)(dst), { recursive: true });
+      (0, import_node_fs20.writeFileSync)(dst, (0, import_node_fs20.readFileSync)(src));
       out.push(rel);
     }
   };
@@ -14020,19 +14069,19 @@ function makeStepReplayAgent(opts) {
         );
       }
       cursor.consumed.set(sig2, already + 1);
-      const filesDir = (0, import_node_path22.join)(turn.dir, "files");
-      const materialized = (0, import_node_fs19.existsSync)(filesDir) ? materializeFiles(filesDir, invocation.workspaceDir) : [];
+      const filesDir = (0, import_node_path23.join)(turn.dir, "files");
+      const materialized = (0, import_node_fs20.existsSync)(filesDir) ? materializeFiles(filesDir, invocation.workspaceDir) : [];
       const role = invocation.action.kind === "invoke-role" ? invocation.action.role : "orchestrator";
       const event = {
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         level: "info",
         role,
         event: "artifact.written",
-        message: `replayed ${role} turn ${turn.dir.split(import_node_path22.sep).pop()}: ${materialized.join(", ") || "(no files delta)"}`
+        message: `replayed ${role} turn ${turn.dir.split(import_node_path23.sep).pop()}: ${materialized.join(", ") || "(no files delta)"}`
       };
-      const logPath = (0, import_node_path22.join)(invocation.workspaceDir, "agent-log.jsonl");
-      const prior = (0, import_node_fs19.existsSync)(logPath) ? (0, import_node_fs19.readFileSync)(logPath, "utf8") : "";
-      (0, import_node_fs19.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
+      const logPath = (0, import_node_path23.join)(invocation.workspaceDir, "agent-log.jsonl");
+      const prior = (0, import_node_fs20.existsSync)(logPath) ? (0, import_node_fs20.readFileSync)(logPath, "utf8") : "";
+      (0, import_node_fs20.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
     }
   };
 }
@@ -14064,12 +14113,12 @@ function buildMock(config, _context) {
   return {
     async invoke(invocation) {
       for (const [filename, contents] of Object.entries(outputs)) {
-        (0, import_node_fs20.writeFileSync)((0, import_node_path23.join)(invocation.workspaceDir, filename), contents);
+        (0, import_node_fs21.writeFileSync)((0, import_node_path24.join)(invocation.workspaceDir, filename), contents);
       }
-      const logPath = (0, import_node_path23.join)(invocation.workspaceDir, "agent-log.jsonl");
-      const prior = (0, import_node_fs20.existsSync)(logPath) ? (0, import_node_fs20.readFileSync)(logPath, "utf8") : "";
+      const logPath = (0, import_node_path24.join)(invocation.workspaceDir, "agent-log.jsonl");
+      const prior = (0, import_node_fs21.existsSync)(logPath) ? (0, import_node_fs21.readFileSync)(logPath, "utf8") : "";
       const event = { timestamp: (/* @__PURE__ */ new Date()).toISOString(), level: "info", role, event: "artifact.written", message: `mock wrote ${Object.keys(outputs).join(", ") || "(nothing)"}` };
-      (0, import_node_fs20.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
+      (0, import_node_fs21.writeFileSync)(logPath, prior + JSON.stringify(event) + "\n");
     }
   };
 }
@@ -14242,7 +14291,7 @@ function outputPathsForAction(action, consortDir, featureId, projectDir) {
   if (action.kind !== "invoke-role") return {};
   const f = featureId;
   const story = "story" in action && typeof action.story === "string" ? action.story : void 0;
-  const rel = (abs) => (0, import_node_path24.relative)(consortDir, abs);
+  const rel = (abs) => (0, import_node_path25.relative)(consortDir, abs);
   const META = { "agent-log": "agent-log.jsonl" };
   if ("mode" in action) {
     if (action.role === "spec-author" && action.mode === "breakdown") {
@@ -14288,7 +14337,7 @@ function outputPathsForAction(action, consortDir, featureId, projectDir) {
     return {};
   }
   if (action.role === "navigator" && story && "buildMode" in action && action.buildMode === "assess-deploy") {
-    return { scope: rel((0, import_node_path24.join)(storyResolved(consortDir, f, story), "deploy-verify-scope.json")) };
+    return { scope: rel((0, import_node_path25.join)(storyResolved(consortDir, f, story), "deploy-verify-scope.json")) };
   }
   return {};
 }
@@ -14352,15 +14401,15 @@ async function performTurnViaExecutor(action, state, routerDeps, cfg, deps) {
   const inputPath = (source) => {
     if (source.startsWith("cycle:") || source.startsWith("ac:")) {
       const rel = expandRel(source.slice(source.indexOf(":") + 1));
-      if (!story || !ac) return (0, import_node_path24.join)(cfg.consortDir, rel);
-      return (0, import_node_path24.join)(cycleDir(cfg.consortDir, f, story, ac), rel);
+      if (!story || !ac) return (0, import_node_path25.join)(cfg.consortDir, rel);
+      return (0, import_node_path25.join)(cycleDir(cfg.consortDir, f, story, ac), rel);
     }
     if (source.startsWith("story:")) {
       const rel = expandRel(source.slice("story:".length));
-      if (!story) return (0, import_node_path24.join)(cfg.consortDir, rel);
-      return (0, import_node_path24.join)(storyResolved(cfg.consortDir, f, story), rel);
+      if (!story) return (0, import_node_path25.join)(cfg.consortDir, rel);
+      return (0, import_node_path25.join)(storyResolved(cfg.consortDir, f, story), rel);
     }
-    return (0, import_node_path24.join)(cfg.consortDir, expandRel(source.replace(/^feature:/, "")));
+    return (0, import_node_path25.join)(cfg.consortDir, expandRel(source.replace(/^feature:/, "")));
   };
   const executorDeps = {
     // Uncontained: the agent reads the tree itself, but Step still gates on the presence of
@@ -14447,25 +14496,25 @@ async function performTurnViaExecutor(action, state, routerDeps, cfg, deps) {
 
 // consort/session/response-formatter.ts
 init_cjs_shims();
-var import_node_fs22 = require("fs");
-var import_node_path26 = require("path");
+var import_node_fs23 = require("fs");
+var import_node_path27 = require("path");
 
 // consort/architecture/e2e-route-adherence.ts
 init_cjs_shims();
-var import_node_fs21 = require("fs");
-var import_node_path25 = require("path");
-var CLIENT_SRC = (0, import_node_path25.join)("client", "src");
-var E2E_DIR = (0, import_node_path25.join)("client", "tests", "e2e");
+var import_node_fs22 = require("fs");
+var import_node_path26 = require("path");
+var CLIENT_SRC = (0, import_node_path26.join)("client", "src");
+var E2E_DIR = (0, import_node_path26.join)("client", "tests", "e2e");
 
 // consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs22.existsSync)(file)) {
+  if (!(0, import_node_fs23.existsSync)(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = (0, import_node_fs22.readFileSync)(file, "utf8");
+    content = (0, import_node_fs23.readFileSync)(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -14477,7 +14526,7 @@ function designGuideConformance(consortDir) {
 init_cjs_shims();
 var import_node_child_process10 = require("child_process");
 var fs17 = __toESM(require("fs"), 1);
-var import_node_path27 = require("path");
+var import_node_path28 = require("path");
 function artifactRoot(consortDir) {
   return consortDir;
 }
@@ -14535,7 +14584,7 @@ var defaultDbStateReader = (projectDir) => {
 };
 var defaultFailingTestReader = (projectDir, story) => {
   if (projectLanguage(projectDir) === "nodejs") return void 0;
-  const file = (0, import_node_path27.join)(projectDir, "tests", "step_defs", `test_${story.replace(/-/g, "_")}.py`);
+  const file = (0, import_node_path28.join)(projectDir, "tests", "step_defs", `test_${story.replace(/-/g, "_")}.py`);
   try {
     const body = fs17.readFileSync(file, "utf8");
     return body.length > 4e3 ? body.slice(0, 4e3) + "\n\u2026 (truncated; read the full file if needed)" : body;
@@ -14545,13 +14594,13 @@ var defaultFailingTestReader = (projectDir, story) => {
 };
 function readCtxLeverMarker(consortDir) {
   try {
-    return JSON.parse(fs17.readFileSync((0, import_node_path27.join)(consortDir, "ctx-levers.json"), "utf8"));
+    return JSON.parse(fs17.readFileSync((0, import_node_path28.join)(consortDir, "ctx-levers.json"), "utf8"));
   } catch {
     return {};
   }
 }
 function failingTestBlock(consortDir, story, reader = defaultFailingTestReader) {
-  const body = reader((0, import_node_path27.dirname)(consortDir), story);
+  const body = reader((0, import_node_path28.dirname)(consortDir), story);
   return body ? ` FAILING TEST (make THIS pass; do NOT search for it) ::
 \`\`\`python
 ${body}
@@ -14571,7 +14620,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
     parts.push(` LAYOUT (place/judge code at THESE paths, do not scan for them) :: ${layout}.`);
   }
   {
-    const language = projectLanguage((0, import_node_path27.dirname)(consortDir));
+    const language = projectLanguage((0, import_node_path28.dirname)(consortDir));
     const runHint = language === "nodejs" ? ` RUN/REACHABILITY :: node project \u2013 source under src/ (there is NO app/). To confirm the app boots or is reachable, run the project's OWN start (the package.json start/dev script, e.g. \`node src/index.js\`) and GET the health path over HTTP \u2013 do NOT assume Python or run \`python -c "import app.main"\` (it will false-fail here).` : language === "java" || language === "kotlin" ? ` RUN/REACHABILITY :: ${language} project. To confirm the app boots or is reachable, run \`./mvnw spring-boot:run\` and GET the health path over HTTP \u2013 do NOT assume Python (\`python -c "import app.main"\` false-fails here).` : ` RUN/REACHABILITY :: python project \u2013 source under app/. To confirm the app boots or is reachable, run \`uv run uvicorn app.main:app\` and GET the health path over HTTP. Reachability is an HTTP response, never just an import succeeding.`;
     parts.push(runHint);
   }
@@ -14583,7 +14632,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   const marker = readCtxLeverMarker(consortDir);
   const dbOn = opts.dbState ?? marker.dbState ?? consortEnv("CTX_DBSTATE") === "1";
   if (dbOn) {
-    const st = (opts.dbStateReader ?? defaultDbStateReader)((0, import_node_path27.dirname)(consortDir));
+    const st = (opts.dbStateReader ?? defaultDbStateReader)((0, import_node_path28.dirname)(consortDir));
     if (st && (st.current || st.heads)) {
       parts.push(
         ` DB STATE (already probed, do NOT re-run alembic current/heads) ::${st.current ? ` current=${st.current.replace(/\s+/g, " ")}` : ""}${st.heads ? ` head=${st.heads.replace(/\s+/g, " ")}` : ""}. The branch is migrated to head; iterate with \`uv run --env-file .env pytest <path>\` (no re-migrate).`
@@ -14599,7 +14648,7 @@ function buildContextPack(consortDir, featureId, story, ac, opts = {}) {
   if (scopeOn) parts.push(scopeNoteBlock());
   const migrationOn = opts.migration ?? marker.migration ?? consortEnv("CTX_MIGRATION") === "1";
   if (migrationOn) {
-    const language = projectLanguage((0, import_node_path27.dirname)(consortDir));
+    const language = projectLanguage((0, import_node_path28.dirname)(consortDir));
     const migrationGuide = language === "nodejs" ? ` MIGRATION :: knex migrations live in migrations/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Source/models live under src/; apply with \`npm run migrate\`.` : language === "java" || language === "kotlin" ? ` MIGRATION :: flyway migrations live in src/main/resources/db/migration/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author it or grep scripts/lk). Apply with \`./mvnw -q flyway:migrate\`.` : ` MIGRATION :: alembic migrations live in alembic/versions/. Create one with \`./scripts/lk lakebase-new-migration --name "<short desc>"\` (do NOT hand-author the revision file or grep scripts/lk to find the command). ORM models are in app/models.py; apply with \`uv run --env-file .env alembic upgrade head\`.`;
     parts.push(migrationGuide);
   }
@@ -14643,13 +14692,13 @@ function renderTestAnalystRoster(ctx, opts = {}) {
 // consort/orchestrator/steps/cross-story-context.ts
 init_cjs_shims();
 var fs18 = __toESM(require("fs"), 1);
-var import_node_path28 = require("path");
+var import_node_path29 = require("path");
 var str = (v) => typeof v === "string" && v.length > 0 ? v : void 0;
 function buildCrossStoryContext(consortDir, feature, currentStory) {
   const ctx = { current_story: currentStory, sibling_stories: [], open_decisions: [], required_persistence_fields: [] };
   const currentDir = (() => {
     try {
-      return (0, import_node_path28.basename)(storyResolved(consortDir, feature, currentStory));
+      return (0, import_node_path29.basename)(storyResolved(consortDir, feature, currentStory));
     } catch {
       return currentStory;
     }
@@ -14806,7 +14855,7 @@ function unNotedAcIds(consortDir, featureId, story) {
   const out = [];
   for (const ac of storyAcIds(consortDir, featureId, story)) {
     try {
-      const j = JSON.parse(fs19.readFileSync((0, import_node_path29.join)(dir, `${ac}.json`), "utf8"));
+      const j = JSON.parse(fs19.readFileSync((0, import_node_path30.join)(dir, `${ac}.json`), "utf8"));
       const n = j.architectural_notes;
       const hasNotes = typeof n === "string" ? n.trim().length > 0 : n !== void 0 && n !== null;
       if (!hasNotes) out.push(ac);
@@ -14933,7 +14982,7 @@ function roleTaskBody(action, featureId, uiTrack, consortDir, build, omit) {
       case "estimate-committed":
         return `Estimate the sprint's COMMITTED feature(s) with a t-shirt size (XS/S/M/L/XL). Read each committed feature's request at ${root}/features/<F>/feature-request.md, then ADD one entry per committed feature to ${root}/planning/estimates.json keyed by its REAL feature id (e.g. "F1-stock-visibility", not a "FP" candidate id), each {"feature_id":"<F>","size":"<XS|S|M|L|XL>","rationale":"<why>"}. KEEP every existing estimate already in the file (merge, do not overwrite the candidate sizes). This is the size sync-backlog stamps into the per-sprint backlog, so the committed backlog shows real sizing.`;
       case "intake": {
-        const seedIntakeDir = (0, import_node_path29.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
+        const seedIntakeDir = (0, import_node_path30.join)(kitRoot(), "examples", "first-project", "stockflow-seed", "intake");
         const groundingClause = fs19.existsSync(seedIntakeDir) ? `Ground the shape in the canon above and the StockFlow worked example at ${seedIntakeDir} (READ the files there to learn the format + level of detail; never copy it verbatim).` : `Ground the shape in the canon above (the StockFlow worked example under the kit's examples/first-project/stockflow-seed/intake/ is unavailable here \u2013 rely on the canon).`;
         return `Author the project intake for the Product Owner, DRAFTING each artifact FRESH from the human's answers at ${root}/intake/answers.md (the interview responses; if absent or thin, draft only what the stated intent supports \u2013 never invent). WRITE:
   - ${root}/product-overview.md \u2013 who it's for, its purpose, how it grows, what to see after each sprint (H1 + body, no implementation detail).
@@ -15027,11 +15076,11 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
 `;
         return advisory + `ASSESS a failed honest-GREEN verify for AC ${action.ac} in story ${s}. The Driver made the current test pass, but the full-suite verify against the running app FAILED, some OTHER test(s) now fail.
 ` + scanDirective + `   ./scripts/lk consort-cycle flag-superseded --feature ${featureId} --story ${s} --ac ${action.ac} --reason "<new AC + what changed>" --test <path_or_nodeid> [--test ...] --tdd-dir ${consortDir}
-   The flag-superseded command writes ${(0, import_node_path29.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
+   The flag-superseded command writes ${(0, import_node_path30.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "superseded-tests.json")}. If for any reason the command will not run, FALL BACK to writing THAT EXACT file directly with the Write tool: {"tests":["<path_or_nodeid>", ...],"reason":"<why superseded>"} \u2013 do NOT search the cache / scripts / logs for the mechanism or invent a different filename. The orchestration honors that file too.
 (b) If instead the failure is a GENUINE REGRESSION (the AC does NOT intend to change that behavior; the Driver's code is wrong), record your ROOT-CAUSE diagnosis so it travels to the Driver / the human instead of being lost. When the Driver can fix it, ALSO give a concrete repair directive (this routes a bounded Driver repair turn):
    ./scripts/lk consort-cycle assess-regression --feature ${featureId} --story ${s} --ac ${action.ac} --diagnosis "<the WHY: which behavior broke + the root cause>" [--fix "<what the Driver should change>"] --tdd-dir ${consortDir}
    Include --fix ONLY when the fix is clear + within the Driver's reach (e.g. a wrong default, a missing filter, an off-by-one); OMIT --fix when it needs a human / a design or spec change (the orchestration then escalates carrying your diagnosis).
-CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path29.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
+CRITICAL \u2013 recording the verdict is the ONLY output of this turn. The orchestration reads your verdict from ${(0, import_node_path30.join)(cycleDir(consortDir, featureId, s, action.ac ?? ""), "regression-assessment.json")} (the assess-regression command writes it). Writing green-failure.json or just explaining the fix in prose is NOT the verdict \u2013 without that file a DRIVER-FIXABLE regression wrongly escalates to a human and the sprint halts. Run the ONE command above as a SINGLE line (do not split across lines, do not wrap in bash -c). If for any reason the command will not run, FALL BACK to writing the file directly with the Write tool: {"diagnosis":"<why>","fix":"<what to change>"} at that exact path \u2013 the orchestration honors that too.
 Flag ONLY tests the new AC truly supersedes; never flag a test just to make a red go away. For a regression, always record a diagnosis (+ fix when driver-fixable) \u2013 never nothing.`;
       }
       if (action.buildMode === "assess-deploy") {
@@ -15084,9 +15133,9 @@ Edit ONLY the flagged test files. The orchestrator re-verifies the full suite af
       if (action.buildMode === "refactor") {
         const pack = (ac) => omit?.has("context-pack") ? "" : buildContextPack(consortDir, featureId, s, ac);
         if ((build?.loop ?? "story") === "story") {
-          return `REFACTOR story ${s} per the Navigator's review (${root}/cycles/${featureId}/${s}/review.json -> refactor_notes), guided by the architecture (${root}/features/${featureId}/architecture.md), the NFRs (${root}/nfrs.md), + design guide (${root}/design/design-guide.md). If review.json has no refactor_notes, this refactor was queued by a BLOCKING build-quality gate (a layering / design-adherence / import-coupling smell in ${root}/smells.json): run that gate to see the violation (e.g. \`consort-layering-clean --project-dir .\`) and fix exactly what it flags \u2013 typically extract the duplicated/misplaced code into one shared helper in its correct layer. Keep ALL the story's tests green and do not change what the outer-boundary tests check, refactor only.` + pack("");
+          return `REFACTOR story ${s} per the Navigator's review (${root}/cycles/${featureId}/${s}/review.json -> refactor_notes), guided by the architecture (${root}/features/${featureId}/architecture.md), the NFRs (${root}/nfrs.md), + design guide (${root}/design/design-guide.md). If review.json has no refactor_notes, this refactor was queued by a BLOCKING build-quality gate (a layering / design-adherence / import-coupling smell in ${root}/smells.json): run that gate to see the violation (e.g. \`consort-layering-clean --project-dir . --architecture ${root}/features/${featureId}/architecture.json\`) and fix exactly what it flags \u2013 typically extract the duplicated/misplaced code into one shared helper in its correct layer. Keep ALL the story's tests green and do not change what the outer-boundary tests check, refactor only.` + pack("");
         }
-        return `REFACTOR AC ${action.ac} in story ${s} per the Navigator's review (${root}/cycles/${featureId}/${s}/${action.ac}/review.json -> refactor_notes), guided by the architecture (${root}/features/${featureId}/architecture.md), the NFRs (${root}/nfrs.md), + design guide (${root}/design/design-guide.md). If review.json has no refactor_notes, this refactor was queued by a BLOCKING build-quality gate (a layering / design-adherence / import-coupling smell in ${root}/smells.json): run that gate to see the violation (e.g. \`consort-layering-clean --project-dir .\`) and fix exactly what it flags \u2013 typically extract the duplicated/misplaced code into one shared helper in its correct layer. Keep ALL tests green and do not change what the outer-boundary tests check, refactor only.` + pack(action.ac ?? "");
+        return `REFACTOR AC ${action.ac} in story ${s} per the Navigator's review (${root}/cycles/${featureId}/${s}/${action.ac}/review.json -> refactor_notes), guided by the architecture (${root}/features/${featureId}/architecture.md), the NFRs (${root}/nfrs.md), + design guide (${root}/design/design-guide.md). If review.json has no refactor_notes, this refactor was queued by a BLOCKING build-quality gate (a layering / design-adherence / import-coupling smell in ${root}/smells.json): run that gate to see the violation (e.g. \`consort-layering-clean --project-dir . --architecture ${root}/features/${featureId}/architecture.json\`) and fix exactly what it flags \u2013 typically extract the duplicated/misplaced code into one shared helper in its correct layer. Keep ALL tests green and do not change what the outer-boundary tests check, refactor only.` + pack(action.ac ?? "");
       }
       {
         return ((build?.loop ?? "story") === "story" ? `Make ALL of story ${s}'s failing tests GREEN in one pass (simplest honest code); implement until every one of the story's tests passes, then run the story's tests once.` : build?.loop === "hybrid-a" ? `Make the failing tests for story ${s}'s current layer-batch ALL GREEN in one pass (simplest honest code); implement until every test in the open batch passes, then run that layer's runner once.` : `Make the failing test for story ${s} GREEN (simplest honest code).`) + (uiTrack ? uiTrackBuild(root) : "") + // ctx-test ON by default for GREEN: inject the failing RED test body so the Driver does not
@@ -15507,7 +15556,7 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
       return deployGateCmds(f, cfg, deployTarget);
     case "deploy-verify-reverify":
       const markerFile = featureDeployReverifyMarkerJson(cfg.consortDir, f);
-      fs19.mkdirSync((0, import_node_path29.dirname)(markerFile), { recursive: true });
+      fs19.mkdirSync((0, import_node_path30.dirname)(markerFile), { recursive: true });
       fs19.writeFileSync(markerFile, JSON.stringify({ routed_at: (/* @__PURE__ */ new Date()).toISOString() }, null, 2) + "\n");
       return deployGateCmds(f, cfg, deployTarget);
     case "approve-deploy-gate":
@@ -15694,7 +15743,7 @@ function buildDriveEffects(cfg) {
     onHandback(handoff, detail) {
       const file = handbackFile(cfg.consortDir, cfg.featureId, handoff.responder, handoff.story);
       try {
-        fs19.mkdirSync((0, import_node_path29.dirname)(file), { recursive: true });
+        fs19.mkdirSync((0, import_node_path30.dirname)(file), { recursive: true });
         fs19.writeFileSync(file, `${detail}
 `, "utf8");
       } catch {
@@ -16090,7 +16139,7 @@ init_cjs_shims();
 
 // consort/gates/sprint-gates.ts
 init_cjs_shims();
-var import_node_fs23 = require("fs");
+var import_node_fs24 = require("fs");
 var SPRINT_GATES_SCHEMA_VERSION = 1;
 function defaultSprintGatesState(sprint) {
   return {
@@ -16105,10 +16154,10 @@ function sprintGatesFile(consortDir, sprint) {
 function readSprintGates(sprint, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = sprintGatesFile(consortDir, sprint);
-  if (!(0, import_node_fs23.existsSync)(file)) return defaultSprintGatesState(sprint);
+  if (!(0, import_node_fs24.existsSync)(file)) return defaultSprintGatesState(sprint);
   let parsed;
   try {
-    parsed = JSON.parse((0, import_node_fs23.readFileSync)(file, "utf8"));
+    parsed = JSON.parse((0, import_node_fs24.readFileSync)(file, "utf8"));
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);
@@ -16415,9 +16464,9 @@ function shouldEmitTelemetry(inp) {
 // consort/telemetry/emitter.ts
 init_cjs_shims();
 var import_node_child_process12 = require("child_process");
-var import_node_fs24 = require("fs");
+var import_node_fs25 = require("fs");
 var import_node_os = require("os");
-var import_node_path30 = require("path");
+var import_node_path31 = require("path");
 var import_node_crypto8 = require("crypto");
 
 // consort/telemetry/spans.ts
@@ -16484,8 +16533,8 @@ function detachedHttpSink(opts) {
     deliver(payload) {
       try {
         const body = payload.spans.map((s) => JSON.stringify(wireLine(s, payload))).join("\n") + "\n";
-        const file = (0, import_node_path30.join)(dir, `consort-telemetry-${(0, import_node_crypto8.randomUUID)()}.ndjson`);
-        (0, import_node_fs24.writeFileSync)(file, body);
+        const file = (0, import_node_path31.join)(dir, `consort-telemetry-${(0, import_node_crypto8.randomUUID)()}.ndjson`);
+        (0, import_node_fs25.writeFileSync)(file, body);
         const child = spawnImpl(process.execPath, [opts.senderJs, file, url, opts.token ?? ""], {
           detached: true,
           stdio: "ignore"

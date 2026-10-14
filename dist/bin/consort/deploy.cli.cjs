@@ -6662,8 +6662,8 @@ var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
 init_cjs_shims();
 var import_node_child_process4 = require("child_process");
 var import_node_crypto2 = require("crypto");
-var import_node_fs8 = require("fs");
-var import_node_path10 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path11 = require("path");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -6989,12 +6989,35 @@ init_cjs_shims();
 var import_node_fs2 = require("fs");
 var import_node_path3 = require("path");
 
+// consort/architecture/layering-clean.ts
+init_cjs_shims();
+var import_node_fs3 = require("fs");
+var import_node_path4 = require("path");
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs2 = __toESM(require("fs"), 1);
 var import_node_child_process2 = require("child_process");
 var import_node_crypto = require("crypto");
-var import_node_path4 = require("path");
+var import_node_path5 = require("path");
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7007,8 +7030,8 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs3 = require("fs");
-var import_node_path5 = require("path");
+var import_node_fs4 = require("fs");
+var import_node_path6 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -7024,19 +7047,19 @@ var path = __toESM(require("path"), 1);
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs4 = require("fs");
-var import_node_path6 = require("path");
+var import_node_fs5 = require("fs");
+var import_node_path7 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process3 = require("child_process");
-var import_node_fs5 = require("fs");
-var import_node_path7 = require("path");
+var import_node_fs6 = require("fs");
+var import_node_path8 = require("path");
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs6 = require("fs");
-var import_node_path8 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path9 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
@@ -7132,8 +7155,8 @@ async function classifyDeployVerifyFailure(failingNodeIds, runIsolated) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path9 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path10 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
@@ -7177,7 +7200,7 @@ function ephemeralVerifyBranchName(experimentBranch, nonce) {
 // consort/deploy/deploy.ts
 function readProjectInstance(projectDir) {
   try {
-    const m = (0, import_node_fs8.readFileSync)((0, import_node_path10.join)(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
+    const m = (0, import_node_fs9.readFileSync)((0, import_node_path11.join)(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
     return m ? m[1].replace(/^["']|["']$/g, "").trim() : void 0;
   } catch {
     return void 0;
@@ -7186,7 +7209,7 @@ function readProjectInstance(projectDir) {
 function readAppDatabaseName(projectDir) {
   let env;
   try {
-    env = (0, import_node_fs8.readFileSync)((0, import_node_path10.join)(projectDir, ".env"), "utf8");
+    env = (0, import_node_fs9.readFileSync)((0, import_node_path11.join)(projectDir, ".env"), "utf8");
   } catch {
     return void 0;
   }
@@ -7329,7 +7352,7 @@ function logReleaseEngineerDeployOutcome(ctx, result) {
   }
 }
 function pidFile(projectDir, target) {
-  return (0, import_node_path10.join)(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
+  return (0, import_node_path11.join)(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
 }
 function normalizeVerifyRun(raw) {
   return typeof raw === "boolean" ? { passed: raw, output: "" } : { passed: raw.passed, output: raw.output ?? "" };
@@ -7358,10 +7381,10 @@ ${tail}
 function writeDeployEvidence(consortDir, evidence) {
   const fdir = findFeatureDir(consortDir, evidence.feature_id);
   if (!fdir) return void 0;
-  const dir = evidence.story_id ? (0, import_node_path10.join)(fdir, "stories", evidence.story_id) : fdir;
-  (0, import_node_fs8.mkdirSync)(dir, { recursive: true });
-  const file = (0, import_node_path10.join)(dir, "deploy-evidence.json");
-  (0, import_node_fs8.writeFileSync)(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
+  const dir = evidence.story_id ? (0, import_node_path11.join)(fdir, "stories", evidence.story_id) : fdir;
+  (0, import_node_fs9.mkdirSync)(dir, { recursive: true });
+  const file = (0, import_node_path11.join)(dir, "deploy-evidence.json");
+  (0, import_node_fs9.writeFileSync)(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
   return file;
 }
 function defaultStart(cmd, cwd, env) {
@@ -7492,8 +7515,8 @@ async function deployToTarget(args) {
   }
   const pid = start(cfg.run, args.projectDir, env);
   const pf = pidFile(args.projectDir, args.targetName);
-  (0, import_node_fs8.mkdirSync)((0, import_node_path10.dirname)(pf), { recursive: true });
-  (0, import_node_fs8.writeFileSync)(pf, String(pid));
+  (0, import_node_fs9.mkdirSync)((0, import_node_path11.dirname)(pf), { recursive: true });
+  (0, import_node_fs9.writeFileSync)(pf, String(pid));
   const servingOk = args.servingOk ?? args.reachable ?? probeServingOk;
   const readyProbe = args.rejectForeignPort ? servingOk : reachable;
   const poll = await (0, import_util2.pollUntil)({
@@ -7610,8 +7633,8 @@ async function deployToTarget(args) {
 }
 function stopLocal(projectDir, targetName) {
   const pf = pidFile(projectDir, targetName);
-  if (!(0, import_node_fs8.existsSync)(pf)) return { stopped: false };
-  const pid = Number((0, import_node_fs8.readFileSync)(pf, "utf8").trim());
+  if (!(0, import_node_fs9.existsSync)(pf)) return { stopped: false };
+  const pid = Number((0, import_node_fs9.readFileSync)(pf, "utf8").trim());
   if (Number.isFinite(pid) && pid > 0) {
     try {
       process.kill(-pid);
@@ -7622,7 +7645,7 @@ function stopLocal(projectDir, targetName) {
       }
     }
   }
-  (0, import_node_fs8.rmSync)(pf, { force: true });
+  (0, import_node_fs9.rmSync)(pf, { force: true });
   return { stopped: true };
 }
 

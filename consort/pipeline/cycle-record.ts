@@ -40,6 +40,7 @@ import { ensureDeployedAndVerify } from "../deploy/deploy.js";
 import { writeEscalation, type Escalation } from "../../consort/gates/escalation.js";
 import { readSmellsLog, markSmellResolved, isBuildRefactorRoutableSmell, hasOpenBuildRefactorRoutableSmell, writeSmellsLog, hasOpenSmell } from "../smells/smells.js";
 import { checkUxClean, summarizeUxViolations, readAppIconFromGuide, installBrandAsset, applyBrandIconReference } from "../architecture/design-adherence.js";
+import { checkImportLayering, checkOrmContainment, layeringConfigFromArchitecture } from "../architecture/layering-clean.js";
 import {
   readGreenFailure,
   writeGreenFailure,
@@ -1014,6 +1015,44 @@ function flagUxAdherenceIfDirty(consortDir: string, story: string): void {
   }
 }
 
+/**
+ * Deterministic layering backstop, run at REVIEW (no model cooperation) — the layering twin of
+ * flagUxAdherenceIfDirty. The Navigator's review is supposed to run `consort-layering-clean`, but a
+ * rubber-stamp verdict (`refactor:false` with no gate run — the live S3 review) leaves no smell, so
+ * a route->model layering violation would ship unrefactored. Run the layering checks here against
+ * the feature's architecture.json regardless of the verdict; a violation flags the blocking
+ * `layering-violation` smell (idempotently), which firstRefactorPendingAc then routes to the Driver's
+ * REFACTOR even when the verdict said refactor:false. Non-service / architecture-less features are
+ * exempt (no architecture.json / service_backed:false). Best-effort: never break the review.
+ */
+function flagLayeringIfDirty(consortDir: string, featureId: string, story: string): void {
+  try {
+    const archPath = join(featureResolved(consortDir, featureId), "architecture.json");
+    if (!existsSync(archPath)) return;
+    const cfg = layeringConfigFromArchitecture(readFileSync(archPath, "utf8"));
+    if (!cfg.serviceBacked || cfg.allModules.length === 0) return;
+    const projectDir = dirname(consortDir);
+    const importLayering = checkImportLayering(projectDir, cfg.allModules);
+    const ormContainment = checkOrmContainment(projectDir, cfg.allModules);
+    const violations = [
+      ...(importLayering.ok ? [] : importLayering.violations),
+      ...(ormContainment.ok ? [] : ormContainment.violations),
+    ];
+    if (violations.length > 0 && !hasOpenSmell(consortDir, "layering-violation", story)) {
+      writeSmellsLog(consortDir, [
+        {
+          smell: "layering-violation",
+          cycle_ids: [],
+          detail: `layering-clean (deterministic review backstop) found: ${violations.join("; ").slice(0, 500)}`,
+          story_id: story,
+        },
+      ]);
+    }
+  } catch {
+    /* a layering scan failure is observability, not a gate; never break the review */
+  }
+}
+
 export function reviewAc(consortDir: string, featureId: string, story: string, acId: string): { reviewed: boolean; refactorRequested: boolean } {
   let verdict: { refactor?: boolean; notes?: string } = {};
   const vf = acReviewVerdictJson(consortDir, featureId, story, acId);
@@ -1051,6 +1090,7 @@ export function reviewAc(consortDir: string, featureId: string, story: string, a
     },
   });
   flagUxAdherenceIfDirty(consortDir, story);
+  flagLayeringIfDirty(consortDir, featureId, story);
   return { reviewed: true, refactorRequested };
 }
 
@@ -1256,6 +1296,7 @@ export function reviewStory(
     },
   });
   flagUxAdherenceIfDirty(consortDir, story);
+  flagLayeringIfDirty(consortDir, featureId, story);
   return { reviewed: true, refactorRequested };
 }
 

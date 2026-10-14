@@ -6770,7 +6770,7 @@ function readAcLayer(tdd, f, acId) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync24, readFileSync as readFileSync24, readdirSync as readdirSync16, statSync as statSync11, writeFileSync as writeFileSync15, mkdirSync as mkdirSync14, rmSync as rmSync5 } from "fs";
+import { existsSync as existsSync25, readFileSync as readFileSync25, readdirSync as readdirSync17, statSync as statSync12, writeFileSync as writeFileSync15, mkdirSync as mkdirSync14, rmSync as rmSync5 } from "fs";
 
 // consort/config/consort-env.ts
 init_esm_shims();
@@ -6802,7 +6802,7 @@ function warnLegacyEnv(legacyName, suffix) {
 }
 
 // consort/pipeline/cycle-record.ts
-import { join as join24, dirname as dirname12 } from "path";
+import { join as join25, dirname as dirname12 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -8022,6 +8022,31 @@ function checkTestlistE2eSpecSuffix(testListJson) {
     if (/\/tests\/e2e\//.test(sf) && !/\.spec\.ts$/.test(sf)) {
       violations.push(
         `test ${it.id ?? "?"} scenario_file "${sf}" is under tests/e2e/ but is not a .spec.ts \u2014 playwright.config's default testMatch runs only *.spec.ts, so this file never runs. Rename it to <name>.spec.ts.`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkTestlistMigrationRevision(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const mentionsDowngrade = /\bdowngrade\b/i;
+  const reversibilityContext = /\bdowngrade\b[\s\S]*?\bupgrade\b|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
+  const relativeStep = /\bdowngrade\s+-\s*\d+\b|\bsingle-step\s+(?:alembic\s+)?downgrade\b|\bdowngrade\s+(?:by\s+)?one\s+step\b/i;
+  const pinned = /\bdown_revision\b|\bits own revision\b|\bexplicit(?:ly)?\b[\s\S]{0,30}\brevision\b|\bdowngrade\s+(?:to\s+)?(?:revision\s+)?["'`]?[0-9a-f]{6,}/i;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (!mentionsDowngrade.test(desc) || !reversibilityContext.test(desc)) continue;
+    if (relativeStep.test(desc) && !pinned.test(desc)) {
+      violations.push(
+        `test item ${it.id ?? "?"} is a migration-reversibility/data-preservation test that downgrades by a RELATIVE step ("${desc.slice(0, 90)}\u2026"). \`downgrade -1\` reverts whatever is HEAD, so it passes on the isolated experiment branch but silently targets the WRONG migration once a later story adds one (head moved). Pin it to the migration-under-test's OWN revision: downgrade to that revision's parent/down_revision (an explicit revision id), assert the schema change reverted, then upgrade head \u2014 never a relative \`downgrade -1\`.`
       );
       if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
@@ -9973,14 +9998,179 @@ function checkUxClean(args) {
   return clean ? { clean, reachability, tokens, appIcon, vocabulary } : { clean, reachability, tokens, appIcon, vocabulary, remediation: UX_CLEAN_REMEDIATION };
 }
 
+// consort/architecture/layering-clean.ts
+init_esm_shims();
+import { existsSync as existsSync18, readFileSync as readFileSync19, readdirSync as readdirSync13, statSync as statSync8 } from "fs";
+import { join as join18 } from "path";
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+function isTestFile(name) {
+  return /^test_.*\.py$/.test(name) || /_test\.py$/.test(name) || name === "conftest.py";
+}
+function sourcePyFilesRec(dir, out) {
+  let entries;
+  try {
+    entries = readdirSync13(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      if (!SOURCE_SKIP_DIRS.has(e.name)) sourcePyFilesRec(join18(dir, e.name), out);
+    } else if (e.isFile() && e.name.endsWith(".py") && !isTestFile(e.name)) {
+      out.push(join18(dir, e.name));
+    }
+  }
+}
+var SESSION_OP = /\b(?:db|session|_session|self\._?session)\s*\.\s*(query|add|add_all|commit|delete|merge|flush|execute|refresh|scalars|scalar)\s*\(/;
+function relTo(projectDir, file) {
+  return file.startsWith(projectDir) ? file.slice(projectDir.length).replace(/^\/+/, "") : file;
+}
+function dottedPrefix(module) {
+  return module.replace(/\.py$/, "").replace(/^\/+|\/+$/g, "").replace(/\//g, ".");
+}
+function layerSourceFiles(projectDir, module) {
+  const base = module.replace(/\/+$/, "");
+  const out = [];
+  const abs = join18(projectDir, base);
+  const tryFile = (p) => {
+    try {
+      if (existsSync18(p) && !statSync8(p).isDirectory()) out.push(p);
+    } catch {
+    }
+  };
+  if (existsSync18(abs)) {
+    let isDir = false;
+    try {
+      isDir = statSync8(abs).isDirectory();
+    } catch {
+    }
+    if (isDir) sourcePyFilesRec(abs, out);
+    else if (abs.endsWith(".py")) out.push(abs);
+    else tryFile(join18(projectDir, `${base}.py`));
+  } else {
+    tryFile(join18(projectDir, `${base}.py`));
+  }
+  return out;
+}
+function resolveRelativeImport(fileAbs, projectDir, dots, tail) {
+  const rel = relTo(projectDir, fileAbs);
+  const parts = rel.split("/");
+  parts.pop();
+  const up = dots - 1;
+  if (up > parts.length) return null;
+  const basePkg = parts.slice(0, parts.length - up);
+  const tailParts = tail ? tail.split(".").filter(Boolean) : [];
+  const full = [...basePkg, ...tailParts].join(".");
+  return full || null;
+}
+function importedModule(line, fileAbs, projectDir) {
+  const from = /^\s*from\s+(\.*)([\w.]*)\s+import\b/.exec(line);
+  if (from) {
+    const dots = from[1].length;
+    const tail = from[2] ?? "";
+    if (dots === 0) return tail || null;
+    return resolveRelativeImport(fileAbs, projectDir, dots, tail);
+  }
+  const imp = /^\s*import\s+([\w.]+)/.exec(line);
+  return imp ? imp[1] : null;
+}
+function underPrefix(mod, prefix) {
+  return mod === prefix || mod.startsWith(`${prefix}.`);
+}
+var IMPORT_LAYERING_REMEDIATION = "A layer imports another layer it is not allowed to depend on. Dependencies must point inward, per the architect's layers[].may_import (boundary -> service -> repository -> models). Route the dependency through the allowed inner layer (the boundary calls the service, the service calls the repository) instead of reaching across or around it. See the `layering-violation` smell + @architectural-design-principles layered-architecture.";
+function checkImportLayering(projectDir, layers) {
+  const decls = layers.filter((l) => typeof l.role === "string" && typeof l.module === "string" && l.module.length > 0).map((l) => ({ role: l.role, module: l.module, allowed: new Set(l.may_import ?? []), prefix: dottedPrefix(l.module) }));
+  const scanned = [];
+  const violations = [];
+  for (const layer of decls) {
+    const forbidden = decls.filter((k) => k.prefix !== layer.prefix && k.role !== layer.role && !layer.allowed.has(k.role));
+    if (forbidden.length === 0) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = readFileSync19(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (/#\s*noqa/i.test(line)) return;
+        const mod = importedModule(line, file, projectDir);
+        if (!mod) return;
+        const hit = forbidden.find((t) => underPrefix(mod, t.prefix));
+        if (hit) violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} may not import ${hit.role})`);
+      });
+    }
+  }
+  return violations.length === 0 ? { ok: true, scanned, violations: [] } : { ok: false, scanned, violations, remediation: IMPORT_LAYERING_REMEDIATION };
+}
+var ORM_CONTAINMENT_EXEMPT_ROLES = /* @__PURE__ */ new Set(["repository", "infrastructure"]);
+var ORM_CONTAINMENT_REMEDIATION = "A layer other than the repository calls the persistence session/ORM directly. Only the repository layer may touch the ORM session; move the persistence call into the repository and have this layer delegate to it. See the `layering-violation` smell + @architectural-design-principles layered-architecture.";
+function checkOrmContainment(projectDir, layers, sessionOp = SESSION_OP) {
+  const hasRepository = layers.some((l) => l.role === "repository");
+  if (!hasRepository) return { ok: true, scanned: [], violations: [] };
+  const scanned = [];
+  const violations = [];
+  for (const layer of layers) {
+    if (typeof layer.module !== "string" || !layer.module || ORM_CONTAINMENT_EXEMPT_ROLES.has(layer.role)) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = readFileSync19(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (sessionOp.test(line)) {
+          violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} layer must not touch the ORM session)`);
+        }
+      });
+    }
+  }
+  return violations.length === 0 ? { ok: true, scanned, violations: [] } : { ok: false, scanned, violations, remediation: ORM_CONTAINMENT_REMEDIATION };
+}
+function layeringConfigFromArchitecture(architectureJson2) {
+  let parsed;
+  try {
+    parsed = JSON.parse(architectureJson2);
+  } catch {
+    return { serviceBacked: false, boundaryModules: [], repositoryModules: [], allModules: [] };
+  }
+  const layers = parsed.layers ?? [];
+  const modulesByRole = (role) => layers.filter((l) => l.role === role && typeof l.module === "string").map((l) => l.module);
+  const allModules = layers.filter((l) => typeof l.role === "string" && typeof l.module === "string").map((l) => ({
+    role: l.role,
+    module: l.module,
+    ...Array.isArray(l.may_import) ? { may_import: l.may_import.filter((r) => typeof r === "string") } : {}
+  }));
+  const boundaryLayer = layers.find((l) => l.role === "boundary" && typeof l.renders_via === "string");
+  return {
+    serviceBacked: parsed.service_backed === true,
+    boundaryModules: modulesByRole("boundary"),
+    repositoryModules: modulesByRole("repository"),
+    allModules,
+    ...boundaryLayer?.renders_via ? { rendersVia: boundaryLayer.renders_via } : {}
+  };
+}
+
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs4 from "fs";
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash as createHash2 } from "crypto";
-import { dirname as dirname10, join as join18 } from "path";
+import { dirname as dirname10, join as join19 } from "path";
 function supersededTestsJson(tdd, feature, story, ac) {
-  return join18(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return join19(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -10013,7 +10203,7 @@ function readSupersededTests(tdd, feature, story, ac) {
 }
 function writeSupersededTests(tdd, feature, story, ac, value) {
   const file = supersededTestsJson(tdd, feature, story, ac);
-  fs4.mkdirSync(join18(cycleDir(tdd, feature, story, ac)), { recursive: true });
+  fs4.mkdirSync(join19(cycleDir(tdd, feature, story, ac)), { recursive: true });
   fs4.writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
 }
 function markSupersessionRefactored(tdd, feature, story, ac) {
@@ -10023,7 +10213,7 @@ function markSupersessionRefactored(tdd, feature, story, ac) {
 }
 var MAX_REGRESSION_FIX_ATTEMPTS = 3;
 function greenFailureJson(tdd, feature, story, ac) {
-  return join18(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return join19(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -10113,14 +10303,14 @@ function rearmRegressionFix(tdd, feature, story, ac, fresh) {
   fs4.rmSync(supersededTestsJson(tdd, feature, story, ac), { force: true });
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return join18(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return join19(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
 function readRegressionAssessment(tdd, feature, story, ac) {
   const dir = cycleDir(tdd, feature, story, ac);
   const candidates = [
     regressionAssessmentJson(tdd, feature, story, ac),
     // canonical: regression-assessment.json
-    join18(dir, "assess-regression.json")
+    join19(dir, "assess-regression.json")
     // agent-natural filename (mirrors the CLI verb)
   ];
   for (const file of candidates) {
@@ -10152,8 +10342,8 @@ function writeRegressionAssessment(tdd, feature, story, ac, value) {
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync19, readFileSync as readFileSync20, readdirSync as readdirSync13, statSync as statSync8 } from "fs";
-import { join as join19, relative, extname } from "path";
+import { existsSync as existsSync20, readFileSync as readFileSync21, readdirSync as readdirSync14, statSync as statSync9 } from "fs";
+import { join as join20, relative, extname } from "path";
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var DEFAULT_CODE_DIRS = ["app", "src", "lib", "templates"];
@@ -10173,15 +10363,15 @@ var ADD_COLUMN_SQL = /add\s+column\s+(?:if\s+not\s+exists\s+)?["'`]?([a-zA-Z_][a
 function walk(dir, keep, out = [], excludeDir = EXCLUDE_DIR) {
   let entries;
   try {
-    entries = readdirSync13(dir);
+    entries = readdirSync14(dir);
   } catch {
     return out;
   }
   for (const e of entries) {
-    const abs = join19(dir, e);
+    const abs = join20(dir, e);
     let st;
     try {
-      st = statSync8(abs);
+      st = statSync9(abs);
     } catch {
       continue;
     }
@@ -10220,8 +10410,8 @@ function forwardMigrationBody(src, ext) {
 function netDroppedSymbols(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
   const files = [];
   for (const md of migrationDirs) {
-    const abs = join19(projectDir, md);
-    if (existsSync19(abs)) {
+    const abs = join20(projectDir, md);
+    if (existsSync20(abs)) {
       for (const f of walk(abs, (p) => /\.(py|sql|js|ts)$/.test(p))) files.push(f);
     }
   }
@@ -10230,7 +10420,7 @@ function netDroppedSymbols(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
   for (const f of files) {
     let src;
     try {
-      src = readFileSync20(f, "utf8");
+      src = readFileSync21(f, "utf8");
     } catch {
       continue;
     }
@@ -10251,12 +10441,12 @@ function scanSymbolRefs(projectDir, dirs, dropped, excludeDir = EXCLUDE_DIR) {
   const matchers = dropped.map((s) => ({ symbol: s, re: symbolRefRegex(s) }));
   const hits = [];
   for (const cd of dirs) {
-    const abs = join19(projectDir, cd);
-    if (!existsSync19(abs)) continue;
+    const abs = join20(projectDir, cd);
+    if (!existsSync20(abs)) continue;
     for (const file of walk(abs, (p) => CODE_EXTS.has(extname(p)), [], excludeDir)) {
       let lines;
       try {
-        lines = readFileSync20(file, "utf8").split("\n");
+        lines = readFileSync21(file, "utf8").split("\n");
       } catch {
         continue;
       }
@@ -10294,12 +10484,12 @@ function scanClientSupersededRefs(projectDir, dropped) {
   const matchers = dropped.flatMap((s) => clientCaseVariants(s).map((v) => ({ symbol: s, re: symbolRefRegex(v) })));
   const hits = [];
   for (const cd of CLIENT_TEST_DIRS) {
-    const abs = join19(projectDir, cd);
-    if (!existsSync19(abs)) continue;
+    const abs = join20(projectDir, cd);
+    if (!existsSync20(abs)) continue;
     for (const file of walk(abs, (p) => CODE_EXTS.has(extname(p)), [], EXCLUDE_DIR_JUNK)) {
       let lines;
       try {
-        lines = readFileSync20(file, "utf8").split("\n");
+        lines = readFileSync21(file, "utf8").split("\n");
       } catch {
         continue;
       }
@@ -10387,23 +10577,23 @@ function clearRefactorVerifyAssessMarker(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync21, readFileSync as readFileSync22, readdirSync as readdirSync14, statSync as statSync9 } from "fs";
-import { join as join21, relative as relative2, extname as extname2 } from "path";
+import { existsSync as existsSync22, readFileSync as readFileSync23, readdirSync as readdirSync15, statSync as statSync10 } from "fs";
+import { join as join22, relative as relative2, extname as extname2 } from "path";
 var DEFAULT_MIGRATION_DIRS2 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var EXCLUDE_DIR2 = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__)(\/|$)/;
 var MODULE_SCOPE_APP_IMPORT = /^(from\s+app\b|import\s+app\b)/;
 function walk2(dir, keep, out = []) {
   let entries;
   try {
-    entries = readdirSync14(dir);
+    entries = readdirSync15(dir);
   } catch {
     return out;
   }
   for (const e of entries) {
-    const abs = join21(dir, e);
+    const abs = join22(dir, e);
     let st;
     try {
-      st = statSync9(abs);
+      st = statSync10(abs);
     } catch {
       continue;
     }
@@ -10419,12 +10609,12 @@ function checkMigrationAppClean(args) {
   const migrationDirs = args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2;
   const violations = [];
   for (const md of migrationDirs) {
-    const abs = join21(args.projectDir, md);
-    if (!existsSync21(abs)) continue;
+    const abs = join22(args.projectDir, md);
+    if (!existsSync22(abs)) continue;
     for (const file of walk2(abs, (p) => extname2(p) === ".py")) {
       let lines;
       try {
-        lines = readFileSync22(file, "utf8").split("\n");
+        lines = readFileSync23(file, "utf8").split("\n");
       } catch {
         continue;
       }
@@ -10445,8 +10635,8 @@ ${list}`;
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
 import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync as existsSync22 } from "fs";
-import { join as join22 } from "path";
+import { existsSync as existsSync23 } from "fs";
+import { join as join23 } from "path";
 var DEFAULT_MIGRATION_DIRS3 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var PARENT_CANDIDATES = [
   "origin/staging",
@@ -10477,7 +10667,7 @@ function resolveParentRef(projectDir, explicit) {
 }
 function checkShippedMigrationImmutable(args) {
   const { projectDir } = args;
-  if (!existsSync22(join22(projectDir, ".git"))) {
+  if (!existsSync23(join23(projectDir, ".git"))) {
     return { clean: true, violations: [], skippedReason: "not a git repo" };
   }
   const parentRef = resolveParentRef(projectDir, args.parentRef);
@@ -10493,7 +10683,7 @@ function checkShippedMigrationImmutable(args) {
   if (!base) {
     return { clean: true, violations: [], skippedReason: `no common ancestor with ${parentRef}` };
   }
-  const migrationDirs = (args.migrationDirs ?? DEFAULT_MIGRATION_DIRS3).filter((d) => existsSync22(join22(projectDir, d)));
+  const migrationDirs = (args.migrationDirs ?? DEFAULT_MIGRATION_DIRS3).filter((d) => existsSync23(join23(projectDir, d)));
   if (migrationDirs.length === 0) {
     return { clean: true, violations: [], skippedReason: "no migration dirs present" };
   }
@@ -10523,8 +10713,8 @@ ${reverts}
 
 // consort/architecture/test-smell-clean.ts
 init_esm_shims();
-import { existsSync as existsSync23, readFileSync as readFileSync23, readdirSync as readdirSync15, statSync as statSync10 } from "fs";
-import { join as join23, relative as relative3, extname as extname3 } from "path";
+import { existsSync as existsSync24, readFileSync as readFileSync24, readdirSync as readdirSync16, statSync as statSync11 } from "fs";
+import { join as join24, relative as relative3, extname as extname3 } from "path";
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 var DEFAULT_TEST_DIRS2 = ["tests", "client/tests"];
 var DEFAULT_MIGRATION_DIRS4 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
@@ -10533,15 +10723,15 @@ var TEST_FILE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs)$|\.py$/;
 function walk3(dir, keep, out = []) {
   let entries;
   try {
-    entries = readdirSync15(dir);
+    entries = readdirSync16(dir);
   } catch {
     return out;
   }
   for (const e of entries) {
-    const abs = join23(dir, e);
+    const abs = join24(dir, e);
     let st;
     try {
-      st = statSync10(abs);
+      st = statSync11(abs);
     } catch {
       continue;
     }
@@ -10566,12 +10756,12 @@ function collectKnownTables(projectDir, migrationDirs) {
     // Knex
   ];
   for (const md of migrationDirs) {
-    const abs = join23(projectDir, md);
-    if (!existsSync23(abs)) continue;
+    const abs = join24(projectDir, md);
+    if (!existsSync24(abs)) continue;
     for (const file of walk3(abs, (p) => [".py", ".sql", ".js", ".ts"].includes(extname3(p)))) {
       let body;
       try {
-        body = readFileSync23(file, "utf8");
+        body = readFileSync24(file, "utf8");
       } catch {
         continue;
       }
@@ -10604,8 +10794,8 @@ function forwardMigrationRegion(body) {
 function collectDroppedColumns(projectDir, migrationDirs) {
   const files = [];
   for (const md of migrationDirs) {
-    const abs = join23(projectDir, md);
-    if (!existsSync23(abs)) continue;
+    const abs = join24(projectDir, md);
+    if (!existsSync24(abs)) continue;
     for (const f of walk3(abs, (p) => [".py", ".sql"].includes(extname3(p)))) files.push(f);
   }
   files.sort();
@@ -10614,7 +10804,7 @@ function collectDroppedColumns(projectDir, migrationDirs) {
   for (const f of files) {
     let body;
     try {
-      body = readFileSync23(f, "utf8");
+      body = readFileSync24(f, "utf8");
     } catch {
       continue;
     }
@@ -10667,14 +10857,14 @@ function checkDroppedColumnDanglingRef(projectDir, migrationDirs) {
   const dropped = collectDroppedColumns(projectDir, migrationDirs);
   if (dropped.size === 0) return [];
   const out = [];
-  const migAbs = migrationDirs.map((d) => join23(projectDir, d));
+  const migAbs = migrationDirs.map((d) => join24(projectDir, d));
   const SRC_EXCLUDE = new RegExp(`(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|dist|build|${ARTIFACT_ROOTS_RE2}|client|tests?|__tests__|e2e)(/|$)`);
   const isSrc = (p) => /\.(py|sql)$/.test(p) && !migAbs.some((m) => p.startsWith(m));
   const srcFiles = walk3(projectDir, (p) => isSrc(p) && !SRC_EXCLUDE.test(p));
   for (const f of srcFiles) {
     let body;
     try {
-      body = readFileSync23(f, "utf8");
+      body = readFileSync24(f, "utf8");
     } catch {
       continue;
     }
@@ -10698,13 +10888,13 @@ function checkReversibleInvariantRoundTrip(projectDir) {
   const tdd = resolveConsortDir(projectDir);
   const featsDir = featuresDir(tdd);
   const out = [];
-  if (!existsSync23(featsDir)) return out;
-  for (const feature of readdirSync15(featsDir)) {
+  if (!existsSync24(featsDir)) return out;
+  for (const feature of readdirSync16(featsDir)) {
     const archPath = architectureJson(tdd, feature);
-    if (!existsSync23(archPath)) continue;
+    if (!existsSync24(archPath)) continue;
     let arch;
     try {
-      arch = JSON.parse(readFileSync23(archPath, "utf8"));
+      arch = JSON.parse(readFileSync24(archPath, "utf8"));
     } catch {
       continue;
     }
@@ -10712,18 +10902,18 @@ function checkReversibleInvariantRoundTrip(projectDir) {
       (pi) => typeof pi?.id === "string" && typeof pi?.type === "string" && /reversib/i.test(pi.type)
     );
     if (reversible.length === 0) continue;
-    const itemSources = [join23(featureDir(tdd, feature), "test-list.json")];
+    const itemSources = [join24(featureDir(tdd, feature), "test-list.json")];
     const stDir = storiesDir(tdd, feature);
-    if (existsSync23(stDir)) {
-      for (const s of readdirSync15(stDir)) {
+    if (existsSync24(stDir)) {
+      for (const s of readdirSync16(stDir)) {
         const p = storyTestListJson(tdd, feature, s);
-        if (existsSync23(p)) itemSources.push(p);
+        if (existsSync24(p)) itemSources.push(p);
       }
     }
     const items = [];
     for (const src of itemSources) {
       try {
-        const tl = JSON.parse(readFileSync23(src, "utf8"));
+        const tl = JSON.parse(readFileSync24(src, "utf8"));
         items.push(...tl.items ?? []);
       } catch {
       }
@@ -10753,12 +10943,12 @@ function checkTestSmells(args) {
   const violations = [];
   const push = (smell, file, line, text, extra) => violations.push({ smell, file, line, text: text.trim().slice(0, 200), detail: SMELL_FIX[smell] + (extra ? ` (${extra})` : "") });
   for (const td of testDirs) {
-    const abs = join23(args.projectDir, td);
-    if (!existsSync23(abs)) continue;
+    const abs = join24(args.projectDir, td);
+    if (!existsSync24(abs)) continue;
     for (const file of walk3(abs, (p) => TEST_FILE.test(p))) {
       let lines;
       try {
-        lines = readFileSync23(file, "utf8").split("\n");
+        lines = readFileSync24(file, "utf8").split("\n");
       } catch {
         continue;
       }
@@ -10901,10 +11091,10 @@ function logCycleEvent2(consortDir, event) {
 }
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync24(file)) {
+  if (!existsSync25(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse(readFileSync24(file, "utf8"));
+  const data = JSON.parse(readFileSync25(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyExperiment(consortDir, featureId, story) {
@@ -10913,20 +11103,20 @@ function storyExperiment(consortDir, featureId, story) {
   return { slug: e?.experiment_slug, branch: e?.branch_id };
 }
 function storyCycles(consortDir, featureId, story) {
-  const base = join24(cyclesRootDir(consortDir), featureId, story);
-  if (!existsSync24(base)) return [];
+  const base = join25(cyclesRootDir(consortDir), featureId, story);
+  if (!existsSync25(base)) return [];
   const out = [];
-  for (const acDir of readdirSync16(base)) {
-    const dir = join24(base, acDir);
+  for (const acDir of readdirSync17(base)) {
+    const dir = join25(base, acDir);
     try {
-      if (!statSync11(dir).isDirectory()) continue;
+      if (!statSync12(dir).isDirectory()) continue;
     } catch {
       continue;
     }
-    for (const f of readdirSync16(dir)) {
+    for (const f of readdirSync17(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(readFileSync24(join24(dir, f), "utf8")));
+        out.push(JSON.parse(readFileSync25(join25(dir, f), "utf8")));
       } catch {
       }
     }
@@ -11168,9 +11358,9 @@ async function greenOpenCycle(args) {
 }
 function readReview(consortDir, featureId, story, acId) {
   const f = acReviewJson(consortDir, featureId, story, acId);
-  if (!existsSync24(f)) return {};
+  if (!existsSync25(f)) return {};
   try {
-    return JSON.parse(readFileSync24(f, "utf8"));
+    return JSON.parse(readFileSync25(f, "utf8"));
   } catch {
     return {};
   }
@@ -11242,8 +11432,8 @@ function flagUxAdherenceIfDirty(consortDir, story) {
     let appIcon;
     try {
       const gp = designGuideJson(consortDir);
-      if (existsSync24(gp)) {
-        const guide = JSON.parse(readFileSync24(gp, "utf8"));
+      if (existsSync25(gp)) {
+        const guide = JSON.parse(readFileSync25(gp, "utf8"));
         const classes = Object.values(guide.components ?? {}).map((c) => typeof c?.class === "string" ? c.class : void 0).filter((c) => !!c);
         if (classes.length) designClasses = classes;
       }
@@ -11261,12 +11451,38 @@ function flagUxAdherenceIfDirty(consortDir, story) {
   } catch {
   }
 }
+function flagLayeringIfDirty(consortDir, featureId, story) {
+  try {
+    const archPath = join25(featureResolved(consortDir, featureId), "architecture.json");
+    if (!existsSync25(archPath)) return;
+    const cfg = layeringConfigFromArchitecture(readFileSync25(archPath, "utf8"));
+    if (!cfg.serviceBacked || cfg.allModules.length === 0) return;
+    const projectDir = dirname12(consortDir);
+    const importLayering = checkImportLayering(projectDir, cfg.allModules);
+    const ormContainment = checkOrmContainment(projectDir, cfg.allModules);
+    const violations = [
+      ...importLayering.ok ? [] : importLayering.violations,
+      ...ormContainment.ok ? [] : ormContainment.violations
+    ];
+    if (violations.length > 0 && !hasOpenSmell(consortDir, "layering-violation", story)) {
+      writeSmellsLog(consortDir, [
+        {
+          smell: "layering-violation",
+          cycle_ids: [],
+          detail: `layering-clean (deterministic review backstop) found: ${violations.join("; ").slice(0, 500)}`,
+          story_id: story
+        }
+      ]);
+    }
+  } catch {
+  }
+}
 function reviewAc(consortDir, featureId, story, acId) {
   let verdict = {};
   const vf = acReviewVerdictJson(consortDir, featureId, story, acId);
-  if (existsSync24(vf)) {
+  if (existsSync25(vf)) {
     try {
-      verdict = JSON.parse(readFileSync24(vf, "utf8"));
+      verdict = JSON.parse(readFileSync25(vf, "utf8"));
     } catch {
       verdict = {};
     }
@@ -11296,6 +11512,7 @@ function reviewAc(consortDir, featureId, story, acId) {
     }
   });
   flagUxAdherenceIfDirty(consortDir, story);
+  flagLayeringIfDirty(consortDir, featureId, story);
   return { reviewed: true, refactorRequested };
 }
 async function refactorAc(consortDir, featureId, story, acId, opts) {
@@ -11334,9 +11551,9 @@ async function refactorAc(consortDir, featureId, story, acId, opts) {
 }
 function readStoryReview(consortDir, featureId, story) {
   const f = storyReviewJson(consortDir, featureId, story);
-  if (!existsSync24(f)) return {};
+  if (!existsSync25(f)) return {};
   try {
-    return JSON.parse(readFileSync24(f, "utf8"));
+    return JSON.parse(readFileSync25(f, "utf8"));
   } catch {
     return {};
   }
@@ -11344,9 +11561,9 @@ function readStoryReview(consortDir, featureId, story) {
 function reviewStory(consortDir, featureId, story) {
   let verdict = {};
   const vf = storyReviewVerdictJson(consortDir, featureId, story);
-  if (existsSync24(vf)) {
+  if (existsSync25(vf)) {
     try {
-      verdict = JSON.parse(readFileSync24(vf, "utf8"));
+      verdict = JSON.parse(readFileSync25(vf, "utf8"));
     } catch {
       verdict = {};
     }
@@ -11376,6 +11593,7 @@ function reviewStory(consortDir, featureId, story) {
     }
   });
   flagUxAdherenceIfDirty(consortDir, story);
+  flagLayeringIfDirty(consortDir, featureId, story);
   return { reviewed: true, refactorRequested };
 }
 async function refactorStory(consortDir, featureId, story, opts) {
@@ -11433,7 +11651,7 @@ async function refactorStory(consortDir, featureId, story, opts) {
 
 // consort/smells/reflection.ts
 init_esm_shims();
-import { existsSync as existsSync25, readFileSync as readFileSync25, writeFileSync as writeFileSync16, mkdirSync as mkdirSync15, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync26, readFileSync as readFileSync26, writeFileSync as writeFileSync16, mkdirSync as mkdirSync15, rmSync as rmSync6 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect",
@@ -11442,9 +11660,9 @@ var SMELL_FOR_OWNER = {
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
-  if (!existsSync25(p)) return void 0;
+  if (!existsSync26(p)) return void 0;
   try {
-    return JSON.parse(readFileSync25(p, "utf8"));
+    return JSON.parse(readFileSync26(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -11485,12 +11703,12 @@ function recordReflectionGate(consortDir, feature, story) {
 
 // consort/smells/reconcile.ts
 init_esm_shims();
-import { existsSync as existsSync26, readFileSync as readFileSync26, writeFileSync as writeFileSync17, mkdirSync as mkdirSync16, rmSync as rmSync7 } from "fs";
+import { existsSync as existsSync27, readFileSync as readFileSync27, writeFileSync as writeFileSync17, mkdirSync as mkdirSync16, rmSync as rmSync7 } from "fs";
 function readReconcileVerdict(consortDir, feature) {
   const p = reconcileVerdictJson(consortDir, feature);
-  if (!existsSync26(p)) return void 0;
+  if (!existsSync27(p)) return void 0;
   try {
-    return JSON.parse(readFileSync26(p, "utf8"));
+    return JSON.parse(readFileSync27(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -11531,16 +11749,16 @@ import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // consort/smells/testlist-conformance.ts
 init_esm_shims();
-import { existsSync as existsSync27, readFileSync as readFileSync27, readdirSync as readdirSync17 } from "fs";
+import { existsSync as existsSync28, readFileSync as readFileSync28, readdirSync as readdirSync18 } from "fs";
 var TESTLIST_SMELL = "reflect-testlist-defect";
 function storyAcLayers(consortDir, featureId, story) {
   const acLayerById = {};
   const dir = acsDir(consortDir, featureId, story);
-  if (existsSync27(dir)) {
-    for (const f of readdirSync17(dir)) {
+  if (existsSync28(dir)) {
+    for (const f of readdirSync18(dir)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse(readFileSync27(`${dir}/${f}`, "utf8")).layer;
+        const layer = JSON.parse(readFileSync28(`${dir}/${f}`, "utf8")).layer;
         if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
       } catch {
       }
@@ -11552,14 +11770,14 @@ function declaredApiEndpoints(consortDir, featureId, story) {
   const texts = [];
   for (const p of [architectureJson(consortDir, featureId), featureSpecJson(consortDir, featureId)]) {
     try {
-      if (existsSync27(p)) texts.push(readFileSync27(p, "utf8"));
+      if (existsSync28(p)) texts.push(readFileSync28(p, "utf8"));
     } catch {
     }
   }
   const dir = acsDir(consortDir, featureId, story);
   try {
-    if (existsSync27(dir)) {
-      for (const f of readdirSync17(dir)) if (f.endsWith(".json")) texts.push(readFileSync27(`${dir}/${f}`, "utf8"));
+    if (existsSync28(dir)) {
+      for (const f of readdirSync18(dir)) if (f.endsWith(".json")) texts.push(readFileSync28(`${dir}/${f}`, "utf8"));
     }
   } catch {
   }
@@ -11569,10 +11787,10 @@ function declaredApiEndpoints(consortDir, featureId, story) {
 }
 function testlistConformanceViolations(consortDir, featureId, story) {
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync27(tlPath)) return null;
+  if (!existsSync28(tlPath)) return null;
   let testListJson;
   try {
-    testListJson = readFileSync27(tlPath, "utf8");
+    testListJson = readFileSync28(tlPath, "utf8");
   } catch {
     return null;
   }
@@ -11586,7 +11804,8 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     checkTestlistFixedKeyE2e(testListJson, acLayerById),
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
-    checkTestlistE2eSpecSuffix(testListJson)
+    checkTestlistE2eSpecSuffix(testListJson),
+    checkTestlistMigrationRevision(testListJson)
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);
@@ -11621,8 +11840,8 @@ function recordTestListGate(consortDir, featureId, story) {
 
 // consort/smells/ia-conformance.ts
 init_esm_shims();
-import { existsSync as existsSync28, readFileSync as readFileSync28, readdirSync as readdirSync18 } from "fs";
-import { join as join25 } from "path";
+import { existsSync as existsSync29, readFileSync as readFileSync29, readdirSync as readdirSync19 } from "fs";
+import { join as join26 } from "path";
 var IA_SMELL = "reflect-ia-defect";
 function iaNamesSeam(iaMarkdown, seam) {
   const esc = seam.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -11631,11 +11850,11 @@ function iaNamesSeam(iaMarkdown, seam) {
 function storyUiSeams(consortDir, featureId, story) {
   const out = [];
   const dir = acsDir(consortDir, featureId, story);
-  if (!existsSync28(dir)) return out;
-  for (const f of readdirSync18(dir)) {
+  if (!existsSync29(dir)) return out;
+  for (const f of readdirSync19(dir)) {
     if (!f.endsWith(".json")) continue;
     try {
-      const ac = JSON.parse(readFileSync28(join25(dir, f), "utf8"));
+      const ac = JSON.parse(readFileSync29(join26(dir, f), "utf8"));
       const seams = Array.isArray(ac.ui_seams) ? ac.ui_seams.filter((s) => typeof s === "string" && s.length > 0) : [];
       if (seams.length > 0) out.push({ id: typeof ac.id === "string" ? ac.id : f.replace(/\.json$/, ""), seams });
     } catch {
@@ -11645,12 +11864,12 @@ function storyUiSeams(consortDir, featureId, story) {
 }
 function iaConformanceViolations(consortDir, featureId, story) {
   const iaPath = iaMd(consortDir);
-  if (!existsSync28(iaPath)) return null;
+  if (!existsSync29(iaPath)) return null;
   const acs = storyUiSeams(consortDir, featureId, story);
   if (acs.length === 0) return null;
   let iaMarkdown;
   try {
-    iaMarkdown = readFileSync28(iaPath, "utf8");
+    iaMarkdown = readFileSync29(iaPath, "utf8");
   } catch {
     return null;
   }

@@ -1843,6 +1843,44 @@ export function checkTestlistE2eSpecSuffix(testListJson: string): ConformanceRes
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
+export function checkTestlistMigrationRevision(testListJson: string): ConformanceResult {
+  let tl: { items?: Array<{ id?: string; description?: string; ac_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  // A migration-reversibility / data-preservation test that downgrades by a RELATIVE step
+  // (`downgrade -1`, "single-step downgrade") is a time-bomb: it assumes the migration under
+  // test is still `head`. The moment a LATER story adds a migration, `-1` reverts THAT newer
+  // one instead, so the test's premise (revert the migration it targets) silently breaks — the
+  // live S1 `t6` lap that cost an assess + a superseded-green turn once S2 added an index
+  // migration. Pin the test to the migration-under-test's OWN revision instead.
+  const mentionsDowngrade = /\bdowngrade\b/i;
+  const reversibilityContext = /\bdowngrade\b[\s\S]*?\bupgrade\b|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
+  // Relative step: `downgrade -1` / `-N`, or an explicitly "single-step" / "one step" downgrade.
+  const relativeStep = /\bdowngrade\s+-\s*\d+\b|\bsingle-step\s+(?:alembic\s+)?downgrade\b|\bdowngrade\s+(?:by\s+)?one\s+step\b/i;
+  // Pinned-revision escape: names an explicit revision id / down_revision / "its own revision".
+  const pinned = /\bdown_revision\b|\bits own revision\b|\bexplicit(?:ly)?\b[\s\S]{0,30}\brevision\b|\bdowngrade\s+(?:to\s+)?(?:revision\s+)?["'`]?[0-9a-f]{6,}/i;
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (!mentionsDowngrade.test(desc) || !reversibilityContext.test(desc)) continue;
+    if (relativeStep.test(desc) && !pinned.test(desc)) {
+      violations.push(
+        `test item ${it.id ?? "?"} is a migration-reversibility/data-preservation test that downgrades by a RELATIVE step ` +
+          `("${desc.slice(0, 90)}…"). \`downgrade -1\` reverts whatever is HEAD, so it passes on the isolated experiment ` +
+          `branch but silently targets the WRONG migration once a later story adds one (head moved). Pin it to the ` +
+          `migration-under-test's OWN revision: downgrade to that revision's parent/down_revision (an explicit revision id), ` +
+          `assert the schema change reverted, then upgrade head — never a relative \`downgrade -1\`.`,
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
 export function checkClientKindLayerCoherence(testListJson: string, acLayerById: Record<string, string>): ConformanceResult {
   let tl: { items?: Array<{ id?: string; kind?: string; ac_id?: string }> };
   try {

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 // bin/consort/layering-clean.cli.ts
-import { readFileSync as readFileSync3 } from "fs";
+import { readFileSync as readFileSync3, existsSync as existsSync3, readdirSync as readdirSync3 } from "fs";
+import { join as join3 } from "path";
 
 // consort/architecture/layering-clean.ts
 import { existsSync as existsSync2, readFileSync as readFileSync2, readdirSync as readdirSync2, statSync as statSync2 } from "fs";
@@ -13,6 +14,16 @@ import { join } from "path";
 var ARTIFACT_ROOT = ".consort";
 var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
 var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
+function resolveConsortDir(projectDir = process.cwd()) {
+  const next = join(projectDir, ARTIFACT_ROOT);
+  if (fs.existsSync(next)) return next;
+  for (const legacyName of LEGACY_ARTIFACT_ROOTS) {
+    const legacy = join(projectDir, legacyName);
+    if (fs.existsSync(legacy)) return legacy;
+  }
+  return next;
+}
+var featuresDir = (tdd) => join(tdd, "features");
 
 // consort/architecture/layering-clean.ts
 var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
@@ -364,6 +375,26 @@ function checkCodeBudget(projectDir, sourcePaths, opts = {}) {
 }
 
 // bin/consort/layering-clean.cli.ts
+function autoResolveArchitecture(projectDir) {
+  let consortDir;
+  try {
+    consortDir = resolveConsortDir(projectDir);
+  } catch {
+    return {};
+  }
+  const root = featuresDir(consortDir);
+  if (!existsSync3(root)) return {};
+  const withArch = readdirSync3(root).map((f) => ({ f, arch: join3(root, f, "architecture.json") })).filter((e) => existsSync3(e.arch));
+  if (withArch.length === 0) return {};
+  if (withArch.length === 1) return { path: withArch[0].arch };
+  try {
+    const next = JSON.parse(readFileSync3(join3(consortDir, "next.json"), "utf8"));
+    const hit = next.feature && withArch.find((e) => e.f === next.feature);
+    if (hit) return { path: hit.arch };
+  } catch {
+  }
+  return { ambiguous: withArch.map((e) => e.f) };
+}
 function parse(argv) {
   const out = { projectDir: process.cwd(), boundary: [], repository: [], json: false };
   for (let i = 0; i < argv.length; i++) {
@@ -399,6 +430,19 @@ var boundary = p.boundary;
 var repository = p.repository;
 var allModules = [];
 var rendersVia;
+if (!p.architecture && p.serviceBacked === void 0 && p.boundary.length === 0 && p.repository.length === 0) {
+  const resolved = autoResolveArchitecture(p.projectDir);
+  if (resolved.path) {
+    p.architecture = resolved.path;
+    process.stderr.write(`layering-clean: no --architecture given; auto-resolved ${resolved.path}
+`);
+  } else if (resolved.ambiguous) {
+    process.stderr.write(
+      `layering-clean: layering NOT checked \u2014 ${resolved.ambiguous.length} features carry an architecture.json (${resolved.ambiguous.join(", ")}) and none is the in-flight feature in next.json. Pass --architecture <feature>/architecture.json so the import-layering/ORM checks actually run.
+`
+    );
+  }
+}
 if (p.architecture) {
   let archJson = "";
   try {

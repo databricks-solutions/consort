@@ -7354,12 +7354,35 @@ init_cjs_shims();
 var import_node_fs6 = require("fs");
 var import_node_path7 = require("path");
 
+// consort/architecture/layering-clean.ts
+init_cjs_shims();
+var import_node_fs7 = require("fs");
+var import_node_path8 = require("path");
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
 // consort/smells/supersession.ts
 init_cjs_shims();
 var fs9 = __toESM(require("fs"), 1);
 var import_node_child_process4 = require("child_process");
 var import_node_crypto2 = require("crypto");
-var import_node_path8 = require("path");
+var import_node_path9 = require("path");
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7372,8 +7395,8 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path9 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path10 = require("path");
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -7389,19 +7412,19 @@ var path7 = __toESM(require("path"), 1);
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs8 = require("fs");
-var import_node_path10 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path11 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process5 = require("child_process");
-var import_node_fs9 = require("fs");
-var import_node_path11 = require("path");
+var import_node_fs10 = require("fs");
+var import_node_path12 = require("path");
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs10 = require("fs");
-var import_node_path12 = require("path");
+var import_node_fs11 = require("fs");
+var import_node_path13 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 
 // consort/pipeline/cycle-record.ts
@@ -7429,7 +7452,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto3 = require("crypto");
-var import_node_fs11 = require("fs");
+var import_node_fs12 = require("fs");
 
 // consort/gates/workflow-phase.ts
 init_cjs_shims();
@@ -7463,7 +7486,7 @@ init_cjs_shims();
 
 // consort/test-list/fan-out-plan.ts
 init_cjs_shims();
-var import_node_path13 = require("path");
+var import_node_path14 = require("path");
 
 // consort/test-list/test-analyst-catalogue.ts
 init_cjs_shims();
