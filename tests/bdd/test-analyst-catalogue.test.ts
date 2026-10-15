@@ -92,6 +92,20 @@ describe("client: an E2E AC's Playwright spec is named *.spec.ts, never *.e2e.ts
   });
 });
 
+describe("fitness: a migration-reversibility test pins to down_revision, never a relative/single-step downgrade", () => {
+  // F1 0.4.6 live run (S2): the fitness analyst authored T44 as "a single-step Alembic downgrade" of the
+  // add-index migration, which `checkTestlistMigrationRevision` flags (a relative step targets the WRONG
+  // migration once head moves). The 0.4.5 fix (A) landed only in navigator.md (the reflect canon), but the
+  // AUTHOR is the fitness analyst, so its directive must teach the down_revision pin and NOT the gate-flagged
+  // "single-step downgrade" method — in lockstep with the gate (same L1-authoring lesson as the .spec.ts fix).
+  const fit = TEST_ANALYST_CATALOGUE.fitness.focusPrompt;
+  it("teaches the down_revision pin, drops the single-step-downgrade method, and names the gate", () => {
+    expect(fit).toMatch(/down_revision/);
+    expect(fit, "must not teach the gate-flagged single-step downgrade as the method").not.toMatch(/single-step downgrade/i);
+    expect(fit, "ties the pin to the deterministic gate").toMatch(/checkTestlistMigrationRevision/);
+  });
+});
+
 describe("resolveTestAnalystKind: fail-loud", () => {
   it("resolves a known kind", () => {
     const e: TestAnalystCatalogueEntry = resolveTestAnalystKind("fitness");

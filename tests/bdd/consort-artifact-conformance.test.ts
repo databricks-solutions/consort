@@ -17,6 +17,7 @@ import {
   checkLayeringDeclared,
   checkFitnessCoverage,
   checkFitnessClauseCoverage,
+  checkFitnessSingularCoverage,
   checkNfrClauseScope,
   checkPlatformNfrDefended,
   checkE2ECoverage,
@@ -1369,6 +1370,58 @@ describe("checkFitnessClauseCoverage: per-clause coverage for the ATOMIC fitness
     expect(checkFitnessClauseCoverage(JSON.stringify({ items: [] }), arch).ok).toBe(true);
     // A product NFR with the same array still requires per-clause coverage (regression).
     expect(checkFitnessClauseCoverage(JSON.stringify({ items: [] }), archAtomic(["a", "b"])).ok).toBe(false);
+  });
+});
+
+describe("story-scoped NFR fitness-coverage (onlyStory): the pre-reflect per-story safety filter", () => {
+  // The pre-reflect per-story suite passes onlyStory so a FEATURE-level or SIBLING-story NFR
+  // (uncoverable from this story's list before its story is designed) is NEVER false-flagged;
+  // those stay the feature-wide test_list gate. Unset onlyStory keeps the original behavior.
+  const arch = JSON.stringify({
+    service_backed: true,
+    nfrs: [
+      { id: "NFR-S1", tier: "product", applies_to: "S1", fitness_function: "rejects negative qty" },
+      { id: "NFR-S2", tier: "product", applies_to: "S2", fitness_function: "no blank cells" },
+      { id: "NFR-FEAT", tier: "product", applies_to: "F1", fitness_function: "migration survives" },
+    ],
+  });
+  const emptyList = JSON.stringify({ items: [] });
+
+  it("feature-wide (no onlyStory) flags every uncovered product singular NFR (unchanged)", () => {
+    const r = checkFitnessSingularCoverage(emptyList, arch);
+    const v = r.ok ? "" : r.violations.join(" ");
+    expect(v).toMatch(/NFR-S1/);
+    expect(v).toMatch(/NFR-S2/);
+    expect(v).toMatch(/NFR-FEAT/);
+  });
+
+  it("onlyStory:S1 flags ONLY S1's uncovered NFR — never a sibling (S2) or feature-level NFR", () => {
+    const r = checkFitnessSingularCoverage(emptyList, arch, { onlyStory: "S1" });
+    expect(r.ok).toBe(false);
+    const v = r.ok ? "" : r.violations.join(" ");
+    expect(v).toMatch(/NFR-S1/);
+    expect(v, "sibling S2 NFR must not flag pre-reflect").not.toMatch(/NFR-S2/);
+    expect(v, "feature-level NFR must not flag pre-reflect").not.toMatch(/NFR-FEAT/);
+  });
+
+  it("onlyStory:S1 passes once S1's NFR has an nfr_id-tagged item", () => {
+    const list = JSON.stringify({ items: [{ id: "T1", ac_id: "AC1", kind: "fitness", nfr_id: "NFR-S1" }] });
+    expect(checkFitnessSingularCoverage(list, arch, { onlyStory: "S1" }).ok).toBe(true);
+  });
+
+  it("clause form (onlyStory) likewise scopes to this story's array-NFRs", () => {
+    const archC = JSON.stringify({
+      service_backed: true,
+      nfrs: [
+        { id: "NFR-S1a", tier: "product", applies_to: "S1", fitness_functions: ["c1", "c2"] },
+        { id: "NFR-S2a", tier: "product", applies_to: "S2", fitness_functions: ["c3"] },
+      ],
+    });
+    const r = checkFitnessClauseCoverage(JSON.stringify({ items: [] }), archC, { onlyStory: "S1" });
+    expect(r.ok).toBe(false);
+    const v = r.ok ? "" : r.violations.join(" ");
+    expect(v).toMatch(/NFR-S1a/);
+    expect(v, "sibling S2 array-NFR must not flag pre-reflect").not.toMatch(/NFR-S2a/);
   });
 });
 

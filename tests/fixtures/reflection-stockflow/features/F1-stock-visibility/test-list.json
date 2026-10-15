@@ -73,6 +73,7 @@
     },
     {
       "id": "T10",
+      "nfr_id": "NFR-F1-sku-location-uniqueness",
       "description": "inserting a second stock_records row with a (sku, location) pair that already exists raises an IntegrityError from the composite UNIQUE(sku, location) constraint (real branch)",
       "ac_id": "AC3-refile-updates-not-duplicates",
       "status": "green",
@@ -89,6 +90,7 @@
     },
     {
       "id": "T12",
+      "nfr_id": "NFR-F1-field-named-validation",
       "description": "submitting an invalid filing (e.g. a negative quantity) returns a field-named inline error naming the offending field, not a bare 400 (real-branch integration)",
       "ac_id": "AC2-file-new-stock-confirmed",
       "status": "green",
@@ -128,6 +130,7 @@
     },
     {
       "id": "T17",
+      "nfr_id": "NFR-F1-empty-state-clean-render",
       "description": "when the listing response is an empty collection, the client renders the explicit \"No stock at this location\" message in place of the table, never a blank region (client component)",
       "ac_id": "AC3-empty-state-shown",
       "status": "green",

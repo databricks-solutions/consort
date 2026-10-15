@@ -43,6 +43,8 @@ import {
   checkTestlistE2eSpecSuffix,
   checkTestlistMigrationRevision,
   checkSchemaChangeOrphan,
+  checkFitnessSingularCoverage,
+  checkFitnessClauseCoverage,
   extractApiEndpoints,
 } from "../orchestrator/validators/conformance/artifact-conformance.js";
 import { writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellHit } from "./smells.js";
@@ -125,6 +127,18 @@ export function testlistConformanceViolations(
   } catch {
     /* a malformed db-design is reported by checkDbDesign */
   }
+  // The feature architecture (optional): read for the STORY-SCOPED NFR fitness-coverage
+  // checks so an NFR that applies_to THIS story but has no nfr_id-tagged test flags here
+  // (pre-reflect) instead of one LLM reflect lap later. Scoped to applies_to===story so a
+  // feature-level / sibling-story NFR is never false-flagged (that stays the feature-wide
+  // test_list gate). Absent/unreadable is fine — the checks are skipped.
+  let archJson: string | undefined;
+  try {
+    const p = architectureJson(consortDir, featureId);
+    if (existsSync(p)) archJson = readFileSync(p, "utf8");
+  } catch {
+    /* a malformed architecture is reported by its own gate */
+  }
   const violations: string[] = [];
   const acIds = new Set<string>();
   for (const r of [
@@ -137,6 +151,16 @@ export function testlistConformanceViolations(
     checkTestlistE2eSpecSuffix(testListJson),
     checkTestlistMigrationRevision(testListJson),
     checkSchemaChangeOrphan(testListJson, dbDesign),
+    // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
+    // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
+    // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a
+    // feature-level or sibling-story NFR from false-flagging before its story is designed.
+    ...(archJson !== undefined
+      ? [
+          checkFitnessSingularCoverage(testListJson, archJson, { onlyStory: story }),
+          checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story }),
+        ]
+      : []),
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);

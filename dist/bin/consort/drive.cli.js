@@ -8293,6 +8293,57 @@ function checkTestlistScenarioFileCoherence(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function clauseRealizedBy(c) {
+  return typeof c === "object" && c !== null && Array.isArray(c.realized_by) ? c.realized_by.filter((a) => typeof a === "string" && a.length > 0) : [];
+}
+function checkFitnessClauseCoverage(testListJson, architectureJson2, opts = {}) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const atomic = (arch.nfrs ?? []).filter(
+    (n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform" && (opts.onlyStory === void 0 || n.applies_to === opts.onlyStory)
+  ).map((n) => ({
+    id: n.id,
+    clauses: n.fitness_functions.filter((c) => typeof c === "string" ? c.trim().length > 0 : typeof c?.clause === "string")
+  })).filter((n) => n.clauses.length > 0);
+  if (atomic.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const allAcIds = new Set(items.map((it) => it.ac_id).filter((a) => typeof a === "string"));
+  const violations = [];
+  for (const nfr of atomic) {
+    const nfrItems = items.filter((it) => it.nfr_id === nfr.id);
+    const acClauses = nfr.clauses.filter((c) => clauseRealizedBy(c).length > 0);
+    const anchoredAcs = new Set(acClauses.flatMap((c) => clauseRealizedBy(c)));
+    for (const c of acClauses) {
+      const rb = clauseRealizedBy(c);
+      const demanded = rb.some((a) => allAcIds.has(a));
+      if (!demanded) continue;
+      const covered = nfrItems.some((it) => typeof it.ac_id === "string" && rb.includes(it.ac_id));
+      if (!covered) {
+        violations.push(
+          `NFR ${nfr.id} clause "${typeof c === "object" && c.clause || ""}" is realized by AC(s) ${rb.join(", ")} present in this test-list but no fitness item tagged nfr_id:"${nfr.id}" anchors to a realizing AC \u2014 author one for it (a bare nfr_id tag on an unrelated AC does not count)`
+        );
+      }
+    }
+    const genericNeed = nfr.clauses.length - acClauses.length;
+    const genericHave = nfrItems.filter((it) => !(typeof it.ac_id === "string" && anchoredAcs.has(it.ac_id))).length;
+    if (genericHave < genericNeed) {
+      violations.push(
+        `NFR ${nfr.id} declares ${genericNeed} atomic fitness clause(s) (fitness_functions) but only ${genericHave} test-list item(s) reference it via nfr_id (author one fitness test per clause, each tagged nfr_id:"${nfr.id}"; do not pack multiple clauses into one test)`
+      );
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+}
 function checkDbDesign(dbDesignJson2, architectureJson2) {
   let arch;
   try {
@@ -8346,6 +8397,39 @@ function canonicalArtifactName(path15) {
   const base = basename(path15);
   if (basename(dirname5(path15)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
+}
+function checkFitnessSingularCoverage(testListJson, architectureJson2, opts = {}) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const singular = (arch.nfrs ?? []).filter(
+    (n) => n && typeof n.id === "string" && n.id.length > 0 && n.tier !== "platform" && // Story-scoped mode (pre-reflect per-story suite): only this story's own NFRs. A
+    // feature-level NFR (applies_to the feature) or a sibling story's is NOT covered
+    // in this story's list, so it must NOT be flagged here — it stays the downstream
+    // feature-wide gate's job. Unset onlyStory = the original feature-wide behaviour.
+    (opts.onlyStory === void 0 || n.applies_to === opts.onlyStory) && typeof n.fitness_function === "string" && n.fitness_function.trim().length > 0 && !(Array.isArray(n.fitness_functions) && n.fitness_functions.some((c) => typeof c === "string" && c.trim().length > 0))
+  ).map((n) => n.id);
+  if (singular.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const have = new Set((tl.items ?? []).map((i) => i.nfr_id).filter((x) => typeof x === "string" && x.length > 0));
+  const missing = singular.filter((id) => !have.has(id));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      violations: missing.map(
+        (id) => `NFR ${id} declares a singular fitness_function but NO test-list item references it via nfr_id \u2013 author one fitness test tagged nfr_id:"${id}" (the array form is clause-gated; the singular form was escaping to the reflect until this check)`
+      )
+    };
+  }
+  return { ok: true };
 }
 function checkTestlistE2eSpecSuffix(testListJson) {
   let tl;
@@ -10517,6 +10601,12 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     if (existsSync29(p)) dbDesign = readFileSync28(p, "utf8");
   } catch {
   }
+  let archJson;
+  try {
+    const p = architectureJson(consortDir, featureId);
+    if (existsSync29(p)) archJson = readFileSync28(p, "utf8");
+  } catch {
+  }
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const r of [
@@ -10528,7 +10618,15 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
     checkTestlistMigrationRevision(testListJson),
-    checkSchemaChangeOrphan(testListJson, dbDesign)
+    checkSchemaChangeOrphan(testListJson, dbDesign),
+    // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
+    // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
+    // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a
+    // feature-level or sibling-story NFR from false-flagging before its story is designed.
+    ...archJson !== void 0 ? [
+      checkFitnessSingularCoverage(testListJson, archJson, { onlyStory: story }),
+      checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story })
+    ] : []
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);
@@ -10681,7 +10779,7 @@ var TEST_ANALYST_CATALOGUE = {
     effort: "high",
     toolScope: ["Read"],
     inputs: ["architecture-invariants", "db-design"],
-    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (single-step downgrade/upgrade, @pytest.mark.migration, NEVER downgrade base) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after downgrade-then-upgrade (NOT that data survives). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where single-step downgrade removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: single-step downgrade drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
+    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN `down_revision`, the explicit revision id named in that migration file; for an initial create-table that is the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after the downgrade-to-`down_revision` then `upgrade head` (NOT that data survives). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` (the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
   },
   client: {
     kind: "client",

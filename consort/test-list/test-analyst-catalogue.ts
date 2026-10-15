@@ -182,14 +182,18 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs " +
       "mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/" +
       "reversibility invariants – the story that MIGRATES the table does). A " +
-      "migration reversibility is ALWAYS one item: reversibility (single-step downgrade/upgrade, " +
-      "@pytest.mark.migration, NEVER downgrade base) asserting the SCHEMA is recreated – the table + its " +
-      "columns/constraints are present again after downgrade-then-upgrade (NOT that data survives). " +
+      "migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN " +
+      "`down_revision`, the explicit revision id named in that migration file; for an initial create-table that is " +
+      "the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the " +
+      "WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags " +
+      "a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is " +
+      "recreated – the table + its columns/constraints are present again after the downgrade-to-`down_revision` then " +
+      "`upgrade head` (NOT that data survives). " +
       "Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE " +
       "item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a " +
-      "column/constraint, where single-step downgrade removes only that addition and prior rows persist). " +
-      "NEVER author a data-preservation item for an INITIAL create-table migration: single-step downgrade " +
-      "drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks " +
+      "column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). " +
+      "NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` " +
+      "(the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks " +
       "the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the " +
       "schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is " +
       "its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), " +

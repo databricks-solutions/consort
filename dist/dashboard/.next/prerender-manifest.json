@@ -30,6 +30,30 @@
         "x-next-revalidate-tag-token"
       ]
     },
+    "/": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/",
+      "dataRoute": "/index.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
+    },
     "/_not-found": {
       "initialStatus": 404,
       "experimentalBypassFor": [
@@ -54,37 +78,13 @@
         "x-next-revalidated-tags",
         "x-next-revalidate-tag-token"
       ]
-    },
-    "/": {
-      "experimentalBypassFor": [
-        {
-          "type": "header",
-          "key": "next-action"
-        },
-        {
-          "type": "header",
-          "key": "content-type",
-          "value": "multipart/form-data;.*"
-        }
-      ],
-      "initialRevalidateSeconds": false,
-      "srcRoute": "/",
-      "dataRoute": "/index.rsc",
-      "allowHeader": [
-        "host",
-        "x-matched-path",
-        "x-prerender-revalidate",
-        "x-prerender-revalidate-if-generated",
-        "x-next-revalidated-tags",
-        "x-next-revalidate-tag-token"
-      ]
     }
   },
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "5aa1b859f849033df63ffc624645ef4d",
-    "previewModeSigningKey": "875fb64cea11970fd12639b7df0661770d0ebe4598c154c35e394a4e39f27779",
-    "previewModeEncryptionKey": "68f5e090f5e1f1e4b5688fa69b06c0f4f5d6218584ca92519b76bacca7d76921"
+    "previewModeId": "b8c4076954928e553295118eb28f14aa",
+    "previewModeSigningKey": "2d5361bdc0a97830c2fb2fa64ff45ca8cf0773df2496353ae1dc751b5a75a158",
+    "previewModeEncryptionKey": "f23ff872d27f1315960d2384ef0d88f14d1650c08590d97f78adfd9a0d86a60f"
   }
 }

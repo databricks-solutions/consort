@@ -1000,17 +1000,31 @@ function clauseRealizedBy(c: FitnessClause): string[] {
     : [];
 }
 
-export function checkFitnessClauseCoverage(testListJson: string, architectureJson: string): ConformanceResult {
-  let arch: { nfrs?: Array<{ id?: string; fitness_functions?: unknown; tier?: string }> };
+export function checkFitnessClauseCoverage(
+  testListJson: string,
+  architectureJson: string,
+  opts: { onlyStory?: string } = {},
+): ConformanceResult {
+  let arch: { nfrs?: Array<{ id?: string; fitness_functions?: unknown; tier?: string; applies_to?: string }> };
   try {
     arch = JSON.parse(architectureJson);
   } catch {
     return { ok: true }; // invalid architecture reported elsewhere
   }
   // Non-platform NFRs that use the atomic array form (a platform NFR is defended
-  // once, excluded — the shipped tiering behavior, preserved).
+  // once, excluded — the shipped tiering behavior, preserved). Story-scoped mode
+  // (onlyStory set) keeps only this story's own NFRs so the pre-reflect per-story
+  // suite never false-flags a feature-level or sibling-story NFR.
   const atomic = (arch.nfrs ?? [])
-    .filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform")
+    .filter(
+      (n) =>
+        n &&
+        typeof n.id === "string" &&
+        n.id.length > 0 &&
+        Array.isArray(n.fitness_functions) &&
+        n.tier !== "platform" &&
+        (opts.onlyStory === undefined || n.applies_to === opts.onlyStory),
+    )
     .map((n) => ({
       id: n.id as string,
       clauses: (n.fitness_functions as FitnessClause[]).filter((c) => (typeof c === "string" ? c.trim().length > 0 : typeof c?.clause === "string")),
@@ -1761,8 +1775,12 @@ export function checkMigrationPreservationClass(architectureJson: string, dbDesi
  * referencing it via `nfr_id`. Platform NFRs are exempt (defended once, by their
  * gate or a feature-level obligation the platform check already enforces).
  */
-export function checkFitnessSingularCoverage(testListJson: string, architectureJson: string): ConformanceResult {
-  let arch: { nfrs?: Array<{ id?: string; tier?: string; fitness_function?: unknown; fitness_functions?: unknown }> };
+export function checkFitnessSingularCoverage(
+  testListJson: string,
+  architectureJson: string,
+  opts: { onlyStory?: string } = {},
+): ConformanceResult {
+  let arch: { nfrs?: Array<{ id?: string; tier?: string; applies_to?: string; fitness_function?: unknown; fitness_functions?: unknown }> };
   try {
     arch = JSON.parse(architectureJson);
   } catch {
@@ -1775,6 +1793,11 @@ export function checkFitnessSingularCoverage(testListJson: string, architectureJ
         typeof n.id === "string" &&
         n.id.length > 0 &&
         n.tier !== "platform" &&
+        // Story-scoped mode (pre-reflect per-story suite): only this story's own NFRs. A
+        // feature-level NFR (applies_to the feature) or a sibling story's is NOT covered
+        // in this story's list, so it must NOT be flagged here — it stays the downstream
+        // feature-wide gate's job. Unset onlyStory = the original feature-wide behaviour.
+        (opts.onlyStory === undefined || n.applies_to === opts.onlyStory) &&
         typeof n.fitness_function === "string" &&
         (n.fitness_function as string).trim().length > 0 &&
         !(Array.isArray(n.fitness_functions) && (n.fitness_functions as unknown[]).some((c) => typeof c === "string" && (c as string).trim().length > 0)),

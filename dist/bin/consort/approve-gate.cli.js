@@ -7197,14 +7197,16 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
 function clauseRealizedBy(c) {
   return typeof c === "object" && c !== null && Array.isArray(c.realized_by) ? c.realized_by.filter((a) => typeof a === "string" && a.length > 0) : [];
 }
-function checkFitnessClauseCoverage(testListJson, architectureJson2) {
+function checkFitnessClauseCoverage(testListJson, architectureJson2, opts = {}) {
   let arch;
   try {
     arch = JSON.parse(architectureJson2);
   } catch {
     return { ok: true };
   }
-  const atomic = (arch.nfrs ?? []).filter((n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform").map((n) => ({
+  const atomic = (arch.nfrs ?? []).filter(
+    (n) => n && typeof n.id === "string" && n.id.length > 0 && Array.isArray(n.fitness_functions) && n.tier !== "platform" && (opts.onlyStory === void 0 || n.applies_to === opts.onlyStory)
+  ).map((n) => ({
     id: n.id,
     clauses: n.fitness_functions.filter((c) => typeof c === "string" ? c.trim().length > 0 : typeof c?.clause === "string")
   })).filter((n) => n.clauses.length > 0);
@@ -7538,7 +7540,7 @@ function checkMigrationPreservationClass(architectureJson2, dbDesignJson2) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
-function checkFitnessSingularCoverage(testListJson, architectureJson2) {
+function checkFitnessSingularCoverage(testListJson, architectureJson2, opts = {}) {
   let arch;
   try {
     arch = JSON.parse(architectureJson2);
@@ -7546,7 +7548,11 @@ function checkFitnessSingularCoverage(testListJson, architectureJson2) {
     return { ok: true };
   }
   const singular = (arch.nfrs ?? []).filter(
-    (n) => n && typeof n.id === "string" && n.id.length > 0 && n.tier !== "platform" && typeof n.fitness_function === "string" && n.fitness_function.trim().length > 0 && !(Array.isArray(n.fitness_functions) && n.fitness_functions.some((c) => typeof c === "string" && c.trim().length > 0))
+    (n) => n && typeof n.id === "string" && n.id.length > 0 && n.tier !== "platform" && // Story-scoped mode (pre-reflect per-story suite): only this story's own NFRs. A
+    // feature-level NFR (applies_to the feature) or a sibling story's is NOT covered
+    // in this story's list, so it must NOT be flagged here — it stays the downstream
+    // feature-wide gate's job. Unset onlyStory = the original feature-wide behaviour.
+    (opts.onlyStory === void 0 || n.applies_to === opts.onlyStory) && typeof n.fitness_function === "string" && n.fitness_function.trim().length > 0 && !(Array.isArray(n.fitness_functions) && n.fitness_functions.some((c) => typeof c === "string" && c.trim().length > 0))
   ).map((n) => n.id);
   if (singular.length === 0) return { ok: true };
   let tl;
