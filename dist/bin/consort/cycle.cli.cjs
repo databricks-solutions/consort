@@ -8061,6 +8061,111 @@ function checkTestlistMigrationRevision(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+var TEST_WORTHY_SCHEMA_CHANGE_KINDS = /* @__PURE__ */ new Set(["create_table", "add_index", "add_constraint"]);
+function idedSchemaChanges(dbDesignJson2) {
+  const out = /* @__PURE__ */ new Map();
+  if (!dbDesignJson2) return out;
+  try {
+    const db = JSON.parse(dbDesignJson2);
+    for (const sc of db.schema_changes ?? []) {
+      if (sc && typeof sc.id === "string" && sc.id.length > 0 && typeof sc.kind === "string") out.set(sc.id, sc.kind);
+    }
+  } catch {
+  }
+  return out;
+}
+function checkSchemaChangeOrphan(testListJson, dbDesignJson2) {
+  const planned = idedSchemaChanges(dbDesignJson2);
+  if (planned.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const ref = it.schema_change_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    if (!planned.has(ref)) {
+      violations.push(
+        `test item ${it.id ?? "?"} references schema_change_id "${ref}", which is NOT a planned db-design.json schema_changes[] entry (the DBA did not commit that change). A migration/schema test may only assert a change the DBA planned: either DROP this test (it asserts a schema change that does not ship) or, if the change SHOULD ship, the DBA must add it to schema_changes[] first (the DBA owns the schema ledger \u2014 the architect's access_patterns are a non-committal nudge, not the authority).`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkSchemaChangeCoverage(testListJson, dbDesignJson2) {
+  const planned = idedSchemaChanges(dbDesignJson2);
+  if (planned.size === 0) return { ok: true };
+  const testWorthy = [...planned.entries()].filter(([, kind]) => TEST_WORTHY_SCHEMA_CHANGE_KINDS.has(kind)).map(([id]) => id);
+  if (testWorthy.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const covered = new Set((tl.items ?? []).map((i) => i.schema_change_id).filter((x) => typeof x === "string" && x.length > 0));
+  const uncovered = testWorthy.filter((id) => !covered.has(id));
+  if (uncovered.length > 0) {
+    return {
+      ok: false,
+      violations: [
+        `schema_changes[] entr(y/ies) with no covering test-list item (schema_change_id): ${uncovered.join(", ")} (a create_table / add_index / add_constraint the DBA committed needs >=1 test asserting it \u2014 a migration reversibility round-trip, or the index/constraint's behavior against the real branch; see test-strategy.md)`
+      ]
+    };
+  }
+  return { ok: true };
+}
+function checkApiContractConsistency(architectureJson2, acJsons) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const contracts = (arch.api_contracts ?? []).filter((c) => c && typeof c.id === "string" && c.id.length > 0);
+  if (contracts.length === 0) return { ok: true };
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  const idSet = /* @__PURE__ */ new Set();
+  const shapesByEndpoint = /* @__PURE__ */ new Map();
+  for (const c of contracts) {
+    idSet.add(c.id);
+    const q = Array.isArray(c.query) && c.query.length ? "?" + [...c.query].sort().join("&") : "";
+    const key = `${c.method ?? "?"} ${c.path ?? "?"}${q}`;
+    const shapes = shapesByEndpoint.get(key) ?? /* @__PURE__ */ new Set();
+    if (typeof c.shape === "string") shapes.add(c.shape);
+    shapesByEndpoint.set(key, shapes);
+  }
+  for (const [key, shapes] of shapesByEndpoint) {
+    if (shapes.size > 1) {
+      violations.push(
+        `endpoint ${key} is declared with conflicting response shapes (${[...shapes].join(" vs ")}) across api_contracts[] \u2014 an endpoint has ONE top-level response shape; declare it exactly once so the ACs that reference it cannot disagree (the S3 par_level envelope-vs-bare-list contradiction).`
+      );
+    }
+  }
+  for (const acJson2 of acJsons) {
+    let ac;
+    try {
+      ac = JSON.parse(acJson2);
+    } catch {
+      continue;
+    }
+    const ref = ac.api_contract_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    if (!idSet.has(ref)) {
+      violations.push(
+        `AC ${ac.id ?? "?"} references api_contract_id "${ref}", which is not a declared architecture.json api_contracts[] entry (declare the endpoint there, or fix the reference \u2014 the shape is single-sourced there, not in the AC).`
+      );
+      if (typeof ac.id === "string") acIds.add(ac.id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
   try {
@@ -8508,6 +8613,28 @@ function architectureConventionsReason(consortDir, featureId) {
   const r = assertArchitectureConforms(conventions, content);
   return r.ok ? null : `architecture conventions failed: ${r.violations.join("; ")}`;
 }
+function apiContractConsistencyReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const fdir = featureResolved(consortDir, featureId);
+  const acJsons = [];
+  const storiesDir2 = (0, import_node_path2.join)(fdir, "stories");
+  if ((0, import_node_fs.existsSync)(storiesDir2)) {
+    for (const s of (0, import_node_fs.readdirSync)(storiesDir2)) {
+      const acsDir2 = (0, import_node_path2.join)(storiesDir2, s, "acs");
+      if (!(0, import_node_fs.existsSync)(acsDir2)) continue;
+      for (const f of (0, import_node_fs.readdirSync)(acsDir2)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          acJsons.push((0, import_node_fs.readFileSync)((0, import_node_path2.join)(acsDir2, f), "utf8"));
+        } catch {
+        }
+      }
+    }
+  }
+  const r = checkApiContractConsistency(arch, acJsons);
+  return r.ok ? null : `api-contract consistency failed: ${r.violations.join("; ")}`;
+}
 function readArchitecture(consortDir, featureId) {
   const f = architectureJson(consortDir, featureId);
   if (!(0, import_node_fs.existsSync)(f)) return void 0;
@@ -8706,6 +8833,18 @@ function persistenceCoverageReason(consortDir, featureId, testListJson) {
   const r = checkPersistenceCoverage(testListJson, arch);
   return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
 }
+function schemaChangeCoverageReason(consortDir, featureId, testListJson) {
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = (0, import_node_fs.existsSync)(dbFile) ? (() => {
+    try {
+      return (0, import_node_fs.readFileSync)(dbFile, "utf8");
+    } catch {
+      return void 0;
+    }
+  })() : void 0;
+  const r = checkSchemaChangeCoverage(testListJson, db);
+  return r.ok ? null : `schema-change coverage failed: ${r.violations.join("; ")}`;
+}
 function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
   let master;
   try {
@@ -8868,6 +9007,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (registeredReason !== null) return { reason: registeredReason };
       const conventionsReason = architectureConventionsReason(consortDir, featureId);
       if (conventionsReason !== null) return { reason: conventionsReason };
+      const apiContractReason = apiContractConsistencyReason(consortDir, featureId);
+      if (apiContractReason !== null) return { reason: apiContractReason };
       const serviceBacked = serviceBackedReason(consortDir, featureId);
       if (serviceBacked !== null) return { reason: serviceBacked };
       const e2eLayerReason = e2eLayerPresentReason(consortDir, featureId);
@@ -8924,6 +9065,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (kindLayerReason !== null) return { reason: kindLayerReason };
         const persistenceReason = persistenceCoverageReason(consortDir, featureId, tlJson);
         if (persistenceReason !== null) return { reason: persistenceReason };
+        const schemaCoverageReason = schemaChangeCoverageReason(consortDir, featureId, tlJson);
+        if (schemaCoverageReason !== null) return { reason: schemaCoverageReason };
         const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
         if (distinctReason !== null) return { reason: distinctReason };
         const e2eReason = e2eCoverageReason(consortDir, featureId, tlJson);
@@ -11803,6 +11946,12 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     return null;
   }
   const acLayerById = storyAcLayers(consortDir, featureId, story);
+  let dbDesign;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if ((0, import_fs15.existsSync)(p)) dbDesign = (0, import_fs15.readFileSync)(p, "utf8");
+  } catch {
+  }
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const r of [
@@ -11813,7 +11962,8 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
-    checkTestlistMigrationRevision(testListJson)
+    checkTestlistMigrationRevision(testListJson),
+    checkSchemaChangeOrphan(testListJson, dbDesign)
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);

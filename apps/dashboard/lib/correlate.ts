@@ -63,6 +63,37 @@ export interface TurnIndexEntry {
  */
 const STRUCTURAL_ROLES = new Set(["release-engineer"]);
 
+/**
+ * The HITL gate NAME a gate TURN carries, or null for a non-gate turn. Maps the turn KIND
+ * (surface-gate / approve-*-gate / await-acceptance / accept) to the gate name its orchestrator
+ * gate.surfaced/gate.approved events carry in `metadata.gate`, so the gate-pairing pass can match an
+ * event to its turn. surface-gate + approve-gate are both the "spec" gate (surface THEN approve = two
+ * turns); await-acceptance + accept are both "acceptance". The sprint/feature gates
+ * (intake/backlog/plan/deploy/promote) are a single approve turn each.
+ */
+function gateNameOfTurn(kind: string | undefined): string | null {
+  switch (kind) {
+    case "surface-gate":
+    case "approve-gate":
+      return "spec";
+    case "approve-intake-gate":
+      return "intake";
+    case "approve-backlog-gate":
+      return "backlog";
+    case "approve-plan-gate":
+      return "plan";
+    case "approve-deploy-gate":
+      return "deploy";
+    case "approve-promote-gate":
+      return "promote";
+    case "await-acceptance":
+    case "accept":
+      return "acceptance";
+    default:
+      return null;
+  }
+}
+
 /** An event paired to the turn that produced it. */
 export interface Pairing {
   /** Index into the event array passed to `correlate`. */
@@ -84,6 +115,12 @@ export interface UnpairedEvent {
 
 export interface CorrelationReport {
   pairings: Pairing[];
+  /** Gate EVENT → gate TURN pairings (HITL gates: planning / spec / acceptance / deploy / promote),
+   *  kept SEPARATE from `pairings` so the invoke-role correlation + its drift detection are unchanged
+   *  (pairings stays the per-role sequential cursor the differential/ground-truth tests pin). The event
+   *  log merges both for its `#ordinal` markers, so every gate row is numbered — independent of the
+   *  correspondence stream, which does not record every gate. */
+  gatePairings: Pairing[];
   /** Events that wanted a turn and found none — real drift. Empty on a healthy corpus. */
   unpairedEvents: UnpairedEvent[];
   /** `invoke-role` turns no event ever reached. A short log explains this; drift also can. */
@@ -204,6 +241,40 @@ export function correlate(
     }
   });
 
+  // ── Gate pairing (HITL gates: planning / spec / acceptance / deploy / promote) ──
+  // The loop above pairs only phase.start → invoke-role turns, so a GATE turn (surface-gate /
+  // approve-*-gate / await-acceptance / accept — none are invoke-role) and its orchestrator-emitted
+  // gate.surfaced / gate.approved event never get a turn ordinal. That left every HITL gate row
+  // UN-NUMBERED in the event log (the "#3/#5 skipped" planning gates) and the deploy/promote gates
+  // unidentifiable — the symptom the user hit. Pair each gate EVENT to its gate TURN by gate name, in
+  // log order, so every gate shows its #ordinal (and lights, since EVENT_LEGEND already purples a
+  // `gate*` row). Sourced from the turn index + the agent-log gate events, INDEPENDENT of the
+  // correspondence stream — which does NOT record every gate (the planning + ship gates emit no
+  // correspondence beat, so a correspondence-only approach drops them). Isolated from the invoke-role
+  // pass: a gate event that finds no turn is simply left un-numbered, NOT counted as drift (gates can
+  // out-number their recorded turns across a re-plan, e.g. a resumed sprint re-deriving planning).
+  const gateTurnsByName = new Map<string, TurnIndexEntry[]>();
+  for (const t of turns) {
+    const g = gateNameOfTurn(t.kind);
+    if (g === null) continue;
+    const list = gateTurnsByName.get(g);
+    if (list) list.push(t);
+    else gateTurnsByName.set(g, [t]);
+  }
+  const gateConsumed = new Map<string, number>();
+  const gatePairings: Pairing[] = [];
+  events.forEach((e, eventIndex) => {
+    if (e.event !== "gate.surfaced" && e.event !== "gate.approved" && e.event !== "gate.rejected") return;
+    const g = ((e.metadata ?? {}) as Record<string, unknown>).gate;
+    if (typeof g !== "string") return;
+    const list = gateTurnsByName.get(g);
+    if (!list) return;
+    const next = gateConsumed.get(g) ?? 0;
+    if (next >= list.length) return; // more gate events than recorded gate turns (a re-plan): leave un-numbered
+    gateConsumed.set(g, next + 1);
+    gatePairings.push({ eventIndex, turnOrdinal: list[next].ordinal, role: "orchestrator", phase: null });
+  });
+
   const cursors: CorrelationReport["cursors"] = {};
   const unpairedTurns: CorrelationReport["unpairedTurns"] = [];
   for (const [role, list] of byRole) {
@@ -227,6 +298,7 @@ export function correlate(
 
   return {
     pairings,
+    gatePairings,
     unpairedEvents,
     unpairedTurns,
     structural,

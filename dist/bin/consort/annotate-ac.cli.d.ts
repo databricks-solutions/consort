@@ -6,6 +6,7 @@ interface ParsedArgs {
     layer?: string;
     notes?: string;
     uiSeams?: string;
+    apiContract?: string;
     consortDir?: string;
     help?: boolean;
 }
@@ -19,6 +20,7 @@ declare function mergeAcAnnotation(raw: string, fields: {
     layer?: string;
     notes: string;
     uiSeams?: string[];
+    apiContract?: string;
 }): string;
 /** Parse a comma-separated --ui-seams value into a trimmed, de-duped token list. */
 declare function parseUiSeams(raw: string | undefined): string[] | undefined;

@@ -25,6 +25,8 @@ import {
   checkNfrClauseScope,
   checkE2ECoverage,
   checkPersistenceCoverage,
+  checkSchemaChangeCoverage,
+  checkApiContractConsistency,
   checkInvariantCoverageDistinct,
   invariantRealizingStory,
   checkSchemaChangeStoryRealizes,
@@ -303,6 +305,35 @@ function architectureConventionsReason(consortDir: string, featureId: string): s
   }
   const r = assertArchitectureConforms(conventions, content);
   return r.ok ? null : `architecture conventions failed: ${r.violations.join("; ")}`;
+}
+
+/** F2 (Gate 3): the architect's api_contracts[] single-sources each endpoint's
+ *  response shape, and every AC's api_contract_id references a declared one — so a
+ *  story's ACs can't disagree on the shape (the S3 par_level contradiction). Reads
+ *  architecture.json + every AC across the feature's stories. Vacuous until the
+ *  architect declares api_contracts (back-compat). */
+function apiContractConsistencyReason(consortDir: string, featureId: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  const fdir = featureResolved(consortDir, featureId);
+  const acJsons: string[] = [];
+  const storiesDir = join(fdir, "stories");
+  if (existsSync(storiesDir)) {
+    for (const s of readdirSync(storiesDir)) {
+      const acsDir = join(storiesDir, s, "acs");
+      if (!existsSync(acsDir)) continue;
+      for (const f of readdirSync(acsDir)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          acJsons.push(readFileSync(join(acsDir, f), "utf8"));
+        } catch {
+          /* a malformed AC is reported by storyAcProblems */
+        }
+      }
+    }
+  }
+  const r = checkApiContractConsistency(arch, acJsons);
+  return r.ok ? null : `api-contract consistency failed: ${r.violations.join("; ")}`;
 }
 
 /** Read architecture.json content for the feature, or undefined when absent. */
@@ -683,6 +714,18 @@ function persistenceCoverageReason(consortDir: string, featureId: string, testLi
   return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
 }
 
+/** Schema-change coverage (Gate 3): every db-design.json schema_changes[] entry of a
+ *  test-worthy kind (create_table / add_index / add_constraint) must be covered by >=1
+ *  test referencing its id (schema_change_id). Closes the gap where a DBA-committed
+ *  index/constraint ships with no reversibility/assertion test. Vacuous on an un-id'd
+ *  ledger, so it enforces only once the DBA emits schema_changes ids. */
+function schemaChangeCoverageReason(consortDir: string, featureId: string, testListJson: string): string | null {
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = existsSync(dbFile) ? (() => { try { return readFileSync(dbFile, "utf8"); } catch { return undefined; } })() : undefined;
+  const r = checkSchemaChangeCoverage(testListJson, db);
+  return r.ok ? null : `schema-change coverage failed: ${r.violations.join("; ")}`;
+}
+
 /**
  * Distinct-invariant-coverage test_list-gate condition (the cross-story
  * counterpart to persistenceCoverageReason): a declared persistence_invariant
@@ -947,6 +990,11 @@ export function resolveArtifactInputs(
       // is exempt (no conventions yet); a non-service-backed feature is exempt.
       const conventionsReason = architectureConventionsReason(consortDir, featureId);
       if (conventionsReason !== null) return { reason: conventionsReason };
+      // F2: the architect's api_contracts[] single-source each endpoint's response
+      // shape; every AC's api_contract_id must reference a declared one, and no
+      // endpoint may be declared with conflicting shapes (the S3 par_level contradiction).
+      const apiContractReason = apiContractConsistencyReason(consortDir, featureId);
+      if (apiContractReason !== null) return { reason: apiContractReason };
       // Architecture conformance (Gate 2, surfaced through the per-story spec gate
       // since the design lane runs the architect before surfacing it). First the
       // service_backed determination itself: a feature that under-declares (not
@@ -1057,6 +1105,12 @@ export function resolveArtifactInputs(
         // schema's own contract, not only incidentally through API behavior tests.
         const persistenceReason = persistenceCoverageReason(consortDir, featureId, tlJson);
         if (persistenceReason !== null) return { reason: persistenceReason };
+        // Schema-change coverage (Gate 3): every DBA-committed test-worthy schema_change
+        // (create_table / add_index / add_constraint) must be asserted by >=1 test
+        // referencing its schema_change_id — no index/constraint ships untested, and the
+        // DBA's ledger (not the architect's access_patterns nudge) is the authority.
+        const schemaCoverageReason = schemaChangeCoverageReason(consortDir, featureId, tlJson);
+        if (schemaCoverageReason !== null) return { reason: schemaCoverageReason };
         // Distinct invariant coverage (Gate 3): each declared invariant belongs
         // to exactly ONE story's fitness tests. A later story re-testing an
         // invariant an earlier story already covers is a redundant re-test that

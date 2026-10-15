@@ -203,11 +203,20 @@ export function driverBoundOptions(bound: DriverBound): Pick<RunDriverOptions, "
       return { transition: nextDesignOnlyTransition, stopWhen: (a) => a.kind === "design-complete" };
     case "build":
       return { stopWhen: (a) => actionLane(a) !== "build" };
-    case "deploy":
-      // Ship = deploy (local working-software) + promote (PR review + merge up to
-      // the parent). Both lanes are in scope so /deploy carries the feature all
-      // the way to merged/done, not just the local deploy.
-      return { stopWhen: (a) => actionLane(a) !== "deploy" && actionLane(a) !== "promote" };
+    case "deploy": {
+      // Ship = the `feature-complete` coarse gateway (its feature-wide conformance
+      // backstop + the feature->deploy phase flip) + deploy (local working-software)
+      // + promote (PR review + merge up to the parent). A standalone `--only deploy`
+      // on an ALREADY-built feature derives `feature-complete` first — lane "coarse" —
+      // and it must EXECUTE (to flip ws.phase into "deploy") rather than stop before
+      // it, or the deploy is a no-op and the promote is never offered. `feature-complete`
+      // is the sole coarse-lane action, so admitting "coarse" admits exactly that one
+      // gateway; an unbuilt feature still derives a build-lane action here and stops
+      // (you cannot deploy what is not built). All three lanes in scope so /deploy
+      // carries the feature all the way to merged/done, not just the local deploy.
+      const shipLanes = new Set(["coarse", "deploy", "promote"]);
+      return { stopWhen: (a) => !shipLanes.has(actionLane(a)) };
+    }
   }
 }
 

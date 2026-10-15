@@ -194,6 +194,7 @@ export function emptyState(projectDir: string, generatedAt: string): DashboardSt
       laneSteps: Object.fromEntries(LANE_IDS.map((l) => [l, [] as string[]])),
       reachedThisPass: [],
       laneCurrent: null,
+      laneGate: null,
       atTimestamp: null,
     },
   };
@@ -280,6 +281,7 @@ function deriveTopology(
     laneSteps,
     reachedThisPass: [...reachedThisPass(slice, undefined, scope)],
     laneCurrent: progress.current,
+    laneGate: progress.currentGate,
     atTimestamp: slice.length > 0 ? slice[slice.length - 1].timestamp : null,
   };
 }

@@ -100,6 +100,10 @@ of hand-editing the AC file, so a dropped brace can never corrupt it.
 --ui-seams (E2E / client ACs): a comma-separated list of the ia.md data-testid seam
 tokens this AC's UI must drive (e.g. "stock-cell-tracking,stock-not-tracked"). The
 deterministic pre-reflect IA gate checks each is named in ia.md.
+
+--api-contract (API-asserting ACs): the id of the architecture.json api_contracts[]
+entry whose response shape this AC exercises (e.g. "EP1-list-stock-by-sku"). The shape
+is single-sourced there; checkApiContractConsistency checks it is a declared endpoint.
 `;
 function parseArgs(argv) {
   const out = {};
@@ -123,6 +127,9 @@ function parseArgs(argv) {
       case "--ui-seams":
         out.uiSeams = argv[++i];
         break;
+      case "--api-contract":
+        out.apiContract = argv[++i];
+        break;
       case "--consort-dir":
       case "--tdd-dir":
         out.consortDir = argv[++i];
@@ -142,6 +149,10 @@ function mergeAcAnnotation(raw, fields) {
   if (fields.layer) obj.layer = fields.layer;
   obj.architectural_notes = fields.notes;
   if (fields.uiSeams !== void 0) obj.ui_seams = fields.uiSeams;
+  if (fields.apiContract !== void 0) {
+    if (fields.apiContract.length > 0) obj.api_contract_id = fields.apiContract;
+    else delete obj.api_contract_id;
+  }
   return JSON.stringify(obj, null, 2) + "\n";
 }
 function parseUiSeams(raw) {
@@ -177,7 +188,7 @@ ${HELP}`);
   }
   let merged;
   try {
-    merged = mergeAcAnnotation(fs2.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes, uiSeams: parseUiSeams(args.uiSeams) });
+    merged = mergeAcAnnotation(fs2.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes, uiSeams: parseUiSeams(args.uiSeams), apiContract: args.apiContract });
   } catch (e) {
     process.stderr.write(
       `Error: ${file} is not valid JSON (${e instanceof Error ? e.message : String(e)}). Fix the existing file's syntax first (this tool preserves fields; it won't overwrite a corrupt AC blindly).

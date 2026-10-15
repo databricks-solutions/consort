@@ -347,6 +347,43 @@ describe("runDriver: Tier-2 phase bounds (driverBoundOptions)", () => {
     expect(log.some((a) => a.kind === "merge")).toBe(true);
     expect(result.stoppedAtBound).toBeUndefined(); // completed at done, not a bound stop
   });
+
+  it("--only deploy on an ALREADY-built feature (phase still 'feature') runs feature-complete, flips to deploy, offers promote, reaches done", async () => {
+    // The Run-4 bug: a feature built by a prior `--only build` run leaves ws.phase
+    // "feature" (the build bound stops at the coarse `feature-complete` gateway
+    // without performing it). A later `--only deploy` then derives `feature-complete`
+    // (lane "coarse") first — the bound MUST perform it (its conformance backstop +
+    // the feature->deploy phase flip) and carry on, not stop before it (which left
+    // "deploy already complete (0 actions)", no PR, no promote).
+    const { state, log, effects } = makeFakeWorld([]);
+    state.phase = "feature";
+    state.breakdownDone = true;
+    state.storyOrder = ["S1", "S2"];
+    state.designGuideReady = true;
+    state.reconcilePassed = true;
+    for (const id of ["S1", "S2"]) {
+      const v = freshStory();
+      v.design = { hasAcs: true, iaRefined: true, iaProjectable: false, architectAnnotated: true, architectProjectable: false, dbaDesigned: true, testListReady: true, testListConforms: true, iaConforms: true, reflectionPassed: true, reflectionVerdictWritten: true };
+      v.gateApproved = true;
+      v.gateSurfaced = true;
+      v.build = { experimentCut: true, testsWritten: true, codeWritten: true, awaitingAcceptance: true, deployVerified: true, accepted: true };
+      state.stories[id] = v;
+    }
+
+    const result = await runDriver(effects, driverBoundOptions("deploy"));
+
+    // The coarse gateway was PERFORMED (onAction logs only performed actions): the
+    // old bound stopped before it, so it never ran and the phase never flipped.
+    expect(log.some((a) => a.kind === "feature-complete")).toBe(true);
+    // ... and the ship then ran all the way through to done.
+    expect(state.phase).toBe("done");
+    expect(state.deploy).toEqual({ deployed: true, gateApproved: true });
+    expect(state.promote).toEqual({ prReady: true, ciGreen: true, prApproved: true, merged: true });
+    expect(log.some((a) => a.kind === "deploy")).toBe(true);
+    expect(log.some((a) => a.kind === "approve-promote-gate")).toBe(true); // the promote WAS offered
+    expect(log.some((a) => a.kind === "merge")).toBe(true);
+    expect(result.stoppedAtBound).toBeUndefined();
+  });
 });
 
 describe("runDriver: output-driven routing seam (options.contract)", () => {

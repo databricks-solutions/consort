@@ -72,6 +72,19 @@ export function orchestratorLogEvents(
   // the phase; slots carry the specifics (story / ac / gate / ...).
   const withStory = story ? { story } : {};
 
+  // A proxy-mode (headless) gate APPROVAL emits a PAIRED gate.surfaced first, so the dashboard — which
+  // derives the parked gate from gate.surfaced — shows the gate as pending (and flashes it purple) at
+  // that point in the timeline. The sprint/feature gates (intake / backlog / plan / deploy / promote)
+  // have NO preceding non-HITL surfacing action the way spec (surface-gate) + acceptance
+  // (await-acceptance) do, so without this they log only gate.approved and never flash in a headless run.
+  // In INTERACTIVE mode this approve-* case never runs (the drive parks before it + the human approves
+  // out-of-band, and parkedGateSurfacedEvent already surfaced at the park), so there is no double-surface.
+  const surfacedThenApproved = (gate: string): AgentLogEventInput[] => {
+    const surfaced = parkedGateSurfacedEvent(action, ctx);
+    const approved: AgentLogEventInput = { ...base, event: "gate.approved", slots: { gate } };
+    return surfaced ? [surfaced, approved] : [approved];
+  };
+
   switch (action.kind) {
     case "invoke-role": {
       const role = action.role;
@@ -105,18 +118,18 @@ export function orchestratorLogEvents(
     case "approve-intake-gate":
       // The HITL intake gate (the human approved the drafted product-overview/nfrs/design-brief).
       // Previously fell through to the default reasoning marker — a latent gap that left the intake
-      // approval unlogged on the orchestrator skeleton; now it emits gate.approved like every gate.
-      return [{ ...base, event: "gate.approved", slots: { gate: "intake" } }];
+      // approval unlogged on the orchestrator skeleton; now it emits gate.surfaced+approved like every gate.
+      return surfacedThenApproved("intake");
     case "approve-backlog-gate":
       // The HITL backlog gate (the human selected + committed the sprint's features).
-      return [{ ...base, event: "gate.approved", slots: { gate: "backlog" } }];
+      return surfacedThenApproved("backlog");
     case "approve-plan-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "plan" } }];
+      return surfacedThenApproved("plan");
     case "approve-deploy-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "deploy" } }];
+      return surfacedThenApproved("deploy");
     case "approve-promote-gate":
       // The HITL PR acceptance (the `promote` gate), before the merge.
-      return [{ ...base, event: "gate.approved", slots: { gate: "promote" } }];
+      return surfacedThenApproved("promote");
     case "deploy-complete":
       // Entering the promote phase: the Release Engineer takes the accepted
       // feature through PR review + merge up to the parent tier. (prepare-pr /

@@ -469,7 +469,10 @@ describe("laneStepForEvent", () => {
       lane: "build",
       step: "b-green",
     });
-    expect(laneStepForEvent(ev("verify.passed", "orchestrator"))).toEqual({
+    // The Driver's build-cycle GREEN verify (cycle.verified) lights b-verify — the exact-event match
+    // wins over b-green/role:driver. (The release-engineer's deploy `verify.passed` is a SEPARATE stage
+    // and no longer lights this between-green-and-review card.)
+    expect(laneStepForEvent(ev("cycle.verified", "driver"))).toEqual({
       lane: "build",
       step: "b-verify",
     });
@@ -536,6 +539,33 @@ describe("laneProgress / passedNodes", () => {
     const p = laneProgress(withGate);
     expect(p.current).toBeNull(); // no step glows at the gate boundary
     expect(p.done.plan.has("p-intake")).toBe(true); // the PO's drafting still reads as done
+  });
+
+  describe("currentGate — the gate/checkpoint step the playhead is parked AT (lane-card glow)", () => {
+    // Facet 2: one-turn ship gates are surfaced+approved in a single turn, so they never become a
+    // parked pendingGate. currentGate reads them off the gate.approved event EVERY gate emits.
+    it("a gate.approved(deploy) playhead → currentGate is the deploy lane step (dp-gate)", () => {
+      const p = laneProgress([ev("gate.approved", "release-engineer", { gate: "deploy" })]);
+      expect(p.currentGate).toBe("dp-gate");
+      expect(p.current).toBeNull(); // never agent-work `current`
+    });
+    it("a gate.approved(promote) playhead → currentGate is the promote lane step (dp-promgate)", () => {
+      expect(laneProgress([ev("gate.approved", "release-engineer", { gate: "promote" })]).currentGate).toBe("dp-promgate");
+    });
+    it("a gate.surfaced(acceptance) playhead → currentGate is the acceptance step (b-accept)", () => {
+      expect(laneProgress([ev("gate.surfaced", "orchestrator", { gate: "acceptance", story: "S1" })]).currentGate).toBe("b-accept");
+    });
+    // The Driver's build-cycle GREEN verify is a gate STEP that `current` nulls; currentGate names it so
+    // the Verify card glows at the GREEN verify (between GREEN and REVIEW), in the release-engineer colour.
+    it("a driver cycle.verified playhead → currentGate is the verify step (b-verify)", () => {
+      const p = laneProgress([ev("cycle.verified", "driver", { story: "S1" })]);
+      expect(p.currentGate).toBe("b-verify");
+    });
+    it("a plain agent-work playhead (driver green) has no currentGate", () => {
+      const p = laneProgress([ev("phase.start", "driver", { phase: "green" })]);
+      expect(p.currentGate).toBeNull();
+      expect(p.current).toEqual({ lane: "build", step: "b-green" }); // agent work stays `current`
+    });
   });
 
   // --- feature scoping ------------------------------------------------------
@@ -840,10 +870,14 @@ describe("topology — the intended workflow (lanes, steps, nodes)", () => {
       expect(stepOf("build", "b-perm").match).toEqual({ role: "driver", buildModeAny: ["green-superseded", "refactor-superseded"] });
     });
 
-    it("gives verify to the release-engineer, lit by the verify.* events", () => {
+    it("gives verify to the release-engineer colour, lit by the build-cycle GREEN verify (cycle.verified) ALONE", () => {
       expect(stepOf("build", "b-verify").role).toBe("release-engineer");
       expect(stepOf("build", "b-verify").gate).toBe(true);
-      expect(stepOf("build", "b-verify").match).toEqual({ eventPrefix: "verify" });
+      expect(stepOf("build", "b-verify").match).toEqual({ eventAny: ["cycle.verified"] });
+    });
+
+    it("lights b-verify (not b-green) off the Driver's build-cycle GREEN verify `cycle.verified` (exact-event precedence)", () => {
+      expect(laneStepForEvent(ev("cycle.verified", "driver"))).toEqual({ lane: "build", step: "b-verify" });
     });
 
     it("has an acceptance gate and a raise-to-HIL terminal, neither lit by events", () => {
@@ -1158,10 +1192,11 @@ describe("laneStepForEvent — intended lane/step per event", () => {
     });
   });
 
-  it("a `verify`-prefixed event → build/b-verify (name alone)", () => {
-    // b-verify matches on the event-name prefix alone, so a release-cycle verify lights it before
-    // any later lane is consulted.
-    expect(laneStepForEvent(ev("verify.passed", "release-engineer", {}))).toEqual({
+  it("the Driver's build-cycle GREEN verify `cycle.verified` → build/b-verify (exact-event wins over b-green)", () => {
+    // b-verify matches the build-cycle verify event by exact name (eventAny), and the exact-event pass
+    // wins over b-green (role:driver, declared earlier) which would otherwise swallow this driver event.
+    // The release-engineer's deploy `verify.passed` is a SEPARATE stage and does NOT light this card.
+    expect(laneStepForEvent(ev("cycle.verified", "driver", {}))).toEqual({
       lane: "build",
       step: "b-verify",
     });

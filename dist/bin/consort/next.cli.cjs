@@ -7241,7 +7241,8 @@ var driver_green_default = {
   agent: { kind: "claude", config: { role: "driver" } },
   match: { kind: "invoke-role", role: "driver", buildMode: null },
   inputs: [
-    { id: "test-list", source: "story:test-list-per-story.json", description: "The story's ordered failing tests the Driver makes GREEN (story-level, or per-AC when the action carries an `ac`)." }
+    { id: "test-list", source: "story:test-list-per-story.json", description: "The story's ordered failing tests the Driver makes GREEN (story-level, or per-AC when the action carries an `ac`)." },
+    { id: "architecture", source: "feature:features/{feature}/architecture.json", optional: true, description: "The layering contract to build to ON THE FIRST PASS, not refactor into afterward: `layers[]` (role -> exact `module` path; the route/boundary delegates to a service, the service to a repository, and ONLY the repository touches the ORM/session) and `api_contracts[]` (each endpoint's single-sourced response `shape` + `item` the Driver implements the boundary against). Building layering-clean + to the declared response shape up front makes the REVIEW gate a confirmation, not a refactor trigger (the S1 layering/Base-location refactor lap). {feature} expands to the run's feature id." }
   ],
   outputs: [
     { id: "code", filename: "app", channel: "product", validator: "driverCodePresent", description: "The PRODUCT code the Driver wrote at the project root to make the RED pass (app/ , the primary in-turn produced signal). The real correctness gate is the post-turn @build-cycle honest-GREEN verify (alembic upgrade + the project's tests against a live branch), which flips codeWritten , this floor just proves the driver produced code." },
@@ -8290,6 +8291,41 @@ function checkTestlistMigrationRevision(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function idedSchemaChanges(dbDesignJson2) {
+  const out = /* @__PURE__ */ new Map();
+  if (!dbDesignJson2) return out;
+  try {
+    const db = JSON.parse(dbDesignJson2);
+    for (const sc of db.schema_changes ?? []) {
+      if (sc && typeof sc.id === "string" && sc.id.length > 0 && typeof sc.kind === "string") out.set(sc.id, sc.kind);
+    }
+  } catch {
+  }
+  return out;
+}
+function checkSchemaChangeOrphan(testListJson, dbDesignJson2) {
+  const planned = idedSchemaChanges(dbDesignJson2);
+  if (planned.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const ref = it.schema_change_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    if (!planned.has(ref)) {
+      violations.push(
+        `test item ${it.id ?? "?"} references schema_change_id "${ref}", which is NOT a planned db-design.json schema_changes[] entry (the DBA did not commit that change). A migration/schema test may only assert a change the DBA planned: either DROP this test (it asserts a schema change that does not ship) or, if the change SHOULD ship, the DBA must add it to schema_changes[] first (the DBA owns the schema ledger \u2014 the architect's access_patterns are a non-committal nudge, not the authority).`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
   try {
@@ -8770,8 +8806,10 @@ function driverBoundOptions(bound) {
       return { transition: nextDesignOnlyTransition, stopWhen: (a) => a.kind === "design-complete" };
     case "build":
       return { stopWhen: (a) => actionLane(a) !== "build" };
-    case "deploy":
-      return { stopWhen: (a) => actionLane(a) !== "deploy" && actionLane(a) !== "promote" };
+    case "deploy": {
+      const shipLanes = /* @__PURE__ */ new Set(["coarse", "deploy", "promote"]);
+      return { stopWhen: (a) => !shipLanes.has(actionLane(a)) };
+    }
   }
 }
 
@@ -8795,6 +8833,11 @@ function orchestratorLogEvents(action, ctx = {}) {
   const story = storyOf(action);
   const base = { role: "orchestrator", level: "info", feature_id };
   const withStory = story ? { story } : {};
+  const surfacedThenApproved = (gate) => {
+    const surfaced = parkedGateSurfacedEvent(action, ctx);
+    const approved = { ...base, event: "gate.approved", slots: { gate } };
+    return surfaced ? [surfaced, approved] : [approved];
+  };
   switch (action.kind) {
     case "invoke-role": {
       const role = action.role;
@@ -8818,15 +8861,15 @@ function orchestratorLogEvents(action, ctx = {}) {
     case "approve-gate":
       return [{ ...base, event: "gate.approved", slots: { gate: "spec", ...withStory } }];
     case "approve-intake-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "intake" } }];
+      return surfacedThenApproved("intake");
     case "approve-backlog-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "backlog" } }];
+      return surfacedThenApproved("backlog");
     case "approve-plan-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "plan" } }];
+      return surfacedThenApproved("plan");
     case "approve-deploy-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "deploy" } }];
+      return surfacedThenApproved("deploy");
     case "approve-promote-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "promote" } }];
+      return surfacedThenApproved("promote");
     case "deploy-complete":
       return [{ role: "release-engineer", level: "info", feature_id, event: "phase.start", slots: { phase: "promote" } }];
     case "accept":
@@ -8873,6 +8916,39 @@ function orchestratorLogEvents(action, ctx = {}) {
       return [{ ...base, event: "reasoning", slots: { note: `orchestrator: ${k}` } }];
     }
   }
+}
+function parkedGateName(gate) {
+  switch (gate.kind) {
+    case "approve-intake-gate":
+      return "intake";
+    case "approve-backlog-gate":
+      return "backlog";
+    case "approve-plan-gate":
+      return "plan";
+    case "approve-gate":
+      return "spec";
+    case "approve-deploy-gate":
+      return "deploy";
+    case "approve-promote-gate":
+      return "promote";
+    case "accept":
+      return "acceptance";
+    default:
+      return null;
+  }
+}
+function parkedGateSurfacedEvent(gate, ctx = {}) {
+  const name = parkedGateName(gate);
+  if (!name) return null;
+  const story = storyOf(gate);
+  const subject = story ? `story ${story}` : name === "intake" || name === "backlog" || name === "plan" ? `sprint ${ctx.sprint ?? name}` : `feature ${ctx.featureId ?? name}`;
+  return {
+    role: "orchestrator",
+    level: "info",
+    feature_id: ctx.featureId,
+    event: "gate.surfaced",
+    slots: { gate: name, subject, ...story ? { story } : {} }
+  };
 }
 function describeAction(action, ctx = {}) {
   const ev = orchestratorLogEvents(action, ctx)[0];
@@ -10032,6 +10108,12 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     return null;
   }
   const acLayerById = storyAcLayers(consortDir, featureId, story);
+  let dbDesign;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if ((0, import_fs8.existsSync)(p)) dbDesign = (0, import_fs8.readFileSync)(p, "utf8");
+  } catch {
+  }
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const r of [
@@ -10042,7 +10124,8 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
-    checkTestlistMigrationRevision(testListJson)
+    checkTestlistMigrationRevision(testListJson),
+    checkSchemaChangeOrphan(testListJson, dbDesign)
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);

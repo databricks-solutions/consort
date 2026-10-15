@@ -299,6 +299,9 @@ export class LiveSource implements DashboardSource {
     // with the LIVE recentEvents tail the ticker maps positionally.
     const byLiveIndex = new Map<number, number>();
     for (const p of report.pairings) byLiveIndex.set(base + p.eventIndex, p.turnOrdinal);
+    // Gate pairings too, so a HITL gate's event row shows its #ordinal in the ticker (the planning +
+    // deploy/promote gates the invoke-role cursor never numbers). Same index shift into live-log space.
+    for (const p of report.gatePairings) byLiveIndex.set(base + p.eventIndex, p.turnOrdinal);
     const start = Math.max(0, at - recentCount);
     const recentTurns: (number | null)[] = [];
     for (let i = start; i < at; i++) recentTurns.push(byLiveIndex.get(i) ?? null);

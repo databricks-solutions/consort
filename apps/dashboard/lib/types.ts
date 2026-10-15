@@ -461,6 +461,7 @@ export interface DashboardState {
     // is "not yet run THIS pass" (uninvoked), even if it ran in a prior loop.
     reachedThisPass: string[];
     laneCurrent: { lane: string; step: string } | null; // sub-step lit at the playhead
+    laneGate: string | null; // the GATE/checkpoint step id the playhead is parked AT (glows the card)
     atTimestamp: string | null; // timestamp of the event at the playhead, for the clock
   };
 }

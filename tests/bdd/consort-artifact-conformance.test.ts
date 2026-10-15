@@ -22,6 +22,9 @@ import {
   checkE2ECoverage,
   checkJsdomBrowserAssertion,
   checkPersistenceCoverage,
+  checkSchemaChangeOrphan,
+  checkSchemaChangeCoverage,
+  checkApiContractConsistency,
   checkInvariantCoverageDistinct,
   invariantRealizingStory,
   checkSchemaChangeStoryRealizes,
@@ -867,6 +870,139 @@ describe("checkPersistenceCoverage (Gate 3: DB coverage tied to the schema's dec
   it("EXEMPTS a non-service-backed feature", () => {
     const trivial = JSON.stringify({ feature_id: "F1-x", nfrs: [] });
     expect(checkPersistenceCoverage(tl([{ id: "T1", description: "x", ac_id: "AC1", status: "pending" }]), trivial).ok).toBe(true);
+  });
+});
+
+describe("checkSchemaChangeOrphan (F1 pre-reflect: a test may only assert a schema_change the DBA planned)", () => {
+  const db = (changes: object[]) => JSON.stringify({ feature_id: "F1-x", tables: [], schema_changes: changes });
+  const tl = (items: object[]) => JSON.stringify({ feature_id: "F1-x", items });
+  const ledger = [
+    { id: "SC1-create-stock-records", story_id: "S1", kind: "create_table", table: "stock_records", detail: "create" },
+  ];
+  it("FLAGS a test referencing a schema_change_id the DBA never planned (the T31/T32 index-not-committed defect)", () => {
+    const r = checkSchemaChangeOrphan(
+      tl([
+        { id: "T30", description: "list by location", ac_id: "AC1", status: "pending", kind: "behavior" },
+        { id: "T31", description: "add-location-index migration reverses", ac_id: "AC1", status: "pending", kind: "fitness", schema_change_id: "SC4-add-location-sku-index" },
+      ]),
+      db(ledger),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/T31/);
+      expect(r.violations.join(" ")).toMatch(/SC4-add-location-sku-index/);
+      expect(r.acIds).toContain("AC1"); // scoped to the AC for a targeted revise
+    }
+  });
+  it("passes when every test's schema_change_id matches a planned ledger entry", () => {
+    const r = checkSchemaChangeOrphan(
+      tl([{ id: "T5", description: "create_table reverses", ac_id: "AC1", status: "pending", kind: "fitness", schema_change_id: "SC1-create-stock-records" }]),
+      db(ledger),
+    );
+    expect(r).toEqual({ ok: true });
+  });
+  it("is VACUOUS on a legacy un-id'd ledger (back-compat: enforces only once the DBA emits schema_changes ids)", () => {
+    const unidd = JSON.stringify({ feature_id: "F1-x", schema_changes: [{ story_id: "S1", kind: "add_index", table: "stock_records", detail: "idx" }] });
+    const r = checkSchemaChangeOrphan(
+      tl([{ id: "T31", description: "x", ac_id: "AC1", status: "pending", kind: "fitness", schema_change_id: "SC4-add-location-sku-index" }]),
+      unidd,
+    );
+    expect(r).toEqual({ ok: true });
+  });
+  it("ignores tests with no schema_change_id, and is vacuous when db-design is absent", () => {
+    expect(checkSchemaChangeOrphan(tl([{ id: "T1", description: "x", ac_id: "AC1", status: "pending", kind: "behavior" }]), db(ledger))).toEqual({ ok: true });
+    expect(checkSchemaChangeOrphan(tl([{ id: "T1", description: "x", ac_id: "AC1", status: "pending", kind: "fitness", schema_change_id: "SC1-create-stock-records" }]), undefined)).toEqual({ ok: true });
+  });
+});
+
+describe("checkSchemaChangeCoverage (F1 Gate 3: every test-worthy DBA schema_change is asserted)", () => {
+  const db = (changes: object[]) => JSON.stringify({ feature_id: "F1-x", tables: [], schema_changes: changes });
+  const tl = (items: object[]) => JSON.stringify({ feature_id: "F1-x", items });
+  it("FLAGS a committed add_index with no covering test (closes the 'index ships untested' gap)", () => {
+    const r = checkSchemaChangeCoverage(
+      tl([{ id: "T5", description: "create reverses", ac_id: "AC1", status: "pending", kind: "fitness", schema_change_id: "SC1-create-stock-records" }]),
+      db([
+        { id: "SC1-create-stock-records", story_id: "S1", kind: "create_table", table: "stock_records", detail: "create" },
+        { id: "SC4-add-location-sku-index", story_id: "S2", kind: "add_index", table: "stock_records", detail: "idx (location, sku)" },
+      ]),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.join(" ")).toMatch(/SC4-add-location-sku-index/);
+  });
+  it("passes when every test-worthy change is covered", () => {
+    const r = checkSchemaChangeCoverage(
+      tl([
+        { id: "T5", description: "create reverses", ac_id: "AC1", status: "pending", kind: "fitness", schema_change_id: "SC1-create-stock-records" },
+        { id: "T6", description: "index exists + used", ac_id: "AC2", status: "pending", kind: "fitness", schema_change_id: "SC4-add-location-sku-index" },
+      ]),
+      db([
+        { id: "SC1-create-stock-records", story_id: "S1", kind: "create_table", table: "stock_records", detail: "create" },
+        { id: "SC4-add-location-sku-index", story_id: "S2", kind: "add_index", table: "stock_records", detail: "idx" },
+      ]),
+    );
+    expect(r).toEqual({ ok: true });
+  });
+  it("does NOT require coverage for a non-test-worthy kind (add_column / alter_column ride the AC's own tests)", () => {
+    const r = checkSchemaChangeCoverage(
+      tl([{ id: "T1", description: "x", ac_id: "AC1", status: "pending", kind: "behavior" }]),
+      db([{ id: "SC9-add-note-column", story_id: "S3", kind: "add_column", table: "stock_records", detail: "note" }]),
+    );
+    expect(r).toEqual({ ok: true });
+  });
+  it("is VACUOUS on a legacy un-id'd ledger", () => {
+    const unidd = JSON.stringify({ feature_id: "F1-x", schema_changes: [{ story_id: "S1", kind: "add_index", table: "stock_records", detail: "idx" }] });
+    expect(checkSchemaChangeCoverage(tl([]), unidd)).toEqual({ ok: true });
+  });
+});
+
+describe("checkApiContractConsistency (F2: single-source each endpoint's response shape)", () => {
+  const arch = (contracts: object[]) => JSON.stringify({ feature_id: "F1-x", service_backed: true, nfrs: [], api_contracts: contracts });
+  const ac = (o: object) => JSON.stringify(o);
+  const listSku = { id: "EP1-list-stock-by-sku", method: "GET", path: "/api/stock", query: ["sku"], shape: "list", item: "stock-record: {sku, location, par_level|null}" };
+  it("passes when ACs reference a single-sourced contract (the fixed S3 par_level shape)", () => {
+    const r = checkApiContractConsistency(
+      arch([listSku]),
+      [
+        ac({ id: "AC1-lists-across-locations", api_contract_id: "EP1-list-stock-by-sku" }),
+        ac({ id: "AC3-par-level-not-tracked", api_contract_id: "EP1-list-stock-by-sku" }),
+        ac({ id: "AC4-empty-state", api_contract_id: "EP1-list-stock-by-sku" }),
+      ],
+    );
+    expect(r).toEqual({ ok: true });
+  });
+  it("FLAGS the same endpoint declared with conflicting shapes (the S3 envelope-vs-bare-list contradiction, made impossible)", () => {
+    const r = checkApiContractConsistency(
+      arch([
+        { id: "EP1-a", method: "GET", path: "/api/stock", query: ["sku"], shape: "list" },
+        { id: "EP1-b", method: "GET", path: "/api/stock", query: ["sku"], shape: "object" },
+      ]),
+      [],
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.join(" ")).toMatch(/conflicting response shapes.*list vs object|list vs object/);
+  });
+  it("FLAGS an AC referencing an undeclared endpoint (and scopes to the AC)", () => {
+    const r = checkApiContractConsistency(arch([listSku]), [ac({ id: "AC9-x", api_contract_id: "EP7-ghost" })]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/EP7-ghost/);
+      expect(r.acIds).toContain("AC9-x");
+    }
+  });
+  it("ignores ACs with no api_contract_id, and is VACUOUS when no api_contracts are declared (back-compat)", () => {
+    expect(checkApiContractConsistency(arch([listSku]), [ac({ id: "AC2-ui-only" })])).toEqual({ ok: true });
+    expect(checkApiContractConsistency(JSON.stringify({ feature_id: "F1-x", nfrs: [] }), [ac({ id: "AC1", api_contract_id: "EP1-x" })])).toEqual({ ok: true });
+  });
+  it("does NOT flag two DISTINCT endpoints on the same path with the same shape, nor a different path", () => {
+    const r = checkApiContractConsistency(
+      arch([
+        { id: "EP1-list-all", method: "GET", path: "/api/stock", shape: "list" },
+        { id: "EP2-list-by-sku", method: "GET", path: "/api/stock", query: ["sku"], shape: "list" },
+        { id: "EP3-get-one", method: "GET", path: "/api/skus/{sku}", shape: "object" },
+      ]),
+      [],
+    );
+    expect(r).toEqual({ ok: true });
   });
 });
 

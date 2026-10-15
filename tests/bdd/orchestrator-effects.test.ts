@@ -1127,10 +1127,19 @@ describe("commandsForAction: promote phase (PR review + merge to parent)", () =>
     // to overwrite those tracked-churny files. The switch must land on the parent
     // regardless (the fork-guard ignores the same metadata).
     expect(cmds[0]).toEqual({ kind: "cli", bin: "git", args: ["checkout", "-f", "staging"] });
+    // Fast-forward local staging to origin/staging AFTER the server-side (squash) PR
+    // merge: the force-checkout above lands on the STALE pre-merge commit, so pull the
+    // merged state (incl. the feature's migration) so the next sprint doesn't plan on
+    // stale code. Best-effort (|| true) — the merge already landed remotely.
+    expect(cmds[1]).toEqual({
+      kind: "cli",
+      bin: "sh",
+      args: ["-c", `git fetch origin 'staging' && git merge --ff-only 'origin/staging' 2>/dev/null || true`],
+    });
     // The local feature-branch delete: non-fatal (|| true) so an already-gone
     // branch on a resume does not fail the terminal step; -D because a PR-merged
     // branch is not a literal ancestor of the parent tip.
-    expect(cmds[1]).toEqual({
+    expect(cmds[2]).toEqual({
       kind: "cli",
       bin: "sh",
       args: ["-c", `git branch -D 'feature-f6' 2>/dev/null || true`],
@@ -1138,11 +1147,16 @@ describe("commandsForAction: promote phase (PR review + merge to parent)", () =>
     expect(cmds[cmds.length - 1]).toMatchObject({ kind: "set-phase", phase: "shipped" });
   });
 
+  /** True iff `cmds` contains the local feature-branch delete step (an `sh` running
+   *  `git branch -D`). Distinct from the always-present fast-forward `sh` step. */
+  const hasBranchDelete = (cmds: ReturnType<typeof commandsForAction>) =>
+    cmds.some((c) => c.kind === "cli" && c.bin === "sh" && typeof c.args?.[1] === "string" && c.args[1].includes("branch -D"));
+
   it("done switches to the parent but does NOT emit a branch delete when the feature branch is unknown", () => {
     const cmds = commandsForAction({ kind: "done" }, cfg({ parentBranch: "staging" }));
     expect(cmds[0]).toEqual({ kind: "cli", bin: "git", args: ["checkout", "-f", "staging"] });
-    // No sh branch-delete command when featureBranch is unset.
-    expect(cmds.some((c) => c.kind === "cli" && c.bin === "sh")).toBe(false);
+    // The fast-forward sh IS present (parent known), but NO branch-delete when featureBranch is unset.
+    expect(hasBranchDelete(cmds)).toBe(false);
     expect(cmds[cmds.length - 1]).toMatchObject({ kind: "set-phase", phase: "shipped" });
   });
 
@@ -1151,7 +1165,7 @@ describe("commandsForAction: promote phase (PR review + merge to parent)", () =>
       { kind: "done" },
       cfg({ parentBranch: "staging", featureBranch: "staging" }),
     );
-    expect(cmds.some((c) => c.kind === "cli" && c.bin === "sh")).toBe(false);
+    expect(hasBranchDelete(cmds)).toBe(false);
   });
 
   it("done emits ONLY the set-phase when the parent tier is unknown (no SCM state)", () => {

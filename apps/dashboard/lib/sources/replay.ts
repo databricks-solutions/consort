@@ -511,7 +511,9 @@ export class ReplaySource implements DashboardSource {
     // Align turn ordinals to the same tail the fold ships as `recentEvents`, so the client can
     // index the two together without computing absolute positions itself.
     const start = Math.max(0, at - recentCount);
-    const byEvent = new Map(r.pairings.map((p) => [p.eventIndex, p.turnOrdinal]));
+    // Include gate pairings so a HITL gate's event row shows its #ordinal (the planning + deploy/
+    // promote gates the invoke-role cursor never numbers), independent of the correspondence stream.
+    const byEvent = new Map([...r.pairings, ...r.gatePairings].map((p) => [p.eventIndex, p.turnOrdinal]));
     const recentTurns: (number | null)[] = [];
     for (let i = start; i < at; i++) recentTurns.push(byEvent.get(i) ?? null);
 

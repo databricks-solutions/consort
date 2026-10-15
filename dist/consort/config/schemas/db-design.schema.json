@@ -92,6 +92,11 @@
         "required": ["story_id", "kind", "table", "detail"],
         "additionalProperties": false,
         "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^SC[0-9]+(-[a-z0-9-]+)?$",
+            "description": "Stable id for this schema change, e.g. \"SC1-create-stock-records\", \"SC4-add-location-sku-index\". A test-list item that asserts THIS change (a migration-reversibility fitness test, an index/constraint assertion) references it via test-list.json schema_change_id, so the deterministic test-list gate reconciles the two: a test referencing a non-existent change is an orphan (route the test-strategist to drop/fix it), and every change of a test-worthy kind (create_table, add_index, add_constraint) must be covered by >=1 referencing test at the finalized test_list gate. This is the DBA's structured decision ledger — the authority a schema/migration test is judged against (NOT the architect's non-committal access_patterns nudge)."
+          },
           "story_id": { "type": "string" },
           "kind": {
             "type": "string",

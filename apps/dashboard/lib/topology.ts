@@ -7,7 +7,7 @@
 // human-decided and fail closed.
 
 import type { AgentLogEvent, LaneStepMeta, Role } from "./types";
-import { GATE_KEY_BY_NODE } from "./gates";
+import { GATE_KEY_BY_NODE, GATE_STEP_BY_KEY } from "./gates";
 // One definition of "which feature does this event belong to", shared with the story
 // derivation. derive.ts does not import this module, so there is no cycle.
 import { featureIdOf } from "./derive";
@@ -45,6 +45,11 @@ export interface StepMatch {
   // the deploy lane, whose deterministic steps light off specific orchestrator events
   // (deploy.start / deploy.verified) rather than a role+phase the way the LLM-agent lanes do.
   event?: string;
+  // Like `event` but a SET: the event name must equal one of these (decided alone). An exact-event
+  // match (event / eventAny) is MORE SPECIFIC than a role match, so laneStepForEvent prefers it — e.g.
+  // the driver's `cycle.verified` (the build-cycle GREEN verify) lights the Verify step (b-verify) over
+  // the Driver step (b-green, role:driver) that also matches a bare driver event.
+  eventAny?: string[];
   // Additional AND-constraint: the event MESSAGE must contain this substring. The promote sub-steps
   // (prepare-pr / wait-ci / merge) emit no distinct event NAME — only the orchestrator's per-action
   // `reasoning` narration ("orchestrator: <kind>") — so they share phaseAny:["promote"] and are
@@ -64,9 +69,13 @@ export interface LaneStep {
   gate?: boolean;
   branch?: boolean; // a fail/side path rather than the happy path
   escalation?: boolean; // a terminal raise-to-HIL node (critical, no single owner)
-  // An OUTER-LOOP step: it runs ONCE per feature, not per story (the design lane's "break into stories"
-  // breakdown). Its turn is story-less, so the per-story round scoping (reachedThisPass + the active-story
-  // turn filter) must NOT apply — its result is always shown regardless of which story's round is in view.
+  // A STORY-LESS step: its turn is per-feature or per-sprint, NOT per story — the design lane's "break
+  // into stories" breakdown, AND every sprint-PLANNING step (propose / estimate / intake / establish /
+  // author-requests), which all run before any story exists. Because the turn is story-less, the per-story
+  // round scoping (reachedThisPass + the active-story turn filter in stepTurnOrdinal) must NOT apply — its
+  // result resolves + shows regardless of which story's round is in view. Without this flag, once a story
+  // goes active the card looks up `<step>|<story>` and misses its real `<step>|` turn, so the early plan
+  // cards open empty while a later story is designing (the breakdown card worked only because it set it).
   outerLoop?: boolean;
   match: StepMatch | null; // null = never lit from an event (human-decided gates)
 }
@@ -317,6 +326,7 @@ const PLAN_LANE: Lane = {
   steps: [
     {
       id: "p-intake",
+      outerLoop: true, // story-less (sprint-planning turn): resolve under `p-intake|`, not `p-intake|<story>`
       role: "product-owner",
       label: "Product owner",
       sub: "intake: overview/nfrs",
@@ -331,6 +341,7 @@ const PLAN_LANE: Lane = {
       // (design-guide.json) + the initial ia.md skeleton are approved WITH the brief they derive
       // from. A planning-lane step (no new gate); its sibling is the per-story d-ux-ia refinement.
       id: "p-ux-establish",
+      outerLoop: true, // story-less (project-level establish): resolve under `p-ux-establish|`
       role: "ux-designer",
       label: "UX designer",
       sub: "establish style + IA",
@@ -350,6 +361,7 @@ const PLAN_LANE: Lane = {
     },
     {
       id: "p-propose",
+      outerLoop: true, // story-less (sprint-planning turn): resolve under `p-propose|`, not `p-propose|<story>`
       role: "spec-author",
       label: "Spec author",
       sub: "propose features",
@@ -357,6 +369,7 @@ const PLAN_LANE: Lane = {
     },
     {
       id: "p-size",
+      outerLoop: true, // story-less (sprint-planning turn): resolve under `p-size|`, not `p-size|<story>`
       role: "architect-reviewer",
       label: "Architect",
       sub: "t-shirt sizing (estimate)",
@@ -379,6 +392,7 @@ const PLAN_LANE: Lane = {
       // turn (phase author-requests), which is why it reads in the PO's colour and shows its elapsed.
       // It lights from the author-requests turn.
       id: "p-req",
+      outerLoop: true, // story-less (per-feature author-requests turn): resolve under `p-req|`
       role: "product-owner",
       label: "Product owner",
       sub: "author requests",
@@ -532,15 +546,18 @@ const BUILD_LANE: Lane = {
     },
     {
       id: "b-verify",
-      // VERIFY (build-cycle AND deploy) is release work, so the dashboard attributes it to the
-      // release-engineer for lane colouring. It keeps its verify-prefix match, so it still lights
-      // from events and `isHumanGate` stays false — it takes the release-engineer's light-blue, not
-      // the purple human-gate colour.
+      // The build-cycle GREEN VERIFY — the honest-GREEN check that runs BETWEEN the Driver's GREEN and
+      // the Navigator's REVIEW, logged as the Driver's `cycle.verified`. VERIFY is release work, so the
+      // card takes the release-engineer's light-blue (role is for COLOUR only; `isHumanGate` stays false
+      // — no gate KEY — so it never goes purple). It matches `cycle.verified` ALONE via `eventAny` (so the
+      // exact-event match wins over b-green/role:driver, which was swallowing it). It deliberately does
+      // NOT match the release-engineer's SEPARATE pre-acceptance deploy `verify.passed` (a later stage,
+      // after REVIEW, at await-acceptance) — that must not light this between-green-and-review card.
       role: "release-engineer",
       label: "Verify",
       sub: "run vs real branch",
       gate: true,
-      match: { eventPrefix: "verify" },
+      match: { eventAny: ["cycle.verified"] },
     },
     {
       id: "b-review",
@@ -832,6 +849,11 @@ export function matchesStep(m: StepMatch | null, e: AgentLogEvent): boolean {
   // Exact event-name match, decided alone (the deploy lane lights dp-deploy / dp-verify off specific
   // orchestrator events).
   if (m.event) return e.event === m.event;
+  // Exact event-name in a SET, decided ALONE (never falls through to a role check): b-verify lights off
+  // the Driver's build-cycle GREEN verify `cycle.verified` ONLY — NOT the release-engineer's deploy
+  // `verify.passed`, which must not re-match it via b-verify's role:release-engineer (that role is for
+  // COLOUR only here, not matching).
+  if (m.eventAny) return m.eventAny.includes(e.event);
 
   // eventPrefix: the event NAME starts with it. When the step ALSO declares a role/phase, treat the
   // two as an OR – the step matches by event name (e.g. p-intake on the seed's `intake.supplied`) OR
@@ -909,6 +931,17 @@ const GATE_STEP_IDS: ReadonlySet<string> = new Set(
 // event lights, or null. First match wins.
 export function laneStepForEvent(e: AgentLogEvent | null | undefined): LaneHit | null {
   if (!e) return null;
+  // PASS 1 — exact-event matches (m.event / m.eventAny) win regardless of lane/step order, because an
+  // exact event name is MORE SPECIFIC than a role/phase match. This is why the driver's `cycle.verified`
+  // (the build-cycle GREEN verify) lights the Verify step (b-verify, eventAny) rather than the Driver
+  // step (b-green, role:driver, declared earlier) that also matches a bare driver event.
+  for (const lane of LANE_IDS) {
+    for (const s of WORKFLOW.lanes[lane].steps) {
+      const m = s.match;
+      if (m && (m.event === e.event || (m.eventAny && m.eventAny.includes(e.event)))) return { lane, step: s.id };
+    }
+  }
+  // PASS 2 — the general first-match (eventPrefix / role / phase / buildMode).
   for (const lane of LANE_IDS) {
     for (const s of WORKFLOW.lanes[lane].steps) {
       if (matchesStep(s.match, e)) return { lane, step: s.id };
@@ -1106,6 +1139,16 @@ export interface LaneProgress {
   last: Record<LaneId, string | null>;
   // the step the final folded event lights — the "playhead" step
   current: LaneHit | null;
+  // The GATE/checkpoint step the playhead is parked AT (step id), for lane-card glow — distinct from
+  // `current` (which excludes gate steps for the focus=step path). This is what the run has ARRIVED at:
+  //   (a) the playhead IS a gate.surfaced/approved/rejected event → the gate it names (GATE_STEP_BY_KEY);
+  //   (b) the playhead maps to a gate STEP that `current` nulled (the per-story release-engineer verify
+  //       `b-verify`, whose deploy/verify work IS the current locus).
+  // It glows the right card for the ship/verify gates that never become a parked `pendingGate` (the
+  // one-turn deploy/promote gates emit no surface→approve window; the per-story verify runs while the
+  // acceptance gate stays open), and it TAKES PRECEDENCE over the lingering pendingGate glow so the
+  // open-but-not-current acceptance gate doesn't steal the glow from the step the run is actually at.
+  currentGate: string | null;
 }
 
 /**
@@ -1152,7 +1195,25 @@ export function laneProgress(events: AgentLogEvent[], upTo?: number, feature?: s
       : null;
   const current: LaneHit | null = hit && !GATE_STEP_IDS.has(hit.step) ? hit : null;
 
-  return { done, last, current };
+  // The gate/checkpoint step the playhead is parked AT (see LaneProgress.currentGate). (a) a
+  // gate.surfaced/approved/rejected event names its gate → that gate's lane step; (b) otherwise a
+  // work event that maps to a gate step (`hit` above, which `current` nulled) — the per-story verify.
+  let currentGate: string | null = null;
+  if (playhead) {
+    if (
+      playhead.event === "gate.surfaced" ||
+      playhead.event === "gate.approved" ||
+      playhead.event === "gate.rejected"
+    ) {
+      const gname = (playhead.metadata as Record<string, unknown> | undefined)?.gate;
+      if (typeof gname === "string") currentGate = GATE_STEP_BY_KEY[gname] ?? null;
+    } else {
+      const gateHit = laneStepForEvent(playhead);
+      if (gateHit && GATE_STEP_IDS.has(gateHit.step)) currentGate = gateHit.step;
+    }
+  }
+
+  return { done, last, current, currentGate };
 }
 
 // An edge is complete when both of its endpoints have been reached.

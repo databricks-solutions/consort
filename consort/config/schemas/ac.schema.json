@@ -49,7 +49,12 @@
     },
     "architectural_notes": {
       "type": "string",
-      "description": "Layer assignment rationale, cross-cutting concerns touched, owner module."
+      "description": "Layer assignment rationale, cross-cutting concerns touched, owner module. Do NOT re-describe an API endpoint's response SHAPE here — that is single-sourced in architecture.json api_contracts[], referenced via api_contract_id, so two ACs of one story cannot disagree on it."
+    },
+    "api_contract_id": {
+      "type": "string",
+      "pattern": "^EP[0-9]+(-[a-z0-9-]+)?$",
+      "description": "For an AC that asserts an API response: the id of the architecture.json api_contracts[] entry whose response shape this AC exercises (e.g. \"EP1-list-stock-by-sku\"). The architect declares the endpoint's shape ONCE there and every AC touching it references it, so the shape (bare list vs envelope, per-field nullability) is single-sourced and cannot contradict across a story's ACs. checkApiContractConsistency flags an api_contract_id that names no declared endpoint, or two endpoints declared with the same (method, path) but a different shape. Omit for a non-API (pure UI/Infra) AC."
     },
     "ui_seams": {
       "type": "array",

@@ -4,7 +4,8 @@
   "agent": { "kind": "claude", "config": { "role": "driver" } },
   "match": { "kind": "invoke-role", "role": "driver", "buildMode": null },
   "inputs": [
-    { "id": "test-list", "source": "story:test-list-per-story.json", "description": "The story's ordered failing tests the Driver makes GREEN (story-level, or per-AC when the action carries an `ac`)." }
+    { "id": "test-list", "source": "story:test-list-per-story.json", "description": "The story's ordered failing tests the Driver makes GREEN (story-level, or per-AC when the action carries an `ac`)." },
+    { "id": "architecture", "source": "feature:features/{feature}/architecture.json", "optional": true, "description": "The layering contract to build to ON THE FIRST PASS, not refactor into afterward: `layers[]` (role -> exact `module` path; the route/boundary delegates to a service, the service to a repository, and ONLY the repository touches the ORM/session) and `api_contracts[]` (each endpoint's single-sourced response `shape` + `item` the Driver implements the boundary against). Building layering-clean + to the declared response shape up front makes the REVIEW gate a confirmation, not a refactor trigger (the S1 layering/Base-location refactor lap). {feature} expands to the run's feature id." }
   ],
   "outputs": [
     { "id": "code", "filename": "app", "channel": "product", "validator": "driverCodePresent", "description": "The PRODUCT code the Driver wrote at the project root to make the RED pass (app/ , the primary in-turn produced signal). The real correctness gate is the post-turn @build-cycle honest-GREEN verify (alembic upgrade + the project's tests against a live branch), which flips codeWritten , this floor just proves the driver produced code." },

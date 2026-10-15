@@ -1881,6 +1881,166 @@ export function checkTestlistMigrationRevision(testListJson: string): Conformanc
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
+/** The db-design.json schema_changes[] kinds that WARRANT a dedicated test: a
+ *  structural change whose correctness a test-list item should assert (the migration
+ *  round-trips reversibly; the index/constraint exists + behaves). add_column /
+ *  alter_column ride the AC's own behavioral tests, not a dedicated schema assertion. */
+const TEST_WORTHY_SCHEMA_CHANGE_KINDS = new Set(["create_table", "add_index", "add_constraint"]);
+
+/** The id'd schema_changes[] from db-design.json as `{ id -> kind }`, for every entry
+ *  that carries a stable id. Empty when db-design is absent/invalid or no entry is id'd
+ *  (a legacy, un-id'd ledger) — which keeps the schema-change checks VACUOUS on
+ *  back-compat corpora (they enforce only once the DBA emits ids per db-design.schema.json). */
+function idedSchemaChanges(dbDesignJson: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!dbDesignJson) return out;
+  try {
+    const db = JSON.parse(dbDesignJson) as { schema_changes?: Array<{ id?: string; kind?: string }> };
+    for (const sc of db.schema_changes ?? []) {
+      if (sc && typeof sc.id === "string" && sc.id.length > 0 && typeof sc.kind === "string") out.set(sc.id, sc.kind);
+    }
+  } catch {
+    /* invalid db-design reported by checkDbDesign */
+  }
+  return out;
+}
+
+/**
+ * PRE-REFLECT orphan check (structural): a test-list item whose `schema_change_id`
+ * references a schema_changes[] entry the DBA did NOT plan. This is the exact F1
+ * defect — the test-strategist authored a migration test (T31/T32) for an index the
+ * architect only "weighed" and the DBA never committed to the ledger — caught here,
+ * deterministically, routed to the test-strategist to drop/fix it, BEFORE the LLM
+ * reflect ever judges it against the architect's non-committal access_patterns nudge
+ * (the wrong authority). The DBA's schema_changes ledger is the authority: a test may
+ * only assert a change the DBA actually planned. Vacuous when the ledger is un-id'd
+ * (legacy) or no item carries a schema_change_id, so existing corpora are unaffected.
+ */
+export function checkSchemaChangeOrphan(testListJson: string, dbDesignJson: string | undefined): ConformanceResult {
+  const planned = idedSchemaChanges(dbDesignJson);
+  if (planned.size === 0) return { ok: true }; // un-id'd ledger: nothing to reconcile against
+  let tl: { items?: Array<{ id?: string; ac_id?: string; schema_change_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const it of tl.items ?? []) {
+    const ref = it.schema_change_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    if (!planned.has(ref)) {
+      violations.push(
+        `test item ${it.id ?? "?"} references schema_change_id "${ref}", which is NOT a planned db-design.json ` +
+          `schema_changes[] entry (the DBA did not commit that change). A migration/schema test may only assert a ` +
+          `change the DBA planned: either DROP this test (it asserts a schema change that does not ship) or, if the ` +
+          `change SHOULD ship, the DBA must add it to schema_changes[] first (the DBA owns the schema ledger — the ` +
+          `architect's access_patterns are a non-committal nudge, not the authority).`,
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
+ * FINALIZED-test-list coverage check (completeness; runs at the downstream test_list
+ * gate alongside checkPersistenceCoverage, NOT pre-reflect — scenario coverage is still
+ * being assigned at reflect time): every db-design.json schema_changes[] entry of a
+ * test-worthy kind (create_table / add_index / add_constraint) must be referenced by
+ * >=1 test-list item's `schema_change_id`. Closes the gap where a committed index or
+ * constraint ships with NO reversibility/assertion test. Vacuous on an un-id'd ledger.
+ */
+export function checkSchemaChangeCoverage(testListJson: string, dbDesignJson: string | undefined): ConformanceResult {
+  const planned = idedSchemaChanges(dbDesignJson);
+  if (planned.size === 0) return { ok: true };
+  const testWorthy = [...planned.entries()].filter(([, kind]) => TEST_WORTHY_SCHEMA_CHANGE_KINDS.has(kind)).map(([id]) => id);
+  if (testWorthy.length === 0) return { ok: true };
+  let tl: { items?: Array<{ schema_change_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const covered = new Set((tl.items ?? []).map((i) => i.schema_change_id).filter((x): x is string => typeof x === "string" && x.length > 0));
+  const uncovered = testWorthy.filter((id) => !covered.has(id));
+  if (uncovered.length > 0) {
+    return {
+      ok: false,
+      violations: [
+        `schema_changes[] entr(y/ies) with no covering test-list item (schema_change_id): ${uncovered.join(", ")} ` +
+          `(a create_table / add_index / add_constraint the DBA committed needs >=1 test asserting it — a migration ` +
+          `reversibility round-trip, or the index/constraint's behavior against the real branch; see test-strategy.md)`,
+      ],
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * F2 single-source guard: the architect declares each API endpoint's response SHAPE
+ * once in architecture.json api_contracts[], and every AC that asserts an API response
+ * references it via api_contract_id instead of re-describing the shape in prose. This
+ * makes the S3 defect — AC3's notes claiming a top-level `par_level:null` envelope while
+ * AC1/AC4 said a bare list, a self-contradiction the LLM reflect had to catch + bounce —
+ * impossible by construction (one declaration). This check is the backstop that the
+ * single-sourcing is honored: (1) the architect's own ledger is self-consistent — no two
+ * contracts for the same (method, path, query) with a DIFFERENT shape; (2) no AC
+ * references an undeclared endpoint. Vacuous when no api_contracts are declared (a
+ * feature with no API surface, or a legacy architecture), so existing corpora are
+ * unaffected until the architect adopts the contract.
+ */
+export function checkApiContractConsistency(architectureJson: string, acJsons: string[]): ConformanceResult {
+  let arch: { api_contracts?: Array<{ id?: string; method?: string; path?: string; query?: string[]; shape?: string }> };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true }; // invalid architecture reported elsewhere
+  }
+  const contracts = (arch.api_contracts ?? []).filter((c) => c && typeof c.id === "string" && c.id.length > 0);
+  if (contracts.length === 0) return { ok: true };
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  const idSet = new Set<string>();
+  const shapesByEndpoint = new Map<string, Set<string>>();
+  for (const c of contracts) {
+    idSet.add(c.id as string);
+    const q = Array.isArray(c.query) && c.query.length ? "?" + [...c.query].sort().join("&") : "";
+    const key = `${c.method ?? "?"} ${c.path ?? "?"}${q}`;
+    const shapes = shapesByEndpoint.get(key) ?? new Set<string>();
+    if (typeof c.shape === "string") shapes.add(c.shape);
+    shapesByEndpoint.set(key, shapes);
+  }
+  for (const [key, shapes] of shapesByEndpoint) {
+    if (shapes.size > 1) {
+      violations.push(
+        `endpoint ${key} is declared with conflicting response shapes (${[...shapes].join(" vs ")}) across ` +
+          `api_contracts[] — an endpoint has ONE top-level response shape; declare it exactly once so the ACs that ` +
+          `reference it cannot disagree (the S3 par_level envelope-vs-bare-list contradiction).`,
+      );
+    }
+  }
+  for (const acJson of acJsons) {
+    let ac: { id?: string; api_contract_id?: string };
+    try {
+      ac = JSON.parse(acJson);
+    } catch {
+      continue; // a malformed AC is reported by the acs-conformance gate
+    }
+    const ref = ac.api_contract_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    if (!idSet.has(ref)) {
+      violations.push(
+        `AC ${ac.id ?? "?"} references api_contract_id "${ref}", which is not a declared architecture.json ` +
+          `api_contracts[] entry (declare the endpoint there, or fix the reference — the shape is single-sourced there, not in the AC).`,
+      );
+      if (typeof ac.id === "string") acIds.add(ac.id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
 export function checkClientKindLayerCoherence(testListJson: string, acLayerById: Record<string, string>): ConformanceResult {
   let tl: { items?: Array<{ id?: string; kind?: string; ac_id?: string }> };
   try {

@@ -8151,7 +8151,8 @@ var driver_green_default = {
   agent: { kind: "claude", config: { role: "driver" } },
   match: { kind: "invoke-role", role: "driver", buildMode: null },
   inputs: [
-    { id: "test-list", source: "story:test-list-per-story.json", description: "The story's ordered failing tests the Driver makes GREEN (story-level, or per-AC when the action carries an `ac`)." }
+    { id: "test-list", source: "story:test-list-per-story.json", description: "The story's ordered failing tests the Driver makes GREEN (story-level, or per-AC when the action carries an `ac`)." },
+    { id: "architecture", source: "feature:features/{feature}/architecture.json", optional: true, description: "The layering contract to build to ON THE FIRST PASS, not refactor into afterward: `layers[]` (role -> exact `module` path; the route/boundary delegates to a service, the service to a repository, and ONLY the repository touches the ORM/session) and `api_contracts[]` (each endpoint's single-sourced response `shape` + `item` the Driver implements the boundary against). Building layering-clean + to the declared response shape up front makes the REVIEW gate a confirmation, not a refactor trigger (the S1 layering/Base-location refactor lap). {feature} expands to the run's feature id." }
   ],
   outputs: [
     { id: "code", filename: "app", channel: "product", validator: "driverCodePresent", description: "The PRODUCT code the Driver wrote at the project root to make the RED pass (app/ , the primary in-turn produced signal). The real correctness gate is the post-turn @build-cycle honest-GREEN verify (alembic upgrade + the project's tests against a live branch), which flips codeWritten , this floor just proves the driver produced code." },
@@ -8920,6 +8921,11 @@ function orchestratorLogEvents(action, ctx = {}) {
   const story = storyOf(action);
   const base = { role: "orchestrator", level: "info", feature_id };
   const withStory = story ? { story } : {};
+  const surfacedThenApproved = (gate) => {
+    const surfaced = parkedGateSurfacedEvent(action, ctx);
+    const approved = { ...base, event: "gate.approved", slots: { gate } };
+    return surfaced ? [surfaced, approved] : [approved];
+  };
   switch (action.kind) {
     case "invoke-role": {
       const role = action.role;
@@ -8943,15 +8949,15 @@ function orchestratorLogEvents(action, ctx = {}) {
     case "approve-gate":
       return [{ ...base, event: "gate.approved", slots: { gate: "spec", ...withStory } }];
     case "approve-intake-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "intake" } }];
+      return surfacedThenApproved("intake");
     case "approve-backlog-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "backlog" } }];
+      return surfacedThenApproved("backlog");
     case "approve-plan-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "plan" } }];
+      return surfacedThenApproved("plan");
     case "approve-deploy-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "deploy" } }];
+      return surfacedThenApproved("deploy");
     case "approve-promote-gate":
-      return [{ ...base, event: "gate.approved", slots: { gate: "promote" } }];
+      return surfacedThenApproved("promote");
     case "deploy-complete":
       return [{ role: "release-engineer", level: "info", feature_id, event: "phase.start", slots: { phase: "promote" } }];
     case "accept":
@@ -8998,6 +9004,39 @@ function orchestratorLogEvents(action, ctx = {}) {
       return [{ ...base, event: "reasoning", slots: { note: `orchestrator: ${k}` } }];
     }
   }
+}
+function parkedGateName(gate) {
+  switch (gate.kind) {
+    case "approve-intake-gate":
+      return "intake";
+    case "approve-backlog-gate":
+      return "backlog";
+    case "approve-plan-gate":
+      return "plan";
+    case "approve-gate":
+      return "spec";
+    case "approve-deploy-gate":
+      return "deploy";
+    case "approve-promote-gate":
+      return "promote";
+    case "accept":
+      return "acceptance";
+    default:
+      return null;
+  }
+}
+function parkedGateSurfacedEvent(gate, ctx = {}) {
+  const name = parkedGateName(gate);
+  if (!name) return null;
+  const story = storyOf(gate);
+  const subject = story ? `story ${story}` : name === "intake" || name === "backlog" || name === "plan" ? `sprint ${ctx.sprint ?? name}` : `feature ${ctx.featureId ?? name}`;
+  return {
+    role: "orchestrator",
+    level: "info",
+    feature_id: ctx.featureId,
+    event: "gate.surfaced",
+    slots: { gate: name, subject, ...story ? { story } : {} }
+  };
 }
 function describeAction(action, ctx = {}) {
   const ev = orchestratorLogEvents(action, ctx)[0];
@@ -11236,6 +11275,111 @@ function checkTestlistMigrationRevision(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+var TEST_WORTHY_SCHEMA_CHANGE_KINDS = /* @__PURE__ */ new Set(["create_table", "add_index", "add_constraint"]);
+function idedSchemaChanges(dbDesignJson2) {
+  const out = /* @__PURE__ */ new Map();
+  if (!dbDesignJson2) return out;
+  try {
+    const db = JSON.parse(dbDesignJson2);
+    for (const sc of db.schema_changes ?? []) {
+      if (sc && typeof sc.id === "string" && sc.id.length > 0 && typeof sc.kind === "string") out.set(sc.id, sc.kind);
+    }
+  } catch {
+  }
+  return out;
+}
+function checkSchemaChangeOrphan(testListJson, dbDesignJson2) {
+  const planned = idedSchemaChanges(dbDesignJson2);
+  if (planned.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const ref = it.schema_change_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    if (!planned.has(ref)) {
+      violations.push(
+        `test item ${it.id ?? "?"} references schema_change_id "${ref}", which is NOT a planned db-design.json schema_changes[] entry (the DBA did not commit that change). A migration/schema test may only assert a change the DBA planned: either DROP this test (it asserts a schema change that does not ship) or, if the change SHOULD ship, the DBA must add it to schema_changes[] first (the DBA owns the schema ledger \u2014 the architect's access_patterns are a non-committal nudge, not the authority).`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkSchemaChangeCoverage(testListJson, dbDesignJson2) {
+  const planned = idedSchemaChanges(dbDesignJson2);
+  if (planned.size === 0) return { ok: true };
+  const testWorthy = [...planned.entries()].filter(([, kind]) => TEST_WORTHY_SCHEMA_CHANGE_KINDS.has(kind)).map(([id]) => id);
+  if (testWorthy.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const covered = new Set((tl.items ?? []).map((i) => i.schema_change_id).filter((x) => typeof x === "string" && x.length > 0));
+  const uncovered = testWorthy.filter((id) => !covered.has(id));
+  if (uncovered.length > 0) {
+    return {
+      ok: false,
+      violations: [
+        `schema_changes[] entr(y/ies) with no covering test-list item (schema_change_id): ${uncovered.join(", ")} (a create_table / add_index / add_constraint the DBA committed needs >=1 test asserting it \u2014 a migration reversibility round-trip, or the index/constraint's behavior against the real branch; see test-strategy.md)`
+      ]
+    };
+  }
+  return { ok: true };
+}
+function checkApiContractConsistency(architectureJson2, acJsons) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const contracts = (arch.api_contracts ?? []).filter((c) => c && typeof c.id === "string" && c.id.length > 0);
+  if (contracts.length === 0) return { ok: true };
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  const idSet = /* @__PURE__ */ new Set();
+  const shapesByEndpoint = /* @__PURE__ */ new Map();
+  for (const c of contracts) {
+    idSet.add(c.id);
+    const q = Array.isArray(c.query) && c.query.length ? "?" + [...c.query].sort().join("&") : "";
+    const key = `${c.method ?? "?"} ${c.path ?? "?"}${q}`;
+    const shapes = shapesByEndpoint.get(key) ?? /* @__PURE__ */ new Set();
+    if (typeof c.shape === "string") shapes.add(c.shape);
+    shapesByEndpoint.set(key, shapes);
+  }
+  for (const [key, shapes] of shapesByEndpoint) {
+    if (shapes.size > 1) {
+      violations.push(
+        `endpoint ${key} is declared with conflicting response shapes (${[...shapes].join(" vs ")}) across api_contracts[] \u2014 an endpoint has ONE top-level response shape; declare it exactly once so the ACs that reference it cannot disagree (the S3 par_level envelope-vs-bare-list contradiction).`
+      );
+    }
+  }
+  for (const acJson2 of acJsons) {
+    let ac;
+    try {
+      ac = JSON.parse(acJson2);
+    } catch {
+      continue;
+    }
+    const ref = ac.api_contract_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    if (!idSet.has(ref)) {
+      violations.push(
+        `AC ${ac.id ?? "?"} references api_contract_id "${ref}", which is not a declared architecture.json api_contracts[] entry (declare the endpoint there, or fix the reference \u2014 the shape is single-sourced there, not in the AC).`
+      );
+      if (typeof ac.id === "string") acIds.add(ac.id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
   try {
@@ -13466,6 +13610,28 @@ function architectureConventionsReason(consortDir, featureId) {
   const r = assertArchitectureConforms(conventions, content);
   return r.ok ? null : `architecture conventions failed: ${r.violations.join("; ")}`;
 }
+function apiContractConsistencyReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const fdir = featureResolved(consortDir, featureId);
+  const acJsons = [];
+  const storiesDir2 = (0, import_node_path14.join)(fdir, "stories");
+  if ((0, import_node_fs12.existsSync)(storiesDir2)) {
+    for (const s of (0, import_node_fs12.readdirSync)(storiesDir2)) {
+      const acsDir2 = (0, import_node_path14.join)(storiesDir2, s, "acs");
+      if (!(0, import_node_fs12.existsSync)(acsDir2)) continue;
+      for (const f of (0, import_node_fs12.readdirSync)(acsDir2)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          acJsons.push((0, import_node_fs12.readFileSync)((0, import_node_path14.join)(acsDir2, f), "utf8"));
+        } catch {
+        }
+      }
+    }
+  }
+  const r = checkApiContractConsistency(arch, acJsons);
+  return r.ok ? null : `api-contract consistency failed: ${r.violations.join("; ")}`;
+}
 function readArchitecture(consortDir, featureId) {
   const f = architectureJson(consortDir, featureId);
   if (!(0, import_node_fs12.existsSync)(f)) return void 0;
@@ -13664,6 +13830,18 @@ function persistenceCoverageReason(consortDir, featureId, testListJson) {
   const r = checkPersistenceCoverage(testListJson, arch);
   return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
 }
+function schemaChangeCoverageReason(consortDir, featureId, testListJson) {
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = (0, import_node_fs12.existsSync)(dbFile) ? (() => {
+    try {
+      return (0, import_node_fs12.readFileSync)(dbFile, "utf8");
+    } catch {
+      return void 0;
+    }
+  })() : void 0;
+  const r = checkSchemaChangeCoverage(testListJson, db);
+  return r.ok ? null : `schema-change coverage failed: ${r.violations.join("; ")}`;
+}
 function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
   let master;
   try {
@@ -13826,6 +14004,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (registeredReason !== null) return { reason: registeredReason };
       const conventionsReason = architectureConventionsReason(consortDir, featureId);
       if (conventionsReason !== null) return { reason: conventionsReason };
+      const apiContractReason = apiContractConsistencyReason(consortDir, featureId);
+      if (apiContractReason !== null) return { reason: apiContractReason };
       const serviceBacked = serviceBackedReason(consortDir, featureId);
       if (serviceBacked !== null) return { reason: serviceBacked };
       const e2eLayerReason = e2eLayerPresentReason(consortDir, featureId);
@@ -13882,6 +14062,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (kindLayerReason !== null) return { reason: kindLayerReason };
         const persistenceReason = persistenceCoverageReason(consortDir, featureId, tlJson);
         if (persistenceReason !== null) return { reason: persistenceReason };
+        const schemaCoverageReason = schemaChangeCoverageReason(consortDir, featureId, tlJson);
+        if (schemaCoverageReason !== null) return { reason: schemaCoverageReason };
         const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
         if (distinctReason !== null) return { reason: distinctReason };
         const e2eReason = e2eCoverageReason(consortDir, featureId, tlJson);
@@ -14824,6 +15006,12 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     return null;
   }
   const acLayerById = storyAcLayers(consortDir, featureId, story);
+  let dbDesign;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if ((0, import_fs17.existsSync)(p)) dbDesign = (0, import_fs17.readFileSync)(p, "utf8");
+  } catch {
+  }
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const r of [
@@ -14834,7 +15022,8 @@ function testlistConformanceViolations(consortDir, featureId, story) {
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
-    checkTestlistMigrationRevision(testListJson)
+    checkTestlistMigrationRevision(testListJson),
+    checkSchemaChangeOrphan(testListJson, dbDesign)
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);
@@ -16963,6 +17152,27 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
         // the deterministic guarantee.)
         ...cfg.parentBranch ? [
           { kind: "cli", bin: "git", args: ["checkout", "-f", cfg.parentBranch] },
+          // Fast-forward the just-checked-out parent to origin/<parent>. The PR
+          // merged SERVER-SIDE (squash) into origin/<parent>, so the LOCAL <parent>
+          // ref is still at its pre-merge commit and the force checkout above lands
+          // on that STALE commit. scm-merge attempts this fast-forward too, but its
+          // non-force `git checkout <parent>` ABORTS on the same dirty per-run
+          // .consort/.lakebase metadata that skips its branch delete (above), so the
+          // ff never runs and local <parent> is left BEHIND the merge — missing the
+          // feature's own files (incl. its migration), a confusing "did it ship?"
+          // false alarm, and the next sprint plans on stale code. Complete it
+          // deterministically here, best-effort: the merge already landed remotely,
+          // so a divergent local parent or an offline fetch is a no-op warning, not
+          // a failure (ff-only never rewrites; `|| true` keeps the terminal step
+          // green). Mirrors the force-checkout + branch-delete compensation above.
+          {
+            kind: "cli",
+            bin: "sh",
+            args: [
+              "-c",
+              `git fetch origin ${shellQuote(cfg.parentBranch)} && git merge --ff-only ${shellQuote("origin/" + cfg.parentBranch)} 2>/dev/null || true`
+            ]
+          },
           // Delete the merged local feature branch so the process never leaves
           // us on (or able to fall back to) a branch that should have been
           // removed. Guarded to the feature branch, and only when it differs

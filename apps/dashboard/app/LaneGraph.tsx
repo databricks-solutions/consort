@@ -715,8 +715,22 @@ function stepState(
   // The ONE gate the run is parked at pulses ("gate-current"); the escalation terminal the run is
   // parked on pulses red ("escalation-current"). Both read from the single focus. Every OTHER gate —
   // passed or upcoming — is neutral; purple/red is only ever the currently-parked one.
+  // The gate/checkpoint step the playhead is parked AT glows (purple), and TAKES PRECEDENCE over the
+  // focus/pendingGate glow: it lights the one-turn ship gates (deploy/promote) + the per-story
+  // release-engineer verify (b-verify) that never become a parked `pendingGate`, and it stops a
+  // lingering surfaced-but-not-cleared gate (acceptance, still open while the release-engineer verifies)
+  // from stealing the glow from the step the run is actually at. When the playhead is NOT at a gate
+  // step, fall back to the parked-gate focus (the spec/acceptance surface→approve window).
   const gateKey = GATE_KEY_BY_STEP[s.id];
-  if (gateKey && state.focus.kind === "gate" && gateKey === state.focus.gate) return "gate-current";
+  if (state.topology.laneGate) {
+    // A HITL human-decision gate (acceptance/deploy/promote/spec/plan/intake/backlog — it carries a
+    // gate KEY) glows purple ("gate-current"). A role-worked checkpoint the playhead is at — the
+    // release-engineer's verify (`b-verify`: gate:true but NOT a HITL gate, so no key) — is the role's
+    // active WORK, so it glows in that ROLE's colour ("current"), never gate-purple.
+    if (s.id === state.topology.laneGate) return gateKey ? "gate-current" : "current";
+  } else if (gateKey && state.focus.kind === "gate" && gateKey === state.focus.gate) {
+    return "gate-current";
+  }
   // Only the ONE HIL terminal the run is parked on flashes red — not every lane's raise-to-HIL box.
   if (s.escalation && state.focus.kind === "escalation" && state.focus.step === s.id) return "escalation-current";
   if (done.has(s.id)) return "done";

@@ -32,7 +32,7 @@
 // would false-positive a design that covers E2E ACs via other harnesses.
 
 import { existsSync, readFileSync, readdirSync } from "fs";
-import { storyTestListJson, acsDir, architectureJson, featureSpecJson } from "../../consort/config/consort-paths.js";
+import { storyTestListJson, acsDir, architectureJson, featureSpecJson, dbDesignJson } from "../../consort/config/consort-paths.js";
 import {
   checkClientKindLayerCoherence,
   checkJsdomBrowserAssertion,
@@ -42,6 +42,7 @@ import {
   checkTestlistEndpointCoherence,
   checkTestlistE2eSpecSuffix,
   checkTestlistMigrationRevision,
+  checkSchemaChangeOrphan,
   extractApiEndpoints,
 } from "../orchestrator/validators/conformance/artifact-conformance.js";
 import { writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellHit } from "./smells.js";
@@ -114,6 +115,16 @@ export function testlistConformanceViolations(
     return null;
   }
   const acLayerById = storyAcLayers(consortDir, featureId, story);
+  // The DBA's schema-change ledger (optional): read for the orphan check so a test
+  // referencing an un-planned schema_change_id is caught pre-reflect. Absent/unreadable
+  // is fine — checkSchemaChangeOrphan is vacuous without an id'd ledger.
+  let dbDesign: string | undefined;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if (existsSync(p)) dbDesign = readFileSync(p, "utf8");
+  } catch {
+    /* a malformed db-design is reported by checkDbDesign */
+  }
   const violations: string[] = [];
   const acIds = new Set<string>();
   for (const r of [
@@ -125,6 +136,7 @@ export function testlistConformanceViolations(
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
     checkTestlistMigrationRevision(testListJson),
+    checkSchemaChangeOrphan(testListJson, dbDesign),
   ]) {
     if (!r.ok) {
       violations.push(...r.violations);

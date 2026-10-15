@@ -2211,6 +2211,28 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
         ...(cfg.parentBranch
           ? [
               { kind: "cli" as const, bin: "git", args: ["checkout", "-f", cfg.parentBranch] },
+              // Fast-forward the just-checked-out parent to origin/<parent>. The PR
+              // merged SERVER-SIDE (squash) into origin/<parent>, so the LOCAL <parent>
+              // ref is still at its pre-merge commit and the force checkout above lands
+              // on that STALE commit. scm-merge attempts this fast-forward too, but its
+              // non-force `git checkout <parent>` ABORTS on the same dirty per-run
+              // .consort/.lakebase metadata that skips its branch delete (above), so the
+              // ff never runs and local <parent> is left BEHIND the merge — missing the
+              // feature's own files (incl. its migration), a confusing "did it ship?"
+              // false alarm, and the next sprint plans on stale code. Complete it
+              // deterministically here, best-effort: the merge already landed remotely,
+              // so a divergent local parent or an offline fetch is a no-op warning, not
+              // a failure (ff-only never rewrites; `|| true` keeps the terminal step
+              // green). Mirrors the force-checkout + branch-delete compensation above.
+              {
+                kind: "cli" as const,
+                bin: "sh",
+                args: [
+                  "-c",
+                  `git fetch origin ${shellQuote(cfg.parentBranch)} && ` +
+                    `git merge --ff-only ${shellQuote("origin/" + cfg.parentBranch)} 2>/dev/null || true`,
+                ],
+              },
               // Delete the merged local feature branch so the process never leaves
               // us on (or able to fall back to) a branch that should have been
               // removed. Guarded to the feature branch, and only when it differs

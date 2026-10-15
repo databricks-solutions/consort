@@ -476,3 +476,53 @@ describe("correlate — story scope confines a phantom phase.start", () => {
     expect(r.unpairedEvents.map((u) => u.eventIndex)).toEqual([5]);
   });
 });
+
+describe("gate pairing — HITL gate turns get a #ordinal via gatePairings (not just invoke-role turns)", () => {
+  const ev = (event: string, gate?: string): AgentLogEvent =>
+    ({ timestamp: "2026-01-01T00:00:00.000Z", level: "info", role: "orchestrator", event, ...(gate ? { metadata: { gate } } : {}) }) as AgentLogEvent;
+  const gturn = (ordinal: number, kind: string): TurnIndexEntry =>
+    ({ ordinal, step: 0, label: kind, kind, dir: `${ordinal}-${kind}`, producedCount: 0, deletedCount: 0 }) as TurnIndexEntry;
+  const byGate = (events: AgentLogEvent[], turns: TurnIndexEntry[]) =>
+    new Map(correlate(events, turns, null, events).gatePairings.map((p) => [p.eventIndex, p.turnOrdinal]));
+
+  it("pairs the planning + ship gate approvals to their turns by gate name (the #3/#5/deploy/promote the user missed)", () => {
+    const events = [ev("gate.approved", "backlog"), ev("gate.approved", "plan"), ev("gate.approved", "deploy"), ev("gate.approved", "promote")];
+    const turns = [gturn(3, "approve-backlog-gate"), gturn(5, "approve-plan-gate"), gturn(77, "approve-deploy-gate"), gturn(81, "approve-promote-gate")];
+    const m = byGate(events, turns);
+    expect(m.get(0)).toBe(3); // backlog -> #3
+    expect(m.get(1)).toBe(5); // plan -> #5
+    expect(m.get(2)).toBe(77); // deploy -> #77
+    expect(m.get(3)).toBe(81); // promote -> #81
+  });
+
+  it("pairs gate.surfaced to the surface-gate turn, then gate.approved to the approve-gate turn (the spec gate's two turns)", () => {
+    const events = [ev("gate.surfaced", "spec"), ev("gate.approved", "spec")];
+    const turns = [gturn(66, "surface-gate"), gturn(67, "approve-gate")];
+    const m = byGate(events, turns);
+    expect(m.get(0)).toBe(66);
+    expect(m.get(1)).toBe(67);
+  });
+
+  it("leaves an extra gate approval un-numbered (a re-plan emits more approvals than recorded gate turns) and does NOT count it as drift", () => {
+    const events = [ev("gate.approved", "intake"), ev("gate.approved", "intake")];
+    const turns = [gturn(0, "approve-intake-gate")]; // only ONE recorded turn for two approvals
+    const r = correlate(events, turns, null, events);
+    const m = new Map(r.gatePairings.map((p) => [p.eventIndex, p.turnOrdinal]));
+    expect(m.get(0)).toBe(0);
+    expect(m.has(1)).toBe(false); // extra left un-numbered, gracefully
+    expect(r.unpairedEvents).toHaveLength(0); // gate events are never counted as drift
+    expect(r.healthy).toBe(true);
+    expect(r.pairings).toHaveLength(0); // gate pairings never pollute the invoke-role `pairings`
+  });
+
+  it("keeps `pairings` pure invoke-role (gate turns excluded) so the differential/ground-truth invariants hold", () => {
+    const events = [
+      { timestamp: "t", level: "info", role: "spec-author", event: "phase.start", metadata: { phase: "propose" } },
+      ev("gate.approved", "backlog"),
+    ] as AgentLogEvent[];
+    const turns = [{ ...gturn(1, "invoke-role"), role: "spec-author" } as TurnIndexEntry, gturn(3, "approve-backlog-gate")];
+    const r = correlate(events, turns, null, events);
+    expect(r.pairings.map((p) => p.turnOrdinal)).toEqual([1]); // only the invoke-role turn
+    expect(r.gatePairings.map((p) => p.turnOrdinal)).toEqual([3]); // the gate turn, kept separate
+  });
+});

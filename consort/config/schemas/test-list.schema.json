@@ -59,6 +59,11 @@
           "nfr_id": {
             "type": "string",
             "description": "For a fitness test defending an NFR that declares the ATOMIC `fitness_functions` array: the id of the architecture.json nfrs[] entry this test covers (e.g. \"NFR-F1-spa-single-page\"). checkFitnessClauseCoverage requires every entry of that NFR's `fitness_functions` to be covered by >=1 test-list item referencing this id, so a multi-clause NFR is defended clause-by-clause with no prose decomposition. Omit for a test covering a persistence invariant (use invariant_id) or a single-obligation NFR."
+          },
+          "schema_change_id": {
+            "type": "string",
+            "pattern": "^SC[0-9]+(-[a-z0-9-]+)?$",
+            "description": "For a migration/schema fitness test: the id of the db-design.json schema_changes[] entry this test asserts (e.g. \"SC1-create-stock-records\" for a reversibility round-trip, \"SC4-add-location-sku-index\" for an index assertion). The DBA's schema_changes ledger is the authority: checkSchemaChangeOrphan (pre-reflect) flags a test referencing a change the DBA did NOT plan — the exact 'migration test for an index the architect only weighed' defect — and checkSchemaChangeCoverage (finalized test_list gate) requires every test-worthy change (create_table, add_index, add_constraint) be referenced by >=1 item. Set it ONLY on a test that asserts a specific schema change; omit otherwise."
           }
         }
       }

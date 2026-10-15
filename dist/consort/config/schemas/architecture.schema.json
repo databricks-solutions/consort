@@ -105,6 +105,48 @@
         "additionalProperties": false
       }
     },
+    "api_contracts": {
+      "type": "array",
+      "description": "The response contract for each API endpoint the feature exposes, declared ONCE here — the single door for an endpoint's response SHAPE. An AC that asserts an API response references its endpoint via ac.json api_contract_id instead of re-describing the shape in architectural_notes prose, so two ACs of one story can NEVER disagree on the shape (the S3 par_level defect: AC3's notes said a top-level `par_level:null` envelope while AC1/AC4 said a bare list — a self-contradiction the LLM reflect had to catch + bounce to a re-annotate lap). checkApiContractConsistency hard-blocks when two entries declare the same (method, path) with a different shape, or an AC references an undeclared endpoint. The architect owns this contract; the test-strategist asserts it and the driver implements it against it.",
+      "items": {
+        "type": "object",
+        "required": ["id", "method", "path", "shape"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^EP[0-9]+(-[a-z0-9-]+)?$",
+            "description": "Stable id, e.g. \"EP1-list-stock-by-sku\". Referenced by ac.json api_contract_id."
+          },
+          "method": {
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          },
+          "path": {
+            "type": "string",
+            "description": "The endpoint path with param placeholders, e.g. \"/api/stock\", \"/api/skus/{sku}\"."
+          },
+          "query": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Query-param name(s) that distinguish this contract from another on the same path, e.g. [\"sku\"] for GET /api/stock?sku=. Omit when the path alone identifies the endpoint."
+          },
+          "shape": {
+            "type": "string",
+            "enum": ["list", "object", "empty"],
+            "description": "The TOP-LEVEL response shape — the fact that must be single-sourced. `list` = a bare JSON array (no envelope); `object` = a single JSON object / envelope; `empty` = no body (e.g. 204). This is the one structured fact that makes a cross-AC contradiction impossible by construction."
+          },
+          "item": {
+            "type": "string",
+            "description": "For shape `list`/`object`: the row/body type in prose or a model ref (e.g. \"stock-record: {sku, location, quantity, tracking_code|null, par_level|null}\"). Per-field nullability lives HERE once, not re-stated per AC."
+          },
+          "story": {
+            "type": "string",
+            "description": "The story id that introduced this endpoint."
+          }
+        }
+      }
+    },
     "nfrs": {
       "type": "array",
       "description": "Non-functional requirements proposed by the architect, adjudicated by the HIL at Gate 2. An empty array is valid (a feature may have no NFRs), but every entry that exists must be HIL-considered, not unconsidered. Each NFR states its requirement (via `brief`, or the legacy `requirement`) and, per @architectural-design-principles, NAMES the fitness function that defends it (`fitness_function`) so the Test Strategist authors it as a RED test.",

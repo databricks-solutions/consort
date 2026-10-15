@@ -23,6 +23,7 @@ interface ParsedArgs {
   layer?: string;
   notes?: string;
   uiSeams?: string;
+  apiContract?: string;
   consortDir?: string;
   help?: boolean;
 }
@@ -42,6 +43,10 @@ of hand-editing the AC file, so a dropped brace can never corrupt it.
 --ui-seams (E2E / client ACs): a comma-separated list of the ia.md data-testid seam
 tokens this AC's UI must drive (e.g. "stock-cell-tracking,stock-not-tracked"). The
 deterministic pre-reflect IA gate checks each is named in ia.md.
+
+--api-contract (API-asserting ACs): the id of the architecture.json api_contracts[]
+entry whose response shape this AC exercises (e.g. "EP1-list-stock-by-sku"). The shape
+is single-sourced there; checkApiContractConsistency checks it is a declared endpoint.
 `;
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -54,6 +59,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case "--layer": out.layer = argv[++i]; break;
       case "--notes": out.notes = argv[++i]; break;
       case "--ui-seams": out.uiSeams = argv[++i]; break;
+      case "--api-contract": out.apiContract = argv[++i]; break;
       case "--consort-dir": case "--tdd-dir": out.consortDir = argv[++i]; break;
       case "--help": case "-h": out.help = true; break;
       default: break;
@@ -69,13 +75,18 @@ export function parseArgs(argv: string[]): ParsedArgs {
  */
 export function mergeAcAnnotation(
   raw: string,
-  fields: { layer?: string; notes: string; uiSeams?: string[] },
+  fields: { layer?: string; notes: string; uiSeams?: string[]; apiContract?: string },
 ): string {
   const obj = JSON.parse(raw) as Record<string, unknown>;
   if (fields.layer) obj.layer = fields.layer;
   obj.architectural_notes = fields.notes;
   // Only set ui_seams when provided (a non-UI AC omits it); an explicit empty list clears it.
   if (fields.uiSeams !== undefined) obj.ui_seams = fields.uiSeams;
+  // Only set api_contract_id when provided (a non-API AC omits it); an empty string clears it.
+  if (fields.apiContract !== undefined) {
+    if (fields.apiContract.length > 0) obj.api_contract_id = fields.apiContract;
+    else delete obj.api_contract_id;
+  }
   return JSON.stringify(obj, null, 2) + "\n";
 }
 
@@ -109,7 +120,7 @@ function main(argv: string[]): number {
   }
   let merged: string;
   try {
-    merged = mergeAcAnnotation(fs.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes, uiSeams: parseUiSeams(args.uiSeams) });
+    merged = mergeAcAnnotation(fs.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes, uiSeams: parseUiSeams(args.uiSeams), apiContract: args.apiContract });
   } catch (e) {
     process.stderr.write(
       `Error: ${file} is not valid JSON (${e instanceof Error ? e.message : String(e)}). ` +
