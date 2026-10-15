@@ -145,4 +145,34 @@ describe("consort hard rules", () => {
     expect(nav.toLowerCase()).toMatch(/assert_not_called|repository is untouched|repository write/i);
     expect(nav, "must warn against proving it by omitting the session/db").toMatch(/do NOT.*OMIT|omitting the session/i);
   });
+
+  // Design-lane efficiency (F1 live design run, S1 revise lap): navigator.md's test-strategy
+  // canon TAUGHT `alembic downgrade -1`, which the pre-reflect gate (checkTestlistMigrationRevision)
+  // flags as a relative step — so every first-pass migration-reversibility test tripped the gate
+  // and burned a revise lap. The canon must teach pinning to the migration's OWN down_revision,
+  // in lockstep with the gate, so the first authored test is already conformant.
+  it("navigator.md's reversibility canon pins to down_revision, not a bare relative downgrade", () => {
+    const nav = readFileSync(NAV_PATH, "utf8");
+    // Teaches the explicit-revision pin the gate's `pinned` pattern recognizes.
+    expect(nav).toMatch(/down_revision/);
+    // Explicitly steers AWAY from the relative step the gate flags.
+    expect(nav).toMatch(/NEVER a relative `downgrade -1`/);
+    // Names the gate, so the canon and the deterministic check stay in lockstep.
+    expect(nav).toMatch(/checkTestlistMigrationRevision/);
+  });
+
+  // Design-lane efficiency (F1 live design run, S3 revise lap): the architect declared
+  // instance-specific ui_seams (sku-location-A-01) the IA names only as a template
+  // (sku-location-<loc>), so the deterministic AC<->IA gate (iaNamesSeam) flagged it and bounced a
+  // ux-designer revise lap. architect-reviewer.md must require ui_seams at the IA's template/region
+  // altitude, never a concrete example instance.
+  it("architect-reviewer.md requires ui_seams at the IA's template/region altitude (no instance seams)", () => {
+    const arch = readFileSync(join(SKILL_DIR, "agents", "architect-reviewer.md"), "utf8");
+    // Requires the template/region altitude the IA names.
+    expect(arch).toMatch(/TEMPLATE/);
+    // Names the instance anti-pattern it forbids.
+    expect(arch).toMatch(/sku-location-A-01/);
+    // Ties it to the deterministic gate that enforces it.
+    expect(arch).toMatch(/iaNamesSeam/);
+  });
 });
