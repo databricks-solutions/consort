@@ -214,7 +214,11 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "You are the CLIENT test analyst (this project HAS a frontend). For every UI-presentation AC the " +
       "architecture routes to the SPA's own client harness, emit a `kind:\"client\"` item with " +
       "`scenario_file` under `client/tests/` (e.g. `client/tests/pages/<Screen>.test.tsx`). Do NOT fold " +
-      "a presentation AC into the backend pytest-bdd suite – that mechanism mismatch is a defect. For an " +
+      "a presentation AC into the backend pytest-bdd suite – that mechanism mismatch is a defect. The INVERSE is " +
+      "equally a defect: emit a client item ONLY for a UI-presentation / `E2E`-layer AC. CHECK the AC's `layer` " +
+      "first and NEVER anchor a client item to an `API` / `service` / `Infra`-layer AC (a client harness mocks the " +
+      "response envelope, so it cannot verify the backend contract; the deterministic `checkClientKindLayerCoherence` " +
+      "gate flags it). Cover a backend AC's clause in a behavior/fitness item instead. For an " +
       "AC that OWNS a page/route, at least one client item MUST exercise the page THROUGH THE REAL " +
       "`<App>` at the AC's route (a Playwright e2e that navigates the route, OR a component test " +
       "rendering `<App>` in `<MemoryRouter initialEntries={[\"<the path>\"]}>`) – a bare " +

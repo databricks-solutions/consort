@@ -90,6 +90,15 @@ describe("client: an E2E AC's Playwright spec is named *.spec.ts, never *.e2e.ts
     expect(cli, "must forbid the silently-skipped .e2e.ts suffix").toMatch(/NEVER `?\.e2e\.ts/);
     expect(cli, "must explain the testMatch reason").toMatch(/testMatch/i);
   });
+
+  // F1 0.4.7 live run (S1): the client analyst anchored kind:"client" tests to AC2 (architect-tagged
+  // API layer) — a mechanism conflict the deterministic checkClientKindLayerCoherence gate caught. The
+  // directive scoped client items to UI-presentation ACs but never explicitly forbade a backend-layer
+  // anchor; the one-clause sharpening (L1) pins it so the first pass is conformant, in lockstep with the gate.
+  it("forbids anchoring a client item to a backend (API/service/Infra)-layer AC and names the gate", () => {
+    expect(cli, "must forbid anchoring a client item to a backend-layer AC").toMatch(/NEVER anchor a client item to an `?API/);
+    expect(cli, "must name the deterministic gate").toMatch(/checkClientKindLayerCoherence/);
+  });
 });
 
 describe("fitness: a migration-reversibility test pins to down_revision, never a relative/single-step downgrade", () => {

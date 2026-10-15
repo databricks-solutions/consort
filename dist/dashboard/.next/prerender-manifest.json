@@ -1,12 +1,8 @@
 {
   "version": 4,
   "routes": {
-    "/favicon.ico": {
-      "initialHeaders": {
-        "cache-control": "public, max-age=0, must-revalidate",
-        "content-type": "image/x-icon",
-        "x-next-cache-tags": "_N_T_/layout,_N_T_/favicon.ico/layout,_N_T_/favicon.ico/route,_N_T_/favicon.ico"
-      },
+    "/_not-found": {
+      "initialStatus": 404,
       "experimentalBypassFor": [
         {
           "type": "header",
@@ -19,8 +15,8 @@
         }
       ],
       "initialRevalidateSeconds": false,
-      "srcRoute": "/favicon.ico",
-      "dataRoute": null,
+      "srcRoute": "/_not-found",
+      "dataRoute": "/_not-found.rsc",
       "allowHeader": [
         "host",
         "x-matched-path",
@@ -54,8 +50,12 @@
         "x-next-revalidate-tag-token"
       ]
     },
-    "/_not-found": {
-      "initialStatus": 404,
+    "/favicon.ico": {
+      "initialHeaders": {
+        "cache-control": "public, max-age=0, must-revalidate",
+        "content-type": "image/x-icon",
+        "x-next-cache-tags": "_N_T_/layout,_N_T_/favicon.ico/layout,_N_T_/favicon.ico/route,_N_T_/favicon.ico"
+      },
       "experimentalBypassFor": [
         {
           "type": "header",
@@ -68,8 +68,8 @@
         }
       ],
       "initialRevalidateSeconds": false,
-      "srcRoute": "/_not-found",
-      "dataRoute": "/_not-found.rsc",
+      "srcRoute": "/favicon.ico",
+      "dataRoute": null,
       "allowHeader": [
         "host",
         "x-matched-path",
@@ -83,8 +83,8 @@
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "b8c4076954928e553295118eb28f14aa",
-    "previewModeSigningKey": "2d5361bdc0a97830c2fb2fa64ff45ca8cf0773df2496353ae1dc751b5a75a158",
-    "previewModeEncryptionKey": "f23ff872d27f1315960d2384ef0d88f14d1650c08590d97f78adfd9a0d86a60f"
+    "previewModeId": "7fac4f5dbe373d32b5d7fa6d2ccfaeb3",
+    "previewModeSigningKey": "ab634a530cfc4bd91c011d5127b873e7a4d48819793df9d7428480f92b052eaf",
+    "previewModeEncryptionKey": "7abe8655a430994ea6d59ef0d1dee1695580fb511642332d8447db9838b56588"
   }
 }
