@@ -218,8 +218,10 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "the design-guide SEAM (assert the element carries its design-guide class / `data-testid`), NEVER " +
       "an inline `style=` or raw CSS in the source. Do NOT set `invariant_id`. " +
       "MATCH THE TEST TO THE AC's `layer`: an AC whose `layer` is **`E2E`** is verified END-TO-END " +
-      "against the REAL paired-branch DB – it REQUIRES a real Playwright e2e (scenario_file under " +
-      "`client/tests/e2e/…`) that drives the DEPLOYED app in a browser against the live DB, with NO " +
+      "against the REAL paired-branch DB – it REQUIRES a real Playwright e2e whose scenario_file is " +
+      "`client/tests/e2e/<name>.spec.ts`: it MUST end `.spec.ts`, NEVER `.e2e.ts` (the scaffold's " +
+      "playwright.config default testMatch runs only `*.spec.ts`, so a `.e2e.ts` file silently never " +
+      "runs), that drives the DEPLOYED app in a browser against the live DB, with NO " +
       "mocked/stubbed fetch and NO in-memory data. A mocked/stubbed COMPONENT test (rendering " +
       "`<App>`/`<Page>` with fake data) is ONLY for a pure presentation/rendering AC, NEVER for an " +
       "`E2E`-layer AC – drafting an E2E-layer AC as a mocked component test is the recurring " +

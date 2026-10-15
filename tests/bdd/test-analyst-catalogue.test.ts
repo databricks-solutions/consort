@@ -79,6 +79,19 @@ describe("fitness: a service-layer guard is described to survive the layering re
   });
 });
 
+describe("client: an E2E AC's Playwright spec is named *.spec.ts, never *.e2e.ts (anti silent-skip)", () => {
+  // F1 live design run (S1): the client analyst authored e2e scenario_files as `.e2e.ts`, which the
+  // scaffold's playwright.config default testMatch (`*.spec.ts`) silently skips, so the deterministic
+  // test-list gate (checkTestlistScenarioFileSuffix) bounced a revise lap. The directive (L1) must pin
+  // the suffix so the first pass is conformant, in lockstep with that gate + the in-turn self-check.
+  const cli = TEST_ANALYST_CATALOGUE.client.focusPrompt;
+  it("names the *.spec.ts e2e path and forbids *.e2e.ts (with the testMatch reason)", () => {
+    expect(cli).toMatch(/\.spec\.ts/);
+    expect(cli, "must forbid the silently-skipped .e2e.ts suffix").toMatch(/NEVER `?\.e2e\.ts/);
+    expect(cli, "must explain the testMatch reason").toMatch(/testMatch/i);
+  });
+});
+
 describe("resolveTestAnalystKind: fail-loud", () => {
   it("resolves a known kind", () => {
     const e: TestAnalystCatalogueEntry = resolveTestAnalystKind("fitness");
