@@ -350,7 +350,12 @@ function checkReversibleInvariantRoundTrip(projectDir: string): TestSmellViolati
       // correct test to the HIL. Naming both directions IS the round-trip signal.
       const hasRoundTrip = covering.some((it) => {
         const d = it.description ?? "";
-        return (/\bround.?trip\b/i.test(d)) || (/\bdowngrade\b/i.test(d) && /\bupgrade\b/i.test(d));
+        // Match the verb STEMS, not the exact words, so gerund/past-tense forms count:
+        // "Downgrading to its own down_revision then upgrading head" IS a round-trip even
+        // though the bare words "downgrade"/"upgrade"/"round-trip" never appear. The prior
+        // exact-word regex (\bdowngrade\b / \bupgrade\b) false-negatived that genuine T9
+        // round-trip and bounced a correct test to the HIL.
+        return (/\bround.?trip\b/i.test(d)) || (/\bdowngrad\w*/i.test(d) && /\bupgrad\w*/i.test(d));
       });
       if (!hasRoundTrip) {
         out.push({

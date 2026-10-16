@@ -372,6 +372,19 @@ describe("checkTestSmells: the three migration/aggregate detectors", () => {
       { id: "T25", invariant_id: "PI5-par-level-additive-migration", description: "A single-step downgrade on the real branch database removes the par_level column from stock_records; a subsequent upgrade re-adds the nullable par_level column, proving schema recreation" },
     ] }));
     expect(checkTestSmells({ projectDir: dir4 }).clean).toBe(true);
+
+    // Regression (live T9 HIL false-positive): a GERUND-worded round-trip is a genuine
+    // round-trip even though the bare words downgrade/upgrade/round-trip never appear. The
+    // prior exact-word regex (\bdowngrade\b / \bupgrade\b) missed "Downgrading"/"upgrading"
+    // and bounced a correct, down_revision-pinned test to the HIL.
+    const dir5 = mkProject();
+    write(dir5, ".consort/features/F1/architecture.json", JSON.stringify({
+      persistence_invariants: [{ id: "PI4-migration-reversible", type: "migration_reversible", table: "stock_records" }],
+    }));
+    write(dir5, ".consort/features/F1/test-list.json", JSON.stringify({ items: [
+      { id: "T9", invariant_id: "PI4-migration-reversible", description: "Downgrading to the create-table migration's own down_revision then upgrading head recreates stock_records with its columns, unique constraint and check constraint (marked @pytest.mark.migration)" },
+    ] }));
+    expect(checkTestSmells({ projectDir: dir5 }).clean).toBe(true);
   });
 });
 

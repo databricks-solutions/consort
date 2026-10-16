@@ -11076,7 +11076,7 @@ function checkReversibleInvariantRoundTrip(projectDir) {
       const covering = items.filter((it) => it.invariant_id === pi.id);
       const hasRoundTrip = covering.some((it) => {
         const d = it.description ?? "";
-        return /\bround.?trip\b/i.test(d) || /\bdowngrade\b/i.test(d) && /\bupgrade\b/i.test(d);
+        return /\bround.?trip\b/i.test(d) || /\bdowngrad\w*/i.test(d) && /\bupgrad\w*/i.test(d);
       });
       if (!hasRoundTrip) {
         out.push({
