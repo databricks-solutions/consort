@@ -102,6 +102,18 @@ jobs:
           fi
           npm install
 
+      - name: Set up .NET
+        if: steps.detect-lang.outputs.lang == 'dotnet'
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore .NET packages and tools
+        if: steps.detect-lang.outputs.lang == 'dotnet'
+        run: |
+          dotnet restore
+          if [ -f .config/dotnet-tools.json ]; then dotnet tool restore; fi
+
       # Install frontend dependencies when a `client/` workspace is present
       # (Python+React layouts etc.). Gated on client/package.json so projects
       # without a frontend skip this transparently.
@@ -301,10 +313,12 @@ jobs:
           BODY="⚠️ **No Lakebase CI branch** was created. This run is not using a dedicated database branch. Open the [workflow run](${RUN_URL}), expand **Create CI database branch (Lakebase)** and check the step **Summary** (or log) for the reason and how to fix it."
           gh pr comment "$PR" --body "$BODY" 2>/dev/null || true
 
-      # Install Flyway CLI for Java/Kotlin projects only. The substrate's
-      # migrate runner spawns the standalone `flyway` binary; non-Java
-      # projects don't need it. Runtime-gated on pom.xml so the YAML is
-      # one shape for every language.
+      # Install Flyway CLI for Java/Kotlin projects and .NET projects that use
+      # Flyway (db/migrations/). The substrate's migrate runner spawns the
+      # standalone `flyway` binary; other projects don't need it. Runtime-gated
+      # on pom.xml / any file under db/migrations/ (what the adapter checks; a
+      # fresh scaffold has only its README there) so the YAML is one shape for
+      # every language.
       #
       # Resolution order:
       #   1. `flyway` already on PATH (self-hosted runner with brew /
@@ -315,7 +329,7 @@ jobs:
       #   3. Default https://repo1.maven.org/maven2 for GitHub-hosted
       #      runners with public internet.
       - name: Install Flyway CLI
-        if: steps.lakebase-db.outputs.url != '' && hashFiles('pom.xml') != ''
+        if: steps.lakebase-db.outputs.url != '' && (hashFiles('pom.xml') != '' || hashFiles('db/migrations/**') != '')
         env:
           FLYWAY_DOWNLOAD_BASE_URL: ${{ vars.FLYWAY_DOWNLOAD_BASE_URL }}
         run: |
@@ -388,6 +402,8 @@ jobs:
               uv run pytest
             elif [ "$LANG" = "nodejs" ]; then
               npm test
+            elif [ "$LANG" = "dotnet" ]; then
+              dotnet test --no-restore
             fi
           else
             echo "::error::No CI branch URL – cannot run tests without a database. Check the 'Create CI database branch' step for details."
@@ -570,6 +586,10 @@ jobs:
               desc=$(echo "$base" | sed 's/^[^_]*_//' | sed 's/\.py$//' | tr '_' ' ')
               [ -n "$rev" ] && echo "| $rev | $desc |" >> "$MD"
             done
+          elif [ "$LANG" = "dotnet" ]; then
+            # EF Core or Flyway: the kit's canonical discovery picks the tool + files.
+            npx --yes --package="${SCM_UTILS_NPX_PKG}" lakebase-schema-migrate list \
+              | jq -r '.[] | if .tool == "flyway" then "| V\(.version) | \(.description) |" else "| \(.version) | \(.description) (EF Core) |" end' >> "$MD"
           elif [ "$LANG" = "nodejs" ]; then
             for f in migrations/*.js; do
               [ -f "$f" ] || continue

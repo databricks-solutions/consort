@@ -2,6 +2,16 @@
 # Run tests using the branch URL from .env (post-checkout hook writes it).
 # Detects project language and calls the appropriate test runner.
 # Usage: ./scripts/run-tests.sh [extra args]
+#
+# E2E-ASSEMBLY CONTRACT (kit maintainers): this template is intentionally
+# BLOCK-LESS for the Playwright E2E suite. The E2E block is NOT shipped inline
+# here; scm-utils' `enableE2eForProject` / `addE2eToRunTestsScript` APPENDS it
+# per-project at scaffold/upgrade time (idempotent; delimited by the marker
+# `# run Playwright E2E suite when configured`). Do NOT inline the E2E block in
+# this template — it would double with the appended one. The non-E2E body here
+# tracks scm-utils' run-tests.sh and must be kept at parity on a tiered
+# (scm-utils -> consort) upgrade; that body-parity is handled by the e2e-assembly
+# convergence effort, NOT the workflow drift guard (which covers .github/workflows).
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

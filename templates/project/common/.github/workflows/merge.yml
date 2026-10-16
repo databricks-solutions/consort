@@ -143,6 +143,18 @@ jobs:
           fi
           npm install
 
+      - name: Set up .NET
+        if: steps.detect-lang.outputs.lang == 'dotnet'
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore .NET packages and tools
+        if: steps.detect-lang.outputs.lang == 'dotnet'
+        run: |
+          dotnet restore
+          if [ -f .config/dotnet-tools.json ]; then dotnet tool restore; fi
+
       # The official action installs to a user-writable path (no sudo). It's
       # a no-op if a compatible databricks CLI is already on PATH.
       - name: Install Databricks CLI
@@ -218,7 +230,7 @@ jobs:
       #   3. Default https://repo1.maven.org/maven2 for GitHub-hosted
       #      runners with public internet.
       - name: Install Flyway CLI
-        if: hashFiles('pom.xml') != ''
+        if: (hashFiles('pom.xml') != '' || hashFiles('db/migrations/**') != '')
         env:
           FLYWAY_DOWNLOAD_BASE_URL: ${{ vars.FLYWAY_DOWNLOAD_BASE_URL }}
         run: |
@@ -327,8 +339,13 @@ jobs:
           echo "  instance:    $LAKEBASE_PROJECT_ID"
           echo "  branch:      $LAKEBASE_BRANCH_NAME"
           echo "  git ref:     $GITHUB_REF_NAME"
+          # apply-tier (not plain apply): this step migrates the PARENT TIER
+          # (staging / main / dev), which `apply` refuses on purpose. apply-tier
+          # is the promotion opt-in (allowTier) + verifies the tier reached head,
+          # so a partial promotion fails the job instead of leaving git ahead of
+          # the Lakebase schema. Single-tier (default branch) also goes through it.
           npx --yes --package="${SCM_UTILS_NPX_PKG}" \
-            lakebase-schema-migrate apply \
+            lakebase-schema-migrate apply-tier \
             --instance "$LAKEBASE_PROJECT_ID" \
             --branch "$LAKEBASE_BRANCH_NAME" \
             --pretty
