@@ -11,7 +11,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { checkTestSmells } from "../../consort/architecture/test-smell-clean.js";
+import { checkTestSmells, AUTHOR_LAYER_TEST_SMELLS } from "../../consort/architecture/test-smell-clean.js";
 import { beginNextPendingCycle, greenOpenCycle, type GreenVerifier } from "../../consort/pipeline/cycle-record.js";
 
 const tmpDirs: string[] = [];
@@ -405,5 +405,48 @@ describe("greenOpenCycle: a smell-laden test is caught proactively at GREEN", ()
     expect(r.recorded).toBe(false);
     expect(r.needsAssess).toBe(true);
     expect(r.summary).toMatch(/TEST-AUTHORING-SMELL/);
+  });
+
+  // An AUTHOR-LAYER smell (migration-reversibility class) is NOT closable by a surgical
+  // Driver repair, so it must ESCALATE on the first failure (not route needsAssess ->
+  // driver-repair, which loops forever on a test the driver cannot green — the observed churn).
+  it("a PASSING verify + an author-layer reversible-invariant-round-trip smell ESCALATES (never a driver repair loop)", async () => {
+    const project = mkProject();
+    const tdd = path.join(project, ".consort");
+    const acsDir = path.join(tdd, "features", F, "stories", S, "acs");
+    fs.mkdirSync(acsDir, { recursive: true });
+    writeJson(path.join(acsDir, "AC1.json"), { id: "AC1", layer: "E2E", text: "migration reversible" });
+    const items = [{ id: "T9", invariant_id: "PI1-migration-reversible", description: "seed rows, run alembic upgrade head, assert columns present", ac_id: "AC1", status: "pending" }];
+    writeJson(path.join(tdd, "features", F, "stories", S, "test-list-per-story.json"), { feature_id: F, story_id: S, items });
+    writeJson(path.join(tdd, "features", F, "test-list.json"), { feature_id: F, items });
+    writeJson(path.join(tdd, "features", F, "architecture.json"), {
+      persistence_invariants: [{ id: "PI1-migration-reversible", type: "migration_reversible", table: "stock_records" }],
+    });
+    const expDir = path.join(tdd, "experiments", F, S, "exp1");
+    fs.mkdirSync(expDir, { recursive: true });
+    fs.writeFileSync(path.join(expDir, "branch.txt"), "experiment-s1-exp1");
+    writeJson(path.join(expDir, "outcomes.json"), { status: "running" });
+
+    beginNextPendingCycle({ consortDir: tdd, featureId: F, story: S });
+    const r = await greenOpenCycle({ consortDir: tdd, featureId: F, story: S, verify: pass });
+
+    expect(r.recorded).toBe(false);
+    expect(r.escalated).toBe(true);
+    expect(r.needsAssess).toBeFalsy();
+    expect(r.escalation?.source).toBe("test-authoring-smell");
+    expect(r.summary).toMatch(/TEST-AUTHORING-SMELL/);
+  });
+});
+
+describe("AUTHOR_LAYER_TEST_SMELLS: the migration-reversibility classes that need a re-author, not a driver repair", () => {
+  it("holds exactly the three migration-reversibility smells", () => {
+    expect([...AUTHOR_LAYER_TEST_SMELLS].sort()).toEqual(
+      ["migration-marker-presence", "relative-migration-revision", "reversible-invariant-round-trip"],
+    );
+  });
+  it("excludes the surgically Driver-fixable smells (they stay on the assess->repair path)", () => {
+    for (const surgical of ["loose-locator", "delete-teardown", "broad-integrity-except", "vi-mock-tdz", "fixed-key-e2e", "whole-table-aggregate"] as const) {
+      expect(AUTHOR_LAYER_TEST_SMELLS.has(surgical)).toBe(false);
+    }
   });
 });

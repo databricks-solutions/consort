@@ -327,6 +327,22 @@ const STATE_OWNERSHIP_CANON =
   " seeded rows, or query a per-run-unique slice that is genuinely empty – or explicitly clear the aggregate you" +
   " claim empty. Also revert/roll back rows a test writes so it never leaks state into another test.";
 
+/** Appended to the build-lane RED authoring directive so the Navigator authors a migration-reversibility
+ *  test correctly on the FIRST pass. The full canon lives in navigator.md, but a cheaper red-turn model
+ *  buries it in the long agent doc and defaults to a dynamic/blind `downgrade base` — which the honest-GREEN
+ *  `reversible-invariant-round-trip` verify then rejects as a forward-only, un-tied test, dead-locking the
+ *  assess/repair loop. This reinforces the rule inline, in lockstep with checkTestlistMigrationRevision. */
+const MIGRATION_REVERSIBILITY_CANON =
+  " MIGRATION-REVERSIBILITY TEST (any `migration_reversible` invariant): downgrade to the migration-under-test's" +
+  " OWN `down_revision` – the explicit revision id named in that migration file (for an initial create-table that" +
+  " id is the base) – then `upgrade head`. NEVER a relative `downgrade -1` and NEVER a blind/dynamic `downgrade" +
+  " base` fallback (both revert the WRONG migration / the whole chain; the deterministic `checkTestlistMigrationRevision`" +
+  " and the honest-GREEN `reversible-invariant-round-trip` verify flag them). Mark it `@pytest.mark.migration` and" +
+  " name the test for BOTH directions (downgrade AND upgrade / a \"round-trip\") so coverage maps to the invariant." +
+  " Assert SCHEMA RECREATION only (table + columns + constraints present again after the round-trip), NEVER" +
+  " data-survival: a create-table downgrade (to base) DROPS the table, so \"seeded rows survive\" is UNSATISFIABLE" +
+  " and no product code can green it – authoring that dead-locks the assess/repair loop into HIL.";
+
 /** Appended to the architect + test-strategist directives so a REVISE re-run knows its cleared prior
  *  is the self-heal's doing, not data loss. On a reflect-revise the co-heal (revise.ts) clears this
  *  story's architectural_notes + per-story test-list items (so the architect re-tags against the fixed
@@ -1206,7 +1222,7 @@ function roleTaskBody(
         // authors tests against the slice + the known layout inline rather than
         // re-reading the design tree. redOnly: no test-location line (no code yet).
         return (
-          `${nextPendingTestDirective(consortDir, featureId, s, build?.loop, build?.cap)}${uiTrack ? uiTrackBuild(root) : ""}` +
+          `${nextPendingTestDirective(consortDir, featureId, s, build?.loop, build?.cap)}${MIGRATION_REVERSIBILITY_CANON}${uiTrack ? uiTrackBuild(root) : ""}` +
           buildContextPack(consortDir, featureId, s, action.ac ?? "", { skipTestLoop: true })
         );
       }

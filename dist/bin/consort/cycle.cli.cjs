@@ -10873,6 +10873,11 @@ init_cjs_shims();
 var import_node_fs9 = require("fs");
 var import_node_path11 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+var AUTHOR_LAYER_TEST_SMELLS = /* @__PURE__ */ new Set([
+  "migration-marker-presence",
+  "relative-migration-revision",
+  "reversible-invariant-round-trip"
+]);
 var DEFAULT_TEST_DIRS2 = ["tests", "client/tests"];
 var DEFAULT_MIGRATION_DIRS4 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var EXCLUDE_DIR3 = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist)(\/|$)/;
@@ -11387,6 +11392,7 @@ async function greenOpenCycle(args) {
   const verify = args.verify ?? defaultGreenVerifier;
   let result = await verify({ projectDir: (0, import_path12.dirname)(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
   let testSmellRemediation;
+  let authorLayerTestSmell = false;
   if (!result.passed && !consortEnv("REPLAY_BUILD_DIR") && isProvisioningFaultSummary(result.summary)) {
     const retry = await verify({ projectDir: (0, import_path12.dirname)(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
     if (retry.passed) {
@@ -11423,6 +11429,7 @@ async function greenOpenCycle(args) {
         if (!smells.clean && smells.remediation) {
           result = { passed: false, summary: smells.remediation };
           testSmellRemediation = smells.remediation;
+          authorLayerTestSmell = smells.violations.some((v) => AUTHOR_LAYER_TEST_SMELLS.has(v.smell));
         }
       } catch {
       }
@@ -11449,6 +11456,17 @@ async function greenOpenCycle(args) {
       const escalation2 = writeEscalation(consortDir, {
         source: "auth-expired",
         reason: `Databricks auth session expired during verify of ${open.test_id} (${open.ac_id}) in ${featureId}/${story}. Re-authenticate with \`databricks auth login\` and re-run. (verify: ${result.summary})`,
+        feature_id: featureId,
+        story_id: story,
+        ac_id: open.ac_id
+      });
+      return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, escalated: true, escalation: escalation2, summary: result.summary };
+    }
+    if (authorLayerTestSmell && testSmellRemediation) {
+      const escalation2 = writeEscalation(consortDir, {
+        source: "test-authoring-smell",
+        reason: `A migration-reversibility test-authoring smell for ${open.test_id} (${open.ac_id}) in ${featureId}/${story} is not Driver-fixable \u2013 the test's AUTHOR must re-author it (an explicit down_revision round-trip), not a code repair. Escalating with the remediation instead of burning assess->repair rounds that cannot green it.
+${testSmellRemediation}`,
         feature_id: featureId,
         story_id: story,
         ac_id: open.ac_id

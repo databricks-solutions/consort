@@ -56,6 +56,22 @@ export type TestSmellName =
   | "pytest-bdd-parse-conversion"
   | "dropped-column-dangling-reference";
 
+/** The migration-reversibility test-smell classes that CANNOT be closed by a surgical
+ *  Driver repair (narrow a catch, drop a teardown): they require RE-AUTHORING the
+ *  migration test's downgrade/upgrade mechanics (explicit `down_revision`, a round-trip,
+ *  `@pytest.mark.migration`), which a Driver code-repair cannot do. A green-failure
+ *  carrying one of these escalates to the test's AUTHOR (HIL) on the first failure
+ *  instead of burning bounded assess->repair rounds that can never green it (the churn
+ *  observed when a reversible-invariant-round-trip smell looped driver-repair). The rest
+ *  of the issue #199 catalog (loose-locator, delete-teardown, broad-integrity-except,
+ *  vi-mock-tdz, fixed-key-e2e, whole-table-aggregate) IS surgically Driver-fixable and
+ *  stays on the assess->repair path. */
+export const AUTHOR_LAYER_TEST_SMELLS: ReadonlySet<TestSmellName> = new Set<TestSmellName>([
+  "migration-marker-presence",
+  "relative-migration-revision",
+  "reversible-invariant-round-trip",
+]);
+
 export interface TestSmellViolation {
   smell: TestSmellName;
   /** Project-relative file path. */

@@ -55,7 +55,7 @@ import { checkContractClean, supersededTestCandidates } from "../architecture/co
 import { readRefactorVerifyAssessMarker, writeRefactorVerifyAssessMarker, clearRefactorVerifyAssessMarker } from "../smells/refactor-verify-assess.js";
 import { checkMigrationAppClean } from "../architecture/migration-app-clean.js";
 import { checkShippedMigrationImmutable } from "../architecture/migration-history-clean.js";
-import { checkTestSmells } from "../architecture/test-smell-clean.js";
+import { checkTestSmells, AUTHOR_LAYER_TEST_SMELLS } from "../architecture/test-smell-clean.js";
 import { emitAgentLogEvent, type AgentLogEventInput } from "../../consort/logging/agent-log.js";
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -582,6 +582,10 @@ export async function greenOpenCycle(
   // captured here so the green-failure enrichment records it as a surgical driver
   // fixDirective (path (b)), never a spec-defect reopen (the churn-killer).
   let testSmellRemediation: string | undefined;
+  // True when a fired test-smell is an AUTHOR-LAYER (migration-reversibility) class that a
+  // Driver code-repair cannot close – escalate to the author on the first failure instead
+  // of looping bounded assess->repair rounds (see AUTHOR_LAYER_TEST_SMELLS).
+  let authorLayerTestSmell = false;
   // DB-PROVISIONING short-circuit (issue #197): a verify that failed because the
   // E2E app served an UNMIGRATED/unreachable database is an infra fault, not a
   // regression. The harness never reuses a server anymore (CI=1 + free ports in
@@ -660,6 +664,9 @@ export async function greenOpenCycle(
           // so the assess records a SURGICAL driver fixDirective (narrow the catch,
           // drop the pointless teardown), never a design-lane reopen (the churn).
           testSmellRemediation = smells.remediation;
+          // ...UNLESS a fired smell is an author-layer (migration-reversibility) class a
+          // surgical Driver repair cannot close – those escalate on first failure below.
+          authorLayerTestSmell = smells.violations.some((v) => AUTHOR_LAYER_TEST_SMELLS.has(v.smell));
         }
       } catch {
         /* advisory scan: a gate error must never fail the cycle */
@@ -699,6 +706,27 @@ export async function greenOpenCycle(
         reason:
           `Databricks auth session expired during verify of ${open.test_id} (${open.ac_id}) in ${featureId}/${story}. ` +
           `Re-authenticate with \`databricks auth login\` and re-run. (verify: ${result.summary})`,
+        feature_id: featureId,
+        story_id: story,
+        ac_id: open.ac_id,
+      });
+      return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, escalated: true, escalation, summary: result.summary };
+    }
+    // AUTHOR-LAYER test-smell short-circuit: a migration-reversibility smell
+    // (reversible-invariant-round-trip / relative-migration-revision / migration-marker-presence)
+    // is NOT closable by a surgical Driver repair – it needs the test RE-AUTHORED (explicit
+    // down_revision round-trip). Routing it through assess->repair just burns bounded rounds on
+    // a test the Driver cannot green, then escalates anyway (the observed churn). The verify
+    // already deterministically diagnosed it ("the test's AUTHOR fixes these, not a code repair"),
+    // so escalate on the FIRST failure with the exact remediation – same posture as auth-expired.
+    if (authorLayerTestSmell && testSmellRemediation) {
+      const escalation = writeEscalation(consortDir, {
+        source: "test-authoring-smell",
+        reason:
+          `A migration-reversibility test-authoring smell for ${open.test_id} (${open.ac_id}) in ` +
+          `${featureId}/${story} is not Driver-fixable – the test's AUTHOR must re-author it (an explicit ` +
+          `down_revision round-trip), not a code repair. Escalating with the remediation instead of burning ` +
+          `assess->repair rounds that cannot green it.\n${testSmellRemediation}`,
         feature_id: featureId,
         story_id: story,
         ac_id: open.ac_id,
