@@ -5,6 +5,7 @@ I need the team to file a SKU's stock at a physical location and see it again. T
 Concretely for this feature:
 
 - File the stock level of one SKU at one location, and retrieve it later.
+- When the operator enters a location, they shouldn't have to retype one they've already used: offer the locations already on record to choose from, while still letting them record stock at a brand-new location that has never been used. How that's presented is the designer's call; what matters is that an existing location is reusable without retyping and a new one is never blocked.
 - A SKU can hold stock at more than one location; each `(sku, location)` pair is its own record and is uniquely addressable. Two records must never share that pair (resolve the collision at write time, never store a duplicate, never show an error page).
 - Each unit is identified by a single tracking code (a `tracking_code`) that encodes its location, batch, and serial together. The team is fine with one combined code for V1; a later iteration will revisit splitting those fields apart. Store and show that combined code on the stock record now.
 - The home screen is a calm, scannable stock-by-location table: SKU, location, quantity (right-aligned), and the tracking code column, rendered adaptively (a cell shows its value, or an explicit "not tracked" when absent, never blank). An empty location shows an explicit "No stock at this location" state, never a blank page.
