@@ -19,9 +19,10 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { storyAcIds, readAcLayer, readAcArchitecturalNotes, featureTestListJson, acsDir, designGuideJson, designAssetsDir, architectureJson, dbDesignJson, featureSpecJson, storiesDir } from "../../consort/config/consort-paths.js";
 import { checkArtifactConformance, canonicalArtifactName, checkDbDesign, checkStoryIndependence } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
-import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, checkE2eHelperExports, checkE2eRouteAround } from "../../consort/architecture/e2e-route-adherence.js";
+import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, checkE2eHelperExports, checkE2eRouteAround, checkE2eFixedKeyEmptyState } from "../../consort/architecture/e2e-route-adherence.js";
 import { collectLayeringViolations } from "../../consort/architecture/layering-clean.js";
 import { collectUxViolations } from "../../consort/architecture/design-adherence.js";
+import { testlistConformanceForContent } from "../../consort/smells/testlist-conformance.js";
 import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "../../consort/gates/registered-breakdown.js";
 
 export interface FormatViolation {
@@ -350,6 +351,19 @@ function checkTestStrategist(args: FormatArgs, v: FormatViolation[]): void {
       problem: `AC(s) with no covering test: [${uncovered.join(", ")}]. Every AC needs >=1 item (a client AC needs a kind:client item; see the reflect gate).`,
     });
   }
+  // SHIFT-LEFT: run the SAME deterministic, story-scoped pre-reflect conformance suite the
+  // design-lane gate runs (`testlistConformanceViolations`) HERE, in the Test Strategist's own
+  // self-check, so a nonconformant list is fixed WITHIN this turn instead of shipping to the
+  // navigator reflect gate that bounces it back as a `reflect-testlist-defect` revise-route (the
+  // redirect). Covers NFR fitness `nfr_id` coverage (the S1 semantic-dedup drop), scenario_file-vs-
+  // description filename coherence (the S2 mismatch), client-kind-vs-layer, e2e-spec-suffix,
+  // migration down_revision, schema-change orphan, whole-table-aggregate, endpoint coherence, etc.
+  // ONE check-core keeps the self-check and the gate on a single source of truth (never diverge).
+  // Run it against the MASTER filtered to this story (`items` above) — the per-story view the gate
+  // reads is written by a postTurn AFTER this turn, so it is absent mid-turn; `items` is exactly
+  // what that postTurn would carve out.
+  const conf = testlistConformanceForContent(consortDir, featureId, story, JSON.stringify({ items }));
+  if (conf) v.push({ artifact: "test-list.json", problem: `test-list conformance: ${conf.reason}` });
 }
 
 /** Whether the project's design-guide.json exists AND conforms to its schema.
@@ -475,6 +489,10 @@ function checkNavigator(args: FormatArgs, v: FormatViolation[]): void {
   // interaction that falls back via `.catch(() => page.goto('?...'))` passes whether or not the
   // control works (stockflow S2: the native-datalist filter shipped broken behind the bypass).
   for (const x of checkE2eRouteAround(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  // An empty-state e2e must key on a per-run-unique value, never a hardcoded literal: the shared
+  // feature-branch DB may already hold that key (stockflow S3: a fixed 'C-03' a sibling test seeded
+  // was non-empty → a double assess->repair). Fixed-key empty assertions are caught here, in-turn.
+  for (const x of checkE2eFixedKeyEmptyState(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
 }
 
 /** driver (build lane): the SAME deterministic layering + ux-adherence scans the REVIEW backstop

@@ -359,3 +359,58 @@ export function checkE2eSeedBackendDerivation(projectDir: string): E2eSeedResult
   }
   return { ok: violations.length === 0, violations };
 }
+
+export interface E2eFixedKeyEmptyViolation {
+  /** The E2E spec (project-relative) that asserts an empty-state on a hardcoded key. */
+  spec: string;
+  /** The offending key literal / assertion (trimmed). */
+  snippet: string;
+  remediation: string;
+}
+export interface E2eFixedKeyEmptyResult {
+  ok: boolean;
+  violations: E2eFixedKeyEmptyViolation[];
+}
+
+/** Flags an e2e spec that asserts an EMPTY/absence state (a `*empty*` data-testid or `.toHaveCount(0)`)
+ *  while driving the filter/key to that state with a HARDCODED string literal and NO per-run-unique
+ *  value (crypto.randomUUID) anywhere in the file. The honest-GREEN e2e verify runs against the SHARED
+ *  feature-branch DB, so a fixed key a sibling test/story already seeded is NOT empty → the empty
+ *  assertion fails on a correct app and the cycle burns an assess->repair (the stockflow S3 'C-03'
+ *  double repair). A guaranteed-empty key MUST be per-run-unique. The spec-code analogue of
+ *  checkTestlistFixedKeyE2e (which guards the test-LIST). CONSERVATIVE / fail-open: a file that uses
+ *  randomUUID, or has no empty-state assertion, or no hardcoded filter literal, is never flagged. No
+ *  client e2e tree => clean no-op. */
+export function checkE2eFixedKeyEmptyState(projectDir: string): E2eFixedKeyEmptyResult {
+  const e2eRoot = join(projectDir, E2E_DIR);
+  if (!existsSync(e2eRoot)) return { ok: true, violations: [] };
+  const emptyAssertion = /getByTestId\(\s*(['"`])[\w-]*empty[\w-]*\1\s*\)|\.toHaveCount\(\s*0\s*\)/;
+  // A filter/key set to a bare string LITERAL (not a variable / template with a run-unique value):
+  // `.fill("C-03")` / `.selectOption("C-03")` / a `?location=C-03` query literal.
+  const literalKey = /\.(?:fill|selectOption)\(\s*(['"`])[^'"`$\n]{1,40}\1\s*\)|[?&][A-Za-z_]+=([A-Za-z0-9_-]{1,40})(?=['"`&\s)])/;
+  const violations: E2eFixedKeyEmptyViolation[] = [];
+  for (const spec of walk(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
+    let src: string;
+    try {
+      src = readFileSync(spec, "utf8");
+    } catch {
+      continue;
+    }
+    if (!emptyAssertion.test(src)) continue; // no empty-state assertion → not this check's concern
+    if (/randomUUID|uuid/i.test(src)) continue; // per-run-unique in use → the correct form (fail open)
+    const m = literalKey.exec(src);
+    if (!m) continue; // no hardcoded filter literal → fail open
+    const specRel = relative(projectDir, spec).split(/[\\/]/).join("/");
+    violations.push({
+      spec: specRel,
+      snippet: m[0].slice(0, 60),
+      remediation:
+        `${specRel} asserts an EMPTY state (a *empty* seam / toHaveCount(0)) while keying the filter to a HARDCODED ` +
+        `literal (${m[0].slice(0, 40)}) with no per-run uniqueness. The e2e verify runs against the SHARED feature-branch ` +
+        `DB, so a sibling test/story that seeded that key leaves it NON-empty and the assertion fails on a correct app ` +
+        `(an assess->repair lap). Derive a per-run-unique key — e.g. \`const loc = \\\`C-\\\${crypto.randomUUID()}\\\`\` — and ` +
+        `use that SAME value in the filter fill AND the assertion, so each run owns a guaranteed-empty key.`,
+    });
+  }
+  return { ok: violations.length === 0, violations };
+}

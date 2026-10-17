@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, checkE2eHelperExports, checkE2eRouteAround, globToRegExp } from "../../consort/architecture/e2e-route-adherence.js";
+import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, checkE2eHelperExports, checkE2eRouteAround, checkE2eFixedKeyEmptyState, globToRegExp } from "../../consort/architecture/e2e-route-adherence.js";
 import { formatRoleResponse } from "../../consort/session/response-formatter.js";
 
 let dir: string;
@@ -193,5 +193,47 @@ describe("checkE2eRouteAround (drive the shipped control, not a URL bypass)", ()
     const res = formatRoleResponse({ role: "navigator", consortDir: join(dir, ".consort"), featureId: "F1", story: "S2" });
     expect(res.ok).toBe(false);
     expect(res.violations.some((v) => /routes around the shipped control/.test(v.problem))).toBe(true);
+  });
+});
+
+// P (iteration 2): an empty-state e2e keyed on a HARDCODED literal fails on the shared feature-branch
+// DB when a sibling test seeded that key (stockflow S3 'C-03' double assess->repair). A guaranteed-
+// empty key must be per-run-unique. Spec-code analogue of checkTestlistFixedKeyE2e.
+describe("checkE2eFixedKeyEmptyState (empty-state must key on a per-run-unique value)", () => {
+  it("FLAGS an empty-state assertion keyed on a hardcoded location literal (the S3 'C-03' defect)", () => {
+    spec("empty-location.spec.ts",
+      `test("empty location", async ({ page }) => {\n` +
+      `  await page.goto("/");\n` +
+      `  await page.getByRole("combobox", { name: /location/i }).fill("C-03");\n` +
+      `  await expect(page.getByTestId("stock-empty")).toContainText("No stock at this location");\n` +
+      `});\n`);
+    const r = checkE2eFixedKeyEmptyState(dir);
+    expect(r.ok).toBe(false);
+    expect(r.violations[0].remediation).toMatch(/per-run-unique/);
+  });
+
+  it("PASSES a per-run-unique empty-location key (crypto.randomUUID — the repaired form)", () => {
+    spec("empty-location-ok.spec.ts",
+      `test("empty location", async ({ page }) => {\n` +
+      `  await page.goto("/");\n` +
+      `  const loc = \`C-\${crypto.randomUUID()}\`;\n` +
+      `  await page.getByRole("combobox", { name: /location/i }).fill(loc);\n` +
+      `  await expect(page.getByTestId("stock-empty")).toContainText("No stock at this location");\n` +
+      `});\n`);
+    expect(checkE2eFixedKeyEmptyState(dir).ok).toBe(true);
+  });
+
+  it("does NOT flag a spec with no empty-state assertion (a populated-table test on a fixed location)", () => {
+    spec("populated.spec.ts",
+      `test("table", async ({ page }) => { await page.getByRole("combobox").fill("A-01"); await expect(page.getByTestId("stock-table")).toBeVisible(); });`);
+    expect(checkE2eFixedKeyEmptyState(dir).ok).toBe(true);
+  });
+
+  it("the navigator self-check surfaces the fixed-key empty-state", () => {
+    spec("S3-empty.spec.ts",
+      `test("t", async ({ page }) => { await page.getByRole("combobox").fill("C-03"); await expect(page.getByTestId("sku-empty")).toBeVisible(); });`);
+    const res = formatRoleResponse({ role: "navigator", consortDir: join(dir, ".consort"), featureId: "F1", story: "S3" });
+    expect(res.ok).toBe(false);
+    expect(res.violations.some((vv) => /per-run-unique/.test(vv.problem))).toBe(true);
   });
 });

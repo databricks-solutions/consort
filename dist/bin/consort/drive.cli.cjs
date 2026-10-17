@@ -10596,6 +10596,9 @@ function testlistConformanceViolations(consortDir, featureId, story) {
   } catch {
     return null;
   }
+  return testlistConformanceForContent(consortDir, featureId, story, testListJson);
+}
+function testlistConformanceForContent(consortDir, featureId, story, testListJson) {
   const acLayerById = storyAcLayers(consortDir, featureId, story);
   let dbDesign;
   try {

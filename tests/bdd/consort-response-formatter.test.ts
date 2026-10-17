@@ -550,3 +550,42 @@ describe("driver self-check (P2): layering + ux-adherence pre-handoff", () => {
     expect(res.violations.some((v) => v.artifact === "ux-adherence")).toBe(true);
   });
 });
+
+// Shift-left: the test-strategist self-check now runs the SAME deterministic pre-reflect test-list
+// conformance suite the gate runs, so the two redirects seen live on stockflow-example F1 (S1: a
+// semantic-dedup drop of the sole nfr_id-tagged item; S2: a scenario_file/description filename
+// mismatch) are caught IN-TURN instead of bouncing back from the reflect gate as a revise-route.
+describe("test-strategist self-check runs the pre-reflect conformance suite (shift-left)", () => {
+  const archJson = (nfrs: unknown[]) =>
+    writeJson(join(tdd, "features", F, "architecture.json"), { feature_id: F, service_backed: true, nfrs });
+
+  it("FLAGS a product NFR (applies_to this story) whose singular fitness_function has NO nfr_id-tagged item (the S1 drop)", () => {
+    writeAc("AC1-x", { layer: "API" });
+    writeJson(masterList(), { feature_id: F, items: [{ id: "T1", kind: "behavior", ac_id: "AC1-x", description: "POST a blank field returns 422 naming the field" }] });
+    archJson([{ id: "NFR7-field-named-validation", tier: "product", applies_to: S, fitness_function: "POST with a blank field returns 422 whose detail names the field." }]);
+    const res = formatRoleResponse({ role: "test-strategist", consortDir: tdd, featureId: F, story: S });
+    expect(res.ok).toBe(false);
+    expect(res.violations.some((v) => /conformance/.test(v.problem) && /nfr_id|NFR7/.test(v.problem))).toBe(true);
+  });
+
+  it("PASSES once an nfr_id-tagged fitness item covers that NFR (the dedup-protected anchor survives)", () => {
+    writeAc("AC1-x", { layer: "API" });
+    writeJson(masterList(), { feature_id: F, items: [
+      { id: "T1", kind: "behavior", ac_id: "AC1-x", description: "POST a blank field returns 422 naming the field" },
+      { id: "T2", kind: "fitness", ac_id: "AC1-x", nfr_id: "NFR7-field-named-validation", description: "POST blank field -> 422 names the field" },
+    ] });
+    archJson([{ id: "NFR7-field-named-validation", tier: "product", applies_to: S, fitness_function: "POST with a blank field returns 422 whose detail names the field." }]);
+    const res = formatRoleResponse({ role: "test-strategist", consortDir: tdd, featureId: F, story: S });
+    expect(res.violations.some((v) => /conformance/.test(v.problem))).toBe(false);
+  });
+
+  it("FLAGS a test item whose description names a different .spec.ts than its scenario_file (the S2 mismatch)", () => {
+    writeAc("AC1-x", { layer: "E2E" });
+    writeJson(masterList(), { feature_id: F, items: [
+      { id: "T1", kind: "client", ac_id: "AC1-x", scenario_file: "client/tests/e2e/stock-table.spec.ts", description: "renders the table (see client/tests/e2e/stock-by-location-table.spec.ts)" },
+    ] });
+    const res = formatRoleResponse({ role: "test-strategist", consortDir: tdd, featureId: F, story: S });
+    expect(res.ok).toBe(false);
+    expect(res.violations.some((v) => /conformance/.test(v.problem))).toBe(true);
+  });
+});

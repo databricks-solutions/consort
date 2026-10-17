@@ -116,6 +116,24 @@ export function testlistConformanceViolations(
   } catch {
     return null;
   }
+  return testlistConformanceForContent(consortDir, featureId, story, testListJson);
+}
+
+/**
+ * The same deterministic story-scoped conformance as testlistConformanceViolations, but against a
+ * test-list JSON STRING the caller supplies. The Test Strategist's mid-turn self-check runs this
+ * against the MASTER filtered to the story, because the per-story view the gate reads
+ * (storyTestListJson) is written by a postTurn and does NOT exist yet in-turn — reading it there
+ * would vacuously pass and let the defect escape to the reflect gate. acLayers / db-design /
+ * architecture ARE on disk mid-turn, so they are read here. ONE check-core, two entry points
+ * (self-check + gate) — they can never diverge.
+ */
+export function testlistConformanceForContent(
+  consortDir: string,
+  featureId: string,
+  story: string,
+  testListJson: string,
+): { reason: string; acIds: string[] } | null {
   const acLayerById = storyAcLayers(consortDir, featureId, story);
   // The DBA's schema-change ledger (optional): read for the orphan check so a test
   // referencing an un-planned schema_change_id is caught pre-reflect. Absent/unreadable

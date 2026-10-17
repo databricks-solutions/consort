@@ -15318,6 +15318,9 @@ function testlistConformanceViolations(consortDir, featureId, story) {
   } catch {
     return null;
   }
+  return testlistConformanceForContent(consortDir, featureId, story, testListJson);
+}
+function testlistConformanceForContent(consortDir, featureId, story, testListJson) {
   const acLayerById = storyAcLayers(consortDir, featureId, story);
   let dbDesign;
   try {
@@ -16134,6 +16137,32 @@ function checkE2eSeedBackendDerivation(projectDir) {
   }
   return { ok: violations.length === 0, violations };
 }
+function checkE2eFixedKeyEmptyState(projectDir) {
+  const e2eRoot = (0, import_node_path25.join)(projectDir, E2E_DIR);
+  if (!(0, import_node_fs22.existsSync)(e2eRoot)) return { ok: true, violations: [] };
+  const emptyAssertion = /getByTestId\(\s*(['"`])[\w-]*empty[\w-]*\1\s*\)|\.toHaveCount\(\s*0\s*\)/;
+  const literalKey = /\.(?:fill|selectOption)\(\s*(['"`])[^'"`$\n]{1,40}\1\s*\)|[?&][A-Za-z_]+=([A-Za-z0-9_-]{1,40})(?=['"`&\s)])/;
+  const violations = [];
+  for (const spec of walk2(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
+    let src;
+    try {
+      src = (0, import_node_fs22.readFileSync)(spec, "utf8");
+    } catch {
+      continue;
+    }
+    if (!emptyAssertion.test(src)) continue;
+    if (/randomUUID|uuid/i.test(src)) continue;
+    const m = literalKey.exec(src);
+    if (!m) continue;
+    const specRel = (0, import_node_path25.relative)(projectDir, spec).split(/[\\/]/).join("/");
+    violations.push({
+      spec: specRel,
+      snippet: m[0].slice(0, 60),
+      remediation: `${specRel} asserts an EMPTY state (a *empty* seam / toHaveCount(0)) while keying the filter to a HARDCODED literal (${m[0].slice(0, 40)}) with no per-run uniqueness. The e2e verify runs against the SHARED feature-branch DB, so a sibling test/story that seeded that key leaves it NON-empty and the assertion fails on a correct app (an assess->repair lap). Derive a per-run-unique key \u2014 e.g. \`const loc = \\\`C-\\\${crypto.randomUUID()}\\\`\` \u2014 and use that SAME value in the filter fill AND the assertion, so each run owns a guaranteed-empty key.`
+    });
+  }
+  return { ok: violations.length === 0, violations };
+}
 
 // consort/session/response-formatter.ts
 function needStory(role, story, violations) {
@@ -16337,6 +16366,8 @@ function checkTestStrategist(args, v) {
       problem: `AC(s) with no covering test: [${uncovered.join(", ")}]. Every AC needs >=1 item (a client AC needs a kind:client item; see the reflect gate).`
     });
   }
+  const conf = testlistConformanceForContent(consortDir, featureId, story, JSON.stringify({ items }));
+  if (conf) v.push({ artifact: "test-list.json", problem: `test-list conformance: ${conf.reason}` });
 }
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
@@ -16411,6 +16442,7 @@ function checkNavigator(args, v) {
   for (const x of checkE2eSeedBackendDerivation(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
   for (const x of checkE2eHelperExports(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
   for (const x of checkE2eRouteAround(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  for (const x of checkE2eFixedKeyEmptyState(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
 }
 function checkDriver(args, v) {
   const archFile = architectureJson(args.consortDir, args.featureId);
