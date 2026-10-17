@@ -7692,6 +7692,7 @@ var driver_green_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     { bin: "@build-cycle", args: [], when: "after" }
   ]
 };
@@ -7986,6 +7987,7 @@ var driver_refactor_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     {
       bin: "@build-cycle",
       args: [],
@@ -8029,6 +8031,7 @@ var driver_refactor_deploy_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     {
       bin: "@build-cycle",
       args: [],
@@ -8072,6 +8075,7 @@ var driver_refactor_superseded_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     {
       bin: "@build-cycle",
       args: [],
@@ -8101,6 +8105,7 @@ var driver_repair_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     { bin: "@build-cycle", args: [], when: "after" }
   ]
 };
@@ -8125,6 +8130,7 @@ var driver_green_superseded_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     { bin: "@build-cycle", args: [], when: "after" }
   ]
 };

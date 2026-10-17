@@ -11,19 +11,38 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { reviewArtifacts, roleArtifacts } from "./resolve-review-artifacts.js";
 
-/** macOS app-bundle CLIs, the fallback when the editor's `code`/`cursor` shim was
+/** macOS app-bundle CLIs per editor, the fallback when the editor's `cursor`/`code` shim was
  *  never installed on PATH (users skip that step). Mirrors start.md's find_editor. */
-const APP_BUNDLE_CLIS = [
+const CURSOR_BUNDLES = [
   "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
   `${process.env.HOME}/Applications/Cursor.app/Contents/Resources/app/bin/cursor`,
+];
+const CODE_BUNDLES = [
   "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
   `${process.env.HOME}/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code`,
 ];
 
-/** Find a usable editor CLI: PATH `cursor`/`code` first, then an installed .app's CLI. */
+/** The editor whose integrated terminal this process runs in, by env markers, or null when
+ *  undetermined. BOTH Cursor and VS Code set TERM_PROGRAM=vscode (Cursor is a VS Code fork), so
+ *  Cursor is distinguished by its own CURSOR_TRACE_ID — checked FIRST — and VS Code by
+ *  VSCODE_PID / VSCODE_GIT_IPC_HANDLE / TERM_PROGRAM=vscode with no Cursor marker. This is what
+ *  decides WHICH editor to open files in: a user running inside VS Code must not get Cursor just
+ *  because the `cursor` shim happens to be first on PATH. */
+export function hostEditor(env: NodeJS.ProcessEnv = process.env): "cursor" | "code" | null {
+  if (env.CURSOR_TRACE_ID) return "cursor";
+  if (env.VSCODE_PID || env.VSCODE_GIT_IPC_HANDLE || env.TERM_PROGRAM === "vscode") return "code";
+  return null;
+}
+
+/** Find a usable editor CLI, PREFERRING the host editor (the one whose terminal we run in): its
+ *  PATH shim first, then the other editor's shim, then the host's .app CLI, then the other's.
+ *  Undetermined host keeps the legacy cursor-then-code order. */
 export function findEditorCmd(env: NodeJS.ProcessEnv = process.env): string | null {
+  const host = hostEditor(env);
+  const names = host === "code" ? ["code", "cursor"] : ["cursor", "code"];
+  const bundles = host === "code" ? [...CODE_BUNDLES, ...CURSOR_BUNDLES] : [...CURSOR_BUNDLES, ...CODE_BUNDLES];
   const pathDirs = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
-  for (const name of ["cursor", "code"]) {
+  for (const name of names) {
     for (const dir of pathDirs) {
       const p = path.join(dir, name);
       try {
@@ -33,7 +52,7 @@ export function findEditorCmd(env: NodeJS.ProcessEnv = process.env): string | nu
       }
     }
   }
-  for (const p of APP_BUNDLE_CLIS) {
+  for (const p of bundles) {
     try {
       if (fs.existsSync(p)) return p;
     } catch {

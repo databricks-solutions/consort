@@ -146,10 +146,13 @@ var THEME_HEADER = `/*
 function buildThemeCss(guide) {
   return THEME_HEADER + renderThemeRootCss(guide);
 }
-function applyDesignGuideTheme(projectDir) {
+function applyDesignGuideTheme(projectDir, opts = {}) {
   const consortDir = resolveConsortDir(projectDir);
   const guidePath = designGuideJson(consortDir);
   if (!existsSync3(guidePath)) {
+    if (opts.ifGuide) {
+      return { themePath: "", varCount: 0, iconInstalled: false, skipped: true };
+    }
     throw new Error(
       `apply-theme: no design guide at ${guidePath} \u2014 run the UX designer first (this is a UI project's design system).`
     );
@@ -177,6 +180,7 @@ function parse(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--project") out.project = argv[++i];
+    else if (argv[i] === "--if-guide") out.ifGuide = true;
   }
   return out;
 }
@@ -184,7 +188,12 @@ function main() {
   const a = parse(process.argv.slice(2));
   const projectDir = a.project ?? process.cwd();
   try {
-    const { themePath, varCount, iconInstalled } = applyDesignGuideTheme(projectDir);
+    const { themePath, varCount, iconInstalled, skipped } = applyDesignGuideTheme(projectDir, { ifGuide: a.ifGuide });
+    if (skipped) {
+      process.stdout.write(`apply-design-theme: no design guide (--if-guide) \u2014 nothing to apply.
+`);
+      return 0;
+    }
     process.stdout.write(`apply-design-theme: wrote ${varCount} design tokens to ${themePath} (:root generated from design-guide.json).
 `);
     if (iconInstalled) {

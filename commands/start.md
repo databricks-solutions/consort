@@ -205,7 +205,7 @@ KIT_REF="${LAKEBASE_KIT_REF:-}"
 if [ -z "$KIT_REF" ] && [ -f "$CONSORT_ROOT/.claude-plugin/plugin.json" ]; then
   KIT_REF="v$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
 fi
-KIT_REF="${KIT_REF:-v0.4.12}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
+KIT_REF="${KIT_REF:-v0.4.13}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
 export LAKEBASE_KIT_REF="$KIT_REF"
 
 # Launch scaffolding DETACHED (own session): it prints the child pid + a live-log path
@@ -276,15 +276,20 @@ The extension is the Git + Lakebase **source-control view** — your code branch
 
 **First check whether they even have an editor**, then, if yes, do it for them (download the latest release `.vsix`, install, open the project). The `cursor` / `code` CLI is often NOT on PATH even when the app IS installed (users skip the editor's "Install command in PATH" step), so fall back to the macOS app-bundle CLI before concluding it's missing:
 ```bash
-# Find a usable Cursor/VS Code CLI: PATH first, then the installed .app's bundled CLI.
+# Find a usable Cursor/VS Code CLI, PREFERRING the editor whose terminal we run in (both are
+# usually installed, so cursor-first would open Cursor for a user working in VS Code). Both set
+# TERM_PROGRAM=vscode; Cursor is distinguished by CURSOR_TRACE_ID, VS Code by VSCODE_PID. PATH
+# shims first (host editor's shim first), then the installed .app's bundled CLI (host's first).
 find_editor() {
-  for c in cursor code; do command -v "$c" >/dev/null 2>&1 && { echo "$c"; return; }; done
-  for p in "/Applications/Cursor.app/Contents/Resources/app/bin/cursor" \
-           "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor" \
-           "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
-           "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"; do
-    [ -x "$p" ] && { echo "$p"; return; }
-  done
+  local order="cursor code" bundles_cursor bundles_code
+  if [ -z "${CURSOR_TRACE_ID:-}" ] && { [ -n "${VSCODE_PID:-}" ] || [ -n "${VSCODE_GIT_IPC_HANDLE:-}" ] || [ "${TERM_PROGRAM:-}" = "vscode" ]; }; then
+    order="code cursor"   # host is VS Code
+  fi
+  for c in $order; do command -v "$c" >/dev/null 2>&1 && { echo "$c"; return; }; done
+  bundles_cursor="/Applications/Cursor.app/Contents/Resources/app/bin/cursor $HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
+  bundles_code="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code $HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+  case "$order" in "code cursor") set -- $bundles_code $bundles_cursor ;; *) set -- $bundles_cursor $bundles_code ;; esac
+  for p in "$@"; do [ -x "$p" ] && { echo "$p"; return; }; done
 }
 ED="$(find_editor)"
 if [ -z "$ED" ]; then

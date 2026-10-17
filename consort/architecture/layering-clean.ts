@@ -488,6 +488,21 @@ export function layeringConfigFromArchitecture(architectureJson: string): {
   };
 }
 
+/**
+ * Read-only layering scan from a feature's architecture.json: the import-layering + ORM-containment
+ * violation strings a service-backed feature has (empty array when clean, not `service_backed`, or no
+ * layers declared). This is the SINGLE orchestration the REVIEW backstop (flagLayeringIfDirty) and the
+ * DRIVER pre-handoff self-check both call, so the driver clears in-turn exactly what review would
+ * otherwise flag into a refactor lap.
+ */
+export function collectLayeringViolations(projectDir: string, architectureJson: string): string[] {
+  const cfg = layeringConfigFromArchitecture(architectureJson);
+  if (!cfg.serviceBacked || cfg.allModules.length === 0) return [];
+  const importLayering = checkImportLayering(projectDir, cfg.allModules);
+  const ormContainment = checkOrmContainment(projectDir, cfg.allModules);
+  return [...(importLayering.ok ? [] : importLayering.violations), ...(ormContainment.ok ? [] : ormContainment.violations)];
+}
+
 // ─── A1: module placement ────────────────────────────────────────
 // The architect's `layers[].module` is the contract for WHERE each layer's code
 // lives. Honor exactly what is declared (no imposed directory convention): a

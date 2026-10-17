@@ -79,6 +79,24 @@ describe("applyDesignGuideTheme: overwrites theme.css from the guide", () => {
     const dir = scaffold(undefined);
     expect(() => applyDesignGuideTheme(dir)).toThrowError(/no design guide/i);
   });
+
+  it("no-ops (skipped) with { ifGuide: true } when there is no design guide — the DRIVER post-turn re-freeze path", () => {
+    // The driver postTurn re-applies the theme onto the shell it just (re)wrote, but runs on
+    // EVERY project — a non-UI (or pre-guide) project has no guide, so ifGuide must no-op, not throw.
+    const dir = scaffold(undefined);
+    const res = applyDesignGuideTheme(dir, { ifGuide: true });
+    expect(res.skipped).toBe(true);
+    expect(res.varCount).toBe(0);
+    expect(res.iconInstalled).toBe(false);
+  });
+
+  it("still applies normally with { ifGuide: true } when a guide IS present (re-freeze on a UI project)", () => {
+    const dir = scaffold(INDIGO_GUIDE);
+    const res = applyDesignGuideTheme(dir, { ifGuide: true });
+    expect(res.skipped).toBeFalsy();
+    expect(res.varCount).toBeGreaterThan(0);
+    expect(readFileSync(res.themePath, "utf8")).toContain("--color-brand-indigo: #4840BB;");
+  });
 });
 
 describe("applyDesignGuideTheme: installs the brand icon at design-apply time", () => {

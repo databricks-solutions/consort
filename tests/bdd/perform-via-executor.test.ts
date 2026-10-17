@@ -336,10 +336,12 @@ describe("performViaExecutor (#594): driver GREEN through the StepExecutor", () 
 
       expect(bounded).toBeDefined();
       // Same phase order as RED: agent, reconcile (materialize the meta agent-log the validator
-      // checks), then the post-turn @build-cycle – here the `green` verb (honest-GREEN), NOT `begin`.
+      // checks), then the post-turn apply-theme re-freeze (P1: idempotent, --if-guide no-ops on a
+      // non-UI project) + the @build-cycle `green` verb (honest-GREEN), NOT `begin`.
       expect(labels).toEqual([
         "claude:driver",
         "cli:log:--reconcile",
+        "cli:apply-design-theme:--if-guide",
         "cli:cycle:green",
       ]);
     } finally {

@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { reviewArtifacts } from "../../consort/orchestrator/open/resolve-review-artifacts";
-import { openArtifactsInEditor, isInsideEditor } from "../../consort/orchestrator/open/open-in-editor";
+import { openArtifactsInEditor, isInsideEditor, findEditorCmd, hostEditor } from "../../consort/orchestrator/open/open-in-editor";
 
 let tdd: string;
 beforeEach(() => {
@@ -137,6 +137,40 @@ describe("openArtifactsInEditor", () => {
   it("isInsideEditor detects the editor terminal", () => {
     expect(isInsideEditor({ TERM_PROGRAM: "vscode" } as NodeJS.ProcessEnv)).toBe(true);
     expect(isInsideEditor({ TERM_PROGRAM: "Apple_Terminal" } as NodeJS.ProcessEnv)).toBe(false);
+  });
+});
+
+// Regression guard: files were opening in Cursor for a user working in VS Code, because
+// findEditorCmd tried `cursor` before `code` unconditionally. It must prefer the HOST editor
+// (the terminal we run in), since both editors are usually on PATH.
+describe("findEditorCmd prefers the host editor", () => {
+  let bin: string;
+  beforeEach(() => {
+    bin = mkdtempSync(join(tmpdir(), "editor-bin-"));
+    writeFileSync(join(bin, "cursor"), "#!/bin/sh\n");
+    writeFileSync(join(bin, "code"), "#!/bin/sh\n");
+  });
+  afterEach(() => rmSync(bin, { recursive: true, force: true }));
+
+  it("hostEditor: CURSOR_TRACE_ID => cursor (even though Cursor also sets TERM_PROGRAM=vscode)", () => {
+    expect(hostEditor({ CURSOR_TRACE_ID: "x", TERM_PROGRAM: "vscode" } as NodeJS.ProcessEnv)).toBe("cursor");
+  });
+  it("hostEditor: VS Code markers (no Cursor marker) => code", () => {
+    expect(hostEditor({ VSCODE_PID: "123", TERM_PROGRAM: "vscode" } as NodeJS.ProcessEnv)).toBe("code");
+    expect(hostEditor({ VSCODE_GIT_IPC_HANDLE: "/tmp/x" } as NodeJS.ProcessEnv)).toBe("code");
+  });
+  it("hostEditor: undetermined => null", () => {
+    expect(hostEditor({ TERM_PROGRAM: "Apple_Terminal" } as NodeJS.ProcessEnv)).toBeNull();
+  });
+
+  it("opens in VS Code (`code`) when the host is VS Code, with BOTH shims on PATH (the reported bug)", () => {
+    expect(findEditorCmd({ PATH: bin, VSCODE_PID: "123", TERM_PROGRAM: "vscode" } as NodeJS.ProcessEnv)).toBe("code");
+  });
+  it("opens in Cursor (`cursor`) when the host is Cursor", () => {
+    expect(findEditorCmd({ PATH: bin, CURSOR_TRACE_ID: "x", TERM_PROGRAM: "vscode" } as NodeJS.ProcessEnv)).toBe("cursor");
+  });
+  it("keeps the legacy cursor-first order when the host is undetermined", () => {
+    expect(findEditorCmd({ PATH: bin } as NodeJS.ProcessEnv)).toBe("cursor");
   });
 });
 

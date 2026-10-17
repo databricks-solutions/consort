@@ -686,6 +686,38 @@ export function summarizeUxViolations(r: UxCleanResult): string {
   return parts.join("; ");
 }
 
+/** Read (read-only) the design guide's component-class vocabulary + brand app_icon — the
+ *  contract the ux-adherence check enforces. Absent/malformed guide -> conservative defaults
+ *  (undefined), so the check falls back to its any-className signal / no-icon behavior. Shared
+ *  by the REVIEW backstop (flagUxAdherenceIfDirty) and the DRIVER self-check. */
+export function readDesignContract(consortDir: string): { designClasses?: string[]; appIcon?: { source: string; install_to: string } } {
+  let designClasses: string[] | undefined;
+  let appIcon: { source: string; install_to: string } | undefined;
+  try {
+    const gp = designGuideJson(consortDir);
+    if (existsSync(gp)) {
+      const guide = JSON.parse(readFileSync(gp, "utf8")) as { components?: Record<string, { class?: string }>; app_icon?: { source: string; install_to: string } };
+      const classes = Object.values(guide.components ?? {})
+        .map((c) => (typeof c?.class === "string" ? c.class : undefined))
+        .filter((c): c is string => !!c);
+      if (classes.length) designClasses = classes;
+    }
+    appIcon = readAppIconFromGuide(consortDir);
+  } catch {
+    /* malformed guide -> conservative defaults; the guide gate reports its shape */
+  }
+  return { designClasses, appIcon };
+}
+
+/** Read-only ux-adherence scan: the violation summary (empty array when clean). Does NOT install
+ *  the brand asset bytes (unlike the review backstop) — the DRIVER self-check only REPORTS, so the
+ *  driver can fix the shell before handoff instead of shipping it to the review refactor lap. */
+export function collectUxViolations(consortDir: string): string[] {
+  const { designClasses, appIcon } = readDesignContract(consortDir);
+  const ux = checkUxClean({ projectDir: dirname(consortDir), designClasses, appIcon });
+  return ux.clean ? [] : [summarizeUxViolations(ux)];
+}
+
 /**
  * The I/O boundary (mirrors checkE2eRegexClean): scan a project's client workspace
  * for unreachable + bare feature pages. **UI-track only**: no client/src/App.tsx ->

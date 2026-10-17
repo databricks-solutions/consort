@@ -39,8 +39,8 @@ import { listExperiments } from "../../consort/experiment/experiment.js";
 import { ensureDeployedAndVerify } from "../deploy/deploy.js";
 import { writeEscalation, type Escalation } from "../../consort/gates/escalation.js";
 import { readSmellsLog, markSmellResolved, isBuildRefactorRoutableSmell, hasOpenBuildRefactorRoutableSmell, writeSmellsLog, hasOpenSmell } from "../smells/smells.js";
-import { checkUxClean, summarizeUxViolations, readAppIconFromGuide, installBrandAsset, applyBrandIconReference } from "../architecture/design-adherence.js";
-import { checkImportLayering, checkOrmContainment, layeringConfigFromArchitecture } from "../architecture/layering-clean.js";
+import { checkUxClean, summarizeUxViolations, readAppIconFromGuide, readDesignContract, installBrandAsset, applyBrandIconReference } from "../architecture/design-adherence.js";
+import { collectLayeringViolations } from "../architecture/layering-clean.js";
 import {
   readGreenFailure,
   writeGreenFailure,
@@ -1000,28 +1000,10 @@ export function flagTestListGateDriftIfAny(consortDir: string, featureId: string
  */
 function flagUxAdherenceIfDirty(consortDir: string, story: string): void {
   try {
-    // Read the design guide (when present) so the scan enforces its declared
-    // contract: the component-class vocabulary (token-consumption) AND the brand
-    // app_icon (app-icon adherence). Absent/malformed guide -> undefined, the checks
-    // fall back to their conservative defaults (any-className signal; no icon check).
-    let designClasses: string[] | undefined;
-    let appIcon: { source: string; install_to: string } | undefined;
-    try {
-      const gp = designGuideJson(consortDir);
-      if (existsSync(gp)) {
-        const guide = JSON.parse(readFileSync(gp, "utf8")) as {
-          components?: Record<string, { class?: string }>;
-          app_icon?: { source: string; install_to: string };
-        };
-        const classes = Object.values(guide.components ?? {})
-          .map((c) => (typeof c?.class === "string" ? c.class : undefined))
-          .filter((c): c is string => !!c);
-        if (classes.length) designClasses = classes;
-      }
-      appIcon = readAppIconFromGuide(consortDir);
-    } catch {
-      /* malformed guide -> conservative defaults; the guide gate reports its shape */
-    }
+    // Read the design guide (when present) so the scan enforces its declared contract: the
+    // component-class vocabulary (token-consumption) AND the brand app_icon. The SAME read the
+    // DRIVER self-check uses (readDesignContract) — absent/malformed guide -> conservative defaults.
+    const { designClasses, appIcon } = readDesignContract(consortDir);
     // DETERMINISTIC brand-asset install: copy the real image bytes from the staged
     // intake asset into the design-guide's `install_to` (e.g. client/public/warehouse.png)
     // so the built app actually SERVES it. A coding agent cannot `cp` a binary via text
@@ -1057,15 +1039,9 @@ function flagLayeringIfDirty(consortDir: string, featureId: string, story: strin
   try {
     const archPath = join(featureResolved(consortDir, featureId), "architecture.json");
     if (!existsSync(archPath)) return;
-    const cfg = layeringConfigFromArchitecture(readFileSync(archPath, "utf8"));
-    if (!cfg.serviceBacked || cfg.allModules.length === 0) return;
-    const projectDir = dirname(consortDir);
-    const importLayering = checkImportLayering(projectDir, cfg.allModules);
-    const ormContainment = checkOrmContainment(projectDir, cfg.allModules);
-    const violations = [
-      ...(importLayering.ok ? [] : importLayering.violations),
-      ...(ormContainment.ok ? [] : ormContainment.violations),
-    ];
+    // The SAME read-only scan the DRIVER self-check runs (collectLayeringViolations) — so the
+    // driver clears in-turn exactly what this backstop would otherwise flag into a refactor lap.
+    const violations = collectLayeringViolations(dirname(consortDir), readFileSync(archPath, "utf8"));
     if (violations.length > 0 && !hasOpenSmell(consortDir, "layering-violation", story)) {
       writeSmellsLog(consortDir, [
         {

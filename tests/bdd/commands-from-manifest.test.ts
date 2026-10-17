@@ -226,13 +226,16 @@ describe("commandsFromManifest ≡ commandsForAction: architect t-shirt sizer (e
 describe("commandsFromManifest ≡ commandsForAction: driver GREEN build turn", () => {
   const GREEN: WorkflowAction = { kind: "invoke-role", role: "driver", story: "S1-record-stock" };
 
-  it("plain story-loop driver GREEN: byte-identical [claude, cycle green, reconcile]", () => {
+  it("plain story-loop driver GREEN: byte-identical [claude, apply-theme, cycle green, reconcile]", () => {
     const c = cfg({ modelForRole: (r) => (r === "driver" ? "haiku" : "sonnet") });
     const legacy = commandsForAction(GREEN, c);
     const fromManifest = commandsFromManifest(GREEN, c);
     expect(fromManifest).toEqual(legacy);
+    // P1: the driver re-freezes the theme onto the shell it just wrote (idempotent, --if-guide
+    // no-ops on a non-UI project) BEFORE the honest-GREEN verify, so branding is correct at GREEN.
     expect(fromManifest!.map((cmd) => (cmd.kind === "cli" ? `cli:${cmd.args[0]}` : cmd.kind))).toEqual([
       "claude",
+      "cli:--if-guide",
       "cli:green",
       "cli:--reconcile",
     ]);

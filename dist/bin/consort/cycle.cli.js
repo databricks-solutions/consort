@@ -10104,6 +10104,21 @@ function summarizeUxViolations(r) {
   if (!r.appIcon.ok) parts.push(`brand app icon not applied: ${r.appIcon.violations.join("; ")}`);
   return parts.join("; ");
 }
+function readDesignContract(consortDir) {
+  let designClasses;
+  let appIcon;
+  try {
+    const gp = designGuideJson(consortDir);
+    if (existsSync17(gp)) {
+      const guide = JSON.parse(readFileSync18(gp, "utf8"));
+      const classes = Object.values(guide.components ?? {}).map((c) => typeof c?.class === "string" ? c.class : void 0).filter((c) => !!c);
+      if (classes.length) designClasses = classes;
+    }
+    appIcon = readAppIconFromGuide(consortDir);
+  } catch {
+  }
+  return { designClasses, appIcon };
+}
 function checkUxClean(args) {
   const okIcon = { ok: true, violations: [] };
   const okVocab = { ok: true, missing: [] };
@@ -10310,6 +10325,13 @@ function layeringConfigFromArchitecture(architectureJson2) {
     allModules,
     ...boundaryLayer?.renders_via ? { rendersVia: boundaryLayer.renders_via } : {}
   };
+}
+function collectLayeringViolations(projectDir, architectureJson2) {
+  const cfg = layeringConfigFromArchitecture(architectureJson2);
+  if (!cfg.serviceBacked || cfg.allModules.length === 0) return [];
+  const importLayering = checkImportLayering(projectDir, cfg.allModules);
+  const ormContainment = checkOrmContainment(projectDir, cfg.allModules);
+  return [...importLayering.ok ? [] : importLayering.violations, ...ormContainment.ok ? [] : ormContainment.violations];
 }
 
 // consort/smells/supersession.ts
@@ -11595,18 +11617,7 @@ function flagTestListGateDriftIfAny(consortDir, featureId, story) {
 }
 function flagUxAdherenceIfDirty(consortDir, story) {
   try {
-    let designClasses;
-    let appIcon;
-    try {
-      const gp = designGuideJson(consortDir);
-      if (existsSync25(gp)) {
-        const guide = JSON.parse(readFileSync25(gp, "utf8"));
-        const classes = Object.values(guide.components ?? {}).map((c) => typeof c?.class === "string" ? c.class : void 0).filter((c) => !!c);
-        if (classes.length) designClasses = classes;
-      }
-      appIcon = readAppIconFromGuide(consortDir);
-    } catch {
-    }
+    const { designClasses, appIcon } = readDesignContract(consortDir);
     if (appIcon) {
       installBrandAsset(dirname12(consortDir), consortDir, appIcon);
       applyBrandIconReference(dirname12(consortDir), appIcon.install_to);
@@ -11622,15 +11633,7 @@ function flagLayeringIfDirty(consortDir, featureId, story) {
   try {
     const archPath = join25(featureResolved(consortDir, featureId), "architecture.json");
     if (!existsSync25(archPath)) return;
-    const cfg = layeringConfigFromArchitecture(readFileSync25(archPath, "utf8"));
-    if (!cfg.serviceBacked || cfg.allModules.length === 0) return;
-    const projectDir = dirname12(consortDir);
-    const importLayering = checkImportLayering(projectDir, cfg.allModules);
-    const ormContainment = checkOrmContainment(projectDir, cfg.allModules);
-    const violations = [
-      ...importLayering.ok ? [] : importLayering.violations,
-      ...ormContainment.ok ? [] : ormContainment.violations
-    ];
+    const violations = collectLayeringViolations(dirname12(consortDir), readFileSync25(archPath, "utf8"));
     if (violations.length > 0 && !hasOpenSmell(consortDir, "layering-violation", story)) {
       writeSmellsLog(consortDir, [
         {

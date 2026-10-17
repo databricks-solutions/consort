@@ -32,6 +32,7 @@
     "resumeKeyFrom": "story"
   },
   "postTurn": [
+    { "bin": "APPLY_DESIGN_THEME_BIN", "args": ["--if-guide", "--project", "{projectRoot}"], "when": "after" },
     {
       "bin": "@build-cycle",
       "args": [],

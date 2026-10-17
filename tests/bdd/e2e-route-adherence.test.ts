@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, globToRegExp } from "../../consort/architecture/e2e-route-adherence.js";
+import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, checkE2eHelperExports, checkE2eRouteAround, globToRegExp } from "../../consort/architecture/e2e-route-adherence.js";
 import { formatRoleResponse } from "../../consort/session/response-formatter.js";
 
 let dir: string;
@@ -112,5 +112,86 @@ describe("checkE2eSeedBackendDerivation (hardcoded/port-swapped seed backend —
     const res = formatRoleResponse({ role: "navigator", consortDir: join(dir, ".consort"), featureId: "F1", story: "S2" });
     expect(res.ok).toBe(false);
     expect(res.violations.some((v) => /string-replacing the client port|\$\{baseURL\}/.test(v.problem))).toBe(true);
+  });
+});
+
+// P3: a spec importing a name a LOCAL helper does not export fails the whole suite at load
+// (stockflow S1: helpers.ts re-exported `expect` but not `test`). Non-relative imports
+// (@playwright/test), star re-exports, and unresolved specifiers fail open.
+describe("checkE2eHelperExports (local-helper import/export consistency)", () => {
+  const helper = (body: string) => writeFileSync(join(dir, "client", "tests", "e2e", "helpers.ts"), body);
+
+  it("FLAGS a spec importing a name the local helper does not export (the S1 missing `export { test }`)", () => {
+    helper(`import { expect } from "@playwright/test";\nexport { expect };\n`);
+    spec("file-stock.spec.ts", `import { test, expect } from "./helpers";\ntest("t", async () => {});\n`);
+    const r = checkE2eHelperExports(dir);
+    expect(r.ok).toBe(false);
+    expect(r.violations).toHaveLength(1);
+    expect(r.violations[0].missing).toEqual(["test"]);
+    expect(r.violations[0].remediation).toMatch(/@playwright\/test|re-export/);
+  });
+
+  it("does NOT flag when the helper re-exports exactly what the spec imports", () => {
+    helper(`import { test, expect } from "@playwright/test";\nexport { test, expect };\n`);
+    spec("ok.spec.ts", `import { test, expect } from "./helpers";\ntest("t", async () => {});\n`);
+    expect(checkE2eHelperExports(dir).ok).toBe(true);
+  });
+
+  it("does NOT flag a direct @playwright/test import (non-relative, skipped)", () => {
+    spec("direct.spec.ts", `import { test, expect } from "@playwright/test";\ntest("t", async () => {});\n`);
+    expect(checkE2eHelperExports(dir).ok).toBe(true);
+  });
+
+  it("fails open on an unresolved relative import", () => {
+    spec("missing.spec.ts", `import { test } from "./nope";\n`);
+    expect(checkE2eHelperExports(dir).ok).toBe(true);
+  });
+
+  it("the navigator self-check surfaces the unsatisfied helper import", () => {
+    helper(`export { expect } from "@playwright/test";\n`);
+    spec("S1.spec.ts", `import { test, expect } from "./helpers";\n`);
+    const res = formatRoleResponse({ role: "navigator", consortDir: join(dir, ".consort"), featureId: "F1", story: "S1" });
+    expect(res.ok).toBe(false);
+    expect(res.violations.some((v) => /does not export/.test(v.problem))).toBe(true);
+  });
+});
+
+// P3: a spec must drive its assertion THROUGH the shipped control, not route around it
+// (stockflow S2: selectOption(...).catch(() => page.goto('?location=')) passed whether or not
+// the native-datalist filter worked). Only a control-interaction + `.catch`-with-goto is flagged.
+describe("checkE2eRouteAround (drive the shipped control, not a URL bypass)", () => {
+  it("FLAGS a control interaction with a `.catch(() => page.goto('?...'))` fallback (the S2 datalist bypass)", () => {
+    spec("empty-location.spec.ts",
+      `test("t", async ({ page }) => {\n` +
+      `  await page.getByTestId("location-select").selectOption({ value: loc }).catch(async () => {\n` +
+      `    await page.goto(\`/?location=\${loc}\`);\n` +
+      `  });\n` +
+      `});\n`);
+    const r = checkE2eRouteAround(dir);
+    expect(r.ok).toBe(false);
+    expect(r.violations).toHaveLength(1);
+    expect(r.violations[0].remediation).toMatch(/routes around the shipped control/);
+  });
+
+  it("does NOT flag a plain control interaction with no navigation fallback", () => {
+    spec("ok.spec.ts", `test("t", async ({ page }) => { await page.getByTestId("location-select").selectOption({ value: "A" }); });`);
+    expect(checkE2eRouteAround(dir).ok).toBe(true);
+  });
+
+  it("does NOT flag a `.catch` whose handler does not navigate (fail open)", () => {
+    spec("catch-no-goto.spec.ts", `await page.getByRole("button").click().catch(() => {});`);
+    expect(checkE2eRouteAround(dir).ok).toBe(true);
+  });
+
+  it("does NOT flag a legitimate deep-link page.goto with a query (no control fallback)", () => {
+    spec("deeplink.spec.ts", `test("t", async ({ page }) => { await page.goto("/?location=NOWHERE"); });`);
+    expect(checkE2eRouteAround(dir).ok).toBe(true);
+  });
+
+  it("the navigator self-check surfaces the route-around", () => {
+    spec("S2.spec.ts", `await page.getByTestId("x").selectOption({ value: "a" }).catch(async () => { await page.goto("/?location=a"); });`);
+    const res = formatRoleResponse({ role: "navigator", consortDir: join(dir, ".consort"), featureId: "F1", story: "S2" });
+    expect(res.ok).toBe(false);
+    expect(res.violations.some((v) => /routes around the shipped control/.test(v.problem))).toBe(true);
   });
 });

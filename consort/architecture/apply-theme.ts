@@ -37,6 +37,9 @@ export interface ApplyThemeResult {
   /** True iff the guide declared an app_icon AND its real bytes were installed to install_to
    *  (false when no app_icon is declared or no staged source asset exists). */
   iconInstalled: boolean;
+  /** True iff an `ifGuide` caller found no design guide and no-op'd (not a UI project,
+   *  or the guide was not written yet). Absent/false on a normal apply. */
+  skipped?: boolean;
 }
 
 /** The full theme.css text for a guide: the generated banner + the :root block. */
@@ -50,10 +53,19 @@ export function buildThemeCss(guide: DesignGuide): string {
  * Idempotent: re-running with the same guide yields byte-identical output.
  * Throws (loud) when no guide exists — the UX designer must run first.
  */
-export function applyDesignGuideTheme(projectDir: string): ApplyThemeResult {
+export function applyDesignGuideTheme(
+  projectDir: string,
+  opts: { ifGuide?: boolean } = {},
+): ApplyThemeResult {
   const consortDir = resolveConsortDir(projectDir);
   const guidePath = designGuideJson(consortDir);
   if (!existsSync(guidePath)) {
+    // `ifGuide` callers (the DRIVER post-turn re-freeze, which runs on every project
+    // whether or not it is a UI track) treat an absent guide as a no-op. The default
+    // (UX-designer) path still throws loud, because there the guide MUST already exist.
+    if (opts.ifGuide) {
+      return { themePath: "", varCount: 0, iconInstalled: false, skipped: true };
+    }
     throw new Error(
       `apply-theme: no design guide at ${guidePath} — run the UX designer first (this is a UI project's design system).`,
     );

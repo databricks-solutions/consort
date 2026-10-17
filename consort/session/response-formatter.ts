@@ -19,7 +19,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { storyAcIds, readAcLayer, readAcArchitecturalNotes, featureTestListJson, acsDir, designGuideJson, designAssetsDir, architectureJson, dbDesignJson, featureSpecJson, storiesDir } from "../../consort/config/consort-paths.js";
 import { checkArtifactConformance, canonicalArtifactName, checkDbDesign, checkStoryIndependence } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
-import { checkE2eRouteCollision, checkE2eSeedBackendDerivation } from "../../consort/architecture/e2e-route-adherence.js";
+import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, checkE2eHelperExports, checkE2eRouteAround } from "../../consort/architecture/e2e-route-adherence.js";
+import { collectLayeringViolations } from "../../consort/architecture/layering-clean.js";
+import { collectUxViolations } from "../../consort/architecture/design-adherence.js";
 import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "../../consort/gates/registered-breakdown.js";
 
 export interface FormatViolation {
@@ -53,6 +55,7 @@ export const FORMATTED_ROLES = new Set([
   "test-strategist",
   "ux-designer",
   "navigator",
+  "driver",
 ]);
 
 function needStory(role: string, story: string | undefined, violations: FormatViolation[]): story is string {
@@ -464,6 +467,30 @@ function checkNavigator(args: FormatArgs, v: FormatViolation[]): void {
   // port hardcodes 8000 and writes to a stale server / different DB when a shared CI runner bumps
   // the backend off a busy port — GREEN locally, RED in CI (stockflow-3-90).
   for (const x of checkE2eSeedBackendDerivation(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  // Every symbol a spec imports from a LOCAL helper must be exported by it — else the spec fails
+  // at load and the whole Playwright suite cannot run (stockflow S1: helpers.ts missing `export
+  // { test }`, surfaced only as a GREEN-failure that cost an assess+repair roundtrip).
+  for (const x of checkE2eHelperExports(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  // A spec must drive its assertion THROUGH the shipped control, not route around it: a control
+  // interaction that falls back via `.catch(() => page.goto('?...'))` passes whether or not the
+  // control works (stockflow S2: the native-datalist filter shipped broken behind the bypass).
+  for (const x of checkE2eRouteAround(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+}
+
+/** driver (build lane): the SAME deterministic layering + ux-adherence scans the REVIEW backstop
+ *  runs (collectLayeringViolations / collectUxViolations), surfaced at the driver's pre-handoff so a
+ *  route->infrastructure layering violation or an unapplied brand shell is fixed IN-TURN (at GREEN)
+ *  instead of shipping to a review->refactor lap (the S1 layering + branding refactor). Read-only;
+ *  a non-service feature (no/`service_backed:false` architecture.json) and a non-UI project are both
+ *  clean no-ops, so this is safe to run on every driver turn. */
+function checkDriver(args: FormatArgs, v: FormatViolation[]): void {
+  const archFile = architectureJson(args.consortDir, args.featureId);
+  if (existsSync(archFile)) {
+    for (const x of collectLayeringViolations(dirname(args.consortDir), readFileSync(archFile, "utf8"))) {
+      v.push({ artifact: "layering", problem: x });
+    }
+  }
+  for (const x of collectUxViolations(args.consortDir)) v.push({ artifact: "ux-adherence", problem: x });
 }
 
 const CHECKERS: Record<string, (a: FormatArgs, v: FormatViolation[]) => void> = {
@@ -473,6 +500,7 @@ const CHECKERS: Record<string, (a: FormatArgs, v: FormatViolation[]) => void> = 
   "test-strategist": checkTestStrategist,
   "ux-designer": checkUxDesigner,
   navigator: checkNavigator,
+  driver: checkDriver,
 };
 
 /**

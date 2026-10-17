@@ -109,15 +109,25 @@ function reviewArtifacts(consortDir, opts = {}) {
 }
 
 // consort/orchestrator/open/open-in-editor.ts
-var APP_BUNDLE_CLIS = [
+var CURSOR_BUNDLES = [
   "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
-  `${process.env.HOME}/Applications/Cursor.app/Contents/Resources/app/bin/cursor`,
+  `${process.env.HOME}/Applications/Cursor.app/Contents/Resources/app/bin/cursor`
+];
+var CODE_BUNDLES = [
   "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
   `${process.env.HOME}/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code`
 ];
+function hostEditor(env = process.env) {
+  if (env.CURSOR_TRACE_ID) return "cursor";
+  if (env.VSCODE_PID || env.VSCODE_GIT_IPC_HANDLE || env.TERM_PROGRAM === "vscode") return "code";
+  return null;
+}
 function findEditorCmd(env = process.env) {
+  const host = hostEditor(env);
+  const names = host === "code" ? ["code", "cursor"] : ["cursor", "code"];
+  const bundles = host === "code" ? [...CODE_BUNDLES, ...CURSOR_BUNDLES] : [...CURSOR_BUNDLES, ...CODE_BUNDLES];
   const pathDirs = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
-  for (const name of ["cursor", "code"]) {
+  for (const name of names) {
     for (const dir of pathDirs) {
       const p = path.join(dir, name);
       try {
@@ -126,7 +136,7 @@ function findEditorCmd(env = process.env) {
       }
     }
   }
-  for (const p of APP_BUNDLE_CLIS) {
+  for (const p of bundles) {
     try {
       if (fs3.existsSync(p)) return p;
     } catch {

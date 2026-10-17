@@ -748,6 +748,12 @@ function roleTaskBody(
       ` it participates in. APPEND each new user flow at the END of the numbered list, keeping the numbers sequential.` +
       ` When a flow or CTA links to ANOTHER screen with a query param (e.g. a Receive CTA to \`/receive?sku=<sku>\`),` +
       ` that target screen's Screens-table row must declare the param it accepts (e.g. \`/receive\` (\`?sku=\`)).` +
+      ` For each INTERACTIVE control a surface introduces (a filter, selector, combobox, search box, toggle), name` +
+      ` in the Screens-table row the control's TYPE and its OPTION SOURCE and the states it must reach — e.g. a` +
+      ` location filter is an accessible combobox whose options are ALL distinct locations (so an EMPTY or other` +
+      ` location is selectable and its empty-state is reachable THROUGH the control), not a native datalist whose` +
+      ` options are only the currently-filtered rows and whose popup cannot be placed. A control a user cannot` +
+      ` operate to reach an asserted state is an IA defect to decide HERE, not a build-time accident.` +
       ` The refinement is ADDITIVE — extend the existing sections and compose new surfaces from` +
       ` the established component vocabulary; the style system (design-guide.json) is read-only context here, authored` +
       ` at establish. Reconcile ALL of this story's user-facing ACs on every run, including a re-run after a reflect` +
@@ -1042,7 +1048,14 @@ function roleTaskBody(
           `the screen, form, or data-testid seam that AC asserts among the IA's Screens, Navigation, and User ` +
           `flows — emit a ux-designer finding naming every asserted surface the IA leaves out, because the ` +
           `architect would otherwise tag an E2E layer against a screen the IA does not define (the ia ` +
-          `refinement adds the missing surface).` +
+          `refinement adds the missing surface). ALSO, when that AC asserts an INTERACTIVE control (a filter, ` +
+          `selector, combobox, search), the IA must name a control the user can OPERATE to reach EVERY state the ` +
+          `AC asserts: the control's declared option source must cover the asserted values and its empty / ` +
+          `no-match state must be reachable THROUGH the control (e.g. an all-values accessible combobox, not a ` +
+          `native datalist whose options are only the filtered rows and whose empty option is unselectable) — ` +
+          `emit a ux-designer finding when the IA's control cannot reach an asserted state. This control-SEMANTICS ` +
+          `check is the twin of the surface-existence check: a surface the IA NAMES but whose control a user ` +
+          `cannot operate to the asserted state is still an ia defect, not a build detail or a test bypass;` +
           ` Do NOT critique implementation, style, or scope, only buildability + internal ` +
           `consistency of THIS story's artifacts.` +
           ` BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued — run EVERY check against ` +
@@ -1793,6 +1806,16 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
       // which the driver then hand-refactors in build. (Mirrors the manifest postTurn.)
       if (action.role === "ux-designer") {
         cmds.push({ kind: "cli", bin: APPLY_DESIGN_THEME_BIN, args: ["--project", cfg.projectDir] });
+      }
+      // P1: the DRIVER (re)writes the client shell (App.tsx / index.html) during build — after
+      // which NO ux-designer turn runs — so re-freeze the theme onto it here too, idempotently.
+      // `--if-guide` makes it a no-op on a non-UI (or pre-guide) project, so this is safe to emit
+      // unconditionally for every driver turn. This puts the brand icon + app_name on the fresh
+      // shell at GREEN, so the review ux-adherence gate is a confirmation, not a refactor trigger
+      // (the S1 branding refactor lap). Mirrors the driver manifests' apply-theme postTurn, kept
+      // byte-parallel with commandsFromManifest.
+      if (action.role === "driver") {
+        cmds.push({ kind: "cli", bin: APPLY_DESIGN_THEME_BIN, args: ["--if-guide", "--project", cfg.projectDir] });
       }
       // Cycle recording is an ORCHESTRATION concern, not the role's: the
       // Navigator/Driver are pure (write the failing test / write the code +

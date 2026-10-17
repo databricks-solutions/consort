@@ -476,3 +476,77 @@ describe("response-formatter: spec-author enforces the registered breakdown (the
     expect(regViolations(res)).toHaveLength(0);
   });
 });
+
+// P2: the DRIVER pre-handoff self-check runs the SAME deterministic layering + ux-adherence scans
+// the Navigator's REVIEW runs, so a route->infrastructure import or a placeholder brand shell is
+// fixed IN-TURN (at GREEN) instead of shipping to a review->refactor lap (the S1 refactors).
+describe("driver self-check (P2): layering + ux-adherence pre-handoff", () => {
+  const DF = "F1-stock-visibility";
+  const DS = "S1-file-stock";
+  const ARCH = {
+    feature_id: DF,
+    service_backed: true,
+    layers: [
+      { name: "routes", role: "boundary", module: "app/routes/", may_import: ["service"] },
+      { name: "services", role: "service", module: "app/services/", may_import: ["repository", "models"] },
+      { name: "repositories", role: "repository", module: "app/repositories/", may_import: ["models", "infrastructure"] },
+      { name: "models", role: "models", module: "app/models/", may_import: [] },
+      { name: "db", role: "infrastructure", module: "app/database.py", may_import: [] },
+    ],
+  };
+  let proj: string;
+  let dtdd: string;
+  const route = (body: string) => writeFileSync(join(proj, "app", "routes", "stock_records.py"), body);
+
+  beforeEach(() => {
+    proj = mkdtempSync(join(tmpdir(), "driver-selfcheck-"));
+    dtdd = join(proj, ".sftdd");
+    mkdirSync(join(dtdd, "features", DF), { recursive: true });
+    writeFileSync(join(dtdd, "features", DF, "architecture.json"), JSON.stringify(ARCH));
+    for (const d of ["routes", "services", "repositories", "models"]) mkdirSync(join(proj, "app", d), { recursive: true });
+    writeFileSync(join(proj, "app", "database.py"), "def get_db():\n    pass\n");
+    writeFileSync(join(proj, "app", "services", "stock_service.py"), "class StockService:\n    pass\n");
+    writeFileSync(join(proj, "app", "repositories", "stock_repository.py"), "class StockRepository:\n    pass\n");
+    writeFileSync(join(proj, "app", "models", "stock_record.py"), "class StockRecord:\n    pass\n");
+  });
+  afterEach(() => rmSync(proj, { recursive: true, force: true }));
+
+  it("FLAGS a boundary route that imports infrastructure directly (the S1 route->get_db violation)", () => {
+    route("from app.database import get_db\nrouter = None\n");
+    const res = formatRoleResponse({ role: "driver", consortDir: dtdd, featureId: DF, story: DS });
+    expect(res.ok).toBe(false);
+    expect(res.violations.some((v) => v.artifact === "layering")).toBe(true);
+  });
+
+  it("PASSES when the boundary delegates to the service (route->service, clean)", () => {
+    route("from app.services.stock_service import StockService\nrouter = None\n");
+    const res = formatRoleResponse({ role: "driver", consortDir: dtdd, featureId: DF, story: DS });
+    expect(res.ok).toBe(true);
+  });
+
+  it("no-ops for a non-service feature (service_backed:false)", () => {
+    route("from app.database import get_db\nrouter = None\n");
+    writeFileSync(join(dtdd, "features", DF, "architecture.json"), JSON.stringify({ ...ARCH, service_backed: false }));
+    const res = formatRoleResponse({ role: "driver", consortDir: dtdd, featureId: DF, story: DS });
+    expect(res.ok).toBe(true);
+  });
+
+  it("FLAGS a placeholder brand shell on a UI project (the S1 ux-adherence branding smell)", () => {
+    route("from app.services.stock_service import StockService\nrouter = None\n"); // layering clean, so only ux fires
+    mkdirSync(join(dtdd, "design"), { recursive: true });
+    writeFileSync(
+      join(dtdd, "design", "design-guide.json"),
+      JSON.stringify({ app_icon: { source: ".consort/design/assets/warehouse.png", install_to: "client/public/warehouse.png" }, app_name: "StockFlow" }),
+    );
+    mkdirSync(join(proj, "client", "src", "pages"), { recursive: true });
+    writeFileSync(join(proj, "client", "index.html"), '<link rel="icon" href="/favicon.svg" />');
+    writeFileSync(
+      join(proj, "client", "src", "App.tsx"),
+      'export function App() { return <nav className="navbar"><span className="navbar__brand"><img className="navbar__icon" src="/favicon.svg" alt="" />my-project</span></nav>; }\n',
+    );
+    writeFileSync(join(proj, "client", "src", "pages", "HomePage.tsx"), 'export function HomePage() { return <main className="page" />; }\n');
+    const res = formatRoleResponse({ role: "driver", consortDir: dtdd, featureId: DF, story: DS });
+    expect(res.ok).toBe(false);
+    expect(res.violations.some((v) => v.artifact === "ux-adherence")).toBe(true);
+  });
+});

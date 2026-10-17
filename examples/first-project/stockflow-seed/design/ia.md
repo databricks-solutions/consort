@@ -14,6 +14,13 @@
 
 Global seams: `navbar`, `toast-region`, `toast-success`, `toast-error`.
 
+## Controls
+Each interactive control declares its TYPE, its OPTION SOURCE, and the states a user must be able to reach THROUGH the control — so the surface is usable by construction and an e2e drives the real control, never a URL/query-param bypass. A named-but-unusable control (e.g. a native `<datalist>` whose options are only the filtered rows and whose empty option cannot be selected) is an IA defect.
+| Control | Screen | Type | Option source | Reachable states |
+|---|---|---|---|---|
+| `warehouse-select` | Home `/` | accessible combobox (listbox popup anchored under the input, keyboard-navigable) | ALL distinct locations (not only those currently holding stock), plus an "All locations" option | pick a location with stock → table; pick an EMPTY location → `stock-empty` reachable through the control; clear → all locations |
+| `search-input` | Search `/search` | text search box | free-text, server-queried | results; no match → `search-empty` |
+
 ## Navigation
 - **Navbar** (`App.tsx`):
   - brand (icon + "StockFlow") links to `/`

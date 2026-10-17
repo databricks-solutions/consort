@@ -6763,8 +6763,8 @@ function readAcArchitecturalNotes(tdd, f, acId) {
 
 // consort/session/response-formatter.ts
 init_esm_shims();
-import { existsSync as existsSync5, readFileSync as readFileSync5, readdirSync as readdirSync4 } from "fs";
-import { dirname as dirname2 } from "path";
+import { existsSync as existsSync7, readFileSync as readFileSync7, readdirSync as readdirSync6 } from "fs";
+import { dirname as dirname3 } from "path";
 
 // consort/orchestrator/validators/conformance/artifact-conformance.ts
 init_esm_shims();
@@ -7165,6 +7165,101 @@ function checkE2eRouteCollision(projectDir) {
   }
   return { ok: violations.length === 0, violations };
 }
+function collectModuleExports(source) {
+  const names = /* @__PURE__ */ new Set();
+  const braceRe = /\bexport\s*\{([^}]*)\}/g;
+  let m;
+  while ((m = braceRe.exec(source)) !== null) {
+    for (const part of m[1].split(",")) {
+      const token = part.trim();
+      if (!token) continue;
+      const asMatch = /\bas\s+([A-Za-z_$][\w$]*)/.exec(token);
+      names.add(asMatch ? asMatch[1] : token.replace(/\s.*$/, ""));
+    }
+  }
+  const declRe = /\bexport\s+(?:async\s+)?(?:const|let|var|function\*?|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/g;
+  while ((m = declRe.exec(source)) !== null) names.add(m[1]);
+  if (/\bexport\s+default\b/.test(source)) names.add("default");
+  if (/\bexport\s*\*/.test(source)) names.add("*");
+  return names;
+}
+function resolveLocalModule(fromFile, spec) {
+  const base = join4(fromFile, "..", spec);
+  const cands = [base, ...[".ts", ".tsx", ".js", ".jsx", ".mjs"].map((e) => base + e), ...["index.ts", "index.tsx", "index.js"].map((i) => join4(base, i))];
+  for (const c of cands) {
+    try {
+      if (existsSync3(c) && statSync2(c).isFile()) return c;
+    } catch {
+    }
+  }
+  return void 0;
+}
+function checkE2eHelperExports(projectDir) {
+  const e2eRoot = join4(projectDir, E2E_DIR);
+  if (!existsSync3(e2eRoot)) return { ok: true, violations: [] };
+  const importRe = /\bimport\s*(?:type\s+)?\{([^}]*)\}\s*from\s*(['"`])(\.[^'"`]*)\2/g;
+  const violations = [];
+  for (const spec of walk(e2eRoot, (n) => /\.(spec|test)\.[tj]sx?$/.test(n))) {
+    let source;
+    try {
+      source = readFileSync3(spec, "utf8");
+    } catch {
+      continue;
+    }
+    const specRel = relative(projectDir, spec).split(/[\\/]/).join("/");
+    let m;
+    while ((m = importRe.exec(source)) !== null) {
+      const resolved = resolveLocalModule(spec, m[3]);
+      if (!resolved) continue;
+      let helperSrc;
+      try {
+        helperSrc = readFileSync3(resolved, "utf8");
+      } catch {
+        continue;
+      }
+      const exported = collectModuleExports(helperSrc);
+      if (exported.has("*")) continue;
+      const imported = m[1].split(",").map((p) => p.trim()).filter(Boolean).map((p) => p.replace(/\s+as\s+[\w$]+$/, "").trim()).filter((n) => n && n !== "type");
+      const missing = imported.filter((n) => !exported.has(n));
+      if (missing.length) {
+        violations.push({
+          spec: specRel,
+          helper: m[3],
+          missing,
+          remediation: `${specRel} imports { ${missing.join(", ")} } from "${m[3]}", but that module does not export ${missing.length > 1 ? "them" : "it"} \u2014 the spec fails at load (SyntaxError) and the Playwright suite cannot run. Either import { test, expect } directly from "@playwright/test" (the scaffold convention), or make the shared helper re-export exactly what the specs import (e.g. \`export { test, expect };\`).`
+        });
+      }
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+function checkE2eRouteAround(projectDir) {
+  const e2eRoot = join4(projectDir, E2E_DIR);
+  if (!existsSync3(e2eRoot)) return { ok: true, violations: [] };
+  const chainRe = /\.(selectOption|click|fill|check|uncheck|press|type|setInputFiles)\s*\([\s\S]*?\)\s*\.catch\s*\(/g;
+  const violations = [];
+  for (const spec of walk(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
+    let source;
+    try {
+      source = readFileSync3(spec, "utf8");
+    } catch {
+      continue;
+    }
+    const specRel = relative(projectDir, spec).split(/[\\/]/).join("/");
+    let m;
+    while ((m = chainRe.exec(source)) !== null) {
+      const window = source.slice(m.index + m[0].length, m.index + m[0].length + 300);
+      if (!/page\s*\.\s*goto\s*\(/.test(window)) continue;
+      const line = source.slice(0, m.index).split("\n").length;
+      violations.push({
+        spec: `${specRel}:${line}`,
+        snippet: source.slice(m.index, m.index + m[0].length).replace(/\s+/g, " ").trim().slice(0, 160),
+        remediation: "E2E routes around the shipped control: a control interaction falls back via `.catch(() => page.goto(...))` to a URL/query-param path, so the test passes whether or not the control works (the native-datalist filter that shipped broken). Drive the assertion THROUGH the control the user operates \u2014 if the control cannot reach the asserted state, that is a UX defect to route to the ux-designer, not to bypass in the test."
+      });
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
 function checkE2eSeedBackendDerivation(projectDir) {
   const e2eRoot = join4(projectDir, E2E_DIR);
   if (!existsSync3(e2eRoot)) return { ok: true, violations: [] };
@@ -7190,11 +7285,340 @@ function checkE2eSeedBackendDerivation(projectDir) {
   return { ok: violations.length === 0, violations };
 }
 
+// consort/architecture/layering-clean.ts
+init_esm_shims();
+import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
+import { join as join5 } from "path";
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+function isTestFile(name) {
+  return /^test_.*\.py$/.test(name) || /_test\.py$/.test(name) || name === "conftest.py";
+}
+function sourcePyFilesRec(dir, out) {
+  let entries;
+  try {
+    entries = readdirSync3(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      if (!SOURCE_SKIP_DIRS.has(e.name)) sourcePyFilesRec(join5(dir, e.name), out);
+    } else if (e.isFile() && e.name.endsWith(".py") && !isTestFile(e.name)) {
+      out.push(join5(dir, e.name));
+    }
+  }
+}
+var SESSION_OP = /\b(?:db|session|_session|self\._?session)\s*\.\s*(query|add|add_all|commit|delete|merge|flush|execute|refresh|scalars|scalar)\s*\(/;
+function relTo(projectDir, file) {
+  return file.startsWith(projectDir) ? file.slice(projectDir.length).replace(/^\/+/, "") : file;
+}
+function dottedPrefix(module) {
+  return module.replace(/\.py$/, "").replace(/^\/+|\/+$/g, "").replace(/\//g, ".");
+}
+function layerSourceFiles(projectDir, module) {
+  const base = module.replace(/\/+$/, "");
+  const out = [];
+  const abs = join5(projectDir, base);
+  const tryFile = (p) => {
+    try {
+      if (existsSync4(p) && !statSync3(p).isDirectory()) out.push(p);
+    } catch {
+    }
+  };
+  if (existsSync4(abs)) {
+    let isDir = false;
+    try {
+      isDir = statSync3(abs).isDirectory();
+    } catch {
+    }
+    if (isDir) sourcePyFilesRec(abs, out);
+    else if (abs.endsWith(".py")) out.push(abs);
+    else tryFile(join5(projectDir, `${base}.py`));
+  } else {
+    tryFile(join5(projectDir, `${base}.py`));
+  }
+  return out;
+}
+function resolveRelativeImport(fileAbs, projectDir, dots, tail) {
+  const rel = relTo(projectDir, fileAbs);
+  const parts = rel.split("/");
+  parts.pop();
+  const up = dots - 1;
+  if (up > parts.length) return null;
+  const basePkg = parts.slice(0, parts.length - up);
+  const tailParts = tail ? tail.split(".").filter(Boolean) : [];
+  const full = [...basePkg, ...tailParts].join(".");
+  return full || null;
+}
+function importedModule(line, fileAbs, projectDir) {
+  const from = /^\s*from\s+(\.*)([\w.]*)\s+import\b/.exec(line);
+  if (from) {
+    const dots = from[1].length;
+    const tail = from[2] ?? "";
+    if (dots === 0) return tail || null;
+    return resolveRelativeImport(fileAbs, projectDir, dots, tail);
+  }
+  const imp = /^\s*import\s+([\w.]+)/.exec(line);
+  return imp ? imp[1] : null;
+}
+function underPrefix(mod, prefix) {
+  return mod === prefix || mod.startsWith(`${prefix}.`);
+}
+var IMPORT_LAYERING_REMEDIATION = "A layer imports another layer it is not allowed to depend on. Dependencies must point inward, per the architect's layers[].may_import (boundary -> service -> repository -> models). Route the dependency through the allowed inner layer (the boundary calls the service, the service calls the repository) instead of reaching across or around it. See the `layering-violation` smell + @architectural-design-principles layered-architecture.";
+function checkImportLayering(projectDir, layers) {
+  const decls = layers.filter((l) => typeof l.role === "string" && typeof l.module === "string" && l.module.length > 0).map((l) => ({ role: l.role, module: l.module, allowed: new Set(l.may_import ?? []), prefix: dottedPrefix(l.module) }));
+  const scanned = [];
+  const violations = [];
+  for (const layer of decls) {
+    const forbidden = decls.filter((k) => k.prefix !== layer.prefix && k.role !== layer.role && !layer.allowed.has(k.role));
+    if (forbidden.length === 0) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = readFileSync4(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (/#\s*noqa/i.test(line)) return;
+        const mod = importedModule(line, file, projectDir);
+        if (!mod) return;
+        const hit = forbidden.find((t) => underPrefix(mod, t.prefix));
+        if (hit) violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} may not import ${hit.role})`);
+      });
+    }
+  }
+  return violations.length === 0 ? { ok: true, scanned, violations: [] } : { ok: false, scanned, violations, remediation: IMPORT_LAYERING_REMEDIATION };
+}
+var ORM_CONTAINMENT_EXEMPT_ROLES = /* @__PURE__ */ new Set(["repository", "infrastructure"]);
+var ORM_CONTAINMENT_REMEDIATION = "A layer other than the repository calls the persistence session/ORM directly. Only the repository layer may touch the ORM session; move the persistence call into the repository and have this layer delegate to it. See the `layering-violation` smell + @architectural-design-principles layered-architecture.";
+function checkOrmContainment(projectDir, layers, sessionOp = SESSION_OP) {
+  const hasRepository = layers.some((l) => l.role === "repository");
+  if (!hasRepository) return { ok: true, scanned: [], violations: [] };
+  const scanned = [];
+  const violations = [];
+  for (const layer of layers) {
+    if (typeof layer.module !== "string" || !layer.module || ORM_CONTAINMENT_EXEMPT_ROLES.has(layer.role)) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = readFileSync4(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (sessionOp.test(line)) {
+          violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} layer must not touch the ORM session)`);
+        }
+      });
+    }
+  }
+  return violations.length === 0 ? { ok: true, scanned, violations: [] } : { ok: false, scanned, violations, remediation: ORM_CONTAINMENT_REMEDIATION };
+}
+function layeringConfigFromArchitecture(architectureJson2) {
+  let parsed;
+  try {
+    parsed = JSON.parse(architectureJson2);
+  } catch {
+    return { serviceBacked: false, boundaryModules: [], repositoryModules: [], allModules: [] };
+  }
+  const layers = parsed.layers ?? [];
+  const modulesByRole = (role) => layers.filter((l) => l.role === role && typeof l.module === "string").map((l) => l.module);
+  const allModules = layers.filter((l) => typeof l.role === "string" && typeof l.module === "string").map((l) => ({
+    role: l.role,
+    module: l.module,
+    ...Array.isArray(l.may_import) ? { may_import: l.may_import.filter((r) => typeof r === "string") } : {}
+  }));
+  const boundaryLayer = layers.find((l) => l.role === "boundary" && typeof l.renders_via === "string");
+  return {
+    serviceBacked: parsed.service_backed === true,
+    boundaryModules: modulesByRole("boundary"),
+    repositoryModules: modulesByRole("repository"),
+    allModules,
+    ...boundaryLayer?.renders_via ? { rendersVia: boundaryLayer.renders_via } : {}
+  };
+}
+function collectLayeringViolations(projectDir, architectureJson2) {
+  const cfg = layeringConfigFromArchitecture(architectureJson2);
+  if (!cfg.serviceBacked || cfg.allModules.length === 0) return [];
+  const importLayering = checkImportLayering(projectDir, cfg.allModules);
+  const ormContainment = checkOrmContainment(projectDir, cfg.allModules);
+  return [...importLayering.ok ? [] : importLayering.violations, ...ormContainment.ok ? [] : ormContainment.violations];
+}
+
+// consort/architecture/design-adherence.ts
+init_esm_shims();
+import { existsSync as existsSync5, readFileSync as readFileSync5, readdirSync as readdirSync4, writeFileSync as writeFileSync2, mkdirSync as mkdirSync2, copyFileSync } from "fs";
+import { join as join6, dirname as dirname2, basename as basename2 } from "path";
+function readAppIconFromGuide(consortDir) {
+  try {
+    const gp = designGuideJson(consortDir);
+    if (!existsSync5(gp)) return void 0;
+    const guide = JSON.parse(readFileSync5(gp, "utf8"));
+    const icon = guide.app_icon;
+    return icon && typeof icon.source === "string" && typeof icon.install_to === "string" ? { source: icon.source, install_to: icon.install_to } : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var VAR_CALL = /var\(\s*--[A-Za-z0-9-]+[^)]*\)/g;
+var ROUTE_ELEMENT_RE = /element=\{\s*<\s*([A-Z][A-Za-z0-9_]*)/g;
+var ROUTE_COMPONENT_RE = /\bComponent=\{\s*([A-Z][A-Za-z0-9_]*)\s*\}/g;
+var REACHABILITY_REMEDIATION = "A feature page component exists under client/src/pages/ but is not wired into App.tsx's <Routes>, so a user can never reach it (its component test passes in isolation, but the app never renders it). Add a <Route ... element={<Page/>} /> for it AND a nav affordance the IA declares. If the component is composed inside another page (not a route of its own), mark it exempt. See the `ux-adherence` smell.";
+function checkRouteReachability(input) {
+  const routed = /* @__PURE__ */ new Set();
+  for (const re of [ROUTE_ELEMENT_RE, ROUTE_COMPONENT_RE]) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(input.appSource)) !== null) routed.add(m[1]);
+  }
+  const exempt = new Set(input.exemptComponents ?? []);
+  const unreachable = input.pageComponents.filter((c) => !routed.has(c) && !exempt.has(c));
+  return unreachable.length === 0 ? { ok: true, unreachable: [] } : { ok: false, unreachable, remediation: REACHABILITY_REMEDIATION };
+}
+var CLASSNAME_RE = /className\s*=\s*["'`]([^"'`]+)["'`]/g;
+var JSX_ELEMENT_RE = /<[A-Za-z][A-Za-z0-9]*[\s/>]/;
+var CONSUMPTION_REMEDIATION = "A feature page renders visible structure but consumes NONE of the design guide: no var(--token) and no class from the design vocabulary. It renders as bare browser-default HTML. Apply the guide \u2013 wrap in the layout/card/button/table classes (or var(--token) styles) the design guide defines \u2013 so the screen matches the design system. See the `ux-adherence` smell.";
+function checkTokenConsumption(input) {
+  const vocab = new Set(input.designClasses ?? []);
+  const bare = [];
+  for (const [name, src] of Object.entries(input.pageSources)) {
+    if (!JSX_ELEMENT_RE.test(src)) continue;
+    const usesVar = VAR_CALL.test(src);
+    VAR_CALL.lastIndex = 0;
+    let usesDesignClass = false;
+    if (vocab.size > 0) {
+      CLASSNAME_RE.lastIndex = 0;
+      let m;
+      while ((m = CLASSNAME_RE.exec(src)) !== null) {
+        if (m[1].split(/\s+/).some((cls) => vocab.has(cls) || [...vocab].some((v) => cls === v || cls.startsWith(`${v}__`) || cls.startsWith(`${v}--`)))) {
+          usesDesignClass = true;
+          break;
+        }
+      }
+    } else {
+      CLASSNAME_RE.lastIndex = 0;
+      usesDesignClass = CLASSNAME_RE.test(src);
+      CLASSNAME_RE.lastIndex = 0;
+    }
+    if (!usesVar && !usesDesignClass) bare.push(name);
+  }
+  return bare.length === 0 ? { ok: true, bare: [] } : { ok: false, bare, remediation: CONSUMPTION_REMEDIATION };
+}
+var APP_ICON_REMEDIATION = "The design guide declares a brand app_icon (an intake asset), but the app does not use it: the asset is missing at its install_to path and/or the app shell still references the generic scaffold placeholder (favicon.svg) instead. Copy the asset to install_to, point index.html's <link rel=\"icon\"> at it, and render it as the navbar/app-title mark. The provided brand icon must be the app's icon, not left unused in intake. See the `ux-adherence` smell.";
+function checkAppIcon(input) {
+  if (!input.appIcon) return { ok: true, violations: [] };
+  const violations = [];
+  const base = input.installedBasename;
+  if (!input.installedExists) {
+    violations.push(`brand app icon not installed at "${input.appIcon.install_to}" (declared in the design guide, copied from "${input.appIcon.source}")`);
+  }
+  const referenced = (src) => src.includes(base);
+  if (!referenced(input.indexHtml)) {
+    violations.push(`index.html favicon does not reference the brand icon "${base}" (still the scaffold placeholder)`);
+  }
+  if (!referenced(input.appShell)) {
+    violations.push(`the app shell (App.tsx) does not reference the brand icon "${base}" (navbar/title still the placeholder)`);
+  }
+  return violations.length === 0 ? { ok: true, violations: [] } : { ok: false, violations, remediation: APP_ICON_REMEDIATION };
+}
+var COMPONENT_VOCAB_REMEDIATION = "The design guide names component classes its `components` declares, but they are not DEFINED in client/src/styles/global.css \u2014 so the app has no styling for that vocabulary and a page applying the class renders unstyled. The UX Designer must author one class per `components` entry (named exactly its `class`), styled through var(--token). This is what turns 'tokens exist on :root' into 'this project's components actually look like the brief' \u2014 the gap that made every app render the generic baseline. See the `ux-adherence` smell.";
+function checkComponentVocabularyDefined(declaredClasses, globalCss) {
+  if (declaredClasses.length === 0) return { ok: true, missing: [] };
+  const missing = declaredClasses.filter((cls) => {
+    const re = new RegExp(`\\.${cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
+    return !re.test(globalCss);
+  });
+  return missing.length === 0 ? { ok: true, missing: [] } : { ok: false, missing, remediation: COMPONENT_VOCAB_REMEDIATION };
+}
+var UX_CLEAN_REMEDIATION = "The client UI does not fully apply the design guide: a feature page is unreachable (not routed in App.tsx), bare (consumes no design tokens/classes), and/or the declared brand app icon is not applied. Wire every feature page into <Routes> with a nav affordance, style it with the design vocabulary, and install + reference the brand icon. See `ux-adherence`.";
+function summarizeUxViolations(r) {
+  const parts = [];
+  if (!r.reachability.ok) parts.push(`unreachable pages: ${r.reachability.unreachable.join(", ")}`);
+  if (!r.tokens.ok) parts.push(`bare (unstyled) pages: ${r.tokens.bare.join(", ")}`);
+  if (!r.vocabulary.ok) parts.push(`design classes not defined in global.css: ${r.vocabulary.missing.join(", ")}`);
+  if (!r.appIcon.ok) parts.push(`brand app icon not applied: ${r.appIcon.violations.join("; ")}`);
+  return parts.join("; ");
+}
+function readDesignContract(consortDir) {
+  let designClasses;
+  let appIcon;
+  try {
+    const gp = designGuideJson(consortDir);
+    if (existsSync5(gp)) {
+      const guide = JSON.parse(readFileSync5(gp, "utf8"));
+      const classes = Object.values(guide.components ?? {}).map((c) => typeof c?.class === "string" ? c.class : void 0).filter((c) => !!c);
+      if (classes.length) designClasses = classes;
+    }
+    appIcon = readAppIconFromGuide(consortDir);
+  } catch {
+  }
+  return { designClasses, appIcon };
+}
+function collectUxViolations(consortDir) {
+  const { designClasses, appIcon } = readDesignContract(consortDir);
+  const ux = checkUxClean({ projectDir: dirname2(consortDir), designClasses, appIcon });
+  return ux.clean ? [] : [summarizeUxViolations(ux)];
+}
+function checkUxClean(args) {
+  const okIcon = { ok: true, violations: [] };
+  const okVocab = { ok: true, missing: [] };
+  const clean0 = { clean: true, reachability: { ok: true, unreachable: [] }, tokens: { ok: true, bare: [] }, appIcon: okIcon, vocabulary: okVocab };
+  const srcDir = args.clientSrcDir ?? join6(args.projectDir, "client", "src");
+  const appTsx = join6(srcDir, "App.tsx");
+  const pagesDir = join6(srcDir, "pages");
+  if (!existsSync5(appTsx) || !existsSync5(pagesDir)) return clean0;
+  const appSource = readFileSync5(appTsx, "utf8");
+  const pageSources = {};
+  const pageComponents = [];
+  for (const name of readdirSync4(pagesDir)) {
+    if (!name.endsWith(".tsx") || name.endsWith(".test.tsx")) continue;
+    const src = readFileSync5(join6(pagesDir, name), "utf8");
+    pageSources[name] = src;
+    for (const re of [/export\s+function\s+([A-Z][A-Za-z0-9_]*)/g, /export\s+const\s+([A-Z][A-Za-z0-9_]*)/g]) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(src)) !== null) pageComponents.push(m[1]);
+    }
+  }
+  const reachability = checkRouteReachability({ appSource, pageComponents });
+  const tokens = checkTokenConsumption({ pageSources, designClasses: args.designClasses });
+  const globalCssPath = join6(srcDir, "styles", "global.css");
+  const vocabulary = args.designClasses && args.designClasses.length > 0 && existsSync5(globalCssPath) ? checkComponentVocabularyDefined(args.designClasses, readFileSync5(globalCssPath, "utf8")) : okVocab;
+  let appIcon = okIcon;
+  if (args.appIcon) {
+    const clientDir = join6(srcDir, "..");
+    const indexHtmlPath = join6(clientDir, "index.html");
+    const installToPath = join6(args.projectDir, args.appIcon.install_to);
+    const installedBasename = args.appIcon.install_to.split("/").pop() ?? args.appIcon.install_to;
+    appIcon = checkAppIcon({
+      appIcon: args.appIcon,
+      installedExists: existsSync5(installToPath),
+      installedBasename,
+      indexHtml: existsSync5(indexHtmlPath) ? readFileSync5(indexHtmlPath, "utf8") : "",
+      appShell: appSource
+    });
+  }
+  const clean = reachability.ok && tokens.ok && appIcon.ok && vocabulary.ok;
+  return clean ? { clean, reachability, tokens, appIcon, vocabulary } : { clean, reachability, tokens, appIcon, vocabulary, remediation: UX_CLEAN_REMEDIATION };
+}
+
 // consort/gates/registered-breakdown.ts
 init_esm_shims();
-import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync3 } from "fs";
-import { join as join5 } from "path";
-var registrationPath = (consortDir) => join5(consortDir, "registration.json");
+import { existsSync as existsSync6, readFileSync as readFileSync6, readdirSync as readdirSync5 } from "fs";
+import { join as join7 } from "path";
+var registrationPath = (consortDir) => join7(consortDir, "registration.json");
 function storySlug(id) {
   return id.replace(/^S\d+-/, "");
 }
@@ -7232,9 +7656,9 @@ function checkRegisteredBreakdown(registration, derived) {
 }
 function readRegistration(consortDir, featureId) {
   const p = registrationPath(consortDir);
-  if (!existsSync4(p)) return null;
+  if (!existsSync6(p)) return null;
   try {
-    const reg = JSON.parse(readFileSync4(p, "utf8"));
+    const reg = JSON.parse(readFileSync6(p, "utf8"));
     if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
     return reg;
   } catch {
@@ -7243,10 +7667,10 @@ function readRegistration(consortDir, featureId) {
 }
 function readDerivedBreakdown(consortDir, featureId) {
   const sdir = storiesDir(consortDir, featureId);
-  if (!existsSync4(sdir)) return [];
-  return readdirSync3(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+  if (!existsSync6(sdir)) return [];
+  return readdirSync5(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
     const adir = acsDir(consortDir, featureId, e.name);
-    const acs = existsSync4(adir) ? readdirSync3(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    const acs = existsSync6(adir) ? readdirSync5(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
     return { id: e.name, acs };
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -7258,7 +7682,8 @@ var FORMATTED_ROLES = /* @__PURE__ */ new Set([
   "dba",
   "test-strategist",
   "ux-designer",
-  "navigator"
+  "navigator",
+  "driver"
 ]);
 function needStory(role, story, violations) {
   if (!story) {
@@ -7269,12 +7694,12 @@ function needStory(role, story, violations) {
 }
 function checkSpecAuthorBreakdown(consortDir, featureId, v) {
   const specPath = featureSpecJson(consortDir, featureId);
-  if (!existsSync5(specPath)) {
+  if (!existsSync7(specPath)) {
     v.push({ artifact: "feature-spec.json", problem: "breakdown deliverable missing (write feature-spec.json with a non-empty stories[] array of the story ids)" });
     return;
   }
   try {
-    const spec = JSON.parse(readFileSync5(specPath, "utf8"));
+    const spec = JSON.parse(readFileSync7(specPath, "utf8"));
     if (!Array.isArray(spec.stories) || spec.stories.length === 0) {
       v.push({ artifact: "feature-spec.json", problem: "stories[] is missing or empty (the breakdown must enumerate >=1 story id)" });
     }
@@ -7283,13 +7708,13 @@ function checkSpecAuthorBreakdown(consortDir, featureId, v) {
     return;
   }
   const sdir = storiesDir(consortDir, featureId);
-  if (!existsSync5(sdir)) return;
+  if (!existsSync7(sdir)) return;
   const storyJsons = [];
-  for (const s of readdirSync4(sdir)) {
+  for (const s of readdirSync6(sdir)) {
     const p = `${sdir}/${s}/story.json`;
-    if (!existsSync5(p)) continue;
+    if (!existsSync7(p)) continue;
     try {
-      storyJsons.push({ name: s, content: readFileSync5(p, "utf8") });
+      storyJsons.push({ name: s, content: readFileSync7(p, "utf8") });
     } catch {
       continue;
     }
@@ -7320,13 +7745,13 @@ function checkSpecAuthor(args, v) {
     v.push({ artifact: `stories/${story}/acs`, problem: "no acceptance criteria written (expected >=1 AC<n>.json)" });
     return;
   }
-  if (!existsSync5(dir)) return;
+  if (!existsSync7(dir)) return;
   const thenById = /* @__PURE__ */ new Map();
-  for (const f of readdirSync4(dir)) {
+  for (const f of readdirSync6(dir)) {
     if (!f.endsWith(".json")) continue;
     let content;
     try {
-      content = readFileSync5(`${dir}/${f}`, "utf8");
+      content = readFileSync7(`${dir}/${f}`, "utf8");
     } catch {
       continue;
     }
@@ -7372,9 +7797,9 @@ function checkArchitect(args, v) {
     }
   }
   const archForSchema = architectureJson(consortDir, featureId);
-  if (existsSync5(archForSchema)) {
+  if (existsSync7(archForSchema)) {
     try {
-      const r = checkArtifactConformance(canonicalArtifactName(archForSchema), readFileSync5(archForSchema, "utf8"));
+      const r = checkArtifactConformance(canonicalArtifactName(archForSchema), readFileSync7(archForSchema, "utf8"));
       if (!r.ok) for (const problem of r.violations) v.push({ artifact: "architecture.json", problem });
     } catch (e) {
       v.push({ artifact: "architecture.json", problem: `is not valid JSON (${e.message})` });
@@ -7384,10 +7809,10 @@ function checkArchitect(args, v) {
 }
 function checkNfrFitnessFunctions(consortDir, featureId, v) {
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync5(archFile)) return;
+  if (!existsSync7(archFile)) return;
   let nfrs;
   try {
-    nfrs = JSON.parse(readFileSync5(archFile, "utf8")).nfrs ?? [];
+    nfrs = JSON.parse(readFileSync7(archFile, "utf8")).nfrs ?? [];
   } catch {
     return;
   }
@@ -7405,13 +7830,13 @@ function checkNfrFitnessFunctions(consortDir, featureId, v) {
 function checkDba(args, v) {
   const { consortDir, featureId } = args;
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync5(archFile)) {
+  if (!existsSync7(archFile)) {
     v.push({ artifact: "architecture.json", problem: "architecture.json missing (the architect owns the contract the DBA realizes)" });
     return;
   }
-  const archContent = readFileSync5(archFile, "utf8");
+  const archContent = readFileSync7(archFile, "utf8");
   const dbFile = dbDesignJson(consortDir, featureId);
-  const dbContent = existsSync5(dbFile) ? readFileSync5(dbFile, "utf8") : void 0;
+  const dbContent = existsSync7(dbFile) ? readFileSync7(dbFile, "utf8") : void 0;
   if (dbContent !== void 0) {
     const conf = checkArtifactConformance("db-design.json", dbContent);
     if (!conf.ok) v.push({ artifact: "db-design.json", problem: conf.violations.join("; ") });
@@ -7423,13 +7848,13 @@ function checkTestStrategist(args, v) {
   const { consortDir, featureId, story } = args;
   if (!needStory("test-strategist", story, v)) return;
   const file = featureTestListJson(consortDir, featureId);
-  if (!existsSync5(file)) {
+  if (!existsSync7(file)) {
     v.push({ artifact: "test-list.json", problem: "test list not written" });
     return;
   }
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync5(file, "utf8"));
+    parsed = JSON.parse(readFileSync7(file, "utf8"));
   } catch (e) {
     v.push({ artifact: "test-list.json", problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
     return;
@@ -7464,12 +7889,12 @@ function checkTestStrategist(args, v) {
 }
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync5(file)) {
+  if (!existsSync7(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = readFileSync5(file, "utf8");
+    content = readFileSync7(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -7478,9 +7903,9 @@ function designGuideConformance(consortDir) {
 }
 function designGuideHasComponents(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync5(file)) return { ok: true };
+  if (!existsSync7(file)) return { ok: true };
   try {
-    const parsed = JSON.parse(readFileSync5(file, "utf8"));
+    const parsed = JSON.parse(readFileSync7(file, "utf8"));
     const comps = parsed.components;
     if (!comps || typeof comps !== "object" || Object.keys(comps).length === 0) {
       return {
@@ -7495,18 +7920,18 @@ function designGuideHasComponents(consortDir) {
 }
 function brandAssetDeclared(consortDir) {
   const assetsDir = designAssetsDir(consortDir);
-  if (!existsSync5(assetsDir)) return { ok: true };
+  if (!existsSync7(assetsDir)) return { ok: true };
   let staged;
   try {
-    staged = readdirSync4(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
+    staged = readdirSync6(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
   } catch {
     return { ok: true };
   }
   if (staged.length === 0) return { ok: true };
   const file = designGuideJson(consortDir);
-  if (existsSync5(file)) {
+  if (existsSync7(file)) {
     try {
-      const guide = JSON.parse(readFileSync5(file, "utf8"));
+      const guide = JSON.parse(readFileSync7(file, "utf8"));
       if (guide.app_icon?.source && guide.app_icon?.install_to) return { ok: true };
     } catch {
       return { ok: true };
@@ -7530,9 +7955,20 @@ function checkUxDesigner(args, v) {
   if (!b.ok) v.push({ artifact: "design/design-guide.json", problem: b.problem ?? "a staged brand asset is not declared as app_icon" });
 }
 function checkNavigator(args, v) {
-  const projectDir = dirname2(args.consortDir);
+  const projectDir = dirname3(args.consortDir);
   for (const x of checkE2eRouteCollision(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
   for (const x of checkE2eSeedBackendDerivation(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  for (const x of checkE2eHelperExports(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  for (const x of checkE2eRouteAround(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+}
+function checkDriver(args, v) {
+  const archFile = architectureJson(args.consortDir, args.featureId);
+  if (existsSync7(archFile)) {
+    for (const x of collectLayeringViolations(dirname3(args.consortDir), readFileSync7(archFile, "utf8"))) {
+      v.push({ artifact: "layering", problem: x });
+    }
+  }
+  for (const x of collectUxViolations(args.consortDir)) v.push({ artifact: "ux-adherence", problem: x });
 }
 var CHECKERS = {
   "spec-author": checkSpecAuthor,
@@ -7540,7 +7976,8 @@ var CHECKERS = {
   dba: checkDba,
   "test-strategist": checkTestStrategist,
   "ux-designer": checkUxDesigner,
-  navigator: checkNavigator
+  navigator: checkNavigator,
+  driver: checkDriver
 };
 function formatRoleResponse(args) {
   const violations = [];

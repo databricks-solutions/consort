@@ -8169,6 +8169,7 @@ var driver_green_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     { bin: "@build-cycle", args: [], when: "after" }
   ]
 };
@@ -8463,6 +8464,7 @@ var driver_refactor_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     {
       bin: "@build-cycle",
       args: [],
@@ -8506,6 +8508,7 @@ var driver_refactor_deploy_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     {
       bin: "@build-cycle",
       args: [],
@@ -8549,6 +8552,7 @@ var driver_refactor_superseded_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     {
       bin: "@build-cycle",
       args: [],
@@ -8578,6 +8582,7 @@ var driver_repair_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     { bin: "@build-cycle", args: [], when: "after" }
   ]
 };
@@ -8602,6 +8607,7 @@ var driver_green_superseded_default = {
     resumeKeyFrom: "story"
   },
   postTurn: [
+    { bin: "APPLY_DESIGN_THEME_BIN", args: ["--if-guide", "--project", "{projectRoot}"], when: "after" },
     { bin: "@build-cycle", args: [], when: "after" }
   ]
 };
@@ -14570,6 +14576,158 @@ function storyDeployVerified(consortDir, featureId, storyId) {
 init_cjs_shims();
 var import_node_fs15 = require("fs");
 var import_node_path17 = require("path");
+function readAppIconFromGuide(consortDir) {
+  try {
+    const gp = designGuideJson(consortDir);
+    if (!(0, import_node_fs15.existsSync)(gp)) return void 0;
+    const guide = JSON.parse((0, import_node_fs15.readFileSync)(gp, "utf8"));
+    const icon = guide.app_icon;
+    return icon && typeof icon.source === "string" && typeof icon.install_to === "string" ? { source: icon.source, install_to: icon.install_to } : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var VAR_CALL = /var\(\s*--[A-Za-z0-9-]+[^)]*\)/g;
+var ROUTE_ELEMENT_RE = /element=\{\s*<\s*([A-Z][A-Za-z0-9_]*)/g;
+var ROUTE_COMPONENT_RE = /\bComponent=\{\s*([A-Z][A-Za-z0-9_]*)\s*\}/g;
+var REACHABILITY_REMEDIATION = "A feature page component exists under client/src/pages/ but is not wired into App.tsx's <Routes>, so a user can never reach it (its component test passes in isolation, but the app never renders it). Add a <Route ... element={<Page/>} /> for it AND a nav affordance the IA declares. If the component is composed inside another page (not a route of its own), mark it exempt. See the `ux-adherence` smell.";
+function checkRouteReachability(input) {
+  const routed = /* @__PURE__ */ new Set();
+  for (const re of [ROUTE_ELEMENT_RE, ROUTE_COMPONENT_RE]) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(input.appSource)) !== null) routed.add(m[1]);
+  }
+  const exempt = new Set(input.exemptComponents ?? []);
+  const unreachable = input.pageComponents.filter((c) => !routed.has(c) && !exempt.has(c));
+  return unreachable.length === 0 ? { ok: true, unreachable: [] } : { ok: false, unreachable, remediation: REACHABILITY_REMEDIATION };
+}
+var CLASSNAME_RE = /className\s*=\s*["'`]([^"'`]+)["'`]/g;
+var JSX_ELEMENT_RE = /<[A-Za-z][A-Za-z0-9]*[\s/>]/;
+var CONSUMPTION_REMEDIATION = "A feature page renders visible structure but consumes NONE of the design guide: no var(--token) and no class from the design vocabulary. It renders as bare browser-default HTML. Apply the guide \u2013 wrap in the layout/card/button/table classes (or var(--token) styles) the design guide defines \u2013 so the screen matches the design system. See the `ux-adherence` smell.";
+function checkTokenConsumption(input) {
+  const vocab = new Set(input.designClasses ?? []);
+  const bare = [];
+  for (const [name, src] of Object.entries(input.pageSources)) {
+    if (!JSX_ELEMENT_RE.test(src)) continue;
+    const usesVar = VAR_CALL.test(src);
+    VAR_CALL.lastIndex = 0;
+    let usesDesignClass = false;
+    if (vocab.size > 0) {
+      CLASSNAME_RE.lastIndex = 0;
+      let m;
+      while ((m = CLASSNAME_RE.exec(src)) !== null) {
+        if (m[1].split(/\s+/).some((cls) => vocab.has(cls) || [...vocab].some((v) => cls === v || cls.startsWith(`${v}__`) || cls.startsWith(`${v}--`)))) {
+          usesDesignClass = true;
+          break;
+        }
+      }
+    } else {
+      CLASSNAME_RE.lastIndex = 0;
+      usesDesignClass = CLASSNAME_RE.test(src);
+      CLASSNAME_RE.lastIndex = 0;
+    }
+    if (!usesVar && !usesDesignClass) bare.push(name);
+  }
+  return bare.length === 0 ? { ok: true, bare: [] } : { ok: false, bare, remediation: CONSUMPTION_REMEDIATION };
+}
+var APP_ICON_REMEDIATION = "The design guide declares a brand app_icon (an intake asset), but the app does not use it: the asset is missing at its install_to path and/or the app shell still references the generic scaffold placeholder (favicon.svg) instead. Copy the asset to install_to, point index.html's <link rel=\"icon\"> at it, and render it as the navbar/app-title mark. The provided brand icon must be the app's icon, not left unused in intake. See the `ux-adherence` smell.";
+function checkAppIcon(input) {
+  if (!input.appIcon) return { ok: true, violations: [] };
+  const violations = [];
+  const base = input.installedBasename;
+  if (!input.installedExists) {
+    violations.push(`brand app icon not installed at "${input.appIcon.install_to}" (declared in the design guide, copied from "${input.appIcon.source}")`);
+  }
+  const referenced = (src) => src.includes(base);
+  if (!referenced(input.indexHtml)) {
+    violations.push(`index.html favicon does not reference the brand icon "${base}" (still the scaffold placeholder)`);
+  }
+  if (!referenced(input.appShell)) {
+    violations.push(`the app shell (App.tsx) does not reference the brand icon "${base}" (navbar/title still the placeholder)`);
+  }
+  return violations.length === 0 ? { ok: true, violations: [] } : { ok: false, violations, remediation: APP_ICON_REMEDIATION };
+}
+var COMPONENT_VOCAB_REMEDIATION = "The design guide names component classes its `components` declares, but they are not DEFINED in client/src/styles/global.css \u2014 so the app has no styling for that vocabulary and a page applying the class renders unstyled. The UX Designer must author one class per `components` entry (named exactly its `class`), styled through var(--token). This is what turns 'tokens exist on :root' into 'this project's components actually look like the brief' \u2014 the gap that made every app render the generic baseline. See the `ux-adherence` smell.";
+function checkComponentVocabularyDefined(declaredClasses, globalCss) {
+  if (declaredClasses.length === 0) return { ok: true, missing: [] };
+  const missing = declaredClasses.filter((cls) => {
+    const re = new RegExp(`\\.${cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
+    return !re.test(globalCss);
+  });
+  return missing.length === 0 ? { ok: true, missing: [] } : { ok: false, missing, remediation: COMPONENT_VOCAB_REMEDIATION };
+}
+var UX_CLEAN_REMEDIATION = "The client UI does not fully apply the design guide: a feature page is unreachable (not routed in App.tsx), bare (consumes no design tokens/classes), and/or the declared brand app icon is not applied. Wire every feature page into <Routes> with a nav affordance, style it with the design vocabulary, and install + reference the brand icon. See `ux-adherence`.";
+function summarizeUxViolations(r) {
+  const parts = [];
+  if (!r.reachability.ok) parts.push(`unreachable pages: ${r.reachability.unreachable.join(", ")}`);
+  if (!r.tokens.ok) parts.push(`bare (unstyled) pages: ${r.tokens.bare.join(", ")}`);
+  if (!r.vocabulary.ok) parts.push(`design classes not defined in global.css: ${r.vocabulary.missing.join(", ")}`);
+  if (!r.appIcon.ok) parts.push(`brand app icon not applied: ${r.appIcon.violations.join("; ")}`);
+  return parts.join("; ");
+}
+function readDesignContract(consortDir) {
+  let designClasses;
+  let appIcon;
+  try {
+    const gp = designGuideJson(consortDir);
+    if ((0, import_node_fs15.existsSync)(gp)) {
+      const guide = JSON.parse((0, import_node_fs15.readFileSync)(gp, "utf8"));
+      const classes = Object.values(guide.components ?? {}).map((c) => typeof c?.class === "string" ? c.class : void 0).filter((c) => !!c);
+      if (classes.length) designClasses = classes;
+    }
+    appIcon = readAppIconFromGuide(consortDir);
+  } catch {
+  }
+  return { designClasses, appIcon };
+}
+function collectUxViolations(consortDir) {
+  const { designClasses, appIcon } = readDesignContract(consortDir);
+  const ux = checkUxClean({ projectDir: (0, import_node_path17.dirname)(consortDir), designClasses, appIcon });
+  return ux.clean ? [] : [summarizeUxViolations(ux)];
+}
+function checkUxClean(args) {
+  const okIcon = { ok: true, violations: [] };
+  const okVocab = { ok: true, missing: [] };
+  const clean0 = { clean: true, reachability: { ok: true, unreachable: [] }, tokens: { ok: true, bare: [] }, appIcon: okIcon, vocabulary: okVocab };
+  const srcDir = args.clientSrcDir ?? (0, import_node_path17.join)(args.projectDir, "client", "src");
+  const appTsx = (0, import_node_path17.join)(srcDir, "App.tsx");
+  const pagesDir = (0, import_node_path17.join)(srcDir, "pages");
+  if (!(0, import_node_fs15.existsSync)(appTsx) || !(0, import_node_fs15.existsSync)(pagesDir)) return clean0;
+  const appSource = (0, import_node_fs15.readFileSync)(appTsx, "utf8");
+  const pageSources = {};
+  const pageComponents = [];
+  for (const name of (0, import_node_fs15.readdirSync)(pagesDir)) {
+    if (!name.endsWith(".tsx") || name.endsWith(".test.tsx")) continue;
+    const src = (0, import_node_fs15.readFileSync)((0, import_node_path17.join)(pagesDir, name), "utf8");
+    pageSources[name] = src;
+    for (const re of [/export\s+function\s+([A-Z][A-Za-z0-9_]*)/g, /export\s+const\s+([A-Z][A-Za-z0-9_]*)/g]) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(src)) !== null) pageComponents.push(m[1]);
+    }
+  }
+  const reachability = checkRouteReachability({ appSource, pageComponents });
+  const tokens = checkTokenConsumption({ pageSources, designClasses: args.designClasses });
+  const globalCssPath = (0, import_node_path17.join)(srcDir, "styles", "global.css");
+  const vocabulary = args.designClasses && args.designClasses.length > 0 && (0, import_node_fs15.existsSync)(globalCssPath) ? checkComponentVocabularyDefined(args.designClasses, (0, import_node_fs15.readFileSync)(globalCssPath, "utf8")) : okVocab;
+  let appIcon = okIcon;
+  if (args.appIcon) {
+    const clientDir = (0, import_node_path17.join)(srcDir, "..");
+    const indexHtmlPath = (0, import_node_path17.join)(clientDir, "index.html");
+    const installToPath = (0, import_node_path17.join)(args.projectDir, args.appIcon.install_to);
+    const installedBasename = args.appIcon.install_to.split("/").pop() ?? args.appIcon.install_to;
+    appIcon = checkAppIcon({
+      appIcon: args.appIcon,
+      installedExists: (0, import_node_fs15.existsSync)(installToPath),
+      installedBasename,
+      indexHtml: (0, import_node_fs15.existsSync)(indexHtmlPath) ? (0, import_node_fs15.readFileSync)(indexHtmlPath, "utf8") : "",
+      appShell: appSource
+    });
+  }
+  const clean = reachability.ok && tokens.ok && appIcon.ok && vocabulary.ok;
+  return clean ? { clean, reachability, tokens, appIcon, vocabulary } : { clean, reachability, tokens, appIcon, vocabulary, remediation: UX_CLEAN_REMEDIATION };
+}
 
 // consort/architecture/layering-clean.ts
 init_cjs_shims();
@@ -14593,6 +14751,155 @@ var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   ".pytest_cache",
   ".ruff_cache"
 ]);
+function isTestFile(name) {
+  return /^test_.*\.py$/.test(name) || /_test\.py$/.test(name) || name === "conftest.py";
+}
+function sourcePyFilesRec(dir, out) {
+  let entries;
+  try {
+    entries = (0, import_node_fs16.readdirSync)(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      if (!SOURCE_SKIP_DIRS.has(e.name)) sourcePyFilesRec((0, import_node_path18.join)(dir, e.name), out);
+    } else if (e.isFile() && e.name.endsWith(".py") && !isTestFile(e.name)) {
+      out.push((0, import_node_path18.join)(dir, e.name));
+    }
+  }
+}
+var SESSION_OP = /\b(?:db|session|_session|self\._?session)\s*\.\s*(query|add|add_all|commit|delete|merge|flush|execute|refresh|scalars|scalar)\s*\(/;
+function relTo(projectDir, file) {
+  return file.startsWith(projectDir) ? file.slice(projectDir.length).replace(/^\/+/, "") : file;
+}
+function dottedPrefix(module2) {
+  return module2.replace(/\.py$/, "").replace(/^\/+|\/+$/g, "").replace(/\//g, ".");
+}
+function layerSourceFiles(projectDir, module2) {
+  const base = module2.replace(/\/+$/, "");
+  const out = [];
+  const abs = (0, import_node_path18.join)(projectDir, base);
+  const tryFile = (p) => {
+    try {
+      if ((0, import_node_fs16.existsSync)(p) && !(0, import_node_fs16.statSync)(p).isDirectory()) out.push(p);
+    } catch {
+    }
+  };
+  if ((0, import_node_fs16.existsSync)(abs)) {
+    let isDir = false;
+    try {
+      isDir = (0, import_node_fs16.statSync)(abs).isDirectory();
+    } catch {
+    }
+    if (isDir) sourcePyFilesRec(abs, out);
+    else if (abs.endsWith(".py")) out.push(abs);
+    else tryFile((0, import_node_path18.join)(projectDir, `${base}.py`));
+  } else {
+    tryFile((0, import_node_path18.join)(projectDir, `${base}.py`));
+  }
+  return out;
+}
+function resolveRelativeImport(fileAbs, projectDir, dots, tail) {
+  const rel = relTo(projectDir, fileAbs);
+  const parts = rel.split("/");
+  parts.pop();
+  const up = dots - 1;
+  if (up > parts.length) return null;
+  const basePkg = parts.slice(0, parts.length - up);
+  const tailParts = tail ? tail.split(".").filter(Boolean) : [];
+  const full = [...basePkg, ...tailParts].join(".");
+  return full || null;
+}
+function importedModule(line, fileAbs, projectDir) {
+  const from = /^\s*from\s+(\.*)([\w.]*)\s+import\b/.exec(line);
+  if (from) {
+    const dots = from[1].length;
+    const tail = from[2] ?? "";
+    if (dots === 0) return tail || null;
+    return resolveRelativeImport(fileAbs, projectDir, dots, tail);
+  }
+  const imp = /^\s*import\s+([\w.]+)/.exec(line);
+  return imp ? imp[1] : null;
+}
+function underPrefix(mod, prefix) {
+  return mod === prefix || mod.startsWith(`${prefix}.`);
+}
+var IMPORT_LAYERING_REMEDIATION = "A layer imports another layer it is not allowed to depend on. Dependencies must point inward, per the architect's layers[].may_import (boundary -> service -> repository -> models). Route the dependency through the allowed inner layer (the boundary calls the service, the service calls the repository) instead of reaching across or around it. See the `layering-violation` smell + @architectural-design-principles layered-architecture.";
+function checkImportLayering(projectDir, layers) {
+  const decls = layers.filter((l) => typeof l.role === "string" && typeof l.module === "string" && l.module.length > 0).map((l) => ({ role: l.role, module: l.module, allowed: new Set(l.may_import ?? []), prefix: dottedPrefix(l.module) }));
+  const scanned = [];
+  const violations = [];
+  for (const layer of decls) {
+    const forbidden = decls.filter((k) => k.prefix !== layer.prefix && k.role !== layer.role && !layer.allowed.has(k.role));
+    if (forbidden.length === 0) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = (0, import_node_fs16.readFileSync)(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (/#\s*noqa/i.test(line)) return;
+        const mod = importedModule(line, file, projectDir);
+        if (!mod) return;
+        const hit = forbidden.find((t) => underPrefix(mod, t.prefix));
+        if (hit) violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} may not import ${hit.role})`);
+      });
+    }
+  }
+  return violations.length === 0 ? { ok: true, scanned, violations: [] } : { ok: false, scanned, violations, remediation: IMPORT_LAYERING_REMEDIATION };
+}
+var ORM_CONTAINMENT_EXEMPT_ROLES = /* @__PURE__ */ new Set(["repository", "infrastructure"]);
+var ORM_CONTAINMENT_REMEDIATION = "A layer other than the repository calls the persistence session/ORM directly. Only the repository layer may touch the ORM session; move the persistence call into the repository and have this layer delegate to it. See the `layering-violation` smell + @architectural-design-principles layered-architecture.";
+function checkOrmContainment(projectDir, layers, sessionOp = SESSION_OP) {
+  const hasRepository = layers.some((l) => l.role === "repository");
+  if (!hasRepository) return { ok: true, scanned: [], violations: [] };
+  const scanned = [];
+  const violations = [];
+  for (const layer of layers) {
+    if (typeof layer.module !== "string" || !layer.module || ORM_CONTAINMENT_EXEMPT_ROLES.has(layer.role)) continue;
+    for (const file of layerSourceFiles(projectDir, layer.module)) {
+      const shown = relTo(projectDir, file);
+      scanned.push(shown);
+      const lines = (0, import_node_fs16.readFileSync)(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (sessionOp.test(line)) {
+          violations.push(`${shown}:${i + 1}  ${line.trim()}  (${layer.role} layer must not touch the ORM session)`);
+        }
+      });
+    }
+  }
+  return violations.length === 0 ? { ok: true, scanned, violations: [] } : { ok: false, scanned, violations, remediation: ORM_CONTAINMENT_REMEDIATION };
+}
+function layeringConfigFromArchitecture(architectureJson2) {
+  let parsed;
+  try {
+    parsed = JSON.parse(architectureJson2);
+  } catch {
+    return { serviceBacked: false, boundaryModules: [], repositoryModules: [], allModules: [] };
+  }
+  const layers = parsed.layers ?? [];
+  const modulesByRole = (role) => layers.filter((l) => l.role === role && typeof l.module === "string").map((l) => l.module);
+  const allModules = layers.filter((l) => typeof l.role === "string" && typeof l.module === "string").map((l) => ({
+    role: l.role,
+    module: l.module,
+    ...Array.isArray(l.may_import) ? { may_import: l.may_import.filter((r) => typeof r === "string") } : {}
+  }));
+  const boundaryLayer = layers.find((l) => l.role === "boundary" && typeof l.renders_via === "string");
+  return {
+    serviceBacked: parsed.service_backed === true,
+    boundaryModules: modulesByRole("boundary"),
+    repositoryModules: modulesByRole("repository"),
+    allModules,
+    ...boundaryLayer?.renders_via ? { rendersVia: boundaryLayer.renders_via } : {}
+  };
+}
+function collectLayeringViolations(projectDir, architectureJson2) {
+  const cfg = layeringConfigFromArchitecture(architectureJson2);
+  if (!cfg.serviceBacked || cfg.allModules.length === 0) return [];
+  const importLayering = checkImportLayering(projectDir, cfg.allModules);
+  const ormContainment = checkOrmContainment(projectDir, cfg.allModules);
+  return [...importLayering.ok ? [] : importLayering.violations, ...ormContainment.ok ? [] : ormContainment.violations];
+}
 
 // consort/smells/supersession.ts
 init_cjs_shims();
@@ -15708,6 +16015,101 @@ function checkE2eRouteCollision(projectDir) {
   }
   return { ok: violations.length === 0, violations };
 }
+function collectModuleExports(source) {
+  const names = /* @__PURE__ */ new Set();
+  const braceRe = /\bexport\s*\{([^}]*)\}/g;
+  let m;
+  while ((m = braceRe.exec(source)) !== null) {
+    for (const part of m[1].split(",")) {
+      const token = part.trim();
+      if (!token) continue;
+      const asMatch = /\bas\s+([A-Za-z_$][\w$]*)/.exec(token);
+      names.add(asMatch ? asMatch[1] : token.replace(/\s.*$/, ""));
+    }
+  }
+  const declRe = /\bexport\s+(?:async\s+)?(?:const|let|var|function\*?|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/g;
+  while ((m = declRe.exec(source)) !== null) names.add(m[1]);
+  if (/\bexport\s+default\b/.test(source)) names.add("default");
+  if (/\bexport\s*\*/.test(source)) names.add("*");
+  return names;
+}
+function resolveLocalModule(fromFile, spec) {
+  const base = (0, import_node_path25.join)(fromFile, "..", spec);
+  const cands = [base, ...[".ts", ".tsx", ".js", ".jsx", ".mjs"].map((e) => base + e), ...["index.ts", "index.tsx", "index.js"].map((i) => (0, import_node_path25.join)(base, i))];
+  for (const c of cands) {
+    try {
+      if ((0, import_node_fs22.existsSync)(c) && (0, import_node_fs22.statSync)(c).isFile()) return c;
+    } catch {
+    }
+  }
+  return void 0;
+}
+function checkE2eHelperExports(projectDir) {
+  const e2eRoot = (0, import_node_path25.join)(projectDir, E2E_DIR);
+  if (!(0, import_node_fs22.existsSync)(e2eRoot)) return { ok: true, violations: [] };
+  const importRe = /\bimport\s*(?:type\s+)?\{([^}]*)\}\s*from\s*(['"`])(\.[^'"`]*)\2/g;
+  const violations = [];
+  for (const spec of walk2(e2eRoot, (n) => /\.(spec|test)\.[tj]sx?$/.test(n))) {
+    let source;
+    try {
+      source = (0, import_node_fs22.readFileSync)(spec, "utf8");
+    } catch {
+      continue;
+    }
+    const specRel = (0, import_node_path25.relative)(projectDir, spec).split(/[\\/]/).join("/");
+    let m;
+    while ((m = importRe.exec(source)) !== null) {
+      const resolved = resolveLocalModule(spec, m[3]);
+      if (!resolved) continue;
+      let helperSrc;
+      try {
+        helperSrc = (0, import_node_fs22.readFileSync)(resolved, "utf8");
+      } catch {
+        continue;
+      }
+      const exported = collectModuleExports(helperSrc);
+      if (exported.has("*")) continue;
+      const imported = m[1].split(",").map((p) => p.trim()).filter(Boolean).map((p) => p.replace(/\s+as\s+[\w$]+$/, "").trim()).filter((n) => n && n !== "type");
+      const missing = imported.filter((n) => !exported.has(n));
+      if (missing.length) {
+        violations.push({
+          spec: specRel,
+          helper: m[3],
+          missing,
+          remediation: `${specRel} imports { ${missing.join(", ")} } from "${m[3]}", but that module does not export ${missing.length > 1 ? "them" : "it"} \u2014 the spec fails at load (SyntaxError) and the Playwright suite cannot run. Either import { test, expect } directly from "@playwright/test" (the scaffold convention), or make the shared helper re-export exactly what the specs import (e.g. \`export { test, expect };\`).`
+        });
+      }
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+function checkE2eRouteAround(projectDir) {
+  const e2eRoot = (0, import_node_path25.join)(projectDir, E2E_DIR);
+  if (!(0, import_node_fs22.existsSync)(e2eRoot)) return { ok: true, violations: [] };
+  const chainRe = /\.(selectOption|click|fill|check|uncheck|press|type|setInputFiles)\s*\([\s\S]*?\)\s*\.catch\s*\(/g;
+  const violations = [];
+  for (const spec of walk2(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
+    let source;
+    try {
+      source = (0, import_node_fs22.readFileSync)(spec, "utf8");
+    } catch {
+      continue;
+    }
+    const specRel = (0, import_node_path25.relative)(projectDir, spec).split(/[\\/]/).join("/");
+    let m;
+    while ((m = chainRe.exec(source)) !== null) {
+      const window = source.slice(m.index + m[0].length, m.index + m[0].length + 300);
+      if (!/page\s*\.\s*goto\s*\(/.test(window)) continue;
+      const line = source.slice(0, m.index).split("\n").length;
+      violations.push({
+        spec: `${specRel}:${line}`,
+        snippet: source.slice(m.index, m.index + m[0].length).replace(/\s+/g, " ").trim().slice(0, 160),
+        remediation: "E2E routes around the shipped control: a control interaction falls back via `.catch(() => page.goto(...))` to a URL/query-param path, so the test passes whether or not the control works (the native-datalist filter that shipped broken). Drive the assertion THROUGH the control the user operates \u2014 if the control cannot reach the asserted state, that is a UX defect to route to the ux-designer, not to bypass in the test."
+      });
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
 function checkE2eSeedBackendDerivation(projectDir) {
   const e2eRoot = (0, import_node_path25.join)(projectDir, E2E_DIR);
   if (!(0, import_node_fs22.existsSync)(e2eRoot)) return { ok: true, violations: [] };
@@ -16007,6 +16409,17 @@ function checkNavigator(args, v) {
   const projectDir = (0, import_node_path26.dirname)(args.consortDir);
   for (const x of checkE2eRouteCollision(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
   for (const x of checkE2eSeedBackendDerivation(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  for (const x of checkE2eHelperExports(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  for (const x of checkE2eRouteAround(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+}
+function checkDriver(args, v) {
+  const archFile = architectureJson(args.consortDir, args.featureId);
+  if ((0, import_node_fs23.existsSync)(archFile)) {
+    for (const x of collectLayeringViolations((0, import_node_path26.dirname)(args.consortDir), (0, import_node_fs23.readFileSync)(archFile, "utf8"))) {
+      v.push({ artifact: "layering", problem: x });
+    }
+  }
+  for (const x of collectUxViolations(args.consortDir)) v.push({ artifact: "ux-adherence", problem: x });
 }
 var CHECKERS = {
   "spec-author": checkSpecAuthor,
@@ -16014,7 +16427,8 @@ var CHECKERS = {
   dba: checkDba,
   "test-strategist": checkTestStrategist,
   "ux-designer": checkUxDesigner,
-  navigator: checkNavigator
+  navigator: checkNavigator,
+  driver: checkDriver
 };
 function formatRoleResponse(args) {
   const violations = [];
@@ -16562,7 +16976,7 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
   }
   if (action.role === "ux-designer" && action.mode === "ia") {
     const uxStory = action.story;
-    return `Refine the information architecture (${root}/design/ia.md) for story ${uxStory}'s user-facing surfaces. Read this story's acceptance criteria (its E2E / client ACs name the screens, forms, and flows a user operates) and the established style system (${root}/design/design-guide.json \u2014 the component vocabulary + tokens the surfaces compose from). ADD this story's surfaces to ia.md's existing sections (Screens / Navigation / User flows): each screen or form the story introduces with its route + data-testid seams, its place in the navigation, and the user flow it participates in. APPEND each new user flow at the END of the numbered list, keeping the numbers sequential. When a flow or CTA links to ANOTHER screen with a query param (e.g. a Receive CTA to \`/receive?sku=<sku>\`), that target screen's Screens-table row must declare the param it accepts (e.g. \`/receive\` (\`?sku=\`)). The refinement is ADDITIVE \u2014 extend the existing sections and compose new surfaces from the established component vocabulary; the style system (design-guide.json) is read-only context here, authored at establish. Reconcile ALL of this story's user-facing ACs on every run, including a re-run after a reflect finding: before finishing, confirm EVERY one of this story's E2E / client ACs maps to a screen or form NAMED in ia.md \u2014 an AC with no IA surface is the defect this step closes.`;
+    return `Refine the information architecture (${root}/design/ia.md) for story ${uxStory}'s user-facing surfaces. Read this story's acceptance criteria (its E2E / client ACs name the screens, forms, and flows a user operates) and the established style system (${root}/design/design-guide.json \u2014 the component vocabulary + tokens the surfaces compose from). ADD this story's surfaces to ia.md's existing sections (Screens / Navigation / User flows): each screen or form the story introduces with its route + data-testid seams, its place in the navigation, and the user flow it participates in. APPEND each new user flow at the END of the numbered list, keeping the numbers sequential. When a flow or CTA links to ANOTHER screen with a query param (e.g. a Receive CTA to \`/receive?sku=<sku>\`), that target screen's Screens-table row must declare the param it accepts (e.g. \`/receive\` (\`?sku=\`)). For each INTERACTIVE control a surface introduces (a filter, selector, combobox, search box, toggle), name in the Screens-table row the control's TYPE and its OPTION SOURCE and the states it must reach \u2014 e.g. a location filter is an accessible combobox whose options are ALL distinct locations (so an EMPTY or other location is selectable and its empty-state is reachable THROUGH the control), not a native datalist whose options are only the currently-filtered rows and whose popup cannot be placed. A control a user cannot operate to reach an asserted state is an IA defect to decide HERE, not a build-time accident. The refinement is ADDITIVE \u2014 extend the existing sections and compose new surfaces from the established component vocabulary; the style system (design-guide.json) is read-only context here, authored at establish. Reconcile ALL of this story's user-facing ACs on every run, including a re-run after a reflect finding: before finishing, confirm EVERY one of this story's E2E / client ACs maps to a screen or form NAMED in ia.md \u2014 an AC with no IA surface is the defect this step closes.`;
   }
   if (action.role === "ux-designer") {
     return `Translate the HIL design brief (${root}/design/design-brief.md) into the project design system: write design-guide.md (visual + interaction standards), design-guide.json (the machine-checkable tokens + components), and ia.md (the information architecture: screens, navigation, flows). This is the project-level style guide the Navigator and Driver build the UI against; author it once from the brief + product-overview.md. COVER THE BRIEF EXHAUSTIVELY \u2013 read design-brief.md + product-overview.md and enumerate, then realize, EVERY named element. In particular: (a) EVERY status/state variant the brief lists (e.g. each badge/pill state) \u2013 include ALL of them, not a representative subset; (b) EVERY asset the brief names (app icon, favicon/browser-tab icon, logos) as an explicit entry; (c) EVERY level of each scalar token the brief enumerates (if it says shadows sm/md/lg, define all three; likewise every spacing/radius/type step); and (d) a design-guide.json "components" block with an entry for EACH reusable UI component the brief describes (navbar, page, card, button, form field, table, status badge, empty state, toast, app icon, and any others the brief names), each with its class + notes. Before finishing, re-read the brief and confirm nothing it names is missing from the design-guide \u2013 a missing status state, asset, token level, or component is a defect.`;
@@ -16628,7 +17042,7 @@ ${groundingClause} The human reviews + approves these before the Spec Author pro
         return `FEATURE-COMPLETE RECONCILIATION for ${featureId}: every story is now designed + gated. Independently check the WHOLE set of stories against ITSELF \u2014 symmetrically, every story vs every other, INCLUDING the first-designed story (which was never checked against its later siblings). The cross-story context (all stories' ACs + the architecture's open_decisions + its mandated not-null fields) is injected below. Look ONLY for CROSS-STORY defects: an AC that contradicts another story's gated AC; a mandated (not-null) field no story's submit AC supplies; two stories' ACs overlapping on the same observable behavior; a persistence invariant anchored to the wrong story. Do NOT re-review a single story in isolation \u2014 each already passed its own reflect + gate. Write the verdict to ${root}/features/${featureId}/reconcile-verdict.json: {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist"|"architect-reviewer"|"ux-designer","story":"<the OWNING story to change>","detail":"<the cross-story defect>","ac_ids":["<exact AC id(s)>"],"severity":"blocking"|"advisory"}]}. Use passed:true with findings:[] when the stories are mutually consistent. Each finding names the OWNING story (the one reopened + changed) and its author. Produce ONLY the verdict file, then stop.`;
       }
       if (action.buildMode === "reflect") {
-        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json), the NFRs (${root}/nfrs.md \u2014 a project-level file, NOT under the feature dir), and the information architecture (${root}/design/ia.md).` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle. The DETERMINISTIC pre-reflect gate has ALREADY verified the structural classes \u2014 client-kind\u2194AC-layer coherence, E2E-layer coverage by a real Playwright spec, and that no real-browser navigation/reload assertion sits in the jsdom component harness \u2014 so do NOT spend a finding re-flagging those; focus on the SEMANTIC defects: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell); (8) for EACH user-facing AC (declared layer E2E or client): read ${root}/design/ia.md and locate the screen, form, or data-testid seam that AC asserts among the IA's Screens, Navigation, and User flows \u2014 emit a ux-designer finding naming every asserted surface the IA leaves out, because the architect would otherwise tag an E2E layer against a screen the IA does not define (the ia refinement adds the missing surface). Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist"|"architect-reviewer"|"ux-designer","detail":"<the defect>","ac_ids":["<exact story AC id(s) this finding is about>"]}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to its OWNING role so the fix routes to the right gate: spec-author (an AC/spec defect \u2014 the given/when/then or scope); architect-reviewer (an ARCHITECTURE defect \u2014 checks 4 and 5, i.e. a wrong layer tag, OR a route/path/contract in an AC's architectural_notes that disagrees with the IA or the tests, OR a persistence invariant that contradicts the AC; this is the architect's product, NOT the spec-author's, so do NOT attribute a notes/layer defect to spec-author); test-strategist (a test-list/coverage defect); ux-designer (a user-facing AC whose surface the IA does not name \u2014 defect 8). Set "ac_ids" to the EXACT story AC id(s) the finding concerns (verbatim, from this story's acs/) \u2014 the revise re-derives ONLY those ACs' test items; omit ac_ids (or []) ONLY for a whole-story defect that needs the entire test-list rebuilt. Write ONLY that file; the orchestrator routes any fix deterministically.`;
+        return `REFLECT on story ${s} BEFORE the build lane: independently critique its spec slice (${root}/features/${featureId}/stories/${s}/story.json + acs/*.json) and its test-list (${root}/features/${featureId}/stories/${s}/test-list-per-story.json) against the architecture (${root}/features/${featureId}/architecture.md/.json), the NFRs (${root}/nfrs.md \u2014 a project-level file, NOT under the feature dir), and the information architecture (${root}/design/ia.md).` + contextRubric(consortDir, featureId, s, "") + ` Look ONLY for design-time defects that would waste a build cycle. The DETERMINISTIC pre-reflect gate has ALREADY verified the structural classes \u2014 client-kind\u2194AC-layer coherence, E2E-layer coverage by a real Playwright spec, and that no real-browser navigation/reload assertion sits in the jsdom component harness \u2014 so do NOT spend a finding re-flagging those; focus on the SEMANTIC defects: (1) ACs that contradict each other; (2) an AC with no covering test, or a test that contradicts its AC; (3) an NFR with no fitness test; (4) a test asserting at a layer the architecture forbids; (5) an AC whose declared layer conflicts with the architecture; (6) an untestable/vacuous AC (no observable outcome); (7) a UI-styling test that asserts inline HTML style or raw CSS in the page SOURCE (e.g. a text-align/color/font check inside a style= attr) for a property the design-guide + design-adherence gate govern, instead of the rendered SEAM (the element carries the design-guide class / data-testid): such a test hard-codes the very inline style the design lane then refactors into a token-driven class, so it blocks that refactor (the ui-style-implementation-test smell); (8) for EACH user-facing AC (declared layer E2E or client): read ${root}/design/ia.md and locate the screen, form, or data-testid seam that AC asserts among the IA's Screens, Navigation, and User flows \u2014 emit a ux-designer finding naming every asserted surface the IA leaves out, because the architect would otherwise tag an E2E layer against a screen the IA does not define (the ia refinement adds the missing surface). ALSO, when that AC asserts an INTERACTIVE control (a filter, selector, combobox, search), the IA must name a control the user can OPERATE to reach EVERY state the AC asserts: the control's declared option source must cover the asserted values and its empty / no-match state must be reachable THROUGH the control (e.g. an all-values accessible combobox, not a native datalist whose options are only the filtered rows and whose empty option is unselectable) \u2014 emit a ux-designer finding when the IA's control cannot reach an asserted state. This control-SEMANTICS check is the twin of the surface-existence check: a surface the IA NAMES but whose control a user cannot operate to the asserted state is still an ia defect, not a build detail or a test bypass; Do NOT critique implementation, style, or scope, only buildability + internal consistency of THIS story's artifacts. BE EXHAUSTIVE in this ONE pass: findings[] is multi-valued \u2014 run EVERY check against EVERY AC, test-list item, and NFR, and emit a SEPARATE finding for EACH distinct defect (decompose a LEGACY multi-part singular NFR fitness_function into its sub-guarantees and flag every uncovered clause \u2014 but an NFR that already declares the ATOMIC fitness_functions ARRAY is coverage-checked DETERMINISTICALLY by checkFitnessClauseCoverage at the test_list gate, so do NOT re-decompose it). Do NOT return one finding at a time: the reflect\u2194revise loop is bounded and escalates after a few laps, so a piecemeal reflect burns that budget on repeated revise\u2192re-test\u2192reflect laps and can hand the human a still-defective design. Write your verdict to ${root}/features/${featureId}/stories/${s}/reflect-verdict.json as {"version":1,"passed":<bool>,"findings":[{"owner":"spec-author"|"test-strategist"|"architect-reviewer"|"ux-designer","detail":"<the defect>","ac_ids":["<exact story AC id(s) this finding is about>"]}]}. passed:true with findings:[] when the spec + test-list are consistent + buildable (the common case, do NOT invent defects). Attribute each finding to its OWNING role so the fix routes to the right gate: spec-author (an AC/spec defect \u2014 the given/when/then or scope); architect-reviewer (an ARCHITECTURE defect \u2014 checks 4 and 5, i.e. a wrong layer tag, OR a route/path/contract in an AC's architectural_notes that disagrees with the IA or the tests, OR a persistence invariant that contradicts the AC; this is the architect's product, NOT the spec-author's, so do NOT attribute a notes/layer defect to spec-author); test-strategist (a test-list/coverage defect); ux-designer (a user-facing AC whose surface the IA does not name \u2014 defect 8). Set "ac_ids" to the EXACT story AC id(s) the finding concerns (verbatim, from this story's acs/) \u2014 the revise re-derives ONLY those ACs' test items; omit ac_ids (or []) ONLY for a whole-story defect that needs the entire test-list rebuilt. Write ONLY that file; the orchestrator routes any fix deterministically.`;
       }
       if (action.buildMode === "assess") {
         const gfAssess = action.ac ? readGreenFailure(consortDir, featureId, s, action.ac) : void 0;
@@ -16941,6 +17355,9 @@ function commandsForAction(action, cfg) {
       }
       if (action.role === "ux-designer") {
         cmds.push({ kind: "cli", bin: APPLY_DESIGN_THEME_BIN, args: ["--project", cfg.projectDir] });
+      }
+      if (action.role === "driver") {
+        cmds.push({ kind: "cli", bin: APPLY_DESIGN_THEME_BIN, args: ["--if-guide", "--project", cfg.projectDir] });
       }
       const cycleCmd = buildCycleCommand(action, cfg);
       if (cycleCmd) cmds.push(cycleCmd);

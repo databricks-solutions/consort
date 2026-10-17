@@ -50,19 +50,22 @@ describe("commandsForAction: invoke-role -> claude", () => {
   it("maps a build role to a claude command with the resolved model", () => {
     const c = cfg({ modelForRole: (r) => (r === "driver" ? "opus" : "sonnet") });
     const cmds = commandsForAction({ kind: "invoke-role", role: "driver", story: "S1" }, c);
-    // [claude, cycle green, reconcile]: the Driver runs (writes code + runs the
-    // project's tests), then the ORCHESTRATION records the cycle (stamps GREEN
+    // [claude, apply-theme, cycle green, reconcile]: the Driver runs (writes code + runs the
+    // project's tests), then the P1 apply-theme re-freeze (idempotent; --if-guide no-ops on a
+    // non-UI project) re-wires the brand shell, the ORCHESTRATION records the cycle (stamps GREEN
     // via the substrate, not the agent), then reconcile logs what landed.
-    expect(cmds).toHaveLength(3);
+    expect(cmds).toHaveLength(4);
     // P5: the Driver resumes PER STORY by default (story-scoped resumeKey), warm
     // across the story's cycles and fresh at each new story. The on-disk artifact
     // remains its only inter-role context, so correctness is unchanged.
     expect(cmds[0]).toMatchObject({ kind: "claude", role: "driver", model: "opus", resumeKey: "driver:S1" });
     expect((cmds[0] as { task: string }).task).toMatch(/GREEN/);
-    expect(cmds[1]).toMatchObject({ kind: "cli", bin: "consort-cycle" });
-    expect((cmds[1] as { args: string[] }).args[0]).toBe("green");
-    expect(cmds[2]).toMatchObject({ kind: "cli", bin: "consort-log" });
-    expect((cmds[2] as { args: string[] }).args).toContain("--reconcile");
+    expect(cmds[1]).toMatchObject({ kind: "cli", bin: "consort-apply-design-theme" });
+    expect((cmds[1] as { args: string[] }).args).toContain("--if-guide");
+    expect(cmds[2]).toMatchObject({ kind: "cli", bin: "consort-cycle" });
+    expect((cmds[2] as { args: string[] }).args[0]).toBe("green");
+    expect(cmds[3]).toMatchObject({ kind: "cli", bin: "consort-log" });
+    expect((cmds[3] as { args: string[] }).args).toContain("--reconcile");
   });
 
   it("keys effort/model on the STEP: spec-author BREAKDOWN and AC-authoring resolve independently", () => {
