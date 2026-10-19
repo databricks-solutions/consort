@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolveSource } from "@/lib/sources";
 import { renderToolMarker } from "@/lib/activity";
 import { correlate, type TurnIndexEntry } from "@/lib/correlate";
+import { roleForEvent } from "@/lib/topology";
 import { consortDir } from "@/lib/consort";
 import { resolveContained } from "@/lib/safepath";
 import type { SourceMode } from "@/lib/source";
@@ -176,14 +177,59 @@ export async function GET(req: NextRequest) {
         if (t.eventIndex != null) {
           const end = rangeEnd.get(t.ordinal) ?? evs.length;
           for (let i = t.eventIndex; i < end; i++) {
-            const e = evs[i] as { event?: string; message?: string; timestamp?: string; metadata?: Record<string, unknown> } | undefined;
+            const raw = evs[i];
+            const e = raw as { event?: string; message?: string; timestamp?: string; role?: string | null; metadata?: Record<string, unknown> } | undefined;
             if (!e || NOISE_EVENTS.has(e.event ?? "")) continue;
-            rebuilt.push({ idx: rebuilt.length, turn: t.ordinal, role: t.role, eventIndex: i, tsLine: e.timestamp, ...eventDisplay(e) });
+            // A woven milestone takes its LANE-STEP actor, NOT the turn-agent's role: these events fall
+            // in the turn's event-range only because their actor has no recorded transcript turn of its
+            // own. `roleForEvent` routes through the SAME lane mapping the topology uses, so e.g. a
+            // per-test GREEN (honest-GREEN verify) + `cycle.verified` + `deploy.*` attribute to the
+            // Release Engineer, a per-test RED to the Navigator — never the enclosing turn's agent.
+            // Falls back to the event's own role (a gate → orchestrator/product-owner), then the turn's.
+            const evRole = roleForEvent(raw ?? null) ?? (typeof e.role === "string" ? e.role : t.role);
+            rebuilt.push({ idx: rebuilt.length, turn: t.ordinal, role: evRole, eventIndex: i, tsLine: e.timestamp, ...eventDisplay(e) });
           }
         }
         t.lineCount = rebuilt.length - t.startLine;
       }
       lines = rebuilt;
+
+      // Re-segment the flattened stream into one "turn" per contiguous run of the SAME actor, so a
+      // milestone woven into a neighbouring agent's turn (a release-engineer Verify/Deploy, an
+      // orchestrator gate) reads as its OWN turn with its OWN role header — not a chip on the
+      // enclosing agent's turn. An agent's tool-work plus its same-role events stay one segment; a
+      // different actor's events (role set by roleForEvent above) break out into theirs. On a corpus
+      // where the kit still logs cycle.verified BEFORE cycle.green this surfaces as Driver → Release
+      // Engineer → Driver; once the kit emits green-then-verify it collapses to Driver → Release
+      // Engineer, with no bounce.
+      const recRole = new Map(turns.map((t) => [t.ordinal, t.role] as const));
+      const recLabel = new Map(turns.map((t) => [t.ordinal, t.label] as const));
+      const recTs = new Map(turns.map((t) => [t.ordinal, t.tsStart] as const));
+      const segs: typeof turns = [];
+      for (const l of lines) {
+        const last = segs[segs.length - 1];
+        if (last && last.role === l.role && last.ordinal === l.turn) {
+          last.lineCount++;
+          if (last.eventIndex == null && l.eventIndex != null) last.eventIndex = l.eventIndex;
+          if (!last.tsStart && l.tsLine) last.tsStart = l.tsLine;
+        } else {
+          segs.push({
+            ordinal: l.turn,
+            role: l.role,
+            // the recorded phase label only when the segment IS that turn's own agent; a milestone
+            // segment broken out from a different actor carries no recorded label.
+            label: recRole.get(l.turn) === l.role ? (recLabel.get(l.turn) ?? null) : null,
+            startLine: l.idx,
+            lineCount: 1,
+            eventIndex: l.eventIndex ?? null,
+            tsStart: l.tsLine ?? recTs.get(l.turn) ?? null,
+            tsEnd: null,
+          });
+        }
+      }
+      for (let i = 0; i < segs.length; i++) segs[i].tsEnd = segs[i + 1]?.tsStart ?? segs[i].tsStart;
+      turns.length = 0;
+      turns.push(...segs);
     } catch {
       /* best-effort — on any failure the stream stays tool-only */
     }

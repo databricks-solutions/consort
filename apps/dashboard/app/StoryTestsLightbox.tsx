@@ -232,11 +232,17 @@ export function StoryTestsLightbox({
   lineAt,
   foldStatus,
   state,
+  selectedTestId,
+  onSelectTest,
   onClose,
 }: {
   feature: string;
   story: string;
   mode: string | null;
+  // The selected test is LIFTED to the page: clicking a bubble selects it here, and the table
+  // capture for that test renders in the bottom dock (not an overlay panel inside this rail).
+  selectedTestId: string | null;
+  onSelectTest: (id: string | null) => void;
   // Timeline position: at the live edge the on-disk (HEAD) status is authoritative; scrubbed back
   // it would describe the future, so the status comes from the recorded `test.result` trail
   // folded as-of the playhead (`foldStatus`), defaulting un-reached tests to "pending".
@@ -257,9 +263,8 @@ export function StoryTestsLightbox({
   // The Lakebase branch the tests run on + a console deep-link (header chip). Polled at the live
   // edge so it tracks the per-cycle experiment branch as the drive cuts/merges.
   const [branch, setBranch] = useState<{ branch: string; consoleUrl: string } | null>(null);
-  // The test whose TABLE state the view shows. Default: follow the running test at the live edge;
-  // a click on any bubble pins that test (so you can inspect what any test left in the tables).
-  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
+  // `selectedTestId` is a PROP now (lifted to the page): clicking a bubble selects the test whose
+  // table capture renders in the bottom dock.
 
   useEffect(() => {
     let alive = true;
@@ -317,65 +322,46 @@ export function StoryTestsLightbox({
   // stream (placed in the turn that ran it, in pass order); fold the lines REVEALED so far (idx <
   // lineAt), last-revealed status per test winning. So scrubbing forward flips bubbles one at a time
   // in the order they passed — line position, not wall-clock (which collapsed a burst into one step).
-  // Also track the latest revealed test line's timestamp as the table panel's "as-of" cutoff; before
-  // any test is revealed, fall back to the current turn's start so the table reads empty, not HEAD.
   const testStatusByLine = new Map<string, string>();
-  let tableAtTs = "";
   for (const l of timeline?.lines ?? []) {
     if (l.kind !== "test" || !l.testId || l.idx >= lineAt) continue;
     testStatusByLine.set(l.testId, l.status ?? "");
-    if (l.tsLine) tableAtTs = l.tsLine;
   }
   const haveTestLines = (timeline?.lines ?? []).some((l) => l.kind === "test");
-  if (!atLive && !tableAtTs && timeline) {
-    const idx = lineAt - 1;
-    const cur =
-      timeline.turns.find((t) => idx >= t.startLine && idx < t.startLine + t.lineCount) ?? timeline.turns[timeline.turns.length - 1];
-    tableAtTs = cur?.tsStart ?? "";
-  }
   const liveStatusFor = (t: StoryTest): string | undefined => testStatusByLine.get(t.id);
-
-  // The table panel is CLICK-DRIVEN: it extends out for the test the user clicks (pins) and closes
-  // when nothing is selected — it does NOT auto-follow the running test.
   const currentTestId = selectedTestId;
 
-  // One source of truth for the two panel widths. The test-list column is a FIXED width so it never
-  // reflows when the table panel opens: the drawer simply grows by exactly TABLE_W to the right, and
-  // the list stays put. (48vw + 46vw = 94vw keeps the open drawer inside the viewport.)
-  const LIST_W = "min(560px, 48vw)";
-  const TABLE_W = "min(720px, 46vw)";
+  // The rail is a FIXED-WIDTH right-edge column of test bubbles only — the table capture for the
+  // selected test renders in the bottom dock, so the rail no longer extends wide for a table panel.
+  // Matches the left Backlog/planning/status pane's width so the two side columns read as a pair.
+  const LIST_W = 360;
 
   return (
     <div
       role="dialog"
       aria-label={`${feature} ${story} tests`}
       style={{
-        // A LEFT-edge drawer (same side as the Status rollup that opens it) that ENDS ABOVE the
-        // transport (bottom: 72), with NO full-screen backdrop — so the scrubber stays reachable AND
-        // the event log on the right stays visible while you watch the bubbles relight. Scrubbing
-        // deliberately keeps it open: the point is to scrub and see the per-test status move. Close
-        // via ✕ or Escape only.
-        position: "fixed",
-        top: 0,
-        left: 0,
-        bottom: 72,
-        zIndex: 65,
-        // Narrow (just the test list) by default; EXTENDS wide when a test is clicked so the table
-        // panel has room for more columns. Collapses back when the selection is cleared. The open
-        // width is LIST_W + TABLE_W so the list column keeps its exact closed width (no reflow).
-        width: selectedTestId ? `calc(${LIST_W} + ${TABLE_W})` : LIST_W,
-        transition: "width 0.15s ease",
+        // A RIGHT-edge test-list pane that is a FLEX SIBLING of the board (not a fixed overlay), so
+        // opening it SHARES horizontal space — the board narrows rather than being covered, exactly
+        // like the old event-log pane did. Bubbles ONLY — the table capture for a selected test
+        // renders in the bottom dock. Scrubbing keeps it open (watch the bubbles relight). Close via
+        // ✕ or Escape. Stretches to the board's height; its own body scrolls.
+        flex: "none",
+        alignSelf: "stretch",
+        width: LIST_W,
+        minWidth: 0,
+        marginLeft: 16,
         background: "var(--surface-panel)",
-        borderRight: "1px solid var(--border-default)",
-        boxShadow: "12px 0 40px rgba(0,0,0,0.35)",
+        border: "1px solid var(--border-default)",
+        borderRadius: radius.panel,
         overflow: "hidden",
         display: "flex",
-        flexDirection: "row",
+        flexDirection: "column",
       }}
     >
       {/* LEFT column: the test list (bubbles) + branch chip + driver activity. FIXED width so opening
           the table panel never resizes it. */}
-      <div style={{ flex: `0 0 ${LIST_W}`, minWidth: 0, overflow: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <span style={{ fontFamily: font.mono, fontSize: "0.9rem", fontWeight: 700, color: "var(--text-strong)" }}>
             {feature} · {story}
@@ -446,35 +432,13 @@ export function StoryTestsLightbox({
                   ? ((atLive ? (foldStatus[t.id] as TestStatus) ?? t.status : "pending") as TestStatus)
                   : (foldStatus[t.id] as TestStatus) ?? (atLive ? t.status : "pending")),
             }))}
-            onSelect={(id) => setSelectedTestId((cur) => (cur === id ? null : id))}
+            onSelect={(id) => onSelectTest(currentTestId === id ? null : id)}
             selectedId={currentTestId}
           />
         )}
       </div>
-      {/* RIGHT panel: the tables AS OF the clicked test — the point of the view. Renders ONLY when a
-          test is clicked (so the drawer is just the list otherwise); wide, for more columns. */}
-      {selectedTestId ? (
-        <div
-          style={{
-            flex: `0 0 ${TABLE_W}`,
-            minWidth: 0,
-            borderLeft: "1px solid var(--border-default)",
-            background: "var(--surface-page)",
-            overflow: "auto",
-            padding: 20,
-          }}
-        >
-          <StoryTables
-            feature={feature}
-            story={story}
-            atLive={atLive}
-            atTs={atLive ? "" : tableAtTs}
-            testId={selectedTestId}
-            idToType={Object.fromEntries((items ?? []).map((t) => [t.id, testType(t)]))}
-            pinned
-          />
-        </div>
-      ) : null}
+      {/* The table capture for the selected test is NO LONGER here — it renders in the bottom dock
+          (see <ActivityDock/>), so this rail stays a compact bubble column beside the live view. */}
     </div>
   );
 }
@@ -505,13 +469,14 @@ function fmtCell(v: unknown): string {
 // running test at the live edge, or a pinned click); at the live edge it polls so the rows appear
 // as the backend captures them. A `component` (Vitest) test never hits the DB, so it shows "no DB
 // interaction" instead of tables.
-function StoryTables({
+export function StoryTables({
   feature,
   story,
   atLive,
   atTs,
   testId,
-  idToType,
+  reached = true,
+  idToType = {},
   pinned,
 }: {
   feature: string;
@@ -522,12 +487,17 @@ function StoryTables({
   // it ran — not at an earlier position (the stale-at-HEAD bug: a test showed records before it ran).
   atTs: string;
   testId: string | null;
-  idToType: Record<string, string>;
+  // Has the scrubber reached this test's step yet? The `atTs` timestamp alone can't gate a verify
+  // burst (every test shares ~one wall-clock instant, so the first pass unlocks them all), so the
+  // page gates on the test's OWN line being revealed — the same line model that lights the bubble.
+  // false → show the "hasn't run yet" note and do NOT fetch, so the table stays empty until its step.
+  reached?: boolean;
+  idToType?: Record<string, string>; // test id → kind, for the "drove" pill colour; optional (dock omits it)
   pinned: boolean;
 }) {
   const [tables, setTables] = useState<TableData[] | null>(null);
   useEffect(() => {
-    if (!testId) {
+    if (!testId || !reached) {
       setTables(null);
       return;
     }
@@ -550,7 +520,7 @@ function StoryTables({
       alive = false;
       if (h) clearInterval(h);
     };
-  }, [feature, story, testId, atLive, atTs]);
+  }, [feature, story, testId, atLive, atTs, reached]);
 
   // The right panel always shows SOMETHING: a prompt when no test is current (nothing running, none
   // pinned), so the panel reads as "pick a test" rather than an empty void.

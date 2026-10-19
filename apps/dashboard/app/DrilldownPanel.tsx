@@ -89,6 +89,9 @@ export function DrilldownPanel({
   feature,
   reveal = "full",
   onClose,
+  onStepTurn,
+  hasPrevTurn = false,
+  hasNextTurn = false,
 }: {
   target: DrilldownTarget;
   mode: "live" | "replay" | null;
@@ -101,10 +104,24 @@ export function DrilldownPanel({
   // after the frontier — shown as uninvoked). "full" for non-topology opens.
   reveal?: DrilldownReveal;
   onClose: () => void;
+  // Step to the previous/next turn WITHOUT leaving the panel (the page re-targets the drill-down to
+  // the adjacent turn ordinal). Only turn targets show the ◀ ▶ controls; the bounds disable them at
+  // the ends.
+  onStepTurn?: (delta: number) => void;
+  hasPrevTurn?: boolean;
+  hasNextTurn?: boolean;
 }) {
   switch (target.kind) {
     case "turn":
-      return <TurnBody ord={target.ord} mode={mode} reveal={reveal} onClose={onClose} />;
+      return (
+        <TurnBody
+          ord={target.ord}
+          mode={mode}
+          reveal={reveal}
+          onClose={onClose}
+          nav={onStepTurn ? <TurnNav onStep={onStepTurn} hasPrev={hasPrevTurn} hasNext={hasNextTurn} /> : undefined}
+        />
+      );
     case "role":
       return <RoleBody role={target.role} feature={feature} mode={mode} reveal={reveal} onClose={onClose} />;
     case "artifact":
@@ -274,6 +291,40 @@ function RoleBody({
 
 // --- shared shell + primitives ---------------------------------------------------------------
 
+// The turn panel's ◀ ▶ prev/next controls — step the drill-down to the adjacent turn ordinal
+// without closing it. Disabled (dimmed) at the ends of the run.
+function TurnNav({ onStep, hasPrev, hasNext }: { onStep: (delta: number) => void; hasPrev: boolean; hasNext: boolean }) {
+  const btn = (label: string, delta: number, enabled: boolean, title: string) => (
+    <button
+      onClick={() => enabled && onStep(delta)}
+      disabled={!enabled}
+      title={title}
+      aria-label={title}
+      style={{
+        background: "none",
+        border: `1px solid var(--border-default)`,
+        borderRadius: radius.chip,
+        color: enabled ? "var(--text-muted)" : "var(--text-faint)",
+        cursor: enabled ? "pointer" : "default",
+        fontFamily: font.sans,
+        fontSize: 13,
+        lineHeight: 1,
+        width: 30,
+        height: 30,
+        opacity: enabled ? 1 : 0.4,
+      }}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <>
+      {btn("◀", -1, hasPrev, "Previous turn")}
+      {btn("▶", 1, hasNext, "Next turn")}
+    </>
+  );
+}
+
 // The panel's INNER chrome (the sliding fixed container is the page's drawer): a header row — a
 // role-coloured badge square, then a stacked title + meta line, then an always-present close button
 // — over the body, which fills the remaining height. One shell for every kind, so the surface is
@@ -283,6 +334,7 @@ function PanelShell({
   title,
   meta,
   onClose,
+  nav,
   children,
   // Single-pane bodies (role / artifact / step) want the body to scroll and pad itself. The turn
   // body manages its own full-width tabs + full-height panes, so it opts out and lays out the body.
@@ -292,6 +344,8 @@ function PanelShell({
   title: React.ReactNode;
   meta?: React.ReactNode;
   onClose: () => void;
+  // Optional header controls (the turn body's ◀ ▶ prev/next), rendered just left of the close button.
+  nav?: React.ReactNode;
   children: React.ReactNode;
   bodyScroll?: boolean;
 }) {
@@ -303,6 +357,7 @@ function PanelShell({
           <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-strong)", fontFamily: font.sans, wordBreak: "break-word" }}>{title}</div>
           {meta ? <div style={{ fontSize: 11.5, color: "var(--text-muted)", fontFamily: font.sans, marginTop: 3, lineHeight: 1.55 }}>{meta}</div> : null}
         </div>
+        {nav ? <div style={{ display: "flex", gap: 6, flex: "none" }}>{nav}</div> : null}
         <button
           onClick={onClose}
           aria-label="Close drill-down panel"
@@ -568,7 +623,7 @@ function PromptOnlyBody({ accent, title, role, prompt, note, onClose }: { accent
   );
 }
 
-function TurnBody({ ord, mode, reveal = "full", onClose }: { ord: number; mode: "live" | "replay" | null; reveal?: DrilldownReveal; onClose: () => void }) {
+function TurnBody({ ord, mode, reveal = "full", onClose, nav }: { ord: number; mode: "live" | "replay" | null; reveal?: DrilldownReveal; onClose: () => void; nav?: React.ReactNode }) {
   const [turn, setTurn] = useState<TurnPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("correspondence");
@@ -679,7 +734,7 @@ function TurnBody({ ord, mode, reveal = "full", onClose }: { ord: number; mode: 
   }
 
   return (
-    <PanelShell accent={roleColor} title={title} meta={meta} onClose={onClose} bodyScroll={false}>
+    <PanelShell accent={roleColor} title={title} meta={meta} onClose={onClose} nav={nav} bodyScroll={false}>
       {/* All three tabs stay clickable (like the reference) — an empty tab shows an empty pane
           rather than being disabled — so the panel always lands on Correspondence and you can click
           across to Artifacts / Code even when a turn has no transcript. */}

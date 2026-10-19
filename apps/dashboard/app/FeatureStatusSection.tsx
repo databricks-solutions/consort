@@ -1,10 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import type { DashboardState, StoryProgress } from "@/lib/types";
 import { font, radius } from "@/lib/theme";
-import { StoryTestsLightbox } from "./StoryTestsLightbox";
-import type { ActivityTimeline } from "./AgentLogReplay";
 
 // LEFT-pane status rollup: the run's features grouped with their stories, limited to features that
 // are COMPLETE or CURRENTLY ACTIVE — the two an operator tracks (a started-but-idle feature that is
@@ -23,17 +20,16 @@ export function FeatureStatusSection({
   state,
   pinned,
   onPin,
-  timeline = null,
-  lineAt = 0,
+  openStory,
+  onOpenStory,
 }: {
   state: DashboardState;
   pinned: string | null;
   onPin: (f: string | null) => void;
-  // The agent-step timeline + the line playhead — threaded to the lightbox so per-test bubbles light
-  // by LINE position: each test's status-transition is a line in the stream, so scrubbing reveals
-  // them one at a time in pass order (not wall-clock, which collapses a burst into one step).
-  timeline?: ActivityTimeline | null;
-  lineAt?: number;
+  // The story whose test-list rail is open (LIFTED to the page), + the opener. Clicking a story row
+  // opens its bubble rail on the right; the selected test's table capture renders in the bottom dock.
+  openStory: { feature: string; story: string } | null;
+  onOpenStory: (feature: string, story: string) => void;
 }) {
   const byFeature = new Map<string, StoryProgress[]>();
   for (const s of state.stories) {
@@ -46,8 +42,6 @@ export function FeatureStatusSection({
   const shown = state.features.filter((f) => f.done || f.active);
   const doneCount = shown.filter((f) => f.done).length;
   const pinnedShown = pinned != null && shown.some((f) => f.id === pinned);
-  // The story whose test lightbox is open (a story is unique only within its feature, so key both).
-  const [openStory, setOpenStory] = useState<{ feature: string; story: string } | null>(null);
   return (
     <>
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -109,7 +103,7 @@ export function FeatureStatusSection({
                     <FeatureStatusStoryRow
                       key={`${f.id}:${s.id}`}
                       s={s}
-                      onOpen={() => setOpenStory({ feature: f.id, story: s.id })}
+                      onOpen={() => onOpenStory(f.id, s.id)}
                     />
                   ))}
                 </div>
@@ -121,26 +115,8 @@ export function FeatureStatusSection({
         })
       )}
     </div>
-    {openStory ? (() => {
-      // The per-test status trail folded as-of the playhead (reducer.ts attaches it to the story),
-      // so the lightbox can colour bubbles by scrubber position when the board is rewound.
-      const st = state.stories.find((s) => s.feature === openStory.feature && s.id === openStory.story);
-      const foldStatus = Object.fromEntries((st?.testItems ?? []).map((t) => [t.id, t.status]));
-      return (
-        <StoryTestsLightbox
-          feature={openStory.feature}
-          story={openStory.story}
-          mode={state.source?.mode ?? null}
-          atLive={state.atLive}
-          atEventIndex={state.atEventIndex}
-          timeline={timeline}
-          lineAt={lineAt}
-          foldStatus={foldStatus}
-          state={state}
-          onClose={() => setOpenStory(null)}
-        />
-      );
-    })() : null}
+    {/* The test-list rail itself is rendered by the page (right side, beside the board), not here —
+        this section only OPENS it via onOpenStory. */}
     </>
   );
 }

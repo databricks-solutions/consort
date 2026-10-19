@@ -269,7 +269,7 @@ describe("render — LaneGraph", () => {
     expect(build).toContain("in progress");
     expect(build).not.toContain("complete");
     // ...and while it's in progress the ratio is actionable, so it stays.
-    expect(build).toContain("1/8 steps");
+    expect(build).toContain("1/6 steps");
   });
 
   it("renders every lane even when laneCurrent names an unknown one", () => {
@@ -316,7 +316,7 @@ describe("render — LaneGraph", () => {
       <LaneGraph state={withTopology({ passedNodes: [], activeNode: null, laneCurrent: null })} />,
     );
     expect(markup).toContain("5/7 steps"); // design: 7 lightable (d-gate + d-hil excluded; d-breakdown + the per-story d-ux-ia aren't lit by this old-corpus fixture), 5 lit
-    expect(markup).toContain("7/8 steps"); // build: 8 lightable (b-verify, an automated role-owned gate, still counts); lit 7
+    expect(markup).toContain("5/6 steps"); // build: 6 lightable (verify folded into green, assess into review; b-hil + b-accept excluded); lit 5
     // Plan reads 2/5: p-intake, p-ux-establish, p-propose, p-size, p-req (the PO authoring turn) — the
     // Backlog gate is excluded (human gate), and breakdown is now a DESIGN-lane step (d-breakdown), not
     // plan. This pre-p-intake render-state snapshot lit only p-propose + p-size.
@@ -425,11 +425,11 @@ describe("render — LaneGraph", () => {
       ),
     );
     // The later steps are pending (not done), so no stale turn/metrics are shown for them.
-    expect(markup).toContain("minimal honest code (GREEN) · pending"); // b-green
-    expect(markup).toContain("review · pending"); // b-review
+    expect(markup).toContain("minimal honest code + verify (GREEN) · pending"); // b-green
+    expect(markup).toContain("review / assess · pending"); // b-review
     expect(markup).toContain("refactor (structure) · pending"); // b-refactor
     // ...and none of them read "done" this pass.
-    expect(markup).not.toContain("minimal honest code (GREEN) · done");
+    expect(markup).not.toContain("minimal honest code + verify (GREEN) · done");
   });
 
   it("survives an empty board without throwing", () => {
@@ -948,7 +948,7 @@ describe("render — FeatureStatusSection (left-pane status rollup)", () => {
   };
 
   it("shows only complete + active features, each with its stories", () => {
-    const m = renderToStaticMarkup(<FeatureStatusSection state={custom} pinned={null} onPin={() => {}} />);
+    const m = renderToStaticMarkup(<FeatureStatusSection state={custom} pinned={null} onPin={() => {}} openStory={null} onOpenStory={() => {}} />);
     // done + active features render; the started-but-idle F9 (and its story S3) do not.
     expect(m).toContain("F1");
     expect(m).toContain("F6");
@@ -964,10 +964,10 @@ describe("render — FeatureStatusSection (left-pane status rollup)", () => {
   });
 
   it("is the feature selector: every feature has a visible pin control; pinning marks it + offers follow", () => {
-    const unpinned = renderToStaticMarkup(<FeatureStatusSection state={custom} pinned={null} onPin={() => {}} />);
+    const unpinned = renderToStaticMarkup(<FeatureStatusSection state={custom} pinned={null} onPin={() => {}} openStory={null} onOpenStory={() => {}} />);
     expect(unpinned).toContain(">pin<"); // the visible pin button (unpinned)
     expect(unpinned).toContain("cursor:pointer"); // it's a real clickable control
-    const pinnedF1 = renderToStaticMarkup(<FeatureStatusSection state={custom} pinned="F1" onPin={() => {}} />);
+    const pinnedF1 = renderToStaticMarkup(<FeatureStatusSection state={custom} pinned="F1" onPin={() => {}} openStory={null} onOpenStory={() => {}} />);
     expect(pinnedF1).toContain(">pinned<"); // F1's pin button now reads "pinned"
     expect(pinnedF1).toContain("follow"); // the clear-pin control in the header
   });
@@ -978,7 +978,7 @@ describe("render — FeatureStatusSection (left-pane status rollup)", () => {
       features: [{ id: "F1", done: false, active: true }],
       stories: [story({ id: "S1", feature: "F1", status: "building", stage: "build", active: true })],
     };
-    const m = renderToStaticMarkup(<FeatureStatusSection state={one} pinned={null} onPin={() => {}} />);
+    const m = renderToStaticMarkup(<FeatureStatusSection state={one} pinned={null} onPin={() => {}} openStory={null} onOpenStory={() => {}} />);
     expect(m).toContain("F1");
     expect(m).toContain(">pin<"); // the pin control is present with one feature too
     expect(m).toContain("cursor:pointer");
@@ -986,7 +986,7 @@ describe("render — FeatureStatusSection (left-pane status rollup)", () => {
 
   it("renders an empty-state line when no feature is complete or underway", () => {
     const empty: DashboardState = { ...state, features: [{ id: "F1", done: false, active: false }], stories: [] };
-    const m = renderToStaticMarkup(<FeatureStatusSection state={empty} pinned={null} onPin={() => {}} />);
+    const m = renderToStaticMarkup(<FeatureStatusSection state={empty} pinned={null} onPin={() => {}} openStory={null} onOpenStory={() => {}} />);
     expect(m).toContain("No feature complete or underway yet.");
   });
 });
