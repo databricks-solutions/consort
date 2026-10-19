@@ -10,6 +10,7 @@
 import { useEffect, useRef } from "react";
 import { ROLES, type DashboardState } from "@/lib/types";
 import { colorForRole, font, radius } from "@/lib/theme";
+import { AgentLogReplay, type ActivityTimeline } from "./AgentLogReplay";
 
 // Only a genuine agent role may own a turn's `#ordinal` colour. A progress beat's `request.role`
 // is overloaded (correspondence.ts:44, "role OR kind"): a real role for an agent turn, but an
@@ -427,15 +428,23 @@ export function LogPane({
   onToggle,
   onOpenTurn,
   onOpenArtifact,
+  timeline,
+  lineAt,
 }: {
   state: DashboardState;
   open: boolean;
   onToggle: () => void;
   onOpenTurn?: (ord: number) => void;
   onOpenArtifact?: (path: string) => void;
+  timeline?: ActivityTimeline | null;
+  lineAt?: number;
 }) {
   return (
     <SidePane side="right" title={`Event log · ${state.eventCount}`} open={open} onToggle={onToggle}>
+      {/* Top section: the active turn's agent steps revealed up to the line playhead (one step at a
+          time). The single scrubber scrubs these lines; crossing a turn checkpoint switches the agent.
+          The event stream sits below. */}
+      <AgentLogReplay timeline={timeline ?? null} lineAt={lineAt ?? 0} />
       <EventTicker state={state} onOpenTurn={onOpenTurn} onOpenArtifact={onOpenArtifact} variant="pane" />
     </SidePane>
   );

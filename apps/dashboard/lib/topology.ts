@@ -923,14 +923,29 @@ export interface LaneHit {
 // must never be the actively-running `current` step (a gate.approved carries the surfacing role +
 // its phase and would otherwise re-light that role's step after the phase is done). The gate's own
 // glow comes from the run's parked-gate focus, not from being `current`.
-const GATE_STEP_IDS: ReadonlySet<string> = new Set(
-  LANE_IDS.flatMap((lane) => WORKFLOW.lanes[lane].steps.filter((s) => s.gate).map((s) => s.id)),
+// HITL gate steps ONLY: a `gate` step with NO owning agent (`role === null`) — the human checkpoints
+// (spec / plan / deploy / promote / acceptance). These must never be the actively-running `current`
+// step; their glow comes from the parked-gate focus. But an AUTOMATED verify (`b-verify` / `dp-verify`,
+// role=release-engineer) is real agent work and SHOULD light as `current` when the playhead is on it —
+// it was previously lumped with the human gates and so the Verify step never lit up.
+const HITL_GATE_STEP_IDS: ReadonlySet<string> = new Set(
+  LANE_IDS.flatMap((lane) => WORKFLOW.lanes[lane].steps.filter((s) => s.gate && s.role === null).map((s) => s.id)),
 );
 
 // First sub-step (lanes in plan→design→build order, steps in declared order) that this
 // event lights, or null. First match wins.
 export function laneStepForEvent(e: AgentLogEvent | null | undefined): LaneHit | null {
   if (!e) return null;
+  // A per-test result lights the stage that PRODUCED it: a GREEN (or refactored) means the honest-GREEN
+  // VERIFY ran the suite against the real paired branch and that test passed → the Verify card (b-verify);
+  // a RED means the Navigator wrote it failing → the RED card (b-red). So scrubbing the per-test greens
+  // keeps the Verify card lit (the tests are being verified against the branch), the RED greens light
+  // the Navigator — matching what actually runs them.
+  if (e.event === "test.result") {
+    const st = (e.metadata as Record<string, unknown> | undefined)?.status;
+    if (st === "green" || st === "refactored") return { lane: "build", step: "b-verify" };
+    if (st === "red") return { lane: "build", step: "b-red" };
+  }
   // PASS 1 — exact-event matches (m.event / m.eventAny) win regardless of lane/step order, because an
   // exact event name is MORE SPECIFIC than a role/phase match. This is why the driver's `cycle.verified`
   // (the build-cycle GREEN verify) lights the Verify step (b-verify, eventAny) rather than the Driver
@@ -1193,7 +1208,9 @@ export function laneProgress(events: AgentLogEvent[], upTo?: number, feature?: s
     playhead && playhead.event !== "gate.surfaced" && playhead.event !== "gate.approved"
       ? laneStepForEvent(playhead)
       : null;
-  const current: LaneHit | null = hit && !GATE_STEP_IDS.has(hit.step) ? hit : null;
+  // Exclude only HUMAN gates from `current` — an automated verify (b-verify / dp-verify) is real
+  // release-engineer work and SHOULD light as the running step when the playhead is on it.
+  const current: LaneHit | null = hit && !HITL_GATE_STEP_IDS.has(hit.step) ? hit : null;
 
   // The gate/checkpoint step the playhead is parked AT (see LaneProgress.currentGate). (a) a
   // gate.surfaced/approved/rejected event names its gate → that gate's lane step; (b) otherwise a
@@ -1208,8 +1225,10 @@ export function laneProgress(events: AgentLogEvent[], upTo?: number, feature?: s
       const gname = (playhead.metadata as Record<string, unknown> | undefined)?.gate;
       if (typeof gname === "string") currentGate = GATE_STEP_BY_KEY[gname] ?? null;
     } else {
+      // A work event that maps to a HUMAN gate step → that gate is parked at. An automated verify
+      // (b-verify / dp-verify) is NOT a currentGate — it lights as `current` above.
       const gateHit = laneStepForEvent(playhead);
-      if (gateHit && GATE_STEP_IDS.has(gateHit.step)) currentGate = gateHit.step;
+      if (gateHit && HITL_GATE_STEP_IDS.has(gateHit.step)) currentGate = gateHit.step;
     }
   }
 

@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { testlistConformanceReason, recordTestListGate } from "../../consort/smells/testlist-conformance.js";
-import { checkTestlistEndpointCoherence, checkTestlistE2eSpecSuffix, checkTestlistMigrationRevision } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
+import { checkTestlistEndpointCoherence, checkTestlistE2eSpecSuffix, checkTestlistComponentScenarioFile, checkTestlistMigrationRevision } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { readSmellsLog } from "../../consort/smells/smells.js";
 
 const F = "F1";
@@ -226,6 +226,33 @@ describe("checkTestlistE2eSpecSuffix (Fix: an e2e-dir scenario_file Playwright w
   it("does NOT flag a .e2e.ts token that is not under a tests/e2e/ dir, nor an item with no scenario_file", () => {
     expect(checkTestlistE2eSpecSuffix(tl([item({ scenario_file: "client/tests/misc/file-stock.e2e.ts" })])).ok).toBe(true);
     expect(checkTestlistE2eSpecSuffix(tl([item({})])).ok).toBe(true);
+  });
+});
+
+describe("checkTestlistComponentScenarioFile (Fix: a component item must name its .test.tsx file — the S1 file-less class)", () => {
+  const comp = (over: Record<string, unknown> = {}): Record<string, unknown> => ({ id: "T1", kind: "component", ac_id: "AC1-file", ...over });
+  const tl = (its: Array<Record<string, unknown>>): string => JSON.stringify({ items: its });
+
+  it("flags a component item with NO scenario_file (the S1 defect)", () => {
+    const r = checkTestlistComponentScenarioFile(tl([comp({})]));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/kind:"component".*missing|\.test\.tsx/);
+      expect(r.acIds).toEqual(["AC1-file"]);
+    }
+  });
+
+  it("flags a component item whose scenario_file is an e2e .spec.ts (wrong harness)", () => {
+    expect(checkTestlistComponentScenarioFile(tl([comp({ scenario_file: "client/tests/e2e/file-stock.spec.ts" })])).ok).toBe(false);
+  });
+
+  it("does NOT flag a component item with a proper client/tests/<...>.test.tsx file", () => {
+    expect(checkTestlistComponentScenarioFile(tl([comp({ scenario_file: "client/tests/components/StockTable.test.tsx" })])).ok).toBe(true);
+  });
+
+  it("ignores non-component kinds", () => {
+    expect(checkTestlistComponentScenarioFile(tl([{ id: "T2", kind: "client", ac_id: "AC1", scenario_file: "client/tests/e2e/x.spec.ts" }])).ok).toBe(true);
+    expect(checkTestlistComponentScenarioFile(tl([{ id: "T3", kind: "behavior", ac_id: "AC1" }])).ok).toBe(true);
   });
 });
 

@@ -220,9 +220,16 @@ function storyView(
     })();
   return {
     gateApproved,
-    // The gate record exists once the story has been surfaced for review;
-    // awaiting-gate is the pre-record surfaced state.
-    gateSurfaced: e.gate != null || e.status === "awaiting-gate",
+    // A story is "surfaced for its gate" when it is currently awaiting that gate
+    // (status `awaiting-gate`) or has already passed it (approved ⟹ it WAS
+    // surfaced). The gate RECORD's mere existence is NOT a reliable signal: a
+    // reconcile/revise reopen resets the story to `designing` but KEEPS its (still
+    // OPEN) gate record, so the old `e.gate != null` wrongly kept a reopened story
+    // "surfaced" — the design loop then never re-surfaced it, and the deferred
+    // /design batch approval tripped the per-story-draft invariant on that sibling
+    // (status `designing`, not `awaiting-gate`). Keying on status + approval flips
+    // this false on a reopen, so the loop re-surfaces the story before approving.
+    gateSurfaced: e.status === "awaiting-gate" || gateApproved,
     design: {
       hasAcs: probe.hasAcs(id),
       specRevisePending: probe.specRevisePending(id),

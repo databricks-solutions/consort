@@ -54,7 +54,9 @@ export type TestSmellName =
   | "relative-migration-revision"
   | "reversible-invariant-round-trip"
   | "pytest-bdd-parse-conversion"
-  | "dropped-column-dangling-reference";
+  | "dropped-column-dangling-reference"
+  | "component-test-mock"
+  | "dsn-inline-credentials";
 
 /** The migration-reversibility test-smell classes that CANNOT be closed by a surgical
  *  Driver repair (narrow a catch, drop a teardown): they require RE-AUTHORING the
@@ -174,6 +176,10 @@ const SMELL_FIX: Record<TestSmellName, string> = {
     "a parse()/parsers.parse() step pattern uses a Python str.format conversion flag (!r / !s / !a); the `parse` library backing pytest-bdd supports the format SPEC ({name:type}) but NOT conversions, so the step text never matches the feature and the step raises StepDefinitionNotFoundError – the app can never green it. Drop the conversion and quote the value in the pattern instead (e.g. parse('… \"{name}\"') to match a quoted feature value, or parse('… {name}') for a bare token), matching how the .feature file writes it",
   "dropped-column-dangling-reference":
     "a contract migration DROPPED this column, but app/seed code still references it – the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it",
+  "component-test-mock":
+    "a client COMPONENT test (client/**/*.test.tsx) MOCKS the data path (a stubbed/spied/assigned global `fetch`, MSW, or a `vi.mock` of the app's api/service/http module). Kit principle: NEVER mock when a real counterpart exists — a component that talks to the backend in production must talk to the REAL backend in test. The vitest harness boots a real backend (vitest.globalSetup.ts) and the fetch shim (tests/setup.ts) routes `/api` to it, so render the component and let its real `/api` calls hit the live service against the paired-branch DB; assert on what comes back. Remove the mock. (A clock — vi.useFakeTimers — or a genuinely third-party module with no real counterpart stays allowed.)",
+  "dsn-inline-credentials":
+    "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example (postgresql://someuser:pw@dbhost.invalid) matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine — not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
 };
 
 /** The upgrade()-path body of an alembic migration (forward operations only) –
@@ -256,6 +262,44 @@ function liveReferenceLines(body: string, col: string): number[] {
     const slash = line.indexOf("//");
     if (slash >= 0) line = line.slice(0, slash);
     if (re.test(line)) out.push(i + 1);
+  }
+  return out;
+}
+
+/** Each line with its comment + docstring content BLANKED, so a raw-SQL matcher (schema-unsatisfiable-ref)
+ *  scans only executable code — never prose. A `#`/`//` line comment is truncated; a triple-quoted
+ *  Python docstring block is blanked for its whole span. Mirrors liveReferenceLines' comment logic.
+ *  (The false positive this fixes: a conftest docstring "Append a per-test TABLE snapshot …" tripped
+ *  the `TABLE\s+(\w+)` matcher on the English word "TABLE", flagging a nonexistent `snapshot` table.) */
+function blankCommentsAndDocstrings(lines: string[]): string[] {
+  const out: string[] = [];
+  let inDoc = false;
+  let docQuote = "";
+  for (let line of lines) {
+    if (inDoc) {
+      if (line.includes(docQuote)) {
+        inDoc = false;
+        line = line.slice(line.indexOf(docQuote) + 3); // code after the closing quote stays
+      } else {
+        out.push("");
+        continue;
+      }
+    }
+    const tq = line.match(/"""|'''/);
+    if (tq) {
+      const q = tq[0];
+      const after = line.slice(line.indexOf(q) + 3);
+      if (!after.includes(q)) {
+        line = line.slice(0, line.indexOf(q)); // keep code before the opening quote
+        inDoc = true;
+        docQuote = q;
+      }
+    }
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const slash = line.indexOf("//");
+    if (slash >= 0) line = line.slice(0, slash);
+    out.push(line);
   }
   return out;
 }
@@ -357,7 +401,14 @@ function checkReversibleInvariantRoundTrip(projectDir: string): TestSmellViolati
         // round-trip and bounced a correct test to the HIL.
         return (/\bround.?trip\b/i.test(d)) || (/\bdowngrad\w*/i.test(d) && /\bupgrad\w*/i.test(d));
       });
-      if (!hasRoundTrip) {
+      // ONLY flag a COVERED-but-forward-only invariant — this smell is about round-trip QUALITY, not
+      // coverage. An UNCOVERED reversible invariant (covering.length === 0) is a coverage concern
+      // owned by checkPersistenceCoverage, which is story-anchored (an invariant whose migration is a
+      // LATER story's is covered THERE, not flagged during an earlier story's build). Firing here on
+      // covering=[] falsely halted S1's build for PI6, whose SC5 index migration belongs to S2 and is
+      // un-buildable in S1. Require a covering item so this stays a quality check, not a premature
+      // cross-story coverage halt.
+      if (covering.length > 0 && !hasRoundTrip) {
         out.push({
           smell: "reversible-invariant-round-trip",
           file: relative(projectDir, featureDir(tdd, feature)),
@@ -394,6 +445,9 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
       const body = lines.join("\n");
       const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
       const isPy = file.endsWith(".py");
+      // A client COMPONENT test (`.test.tsx` under client/, NOT an e2e `.spec.ts`) — the no-mock rule
+      // applies to these: they must hit the real backend over `/api`, not a stubbed data path.
+      const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
 
       // vi-mock-tdz: a vi.mock factory closing over a same-file top-level const with
       // no vi.hoisted anywhere in the file. File-level check (once per file).
@@ -407,6 +461,9 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
 
       // Teardown context tracking for delete-teardown (approximate block scope).
       let teardownDepth = 0;
+      // Comment/docstring-blanked lines for the raw-SQL (schema-unsatisfiable-ref) scan, so prose
+      // like a docstring's "TABLE snapshot" never reads as a SQL table reference.
+      const codeLines = blankCommentsAndDocstrings(lines);
       lines.forEach((text, i) => {
         const line = i + 1;
         if (/^\s*(afterEach|afterAll|teardown|tearDown|def\s+tear\w*|def\s+cleanup)\b/.test(text)) teardownDepth = 1;
@@ -431,9 +488,38 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
           }
         }
 
+        // component-test-mock (JS client component test): the data path is mocked — a stubbed/
+        // spied/assigned global fetch, MSW, or a vi.mock of the app's api/service/http module.
+        // The kit principle forbids mocking when a real backend is available (the vitest harness
+        // boots one). A clock mock / a genuinely third-party vi.mock stays allowed.
+        if (isComponentTest) {
+          if (
+            /vi\.stubGlobal\(\s*["']fetch["']/.test(text) ||
+            /vi\.spyOn\([^)]*,\s*["']fetch["']\s*\)/.test(text) ||
+            /(?:globalThis|global|window)\.fetch\s*=/.test(text)
+          ) {
+            push("component-test-mock", rel, line, text, "stubs the global fetch");
+          } else if (/from\s+["']msw["']/.test(text) || /\bsetupServer\(/.test(text)) {
+            push("component-test-mock", rel, line, text, "MSW network mock");
+          } else if (/vi\.mock\(\s*["'][^"']*(?:\/api\b|\bapi\/|service|\/http\b|repository|fetch)[^"']*["']/i.test(text)) {
+            push("component-test-mock", rel, line, text, "vi.mock of the app's data/API module");
+          }
+        }
+
         // delete-teardown: a destructive delete inside a teardown hook block.
         if (teardownDepth > 0 && /DELETE\s+FROM|deleteMany\(|\.delete\(\s*\{|TRUNCATE/i.test(text)) {
           push("delete-teardown", rel, line, text);
+        }
+
+        // dsn-inline-credentials: a DSN literal carrying inline credentials (scheme://user:pass@host).
+        // Scanned on the RAW line (not comment-blanked) because the corporate secret-scanner reads the
+        // whole file, comments included — even a fake example (postgresql://someuser:pw@dbhost.invalid)
+        // trips the postgres-connection-string rule and blocks the merge commit. A credential-less DSN
+        // (postgresql://dbhost.invalid:5432/somedb) does NOT match: the `:…@` credential segment is
+        // required. Real connections come from env/fixtures, so a source literal only ever needs the
+        // host/port/db an example asserts.
+        if (/\b(?:postgres(?:ql)?|mysql|mongodb|redis|amqp)(?:\+\w+)?:\/\/[^\s/@"'`]*:[^\s/@"'`]*@/.test(text)) {
+          push("dsn-inline-credentials", rel, line, text, "inline user:pass@ in a DSN literal");
         }
 
         // broad-integrity-except (Python): the umbrella catch – but ONLY when it
@@ -482,10 +568,17 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
           }
         }
 
-        // schema-unsatisfiable-ref: a raw-SQL table ref no migration creates.
+        // schema-unsatisfiable-ref: a raw-SQL table ref no migration creates. Scan the
+        // comment/docstring-blanked line so prose (e.g. a docstring's "TABLE snapshot") is not read
+        // as SQL — the false positive that halted this build on the per-test-capture conftest.
         if (knownTables.size > 0) {
-          for (const m of text.matchAll(/\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+["'`]?(\w+)["'`]?/g)) {
-            const ref = m[1].toLowerCase();
+          // DML keywords take a bare table (`FROM foo`), but `TABLE foo` requires a DDL verb
+          // (CREATE/ALTER/DROP/TRUNCATE TABLE foo) — the bare `TABLE <word>` alternative matched the
+          // English word "TABLE" in prose ("per-test TABLE snapshot"), the false positive this fixes.
+          for (const m of codeLines[i].matchAll(
+            /\b(?:FROM|JOIN|INTO|UPDATE)\s+["'`]?(\w+)["'`]?|\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?["'`]?(\w+)/g,
+          )) {
+            const ref = (m[1] ?? m[2]).toLowerCase();
             if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !knownTables.has(ref)) {
               push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
             }

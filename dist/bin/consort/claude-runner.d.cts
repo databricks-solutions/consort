@@ -444,39 +444,6 @@ declare const UX_BROWSER_INSTALL_CMD: {
  *  installed), memoized to once per drive process, and never fatal: on failure the ux-designer
  *  still runs and degrades to the brief exactly as it does when the browser is unavailable. */
 declare function ensureUxBrowserChromium(): void;
-/**
- * The base `claude -p` spawn args for a role turn. Pure + exported so the flag set
- * is guardable. Headless essentials: -p (print), --agent/--model, --strict-mcp-config,
- * stream-json + --verbose (to capture turn.usage while teeing text).
- *
- * --setting-sources project is LOAD-BEARING: headless `claude -p` does NOT load a
- * directory's project settings (incl. its `.claude/agents/*.md` role definitions) by
- * default, so `--agent <role>` fails with "agent not found" unless project settings are
- * explicitly sourced. The kit's role agents live at `<projectDir>/.claude/agents/`
- * (laid down by the scaffolder's deployClaudeAgents, or into a throwaway workspace for a
- * lean live run); `--setting-sources project` is what makes `--agent spec-author` /
- * `--agent ux-designer` / ... resolve. (Verified: the child init event's `agents` list
- * includes the role only when this flag + the .claude/agents file are both present.)
- *
- * --permission-mode acceptEdits is LOAD-BEARING: a scaffolded project ships no
- * .claude/settings.json, so without an explicit mode a headless role agent DEFAULTS
- * TO PROMPTING – and there is no one to answer. A role agent must both WRITE its
- * artifact (feature-spec.json, story stubs, code) AND RUN kit CLIs (its self-check
- * `consort-response-formatter`, the cycle stamps); acceptEdits auto-accepts
- * both headlessly (verified: Write-tool AND Bash writes land with permission_denials
- * empty and is_error false).
- *
- * Why acceptEdits and NOT bypassPermissions: an enterprise managed-settings policy
- * (/Library/Application Support/ClaudeCode/managed-settings.json) sets
- * `permissions.disableBypassPermissionsMode: "disable"`. When that policy is present,
- * a spawned `claude -p --permission-mode bypassPermissions` is SILENTLY DOWNGRADED to
- * `default` (the child session's init event reports permissionMode "default"), which
- * then auto-DENIES every headless prompt – the exact opposite of what we want. So
- * bypassPermissions is not a stronger acceptEdits in this environment; it is broken.
- * acceptEdits is the strongest mode the policy honors, and it is sufficient. SCOPED to
- * the throwaway, isolated, scaffolded project the drive runs in – this spawns each
- * role agent autonomous within that project, not the operator's session.
- */
 declare function claudeBaseArgs(cmd: Extract<DriveCommand, {
     kind: "claude";
 }>): string[];

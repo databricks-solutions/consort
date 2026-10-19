@@ -519,8 +519,8 @@ export function checkE2eLayerPresent(
     violations: [
       `the feature ${why} but NO acceptance criterion is tagged layer:"E2E"; a feature that renders a UI has at least one ` +
         `client<->server contract (a form submit, an inline validation rejection, a success/empty state) whose ONLY real ` +
-        `verification is a Playwright e2e against the live API – tag that AC layer:"E2E" (a mocked component test stubs the ` +
-        `response envelope, so a fabricated shape passes green while the real wire contract drifts). NOTE: an outcome phrased as ` +
+        `verification is a browser Playwright e2e against the live API – tag that AC layer:"E2E" (a narrower component test ` +
+        `exercises one screen, not the full user journey the E2E layer verifies). NOTE: an outcome phrased as ` +
         `"record WHO performed the action" or "the pick is saved", when the operator enters their name on a form with no auth, IS ` +
         `a client form submission (layer:"E2E") – do not flatten it into a backend "API" AC. If the endpoint is genuinely not ` +
         `consumed by any client, reconsider – that is unusual for a UI-track feature.`,
@@ -604,10 +604,11 @@ export function checkFitnessCoverage(testListJson: string, architectureJson: str
  * confirmation, an error state from a failed request – is a client<->server contract, tagged
  * `layer:"E2E"`, and MUST be covered by a REAL end-to-end test: a Playwright spec (scenario_file
  * under an `e2e/` path, e.g. `client/tests/e2e/…`) that drives the deployed app against the live
- * API. A mocked component test is NOT sufficient – it stubs the response envelope, so a fabricated
- * shape passes green while the real wire contract drifts. That is exactly the recurring S2/S3
- * inline-error defect: the client mocked a flat `{quantity: …}` body, went green, and shipped a
- * form that rendered nothing against the real backend's `{detail: {quantity: …}}`. Makes
+ * API. A narrower component test is NOT sufficient for an E2E AC – it exercises one screen, not the
+ * full user journey (component tests are real-DB too, so the bar is SCOPE, not mock-vs-real). The
+ * recurring S2/S3 inline-error defect shows why the full journey matters: a component test that
+ * covered only the form render missed that the real backend's `{detail: {quantity: …}}` envelope
+ * rendered nothing end-to-end. Makes
  * test-strategy.md's long-standing E2E rule a DETERMINISTIC gate (it was prose the supervisor was
  * asked to "catch"). For each `layer:"E2E"` AC id, the assembled test-list must hold >=1 item whose
  * `scenario_file` is under an `e2e/` path. Empty `e2eAcIds` (no E2E-layer AC) is vacuously ok.
@@ -630,8 +631,8 @@ export function checkE2ECoverage(testListJson: string, e2eAcIds: string[]): Conf
       ? `covered only by ${forAc.map((i) => i.scenario_file ?? `kind:${i.kind ?? "?"}`).join(", ")}`
       : "has no covering test";
     violations.push(
-      `E2E-layer AC ${acId} ${how} – a mocked component test cannot verify the real client<->server contract ` +
-        `(a fabricated response envelope passes green while the real wire shape drifts). Add a real Playwright ` +
+      `E2E-layer AC ${acId} ${how} – a narrower component test (one screen) is not the full user journey an E2E AC ` +
+        `verifies; the bar is SCOPE, not mock-vs-real (component tests are real-DB too). Add a real browser Playwright ` +
         `e2e (scenario_file under client/tests/e2e/) that drives the deployed app against the live API`,
     );
   }
@@ -799,7 +800,7 @@ export function checkTestlistEndpointCoherence(testListJson: string, declaredEnd
   const acIds = new Set<string>();
   const declaredList = [...declaredPaths].sort().join(", ");
   for (const it of tl.items ?? []) {
-    if (it.kind !== "behavior" && it.kind !== "client") continue; // only API/UI tests assert endpoints
+    if (it.kind !== "behavior" && it.kind !== "client" && it.kind !== "component") continue; // only API/UI tests assert endpoints (component tests hit /api too)
     const desc = it.description ?? "";
     for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
       const { path, keys } = normalizeEndpoint(tok);
@@ -1866,6 +1867,55 @@ export function checkTestlistE2eSpecSuffix(testListJson: string): ConformanceRes
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
+/**
+ * component-scenario-file, at the test-LIST layer: a `kind:"component"` item MUST carry a
+ * `scenario_file` ending `.test.tsx` (or `.test.ts`) under `client/tests/` — an isolated Vitest
+ * component test — NEVER an e2e `.spec.ts`, and never absent. The per-analyst self-check flags a
+ * missing file ADVISORILY; this is the DETERMINISTIC, fail-closed form that bounces the test_list
+ * gate so a file-less component item never reaches the build with nowhere to author it (the S1
+ * file-less class). Parallel to checkTestlistE2eSpecSuffix.
+ */
+export function checkTestlistComponentScenarioFile(testListJson: string): ConformanceResult {
+  let tl: { items?: Array<{ id?: string; kind?: string; ac_id?: string; scenario_file?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "component") continue;
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    if (!/\.test\.tsx?$/.test(sf) || /\/tests\/e2e\//.test(sf)) {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"component" but its scenario_file is ${sf ? `"${sf}"` : "missing"} — an isolated ` +
+          `component test must name a Vitest file at client/tests/<...>.test.tsx (never an e2e .spec.ts). Name the file so ` +
+          `the build knows where to author it.`,
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
+ * A test-list item DESCRIPTION that asserts a migration-reversibility / data-preservation
+ * round-trip (a downgrade in a reversibility context). This is the SAME detector the
+ * relative-step revision check uses — extracted so the revision check and the
+ * schema_change_id-tagging check share ONE definition and can never drift. It is the
+ * established, in-production reversibility detector (NOT the migration-MARKER description
+ * check that was found to false-positive and was kept code-level).
+ */
+export function isMigrationReversibilityDescription(desc: string): boolean {
+  // Match verb STEMS, not the bare lemma: the live wording is a GERUND ("Downgrading … then upgrading
+  // head recreates …"), which `\bdowngrade\b` misses — the exact 0.4.10 lesson (reversibility detectors
+  // must handle downgrade/downgrading/downgraded + upgrade/upgrading).
+  const mentionsDowngrade = /\bdowngrad\w*/i;
+  const reversibilityContext = /\bdowngrad\w*[\s\S]*?\bupgrad\w*|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
+  return mentionsDowngrade.test(desc) && reversibilityContext.test(desc);
+}
+
 export function checkTestlistMigrationRevision(testListJson: string): ConformanceResult {
   let tl: { items?: Array<{ id?: string; description?: string; ac_id?: string }> };
   try {
@@ -1879,8 +1929,6 @@ export function checkTestlistMigrationRevision(testListJson: string): Conformanc
   // one instead, so the test's premise (revert the migration it targets) silently breaks — the
   // live S1 `t6` lap that cost an assess + a superseded-green turn once S2 added an index
   // migration. Pin the test to the migration-under-test's OWN revision instead.
-  const mentionsDowngrade = /\bdowngrade\b/i;
-  const reversibilityContext = /\bdowngrade\b[\s\S]*?\bupgrade\b|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
   // Relative step: `downgrade -1` / `-N`, or an explicitly "single-step" / "one step" downgrade.
   const relativeStep = /\bdowngrade\s+-\s*\d+\b|\bsingle-step\s+(?:alembic\s+)?downgrade\b|\bdowngrade\s+(?:by\s+)?one\s+step\b/i;
   // Pinned-revision escape: names an explicit revision id / down_revision / "its own revision".
@@ -1889,7 +1937,7 @@ export function checkTestlistMigrationRevision(testListJson: string): Conformanc
   const acIds = new Set<string>();
   for (const it of tl.items ?? []) {
     const desc = it.description ?? "";
-    if (!mentionsDowngrade.test(desc) || !reversibilityContext.test(desc)) continue;
+    if (!isMigrationReversibilityDescription(desc)) continue;
     if (relativeStep.test(desc) && !pinned.test(desc)) {
       violations.push(
         `test item ${it.id ?? "?"} is a migration-reversibility/data-preservation test that downgrades by a RELATIVE step ` +
@@ -1963,6 +2011,45 @@ export function checkSchemaChangeOrphan(testListJson: string, dbDesignJson: stri
       );
       if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
+ * PRE-REFLECT structural check: a migration-reversibility test (its description asserts a
+ * downgrade/upgrade round-trip — isMigrationReversibilityDescription) MUST carry the
+ * `schema_change_id` of the db-design.json schema_changes[] entry it exercises. Without the tag,
+ * checkSchemaChangeOrphan has nothing to reconcile against the DBA's ledger, so a test premised on
+ * a migration the DBA never planned (an index the architect only "weighed", a deferred change)
+ * slips past the deterministic gate to the semantic reflect — the exact F1/S2 history (T37 asserts
+ * the SC5 add-index reversibility but tags no schema_change_id). Forcing the tag routes such a test
+ * back through the ledger authority: it names a planned change (ok), or an un-planned one
+ * (checkSchemaChangeOrphan flags it), or it can name NONE because the DBA planned no such migration
+ * (drop the test). Vacuous when the ledger is un-id'd (legacy), matching checkSchemaChangeOrphan's
+ * back-compat gate, so existing corpora are unaffected.
+ */
+export function checkMigrationTestSchemaChangeTag(testListJson: string, dbDesignJson: string | undefined): ConformanceResult {
+  const planned = idedSchemaChanges(dbDesignJson);
+  if (planned.size === 0) return { ok: true }; // un-id'd ledger: nothing to reconcile against
+  let tl: { items?: Array<{ id?: string; ac_id?: string; description?: string; schema_change_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const it of tl.items ?? []) {
+    if (!isMigrationReversibilityDescription(it.description ?? "")) continue;
+    if (typeof it.schema_change_id === "string" && it.schema_change_id.length > 0) continue;
+    violations.push(
+      `test item ${it.id ?? "?"} asserts a migration-reversibility round-trip but names no schema_change_id. A ` +
+        `migration test must exercise a schema_change the DBA planned in db-design.json — tag it with that entry's id ` +
+        `(e.g. "schema_change_id": "SC5-..."). If NO planned schema_changes[] entry covers it, the DBA did not commit ` +
+        `that migration (an index/change the design defers): DROP the test rather than assert a migration the design ` +
+        `never ships. Known schema_changes ids: ${[...planned.keys()].join(", ") || "(none)"}.`,
+    );
+    if (typeof it.ac_id === "string") acIds.add(it.ac_id);
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
@@ -2074,11 +2161,13 @@ export function checkClientKindLayerCoherence(testListJson: string, acLayerById:
   const violations: string[] = [];
   const acIds = new Set<string>();
   for (const it of tl.items ?? []) {
-    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    // Both UI test kinds — `client` (Playwright e2e) and `component` (isolated Vitest) — render UI,
+    // so neither can verify a backend (API/service/Infra) AC's contract; only an `E2E`-layer (UI) AC.
+    if ((it.kind !== "client" && it.kind !== "component") || typeof it.ac_id !== "string") continue;
     const layer = acLayerById[it.ac_id];
     if (layer !== undefined && layer !== "E2E") {
       violations.push(
-        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) – a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`,
+        `test ${it.id ?? "?"} is kind:"${it.kind}" but anchored to ${it.ac_id} (layer: ${layer}) – a client-side UI test (it renders a component) cannot verify a backend ${layer} AC's contract. Cover the clause in a behavior/fitness test at the ${layer} boundary (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client/component test to a backend-layer AC.`,
       );
       acIds.add(it.ac_id);
     }

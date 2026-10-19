@@ -139,7 +139,9 @@ var SMELL_FIX = {
   "relative-migration-revision": "a reversibility test asserts a NAMED column is absent after a RELATIVE `downgrade -1` (and/or restores with `upgrade head`) \u2013 this assumes THAT column's migration is the current head, so the moment a later feature stacks a migration on top, `-1` reverses the WRONG migration and the column-absence assertion can never pass again (the F6/S1-broke-F1/S3 par_level class). Pin the migration's OWN revision instead: downgrade to its down_revision and upgrade to its revision, so the round-trip validates THIS migration independent of any later head",
   "reversible-invariant-round-trip": "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility \u2013 and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade \u2192 seed/migrate \u2192 upgrade \u2192 assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
   "pytest-bdd-parse-conversion": "a parse()/parsers.parse() step pattern uses a Python str.format conversion flag (!r / !s / !a); the `parse` library backing pytest-bdd supports the format SPEC ({name:type}) but NOT conversions, so the step text never matches the feature and the step raises StepDefinitionNotFoundError \u2013 the app can never green it. Drop the conversion and quote the value in the pattern instead (e.g. parse('\u2026 \"{name}\"') to match a quoted feature value, or parse('\u2026 {name}') for a bare token), matching how the .feature file writes it",
-  "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it"
+  "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it",
+  "component-test-mock": "a client COMPONENT test (client/**/*.test.tsx) MOCKS the data path (a stubbed/spied/assigned global `fetch`, MSW, or a `vi.mock` of the app's api/service/http module). Kit principle: NEVER mock when a real counterpart exists \u2014 a component that talks to the backend in production must talk to the REAL backend in test. The vitest harness boots a real backend (vitest.globalSetup.ts) and the fetch shim (tests/setup.ts) routes `/api` to it, so render the component and let its real `/api` calls hit the live service against the paired-branch DB; assert on what comes back. Remove the mock. (A clock \u2014 vi.useFakeTimers \u2014 or a genuinely third-party module with no real counterpart stays allowed.)",
+  "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example (postgresql://someuser:pw@dbhost.invalid) matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal."
 };
 function forwardMigrationRegion(body) {
   const m = body.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
@@ -204,6 +206,38 @@ function liveReferenceLines(body, col) {
     const slash = line.indexOf("//");
     if (slash >= 0) line = line.slice(0, slash);
     if (re.test(line)) out.push(i + 1);
+  }
+  return out;
+}
+function blankCommentsAndDocstrings(lines) {
+  const out = [];
+  let inDoc = false;
+  let docQuote = "";
+  for (let line of lines) {
+    if (inDoc) {
+      if (line.includes(docQuote)) {
+        inDoc = false;
+        line = line.slice(line.indexOf(docQuote) + 3);
+      } else {
+        out.push("");
+        continue;
+      }
+    }
+    const tq = line.match(/"""|'''/);
+    if (tq) {
+      const q = tq[0];
+      const after = line.slice(line.indexOf(q) + 3);
+      if (!after.includes(q)) {
+        line = line.slice(0, line.indexOf(q));
+        inDoc = true;
+        docQuote = q;
+      }
+    }
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const slash = line.indexOf("//");
+    if (slash >= 0) line = line.slice(0, slash);
+    out.push(line);
   }
   return out;
 }
@@ -278,7 +312,7 @@ function checkReversibleInvariantRoundTrip(projectDir) {
         const d = it.description ?? "";
         return /\bround.?trip\b/i.test(d) || /\bdowngrad\w*/i.test(d) && /\bupgrad\w*/i.test(d);
       });
-      if (!hasRoundTrip) {
+      if (covering.length > 0 && !hasRoundTrip) {
         out.push({
           smell: "reversible-invariant-round-trip",
           file: (0, import_node_path2.relative)(projectDir, featureDir(tdd, feature)),
@@ -310,6 +344,7 @@ function checkTestSmells(args) {
       const body = lines.join("\n");
       const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
       const isPy = file.endsWith(".py");
+      const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
       if (isJs && body.includes("vi.mock(") && !body.includes("vi.hoisted")) {
         const constBefore = body.match(/^const\s+(\w+)\s*=[\s\S]{0,400}?vi\.mock\(/m);
         if (constBefore && new RegExp(`\\b${constBefore[1]}\\b`).test(body.slice(body.indexOf("vi.mock(")))) {
@@ -318,6 +353,7 @@ function checkTestSmells(args) {
         }
       }
       let teardownDepth = 0;
+      const codeLines = blankCommentsAndDocstrings(lines);
       lines.forEach((text, i) => {
         const line = i + 1;
         if (/^\s*(afterEach|afterAll|teardown|tearDown|def\s+tear\w*|def\s+cleanup)\b/.test(text)) teardownDepth = 1;
@@ -335,8 +371,20 @@ function checkTestSmells(args) {
             push("framenavigated-reload-detector", rel, line, text);
           }
         }
+        if (isComponentTest) {
+          if (/vi\.stubGlobal\(\s*["']fetch["']/.test(text) || /vi\.spyOn\([^)]*,\s*["']fetch["']\s*\)/.test(text) || /(?:globalThis|global|window)\.fetch\s*=/.test(text)) {
+            push("component-test-mock", rel, line, text, "stubs the global fetch");
+          } else if (/from\s+["']msw["']/.test(text) || /\bsetupServer\(/.test(text)) {
+            push("component-test-mock", rel, line, text, "MSW network mock");
+          } else if (/vi\.mock\(\s*["'][^"']*(?:\/api\b|\bapi\/|service|\/http\b|repository|fetch)[^"']*["']/i.test(text)) {
+            push("component-test-mock", rel, line, text, "vi.mock of the app's data/API module");
+          }
+        }
         if (teardownDepth > 0 && /DELETE\s+FROM|deleteMany\(|\.delete\(\s*\{|TRUNCATE/i.test(text)) {
           push("delete-teardown", rel, line, text);
+        }
+        if (/\b(?:postgres(?:ql)?|mysql|mongodb|redis|amqp)(?:\+\w+)?:\/\/[^\s/@"'`]*:[^\s/@"'`]*@/.test(text)) {
+          push("dsn-inline-credentials", rel, line, text, "inline user:pass@ in a DSN literal");
         }
         if (isPy) {
           const m = text.match(/^\s*except\s*(IntegrityError|Exception)\b(?:\s+as\s+(\w+))?/);
@@ -361,8 +409,10 @@ function checkTestSmells(args) {
           }
         }
         if (knownTables.size > 0) {
-          for (const m of text.matchAll(/\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+["'`]?(\w+)["'`]?/g)) {
-            const ref = m[1].toLowerCase();
+          for (const m of codeLines[i].matchAll(
+            /\b(?:FROM|JOIN|INTO|UPDATE)\s+["'`]?(\w+)["'`]?|\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?["'`]?(\w+)/g
+          )) {
+            const ref = (m[1] ?? m[2]).toLowerCase();
             if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !knownTables.has(ref)) {
               push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
             }

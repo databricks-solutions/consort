@@ -77,7 +77,7 @@ workspace have to be in place first. One command detects what's missing, offers
 to install it, and runs the environment doctor:
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/consort/main/bootstrap.sh)
+bash <(curl -sL https://tinyurl.com/consort-bootstrap)
 ```
 
 Fix anything it flags red before continuing. (You do not strictly have to run

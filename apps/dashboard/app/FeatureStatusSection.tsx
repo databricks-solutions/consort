@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import type { DashboardState, StoryProgress } from "@/lib/types";
 import { font, radius } from "@/lib/theme";
+import { StoryTestsLightbox } from "./StoryTestsLightbox";
+import type { ActivityTimeline } from "./AgentLogReplay";
 
 // LEFT-pane status rollup: the run's features grouped with their stories, limited to features that
 // are COMPLETE or CURRENTLY ACTIVE — the two an operator tracks (a started-but-idle feature that is
@@ -20,10 +23,17 @@ export function FeatureStatusSection({
   state,
   pinned,
   onPin,
+  timeline = null,
+  lineAt = 0,
 }: {
   state: DashboardState;
   pinned: string | null;
   onPin: (f: string | null) => void;
+  // The agent-step timeline + the line playhead — threaded to the lightbox so per-test bubbles light
+  // by LINE position: each test's status-transition is a line in the stream, so scrubbing reveals
+  // them one at a time in pass order (not wall-clock, which collapses a burst into one step).
+  timeline?: ActivityTimeline | null;
+  lineAt?: number;
 }) {
   const byFeature = new Map<string, StoryProgress[]>();
   for (const s of state.stories) {
@@ -36,7 +46,10 @@ export function FeatureStatusSection({
   const shown = state.features.filter((f) => f.done || f.active);
   const doneCount = shown.filter((f) => f.done).length;
   const pinnedShown = pinned != null && shown.some((f) => f.id === pinned);
+  // The story whose test lightbox is open (a story is unique only within its feature, so key both).
+  const [openStory, setOpenStory] = useState<{ feature: string; story: string } | null>(null);
   return (
+    <>
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.7rem", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
         <span>Status{shown.length > 0 ? <span style={{ textTransform: "none", letterSpacing: 0 }}> · {doneCount} of {shown.length} complete</span> : null}</span>
@@ -93,7 +106,11 @@ export function FeatureStatusSection({
               {stories.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   {stories.map((s) => (
-                    <FeatureStatusStoryRow key={`${f.id}:${s.id}`} s={s} />
+                    <FeatureStatusStoryRow
+                      key={`${f.id}:${s.id}`}
+                      s={s}
+                      onOpen={() => setOpenStory({ feature: f.id, story: s.id })}
+                    />
                   ))}
                 </div>
               ) : (
@@ -104,6 +121,27 @@ export function FeatureStatusSection({
         })
       )}
     </div>
+    {openStory ? (() => {
+      // The per-test status trail folded as-of the playhead (reducer.ts attaches it to the story),
+      // so the lightbox can colour bubbles by scrubber position when the board is rewound.
+      const st = state.stories.find((s) => s.feature === openStory.feature && s.id === openStory.story);
+      const foldStatus = Object.fromEntries((st?.testItems ?? []).map((t) => [t.id, t.status]));
+      return (
+        <StoryTestsLightbox
+          feature={openStory.feature}
+          story={openStory.story}
+          mode={state.source?.mode ?? null}
+          atLive={state.atLive}
+          atEventIndex={state.atEventIndex}
+          timeline={timeline}
+          lineAt={lineAt}
+          foldStatus={foldStatus}
+          state={state}
+          onClose={() => setOpenStory(null)}
+        />
+      );
+    })() : null}
+    </>
   );
 }
 
@@ -150,7 +188,8 @@ function FeatureStateChip({ done }: { done: boolean }) {
 
 // Compact per-story row for the left-pane rollup: id + one status chip (its raw Consort status),
 // deliberately terser than the center column's full design→build→done mini-track (StoryRow).
-function FeatureStatusStoryRow({ s }: { s: StoryProgress }) {
+// Clicking the row opens the story's test lightbox (the Navigator's authored tests + their status).
+function FeatureStatusStoryRow({ s, onOpen }: { s: StoryProgress; onOpen: () => void }) {
   const c =
     s.status === "discarded"
       ? { bg: "var(--status-discarded-tint)", border: "var(--status-discarded)", fg: "var(--status-discarded-text)" }
@@ -160,7 +199,19 @@ function FeatureStatusStoryRow({ s }: { s: StoryProgress }) {
       ? { bg: "var(--status-accent-tint)", border: "var(--status-accent)", fg: "var(--status-accent-text)" }
       : { bg: "var(--surface-inset)", border: "var(--border-default)", fg: "var(--text-muted)" };
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      title="View this story's tests"
+      style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", borderRadius: radius.chip, padding: "1px 2px" }}
+    >
       <span style={{ fontSize: "0.74rem", fontWeight: s.active ? 700 : 500, color: s.active ? "var(--text-strong)" : "var(--text-muted)", fontFamily: font.mono, whiteSpace: "nowrap" }}>
         {s.active ? "▸ " : ""}
         {s.id}
@@ -173,6 +224,10 @@ function FeatureStatusStoryRow({ s }: { s: StoryProgress }) {
         style={{ marginLeft: "auto", fontSize: "0.62rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em", color: c.fg, background: c.bg, border: `1px solid ${c.border}`, borderRadius: radius.chip, padding: "1px 7px", whiteSpace: "nowrap" }}
       >
         {s.status}
+      </span>
+      {/* Discoverability: a faint flask marks the row as opening its test list. */}
+      <span aria-hidden title="View tests" style={{ fontSize: "0.64rem", color: "var(--text-faint)", lineHeight: 1 }}>
+        🧪
       </span>
     </div>
   );

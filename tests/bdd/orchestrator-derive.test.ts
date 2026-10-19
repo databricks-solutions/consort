@@ -92,6 +92,17 @@ describe("deriveDriveState: gate + acceptance mapping", () => {
     expect(s.gateApproved).toBe(false);
   });
 
+  it("a reconcile/revise reopen (status designing, lingering OPEN gate record) is NOT surfaced", () => {
+    // A feature-complete reconcile reopened the story: status reset to `designing`
+    // but the open gate record was kept. gateSurfaced MUST be false so the design
+    // loop re-surfaces it before the deferred /design batch approval — otherwise the
+    // batch approve trips the per-story-draft invariant on this reopened sibling.
+    const p = pipeline({ S1: { status: "designing", gate: { status: "open", history: [] } } });
+    const s = deriveDriveState(p, fakeProbe({}), FEATURE).stories.S1;
+    expect(s.gateSurfaced).toBe(false);
+    expect(s.gateApproved).toBe(false);
+  });
+
   it("a done story is accepted; an active experiment is cut, a discarded one is not", () => {
     const p = pipeline({
       S1: {

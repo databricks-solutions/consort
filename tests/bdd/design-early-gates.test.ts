@@ -116,7 +116,16 @@ describe("checkClientKindLayerCoherence", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.violations?.[0]).toMatch(/T9/);
     if (!r.ok) expect(r.violations?.[0]).toMatch(/AC3-collision-resolved-at-write/);
-    if (!r.ok) expect(r.violations?.[0]).toMatch(/mechanism conflict/);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/cannot verify a backend/);
+  });
+
+  it("flags a kind:'component' item anchored to an API-layer AC too (component is UI-only)", () => {
+    const r = checkClientKindLayerCoherence(
+      tl([{ id: "T9", kind: "component", ac_id: "AC3-collision-resolved-at-write" }]),
+      { "AC3-collision-resolved-at-write": "API" },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations?.[0]).toMatch(/kind:"component"/);
   });
 
   it("passes a client item on an E2E-layer AC and a behavior item on an API AC", () => {

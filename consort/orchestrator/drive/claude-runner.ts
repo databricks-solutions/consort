@@ -355,14 +355,17 @@ export function spawnClaudeStreaming(
     // the last text (the result line) survives – the deliberation never hits the
     // log. Set LAKEBASE_CONSORT_VERBOSE_AGENT=1 to tee every assistant text delta.
     const verboseAgent = !!consortEnv("VERBOSE_AGENT");
-    // Liveness sidecar: when recording, ALWAYS stream the agent's intermediate reasoning + each tool
-    // action to <RECORD_DIR>/agent-live.log as it arrives, timestamped. This is the "is it working or
-    // spinning?" channel – a monitor can `tail -f` it and see fresh prose the moment the agent thinks,
-    // WITHOUT polluting the compact capture log (which still shows only `· tool` markers + the final
-    // outcome). Independent of VERBOSE_AGENT (that tees to the console); this always writes to disk when
-    // RECORD_DIR is set. Append-only, one line per delta, best-effort (a sidecar write must never break
-    // a turn). The file is per-run (all turns append); the turn boundary is marked at open below.
-    const liveLogDir = consortEnv("RECORD_DIR")?.trim();
+    // Liveness sidecar: ALWAYS stream the agent's intermediate reasoning + each tool action to
+    // agent-live.log as it arrives, timestamped. This is the "is it working or spinning?" + "what is
+    // it doing right now" channel – a monitor (or the dashboard's driver-activity ticker) can
+    // `tail -f` it and see fresh prose + tool actions the moment the agent acts, WITHOUT polluting the
+    // compact capture log (which still shows only `· tool` markers + the final outcome). Independent
+    // of VERBOSE_AGENT (that tees to the console). Written on EVERY run, not only recorded ones: the
+    // explicit capture dir (RECORD_DIR) when set, else the project's OWN `.consort` – so the live
+    // activity stream always exists (the dashboard ticker must not depend on a config flag). Append-
+    // only, one line per delta, best-effort (a sidecar write must never break a turn). The file is
+    // per-run (all turns append); the turn boundary is marked at open below.
+    const liveLogDir = consortEnv("RECORD_DIR")?.trim() || resolveConsortDir(cwd);
     let liveLog: number | undefined;
     if (liveLogDir) {
       try {
@@ -646,6 +649,20 @@ export function ensureUxBrowserChromium(): void {
  * the throwaway, isolated, scaffolded project the drive runs in – this spawns each
  * role agent autonomous within that project, not the operator's session.
  */
+// Appended to EVERY role agent's system prompt (one place, so the step log reads the same for all
+// roles — DRY, not repeated across the 8 agent docs). Each tool call should carry a concise, human
+// `description` of what the step does; the dashboard surfaces these as the agent's "Agent steps" log,
+// so a reader sees "Survey project layout" / "Add stock route + service", never a raw shell command.
+const STEP_DESCRIPTION_DIRECTIVE =
+  "Dashboard step log: on EVERY tool call WITHOUT EXCEPTION, include a concise one-line `description` " +
+  "of what the step accomplishes (the Bash `description` field; for other tools, phrase the step's " +
+  "intent) — a human action like \"Survey project layout\" or \"Add SKU detail route + service\", NOT " +
+  "the raw command. This applies to EVERY Bash call including read-only probes (cat / ls / grep / " +
+  "python inspection) and verification/gate steps — a `cat`/`grep` with no description renders as raw " +
+  "shell and is a defect. There are NO exempt steps and NO exempt roles: reflect / reconcile / verify " +
+  "turns describe their reads too. These descriptions are your per-step activity in the Consort " +
+  "dashboard, so every step must be self-explaining.";
+
 export function claudeBaseArgs(cmd: Extract<DriveCommand, { kind: "claude" }>): string[] {
   return [
     "-p", cmd.task,
@@ -654,6 +671,7 @@ export function claudeBaseArgs(cmd: Extract<DriveCommand, { kind: "claude" }>): 
     "--permission-mode", "acceptEdits",
     "--setting-sources", "project",
     "--strict-mcp-config",
+    "--append-system-prompt", STEP_DESCRIPTION_DIRECTIVE,
     "--output-format", "stream-json",
     "--verbose",
   ];

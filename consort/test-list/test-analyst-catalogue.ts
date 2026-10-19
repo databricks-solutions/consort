@@ -159,7 +159,7 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "assert-not-called) — NOT by omitting the session (that raises TypeError once the session becomes " +
       "required and masks the guard, the recurring driver-refactor regression). A " +
       "CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is " +
-      "NOT yours – the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR " +
+      "NOT yours – the COMPONENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR " +
       "declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` " +
       "item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks " +
       "the test_list gate unless every clause is covered) – never one item for the whole array. A COMPOUND " +
@@ -189,6 +189,11 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is " +
       "recreated – the table + its columns/constraints are present again after the downgrade-to-`down_revision` then " +
       "`upgrade head` (NOT that data survives). " +
+      "TAG the reversibility item with `schema_change_id` = the EXACT db-design.json `schema_changes[]` id it " +
+      "exercises (e.g. `SC5-add-location-sku-index`): the DBA ledger is the authority. A migration-reversibility " +
+      "item with NO `schema_change_id` is flagged pre-reflect (`checkMigrationTestSchemaChangeTag`), and one naming " +
+      "a change the DBA did NOT plan is an orphan (`checkSchemaChangeOrphan`) — in either case DROP it rather than " +
+      "assert a migration the design defers (an index the architect only weighed). " +
       "Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE " +
       "item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a " +
       "column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). " +
@@ -216,9 +221,9 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "`scenario_file` under `client/tests/` (e.g. `client/tests/pages/<Screen>.test.tsx`). Do NOT fold " +
       "a presentation AC into the backend pytest-bdd suite – that mechanism mismatch is a defect. The INVERSE is " +
       "equally a defect: emit a client item ONLY for a UI-presentation / `E2E`-layer AC. CHECK the AC's `layer` " +
-      "first and NEVER anchor a client item to an `API` / `service` / `Infra`-layer AC (a client harness mocks the " +
-      "response envelope, so it cannot verify the backend contract; the deterministic `checkClientKindLayerCoherence` " +
-      "gate flags it). Cover a backend AC's clause in a behavior/fitness item instead. For an " +
+      "first and NEVER anchor a client item to an `API` / `service` / `Infra`-layer AC (a client test renders " +
+      "UI; a pure backend/API contract is verified at the service boundary, not through a rendered component — the " +
+      "deterministic `checkClientKindLayerCoherence` gate flags it). Cover a backend AC's clause in a behavior/fitness item instead. For an " +
       "AC that OWNS a page/route, at least one client item MUST exercise the page THROUGH THE REAL " +
       "`<App>` at the AC's route (a Playwright e2e that navigates the route, OR a component test " +
       "rendering `<App>` in `<MemoryRouter initialEntries={[\"<the path>\"]}>`) – a bare " +
@@ -230,20 +235,62 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "`client/tests/e2e/<name>.spec.ts`: it MUST end `.spec.ts`, NEVER `.e2e.ts` (the scaffold's " +
       "playwright.config default testMatch runs only `*.spec.ts`, so a `.e2e.ts` file silently never " +
       "runs), that drives the DEPLOYED app in a browser against the live DB, with NO " +
-      "mocked/stubbed fetch and NO in-memory data. A mocked/stubbed COMPONENT test (rendering " +
-      "`<App>`/`<Page>` with fake data) is ONLY for a pure presentation/rendering AC, NEVER for an " +
-      "`E2E`-layer AC – drafting an E2E-layer AC as a mocked component test is the recurring " +
-      "reflect-testlist-defect (it cannot hit the DB the layer demands). One real e2e per E2E-layer AC. " +
+      "mocked/stubbed fetch and NO in-memory data. **Component tests are ALSO real-DB, NEVER mocked** (kit " +
+      "principle: never mock when a real counterpart exists — the vitest harness boots a real backend and the " +
+      "fetch shim routes the component's `/api` calls to it; the deterministic `component-test-mock` gate FAILS a " +
+      "stubbed-fetch / MSW / `vi.mock`-of-the-api component test). The `E2E`-vs-component choice is SCOPE, not " +
+      "mock-vs-real: an `E2E`-layer AC is a FULL USER JOURNEY and REQUIRES a browser Playwright e2e; a " +
+      "component-scoped UI AC is ONE screen wired to the real backend and takes a real-DB component test (render " +
+      "the component, let its real `/api` calls hit the live service, assert on the real response). Drafting an " +
+      "`E2E`-layer (full-journey) AC as a mere component test is still the recurring reflect-testlist-defect — it is " +
+      "not the full browser flow the layer demands. One real e2e per E2E-layer AC. " +
       "An e2e that CREATES a record (fills a form + submits) MUST key it on a per-run-unique business " +
       "key — a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) — used " +
       "in BOTH the create fill AND the assertion locator, so each run owns its own row on the SHARED " +
       "feature branch (a hardcoded key collides with a prior run / sibling story and goes perma-red). " +
-      "ALSO cover NFR CLIENT-RENDER fitness functions: for every `architecture.json` NFR whose " +
-      "`fitness_function` describes a CLIENT render (e.g. rendering a row with null/optional fields and " +
-      "asserting a 'not tracked' indicator, or an empty/loading/error state), emit a `kind:\"client\"` " +
-      "item that performs that render and asserts the stated outcome. These NFR-render fitness functions " +
-      "are YOURS, never the fitness analyst's (it owns service/DB guards, not the SPA); a stated " +
-      "client-render NFR with no client item is the recurring reflect-testlist-defect. " + SLICE_CONTRACT,
+      "You own the FULL browser JOURNEY only (`client/tests/e2e/*.spec.ts`). The isolated single-component " +
+      "render (`.test.tsx`) and the NFR CLIENT-RENDER fitness functions belong to the COMPONENT analyst, " +
+      "NOT you — do not emit a component-scoped or client-render item here. " + SLICE_CONTRACT,
+  },
+  component: {
+    kind: "component",
+    description: "Isolated, real-DB React component tests for component-scoped UI concerns.",
+    configSummary: "Per UI component with real render logic: a kind:\"component\" item under client/tests/ (only when uiTrack).",
+    model: "sonnet",
+    effort: "default",
+    toolScope: ["Read"],
+    inputs: ["story-acs", "architecture-invariants", "design-guide"],
+    enabledWhen: (ctx) => ctx.uiTrack === true,
+    focusPrompt:
+      "You are the COMPONENT test analyst (this project HAS a frontend). You author ISOLATED, REAL-DB " +
+      "component tests: a SINGLE React component rendered on its own (NOT the whole `<App>`, NOT a full " +
+      "user journey), with its real `/api` calls hitting the REAL backend the vitest harness boots — " +
+      "NEVER a mock (kit principle: never mock when a real counterpart exists; the deterministic " +
+      "`component-test-mock` gate FAILS a stubbed-fetch / MSW / `vi.mock`-of-the-api component test). " +
+      "Emit a `kind:\"component\"` item with `scenario_file` under `client/tests/` ending `.test.tsx` " +
+      "(e.g. `client/tests/components/<Component>.test.tsx`). " +
+      "WHEN to emit (organically, from the design — do NOT invent one): for every UI component the " +
+      "architecture / design-guide defines that has NON-TRIVIAL RENDER LOGIC derived from data — a status " +
+      "badge whose color/label depends on a value, a table/list rendering one row per record, a field that " +
+      "renders differently when null/empty (a 'not tracked' indicator), an empty / loading / error state — " +
+      "emit a component item that renders JUST that component against the real API and asserts the rendered " +
+      "output: the text AND the design-guide SEAM (the element's design-guide class / `data-testid`), NEVER " +
+      "an inline `style=` or raw CSS. A trivial static element with no data-driven render logic needs NO " +
+      "component test — do not pad. " +
+      "SCOPE — you are the peer of the CLIENT (e2e) analyst, split by SCOPE not mock-vs-real: the client " +
+      "analyst owns the FULL browser journey (`client/tests/e2e/*.spec.ts`, Playwright, deployed app); YOU " +
+      "own the SINGLE-component render (`*.test.tsx`, jsdom, real backend). Do NOT author a full-journey " +
+      "flow (that is the client analyst's) and do NOT author an API-contract test (that is behavior's — a " +
+      "component test renders UI, it does not verify the raw wire contract; `checkClientKindLayerCoherence` " +
+      "flags a component item anchored to an `API`/`service`/`Infra` AC). " +
+      "A component test that CREATES a record keys it on a per-run-unique business key — a " +
+      "`crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) — so each run " +
+      "owns its row on the SHARED feature branch. " +
+      "ALSO own NFR CLIENT-RENDER fitness functions (moved here from the client analyst): for every " +
+      "`architecture.json` NFR whose `fitness_function` describes a CLIENT render (a row with null/optional " +
+      "fields asserting a 'not tracked' indicator; an empty/loading/error state), emit a `kind:\"component\"` " +
+      "item that performs that render and asserts the stated outcome. A stated client-render NFR with no " +
+      "component item is a reflect-testlist-defect. Do NOT set `invariant_id`. " + SLICE_CONTRACT,
   },
 };
 

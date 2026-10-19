@@ -7522,6 +7522,12 @@ var EVENT_TEMPLATES = {
   "cycle.verified": { template: "VERIFY [{{ac}}] on {{branch}} {{outcome}}: {{summary}}" },
   "cycle.review": { template: "REVIEW [{{ac}}] refactor={{refactor}}: {{rationale}}" },
   "cycle.refactored": { template: "REFACTOR [{{ac}}]: {{change}}" },
+  // Per-TEST status transition within a cycle (code-emitted by the runner as it parses the test
+  // runner's machine-readable output). Unlike cycle.green (one event per cycle, lead test only),
+  // this fires once per test id so the dashboard can reconstruct each test's status as-of any
+  // event index — the historical per-test trail the cycle.* family does not carry. story_id /
+  // ac_id / cycle_id ride in metadata (not template slots), like the other cycle.* events.
+  "test.result": { template: "TEST {{test_id}} {{status}}" },
   "smell.flagged": { template: "SMELL {{smell}} ({{severity}}): {{detail}}" },
   "runner.missing": { template: "NO RUNNER for layer {{layer}} (test {{test_id}})" },
   // Experiment lifecycle (code-emitted)

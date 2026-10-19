@@ -7072,7 +7072,7 @@ function checkE2eLayerPresent(architectureJson2, evidence) {
   return {
     ok: false,
     violations: [
-      `the feature ${why} but NO acceptance criterion is tagged layer:"E2E"; a feature that renders a UI has at least one client<->server contract (a form submit, an inline validation rejection, a success/empty state) whose ONLY real verification is a Playwright e2e against the live API \u2013 tag that AC layer:"E2E" (a mocked component test stubs the response envelope, so a fabricated shape passes green while the real wire contract drifts). NOTE: an outcome phrased as "record WHO performed the action" or "the pick is saved", when the operator enters their name on a form with no auth, IS a client form submission (layer:"E2E") \u2013 do not flatten it into a backend "API" AC. If the endpoint is genuinely not consumed by any client, reconsider \u2013 that is unusual for a UI-track feature.`
+      `the feature ${why} but NO acceptance criterion is tagged layer:"E2E"; a feature that renders a UI has at least one client<->server contract (a form submit, an inline validation rejection, a success/empty state) whose ONLY real verification is a browser Playwright e2e against the live API \u2013 tag that AC layer:"E2E" (a narrower component test exercises one screen, not the full user journey the E2E layer verifies). NOTE: an outcome phrased as "record WHO performed the action" or "the pick is saved", when the operator enters their name on a form with no auth, IS a client form submission (layer:"E2E") \u2013 do not flatten it into a backend "API" AC. If the endpoint is genuinely not consumed by any client, reconsider \u2013 that is unusual for a UI-track feature.`
     ]
   };
 }
@@ -7140,7 +7140,7 @@ function checkE2ECoverage(testListJson, e2eAcIds) {
     if (forAc.some((i) => isE2e(i.scenario_file))) continue;
     const how = forAc.length ? `covered only by ${forAc.map((i) => i.scenario_file ?? `kind:${i.kind ?? "?"}`).join(", ")}` : "has no covering test";
     violations.push(
-      `E2E-layer AC ${acId} ${how} \u2013 a mocked component test cannot verify the real client<->server contract (a fabricated response envelope passes green while the real wire shape drifts). Add a real Playwright e2e (scenario_file under client/tests/e2e/) that drives the deployed app against the live API`
+      `E2E-layer AC ${acId} ${how} \u2013 a narrower component test (one screen) is not the full user journey an E2E AC verifies; the bar is SCOPE, not mock-vs-real (component tests are real-DB too). Add a real browser Playwright e2e (scenario_file under client/tests/e2e/) that drives the deployed app against the live API`
     );
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
@@ -7665,11 +7665,11 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
-    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    if (it.kind !== "client" && it.kind !== "component" || typeof it.ac_id !== "string") continue;
     const layer = acLayerById[it.ac_id];
     if (layer !== void 0 && layer !== "E2E") {
       violations.push(
-        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+        `test ${it.id ?? "?"} is kind:"${it.kind}" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-side UI test (it renders a component) cannot verify a backend ${layer} AC's contract. Cover the clause in a behavior/fitness test at the ${layer} boundary (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client/component test to a backend-layer AC.`
       );
       acIds.add(it.ac_id);
     }
@@ -7742,6 +7742,12 @@ var EVENT_TEMPLATES = {
   "cycle.verified": { template: "VERIFY [{{ac}}] on {{branch}} {{outcome}}: {{summary}}" },
   "cycle.review": { template: "REVIEW [{{ac}}] refactor={{refactor}}: {{rationale}}" },
   "cycle.refactored": { template: "REFACTOR [{{ac}}]: {{change}}" },
+  // Per-TEST status transition within a cycle (code-emitted by the runner as it parses the test
+  // runner's machine-readable output). Unlike cycle.green (one event per cycle, lead test only),
+  // this fires once per test id so the dashboard can reconstruct each test's status as-of any
+  // event index — the historical per-test trail the cycle.* family does not carry. story_id /
+  // ac_id / cycle_id ride in metadata (not template slots), like the other cycle.* events.
+  "test.result": { template: "TEST {{test_id}} {{status}}" },
   "smell.flagged": { template: "SMELL {{smell}} ({{severity}}): {{detail}}" },
   "runner.missing": { template: "NO RUNNER for layer {{layer}} (test {{test_id}})" },
   // Experiment lifecycle (code-emitted)

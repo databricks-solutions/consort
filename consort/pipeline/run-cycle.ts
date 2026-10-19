@@ -30,6 +30,69 @@ function logCycleEvent(consortDir: string, event: AgentLogEventInput): void {
   }
 }
 
+/**
+ * Emit a per-TEST status event for every test id the cycle covers, so a reader
+ * (the dashboard) can reconstruct EACH test's status as-of any event index — the
+ * cycle.* family logs ONE event per cycle naming only the lead `test_id`, which
+ * is why 32 of a 33-test story had no per-test trail. The status applies to the
+ * whole batch the cycle just transitioned (RED = tests written & failing, GREEN =
+ * code makes them pass, REFACTOR = cleaned), which is the honest grain the
+ * substrate knows from `coveredTestIds`. story_id/ac_id ride as slots (folded
+ * into metadata) so the reader can attribute each result to its story. Best-effort,
+ * like every cycle log — never fails a transition.
+ */
+function logTestResults(
+  consortDir: string,
+  cycle: CycleArtifact,
+  status: "red" | "green" | "refactored",
+  role: "navigator" | "driver",
+): void {
+  // The reporter's REAL per-test transition time (pytest/playwright/vitest append `.consort/
+  // test-run.jsonl` as each `@T<id>` runs). Stamp each `test.result` with WHEN that test actually
+  // reached this status — not the single cycle-marking instant — so a reader can replay each test
+  // lighting in the ORDER it passed, instead of the whole batch flipping together at cycle.green.
+  // Falls back to the emit-time clock for any test with no reporter line (e.g. a refactor-only pass,
+  // or a stack whose runner did not tag that id).
+  const realTs = realTestTimestamps(consortDir, status);
+  for (const testId of coveredTestIds(cycle)) {
+    const ts = realTs.get(testId);
+    try {
+      emitAgentLogEvent(
+        {
+          role,
+          level: "info",
+          event: "test.result",
+          feature_id: cycle.feature_id,
+          cycle_id: cycle.cycle_id,
+          slots: { test_id: testId, status, story_id: cycle.story_id, ac_id: cycle.ac_id ?? "unknown" },
+        },
+        { consortDir, ...(ts ? { now: () => new Date(ts) } : {}) },
+      );
+    } catch {
+      // swallow: never let logging break a cycle transition
+    }
+  }
+}
+
+/** The LATEST `.consort/test-run.jsonl` timestamp per test id for a given status — the reporter's
+ *  real per-test transition time (last line for a (test_id, status) wins). Empty when the tail is
+ *  absent (refactor-only, or a stack with no reporter output), so callers fall back to the clock. */
+function realTestTimestamps(consortDir: string, status: string): Map<string, string> {
+  const out = new Map<string, string>();
+  try {
+    const text = readFileSync(join(consortDir, "test-run.jsonl"), "utf8");
+    for (const line of text.split("\n")) {
+      const s = line.trim();
+      if (!s) continue;
+      const o = JSON.parse(s) as { test_id?: string; status?: string; ts?: string };
+      if (o.test_id && o.status === status && typeof o.ts === "string") out.set(o.test_id, o.ts); // last wins
+    }
+  } catch {
+    /* no reporter tail — fall back to the emit-time clock */
+  }
+  return out;
+}
+
 export type CycleStage = "PLAN" | "RED" | "GREEN" | "REFACTOR";
 export type CycleVerdict = "passed" | "failed" | "skipped";
 
@@ -217,6 +280,8 @@ export function beginCycle(args: BeginCycleArgs): CycleArtifact {
       batch: args.test_ids && args.test_ids.length > 0 ? args.test_ids.length : 1,
     },
   });
+  // Per-test trail: every covered test is now written & failing (RED).
+  logTestResults(args.consortDir, artifact, "red", "navigator");
   return artifact;
 }
 
@@ -317,6 +382,8 @@ export function markGreen(
     cycle_id: cycleId,
     slots: { test_id: a.test_id, ac: a.ac_id ?? "unknown", change: driverChanges ?? "minimal honest code" },
   });
+  // Per-test trail: every covered test now passes (GREEN).
+  logTestResults(scope.consortDir, a, "green", "driver");
   return a;
 }
 
@@ -334,6 +401,8 @@ export function markRefactored(scope: CycleScope, cycleId: string, refactorNotes
     cycle_id: cycleId,
     slots: { ac: a.ac_id ?? "unknown", change: refactorNotes ?? "structure improved", test_id: a.test_id },
   });
+  // Per-test trail: every covered test survives the refactor (REFACTORED).
+  logTestResults(scope.consortDir, a, "refactored", "driver");
   return a;
 }
 

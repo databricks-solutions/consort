@@ -557,9 +557,10 @@ describe("laneProgress / passedNodes", () => {
     });
     // The Driver's build-cycle GREEN verify is a gate STEP that `current` nulls; currentGate names it so
     // the Verify card glows at the GREEN verify (between GREEN and REVIEW), in the release-engineer colour.
-    it("a driver cycle.verified playhead → currentGate is the verify step (b-verify)", () => {
+    it("a driver cycle.verified playhead → b-verify is the CURRENT step (automated verify is work, it lights), not a currentGate", () => {
       const p = laneProgress([ev("cycle.verified", "driver", { story: "S1" })]);
-      expect(p.currentGate).toBe("b-verify");
+      expect(p.current).toEqual({ lane: "build", step: "b-verify" }); // glows as running release-engineer work
+      expect(p.currentGate).toBeNull(); // NOT a human gate — only HITL gates (role null) are currentGate
     });
     it("a plain agent-work playhead (driver green) has no currentGate", () => {
       const p = laneProgress([ev("phase.start", "driver", { phase: "green" })]);

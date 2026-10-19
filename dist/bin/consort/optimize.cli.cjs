@@ -7715,6 +7715,12 @@ var EVENT_TEMPLATES = {
   "cycle.verified": { template: "VERIFY [{{ac}}] on {{branch}} {{outcome}}: {{summary}}" },
   "cycle.review": { template: "REVIEW [{{ac}}] refactor={{refactor}}: {{rationale}}" },
   "cycle.refactored": { template: "REFACTOR [{{ac}}]: {{change}}" },
+  // Per-TEST status transition within a cycle (code-emitted by the runner as it parses the test
+  // runner's machine-readable output). Unlike cycle.green (one event per cycle, lead test only),
+  // this fires once per test id so the dashboard can reconstruct each test's status as-of any
+  // event index — the historical per-test trail the cycle.* family does not carry. story_id /
+  // ac_id / cycle_id ride in metadata (not template slots), like the other cycle.* events.
+  "test.result": { template: "TEST {{test_id}} {{status}}" },
   "smell.flagged": { template: "SMELL {{smell}} ({{severity}}): {{detail}}" },
   "runner.missing": { template: "NO RUNNER for layer {{layer}} (test {{test_id}})" },
   // Experiment lifecycle (code-emitted)
@@ -9372,7 +9378,7 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
     let sawTooLong = false;
     let sawTransient = false;
     const verboseAgent = !!consortEnv("VERBOSE_AGENT");
-    const liveLogDir = consortEnv("RECORD_DIR")?.trim();
+    const liveLogDir = consortEnv("RECORD_DIR")?.trim() || resolveConsortDir(cwd);
     let liveLog;
     if (liveLogDir) {
       try {
@@ -9535,6 +9541,7 @@ function ensureUxBrowserChromium() {
     );
   }
 }
+var STEP_DESCRIPTION_DIRECTIVE = 'Dashboard step log: on EVERY tool call WITHOUT EXCEPTION, include a concise one-line `description` of what the step accomplishes (the Bash `description` field; for other tools, phrase the step\'s intent) \u2014 a human action like "Survey project layout" or "Add SKU detail route + service", NOT the raw command. This applies to EVERY Bash call including read-only probes (cat / ls / grep / python inspection) and verification/gate steps \u2014 a `cat`/`grep` with no description renders as raw shell and is a defect. There are NO exempt steps and NO exempt roles: reflect / reconcile / verify turns describe their reads too. These descriptions are your per-step activity in the Consort dashboard, so every step must be self-explaining.';
 function claudeBaseArgs(cmd) {
   return [
     "-p",
@@ -9548,6 +9555,8 @@ function claudeBaseArgs(cmd) {
     "--setting-sources",
     "project",
     "--strict-mcp-config",
+    "--append-system-prompt",
+    STEP_DESCRIPTION_DIRECTIVE,
     "--output-format",
     "stream-json",
     "--verbose"
@@ -10599,7 +10608,7 @@ function checkE2eLayerPresent(architectureJson2, evidence) {
   return {
     ok: false,
     violations: [
-      `the feature ${why} but NO acceptance criterion is tagged layer:"E2E"; a feature that renders a UI has at least one client<->server contract (a form submit, an inline validation rejection, a success/empty state) whose ONLY real verification is a Playwright e2e against the live API \u2013 tag that AC layer:"E2E" (a mocked component test stubs the response envelope, so a fabricated shape passes green while the real wire contract drifts). NOTE: an outcome phrased as "record WHO performed the action" or "the pick is saved", when the operator enters their name on a form with no auth, IS a client form submission (layer:"E2E") \u2013 do not flatten it into a backend "API" AC. If the endpoint is genuinely not consumed by any client, reconsider \u2013 that is unusual for a UI-track feature.`
+      `the feature ${why} but NO acceptance criterion is tagged layer:"E2E"; a feature that renders a UI has at least one client<->server contract (a form submit, an inline validation rejection, a success/empty state) whose ONLY real verification is a browser Playwright e2e against the live API \u2013 tag that AC layer:"E2E" (a narrower component test exercises one screen, not the full user journey the E2E layer verifies). NOTE: an outcome phrased as "record WHO performed the action" or "the pick is saved", when the operator enters their name on a form with no auth, IS a client form submission (layer:"E2E") \u2013 do not flatten it into a backend "API" AC. If the endpoint is genuinely not consumed by any client, reconsider \u2013 that is unusual for a UI-track feature.`
     ]
   };
 }
@@ -10667,7 +10676,7 @@ function checkE2ECoverage(testListJson, e2eAcIds) {
     if (forAc.some((i) => isE2e(i.scenario_file))) continue;
     const how = forAc.length ? `covered only by ${forAc.map((i) => i.scenario_file ?? `kind:${i.kind ?? "?"}`).join(", ")}` : "has no covering test";
     violations.push(
-      `E2E-layer AC ${acId} ${how} \u2013 a mocked component test cannot verify the real client<->server contract (a fabricated response envelope passes green while the real wire shape drifts). Add a real Playwright e2e (scenario_file under client/tests/e2e/) that drives the deployed app against the live API`
+      `E2E-layer AC ${acId} ${how} \u2013 a narrower component test (one screen) is not the full user journey an E2E AC verifies; the bar is SCOPE, not mock-vs-real (component tests are real-DB too). Add a real browser Playwright e2e (scenario_file under client/tests/e2e/) that drives the deployed app against the live API`
     );
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
@@ -10754,7 +10763,7 @@ function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
   const acIds = /* @__PURE__ */ new Set();
   const declaredList = [...declaredPaths].sort().join(", ");
   for (const it of tl.items ?? []) {
-    if (it.kind !== "behavior" && it.kind !== "client") continue;
+    if (it.kind !== "behavior" && it.kind !== "client" && it.kind !== "component") continue;
     const desc = it.description ?? "";
     for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
       const { path: path11, keys } = normalizeEndpoint(tok);
@@ -11262,6 +11271,32 @@ function checkTestlistE2eSpecSuffix(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkTestlistComponentScenarioFile(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "component") continue;
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    if (!/\.test\.tsx?$/.test(sf) || /\/tests\/e2e\//.test(sf)) {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"component" but its scenario_file is ${sf ? `"${sf}"` : "missing"} \u2014 an isolated component test must name a Vitest file at client/tests/<...>.test.tsx (never an e2e .spec.ts). Name the file so the build knows where to author it.`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function isMigrationReversibilityDescription(desc) {
+  const mentionsDowngrade = /\bdowngrad\w*/i;
+  const reversibilityContext = /\bdowngrad\w*[\s\S]*?\bupgrad\w*|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
+  return mentionsDowngrade.test(desc) && reversibilityContext.test(desc);
+}
 function checkTestlistMigrationRevision(testListJson) {
   let tl;
   try {
@@ -11269,15 +11304,13 @@ function checkTestlistMigrationRevision(testListJson) {
   } catch (err) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
-  const mentionsDowngrade = /\bdowngrade\b/i;
-  const reversibilityContext = /\bdowngrade\b[\s\S]*?\bupgrade\b|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
   const relativeStep = /\bdowngrade\s+-\s*\d+\b|\bsingle-step\s+(?:alembic\s+)?downgrade\b|\bdowngrade\s+(?:by\s+)?one\s+step\b/i;
   const pinned = /\bdown_revision\b|\bits own revision\b|\bexplicit(?:ly)?\b[\s\S]{0,30}\brevision\b|\bdowngrade\s+(?:to\s+)?(?:revision\s+)?["'`]?[0-9a-f]{6,}/i;
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     const desc = it.description ?? "";
-    if (!mentionsDowngrade.test(desc) || !reversibilityContext.test(desc)) continue;
+    if (!isMigrationReversibilityDescription(desc)) continue;
     if (relativeStep.test(desc) && !pinned.test(desc)) {
       violations.push(
         `test item ${it.id ?? "?"} is a migration-reversibility/data-preservation test that downgrades by a RELATIVE step ("${desc.slice(0, 90)}\u2026"). \`downgrade -1\` reverts whatever is HEAD, so it passes on the isolated experiment branch but silently targets the WRONG migration once a later story adds one (head moved). Pin it to the migration-under-test's OWN revision: downgrade to that revision's parent/down_revision (an explicit revision id), assert the schema change reverted, then upgrade head \u2014 never a relative \`downgrade -1\`.`
@@ -11320,6 +11353,27 @@ function checkSchemaChangeOrphan(testListJson, dbDesignJson2) {
       );
       if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkMigrationTestSchemaChangeTag(testListJson, dbDesignJson2) {
+  const planned = idedSchemaChanges(dbDesignJson2);
+  if (planned.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    if (!isMigrationReversibilityDescription(it.description ?? "")) continue;
+    if (typeof it.schema_change_id === "string" && it.schema_change_id.length > 0) continue;
+    violations.push(
+      `test item ${it.id ?? "?"} asserts a migration-reversibility round-trip but names no schema_change_id. A migration test must exercise a schema_change the DBA planned in db-design.json \u2014 tag it with that entry's id (e.g. "schema_change_id": "SC5-..."). If NO planned schema_changes[] entry covers it, the DBA did not commit that migration (an index/change the design defers): DROP the test rather than assert a migration the design never ships. Known schema_changes ids: ${[...planned.keys()].join(", ") || "(none)"}.`
+    );
+    if (typeof it.ac_id === "string") acIds.add(it.ac_id);
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
@@ -11402,11 +11456,11 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
-    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    if (it.kind !== "client" && it.kind !== "component" || typeof it.ac_id !== "string") continue;
     const layer = acLayerById[it.ac_id];
     if (layer !== void 0 && layer !== "E2E") {
       violations.push(
-        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+        `test ${it.id ?? "?"} is kind:"${it.kind}" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-side UI test (it renders a component) cannot verify a backend ${layer} AC's contract. Cover the clause in a behavior/fitness test at the ${layer} boundary (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client/component test to a backend-layer AC.`
       );
       acIds.add(it.ac_id);
     }
@@ -12968,9 +13022,16 @@ function storyView(id, e, probe, loop) {
   })();
   return {
     gateApproved,
-    // The gate record exists once the story has been surfaced for review;
-    // awaiting-gate is the pre-record surfaced state.
-    gateSurfaced: e.gate != null || e.status === "awaiting-gate",
+    // A story is "surfaced for its gate" when it is currently awaiting that gate
+    // (status `awaiting-gate`) or has already passed it (approved ⟹ it WAS
+    // surfaced). The gate RECORD's mere existence is NOT a reliable signal: a
+    // reconcile/revise reopen resets the story to `designing` but KEEPS its (still
+    // OPEN) gate record, so the old `e.gate != null` wrongly kept a reopened story
+    // "surfaced" — the design loop then never re-surfaced it, and the deferred
+    // /design batch approval tripped the per-story-draft invariant on that sibling
+    // (status `designing`, not `awaiting-gate`). Keying on status + approval flips
+    // this false on a reopen, so the loop re-surfaces the story before approving.
+    gateSurfaced: e.status === "awaiting-gate" || gateApproved,
     design: {
       hasAcs: probe.hasAcs(id),
       specRevisePending: probe.specRevisePending(id),
@@ -15344,8 +15405,13 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
+    checkTestlistComponentScenarioFile(testListJson),
     checkTestlistMigrationRevision(testListJson),
     checkSchemaChangeOrphan(testListJson, dbDesign),
+    // A migration-reversibility test must carry the schema_change_id it exercises, so the orphan
+    // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
+    // un-planned change slips to the semantic reflect — the F1/S2 history).
+    checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
     // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
     // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
     // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a
@@ -15506,7 +15572,7 @@ var TEST_ANALYST_CATALOGUE = {
     effort: "high",
     toolScope: ["Read"],
     inputs: ["architecture-invariants", "db-design"],
-    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the CLIENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN `down_revision`, the explicit revision id named in that migration file; for an initial create-table that is the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after the downgrade-to-`down_revision` then `upgrade head` (NOT that data survives). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` (the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
+    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the COMPONENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN `down_revision`, the explicit revision id named in that migration file; for an initial create-table that is the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after the downgrade-to-`down_revision` then `upgrade head` (NOT that data survives). TAG the reversibility item with `schema_change_id` = the EXACT db-design.json `schema_changes[]` id it exercises (e.g. `SC5-add-location-sku-index`): the DBA ledger is the authority. A migration-reversibility item with NO `schema_change_id` is flagged pre-reflect (`checkMigrationTestSchemaChangeTag`), and one naming a change the DBA did NOT plan is an orphan (`checkSchemaChangeOrphan`) \u2014 in either case DROP it rather than assert a migration the design defers (an index the architect only weighed). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` (the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
   },
   client: {
     kind: "client",
@@ -15517,7 +15583,18 @@ var TEST_ANALYST_CATALOGUE = {
     toolScope: ["Read"],
     inputs: ["story-acs", "architecture-invariants", "design-guide"],
     enabledWhen: (ctx) => ctx.uiTrack === true,
-    focusPrompt: "You are the CLIENT test analyst (this project HAS a frontend). For every UI-presentation AC the architecture routes to the SPA's own client harness, emit a `kind:\"client\"` item with `scenario_file` under `client/tests/` (e.g. `client/tests/pages/<Screen>.test.tsx`). Do NOT fold a presentation AC into the backend pytest-bdd suite \u2013 that mechanism mismatch is a defect. The INVERSE is equally a defect: emit a client item ONLY for a UI-presentation / `E2E`-layer AC. CHECK the AC's `layer` first and NEVER anchor a client item to an `API` / `service` / `Infra`-layer AC (a client harness mocks the response envelope, so it cannot verify the backend contract; the deterministic `checkClientKindLayerCoherence` gate flags it). Cover a backend AC's clause in a behavior/fitness item instead. For an AC that OWNS a page/route, at least one client item MUST exercise the page THROUGH THE REAL `<App>` at the AC's route (a Playwright e2e that navigates the route, OR a component test rendering `<App>` in `<MemoryRouter initialEntries={[\"<the path>\"]}>`) \u2013 a bare `render(<ThePage/>)` does NOT prove the page is routed; name the route in the description. Test the design-guide SEAM (assert the element carries its design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS in the source. Do NOT set `invariant_id`. MATCH THE TEST TO THE AC's `layer`: an AC whose `layer` is **`E2E`** is verified END-TO-END against the REAL paired-branch DB \u2013 it REQUIRES a real Playwright e2e whose scenario_file is `client/tests/e2e/<name>.spec.ts`: it MUST end `.spec.ts`, NEVER `.e2e.ts` (the scaffold's playwright.config default testMatch runs only `*.spec.ts`, so a `.e2e.ts` file silently never runs), that drives the DEPLOYED app in a browser against the live DB, with NO mocked/stubbed fetch and NO in-memory data. A mocked/stubbed COMPONENT test (rendering `<App>`/`<Page>` with fake data) is ONLY for a pure presentation/rendering AC, NEVER for an `E2E`-layer AC \u2013 drafting an E2E-layer AC as a mocked component test is the recurring reflect-testlist-defect (it cannot hit the DB the layer demands). One real e2e per E2E-layer AC. An e2e that CREATES a record (fills a form + submits) MUST key it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) \u2014 used in BOTH the create fill AND the assertion locator, so each run owns its own row on the SHARED feature branch (a hardcoded key collides with a prior run / sibling story and goes perma-red). ALSO cover NFR CLIENT-RENDER fitness functions: for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (e.g. rendering a row with null/optional fields and asserting a 'not tracked' indicator, or an empty/loading/error state), emit a `kind:\"client\"` item that performs that render and asserts the stated outcome. These NFR-render fitness functions are YOURS, never the fitness analyst's (it owns service/DB guards, not the SPA); a stated client-render NFR with no client item is the recurring reflect-testlist-defect. " + SLICE_CONTRACT
+    focusPrompt: "You are the CLIENT test analyst (this project HAS a frontend). For every UI-presentation AC the architecture routes to the SPA's own client harness, emit a `kind:\"client\"` item with `scenario_file` under `client/tests/` (e.g. `client/tests/pages/<Screen>.test.tsx`). Do NOT fold a presentation AC into the backend pytest-bdd suite \u2013 that mechanism mismatch is a defect. The INVERSE is equally a defect: emit a client item ONLY for a UI-presentation / `E2E`-layer AC. CHECK the AC's `layer` first and NEVER anchor a client item to an `API` / `service` / `Infra`-layer AC (a client test renders UI; a pure backend/API contract is verified at the service boundary, not through a rendered component \u2014 the deterministic `checkClientKindLayerCoherence` gate flags it). Cover a backend AC's clause in a behavior/fitness item instead. For an AC that OWNS a page/route, at least one client item MUST exercise the page THROUGH THE REAL `<App>` at the AC's route (a Playwright e2e that navigates the route, OR a component test rendering `<App>` in `<MemoryRouter initialEntries={[\"<the path>\"]}>`) \u2013 a bare `render(<ThePage/>)` does NOT prove the page is routed; name the route in the description. Test the design-guide SEAM (assert the element carries its design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS in the source. Do NOT set `invariant_id`. MATCH THE TEST TO THE AC's `layer`: an AC whose `layer` is **`E2E`** is verified END-TO-END against the REAL paired-branch DB \u2013 it REQUIRES a real Playwright e2e whose scenario_file is `client/tests/e2e/<name>.spec.ts`: it MUST end `.spec.ts`, NEVER `.e2e.ts` (the scaffold's playwright.config default testMatch runs only `*.spec.ts`, so a `.e2e.ts` file silently never runs), that drives the DEPLOYED app in a browser against the live DB, with NO mocked/stubbed fetch and NO in-memory data. **Component tests are ALSO real-DB, NEVER mocked** (kit principle: never mock when a real counterpart exists \u2014 the vitest harness boots a real backend and the fetch shim routes the component's `/api` calls to it; the deterministic `component-test-mock` gate FAILS a stubbed-fetch / MSW / `vi.mock`-of-the-api component test). The `E2E`-vs-component choice is SCOPE, not mock-vs-real: an `E2E`-layer AC is a FULL USER JOURNEY and REQUIRES a browser Playwright e2e; a component-scoped UI AC is ONE screen wired to the real backend and takes a real-DB component test (render the component, let its real `/api` calls hit the live service, assert on the real response). Drafting an `E2E`-layer (full-journey) AC as a mere component test is still the recurring reflect-testlist-defect \u2014 it is not the full browser flow the layer demands. One real e2e per E2E-layer AC. An e2e that CREATES a record (fills a form + submits) MUST key it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) \u2014 used in BOTH the create fill AND the assertion locator, so each run owns its own row on the SHARED feature branch (a hardcoded key collides with a prior run / sibling story and goes perma-red). You own the FULL browser JOURNEY only (`client/tests/e2e/*.spec.ts`). The isolated single-component render (`.test.tsx`) and the NFR CLIENT-RENDER fitness functions belong to the COMPONENT analyst, NOT you \u2014 do not emit a component-scoped or client-render item here. " + SLICE_CONTRACT
+  },
+  component: {
+    kind: "component",
+    description: "Isolated, real-DB React component tests for component-scoped UI concerns.",
+    configSummary: 'Per UI component with real render logic: a kind:"component" item under client/tests/ (only when uiTrack).',
+    model: "sonnet",
+    effort: "default",
+    toolScope: ["Read"],
+    inputs: ["story-acs", "architecture-invariants", "design-guide"],
+    enabledWhen: (ctx) => ctx.uiTrack === true,
+    focusPrompt: "You are the COMPONENT test analyst (this project HAS a frontend). You author ISOLATED, REAL-DB component tests: a SINGLE React component rendered on its own (NOT the whole `<App>`, NOT a full user journey), with its real `/api` calls hitting the REAL backend the vitest harness boots \u2014 NEVER a mock (kit principle: never mock when a real counterpart exists; the deterministic `component-test-mock` gate FAILS a stubbed-fetch / MSW / `vi.mock`-of-the-api component test). Emit a `kind:\"component\"` item with `scenario_file` under `client/tests/` ending `.test.tsx` (e.g. `client/tests/components/<Component>.test.tsx`). WHEN to emit (organically, from the design \u2014 do NOT invent one): for every UI component the architecture / design-guide defines that has NON-TRIVIAL RENDER LOGIC derived from data \u2014 a status badge whose color/label depends on a value, a table/list rendering one row per record, a field that renders differently when null/empty (a 'not tracked' indicator), an empty / loading / error state \u2014 emit a component item that renders JUST that component against the real API and asserts the rendered output: the text AND the design-guide SEAM (the element's design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS. A trivial static element with no data-driven render logic needs NO component test \u2014 do not pad. SCOPE \u2014 you are the peer of the CLIENT (e2e) analyst, split by SCOPE not mock-vs-real: the client analyst owns the FULL browser journey (`client/tests/e2e/*.spec.ts`, Playwright, deployed app); YOU own the SINGLE-component render (`*.test.tsx`, jsdom, real backend). Do NOT author a full-journey flow (that is the client analyst's) and do NOT author an API-contract test (that is behavior's \u2014 a component test renders UI, it does not verify the raw wire contract; `checkClientKindLayerCoherence` flags a component item anchored to an `API`/`service`/`Infra` AC). A component test that CREATES a record keys it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) \u2014 so each run owns its row on the SHARED feature branch. ALSO own NFR CLIENT-RENDER fitness functions (moved here from the client analyst): for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (a row with null/optional fields asserting a 'not tracked' indicator; an empty/loading/error state), emit a `kind:\"component\"` item that performs that render and asserts the stated outcome. A stated client-render NFR with no component item is a reflect-testlist-defect. Do NOT set `invariant_id`. " + SLICE_CONTRACT
   }
 };
 function enabledAnalysts(ctx) {
@@ -16079,7 +16156,7 @@ function checkE2eHelperExports(projectDir) {
           spec: specRel,
           helper: m[3],
           missing,
-          remediation: `${specRel} imports { ${missing.join(", ")} } from "${m[3]}", but that module does not export ${missing.length > 1 ? "them" : "it"} \u2014 the spec fails at load (SyntaxError) and the Playwright suite cannot run. Either import { test, expect } directly from "@playwright/test" (the scaffold convention), or make the shared helper re-export exactly what the specs import (e.g. \`export { test, expect };\`).`
+          remediation: `${specRel} imports { ${missing.join(", ")} } from "${m[3]}", but that module does not export ${missing.length > 1 ? "them" : "it"} \u2014 the spec fails at load (SyntaxError) and the Playwright suite cannot run. Either import { test, expect } from the scaffold's "./consort-fixtures" (the e2e convention \u2014 it re-exports test/expect and tags requests for the per-test capture), or make your shared helper re-export exactly what the specs import (e.g. \`export { test, expect };\`).`
         });
       }
     }

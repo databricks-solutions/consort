@@ -16,7 +16,7 @@ import {
 
 describe("TEST_ANALYST_CATALOGUE: the 3 seed kinds", () => {
   it("holds behavior, fitness, and client", () => {
-    expect(Object.keys(TEST_ANALYST_CATALOGUE).sort()).toEqual(["behavior", "client", "fitness"]);
+    expect(Object.keys(TEST_ANALYST_CATALOGUE).sort()).toEqual(["behavior", "client", "component", "fitness"]);
   });
 
   it("every entry is well-formed (kind echoes its key, non-empty description + focusPrompt, >=1 input)", () => {
@@ -121,14 +121,14 @@ describe("resolveTestAnalystKind: fail-loud", () => {
     expect(e.kind).toBe("fitness");
   });
   it("throws on an unknown kind, listing the known kinds sorted", () => {
-    expect(() => resolveTestAnalystKind("nope")).toThrowError(/unknown test-analyst kind "nope".*behavior, client, fitness/s);
+    expect(() => resolveTestAnalystKind("nope")).toThrowError(/unknown test-analyst kind "nope".*behavior, client, component, fitness/s);
   });
 });
 
 describe("enabledAnalysts: client is gated on uiTrack; behavior + fitness are unconditional", () => {
-  it("uiTrack:true enables all three", () => {
+  it("uiTrack:true enables all four", () => {
     const kinds = enabledAnalysts({ projectDir: "/tmp/p", uiTrack: true }).map((e) => e.kind).sort();
-    expect(kinds).toEqual(["behavior", "client", "fitness"]);
+    expect(kinds).toEqual(["behavior", "client", "component", "fitness"]);
   });
   it("uiTrack:false drops client (a no-frontend project gets behavior + fitness only)", () => {
     const kinds = enabledAnalysts({ projectDir: "/tmp/p", uiTrack: false }).map((e) => e.kind).sort();

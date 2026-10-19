@@ -303,6 +303,31 @@ describe("fold — scrubbed-back state is reconstructed from the log, not the sn
     expect(s.gates).toEqual([{ name: "spec", status: "open" }]);
   });
 
+  it("folds the test.result trail into per-story testItems, as-of the playhead (scrubber-faithful)", () => {
+    const run: AgentLogEvent[] = [
+      ev("phase.start", { phase: "design", story: "S1" }, { role: "spec-author" }),
+      ev("test.result", { story_id: "S1", test_id: "T1", status: "red" }, { role: "navigator", message: "TEST T1 red" }),
+      ev("test.result", { story_id: "S1", test_id: "T2", status: "red" }, { role: "navigator", message: "TEST T2 red" }),
+      ev("test.result", { story_id: "S1", test_id: "T1", status: "green" }, { role: "driver", message: "TEST T1 green" }),
+    ];
+    const items = (s: ReturnType<typeof fold>) => s.stories.find((x) => x.id === "S1")?.testItems;
+
+    // Live edge: latest status per test wins — T1 greened, T2 still red.
+    expect(items(fold(run, snap()))).toEqual([
+      { id: "T1", status: "green" },
+      { id: "T2", status: "red" },
+    ]);
+
+    // Scrubbed BEFORE the green (upTo=3 folds phase.start + the two reds): T1 is red AS-OF that point.
+    expect(items(fold(run, snap(), 3))).toEqual([
+      { id: "T1", status: "red" },
+      { id: "T2", status: "red" },
+    ]);
+
+    // Scrubbed before any test.result: no trail yet (the lightbox defaults these to pending).
+    expect(items(fold(run, snap(), 1))).toBeUndefined();
+  });
+
   it("exposes snapshotAsOf + atLive so the UI can label stale panels", () => {
     const back = fold(RUN, withStatus, 1);
     expect(back.atLive).toBe(false);

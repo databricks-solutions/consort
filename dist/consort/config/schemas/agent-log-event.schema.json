@@ -62,6 +62,7 @@
         "cycle.verified",
         "cycle.review",
         "cycle.refactored",
+        "test.result",
         "smell.flagged",
         "runner.missing",
         "experiment.cut",

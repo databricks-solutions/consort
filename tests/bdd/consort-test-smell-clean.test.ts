@@ -51,6 +51,47 @@ describe("checkTestSmells", () => {
     expect(checkTestSmells({ projectDir: dir }).clean).toBe(true);
   });
 
+  it("flags a client component test that stubs the global fetch (component-test-mock)", () => {
+    const dir = mkProject();
+    write(dir, "client/tests/pages/StockTable.test.tsx", `vi.stubGlobal("fetch", vi.fn());\nrender(<StockTable />);\n`);
+    const r = checkTestSmells({ projectDir: dir });
+    expect(r.violations.some((v) => v.smell === "component-test-mock")).toBe(true);
+  });
+
+  it("flags a client component test that vi.mocks the app's api module (component-test-mock)", () => {
+    const dir = mkProject();
+    write(dir, "client/tests/pages/Detail.test.tsx", `vi.mock("../../src/api/stock");\nrender(<Detail />);\n`);
+    const r = checkTestSmells({ projectDir: dir });
+    expect(r.violations.some((v) => v.smell === "component-test-mock")).toBe(true);
+  });
+
+  it("does NOT flag a client component test that hits the real backend (no data-path mock)", () => {
+    const dir = mkProject();
+    write(dir, "client/tests/pages/StockTable.test.tsx", `render(<StockTable />);\nawait screen.findByText(sku);\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "component-test-mock")).toBe(false);
+  });
+
+  it("does NOT flag an e2e spec for component-test-mock (that gate is for .test.tsx only)", () => {
+    const dir = mkProject();
+    write(dir, "client/tests/e2e/flow.spec.ts", `await page.route("**/x", (r) => r.fulfill({ body: "{}" }));\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "component-test-mock")).toBe(false);
+  });
+
+  it("flags an example DSN literal carrying inline credentials (dsn-inline-credentials)", () => {
+    const dir = mkProject();
+    write(dir, "tests/test_stock_fitness.py",
+      `monkeypatch.setenv("DATABASE_URL", "postgresql://someuser:pw@dbhost.invalid:5432/somedb")\n`);
+    const r = checkTestSmells({ projectDir: dir });
+    expect(r.violations.some((v) => v.smell === "dsn-inline-credentials")).toBe(true);
+  });
+
+  it("does NOT flag a credential-less example DSN (host/port/db only) for dsn-inline-credentials", () => {
+    const dir = mkProject();
+    write(dir, "tests/test_stock_config.py",
+      `monkeypatch.setenv("DATABASE_URL", "postgresql://dbhost.invalid:5432/somedb")\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "dsn-inline-credentials")).toBe(false);
+  });
+
   it("flags an unanchored broad alternation (/404|not found/i matches UUID digits)", () => {
     const dir = mkProject();
     write(dir, "client/tests/e2e/detail.spec.ts", `await expect(page.getByText(/404|not found/i)).toBeVisible();\n`);
@@ -100,15 +141,17 @@ describe("checkTestSmells", () => {
 
   it("flags a vi.mock factory closing over a top-level const (TDZ) but not a vi.hoisted one", () => {
     const dir = mkProject();
+    // Mock a genuine third-party (a chart lib with no real counterpart — allowed by the no-mock
+    // gate), so this isolates the TDZ check without also tripping component-test-mock.
     write(dir, "client/tests/pages/list.test.tsx",
-      `const ROWS = [{ sku: "A" }];\nvi.mock("../api", () => ({ list: () => ROWS }));\n`);
+      `const ROWS = [{ sku: "A" }];\nvi.mock("recharts", () => ({ Chart: () => ROWS }));\n`);
     const bad = checkTestSmells({ projectDir: dir });
     expect(bad.clean).toBe(false);
     expect(bad.violations[0].smell).toBe("vi-mock-tdz");
 
     const dir2 = mkProject();
     write(dir2, "client/tests/pages/list.test.tsx",
-      `const ROWS = vi.hoisted(() => [{ sku: "A" }]);\nvi.mock("../api", () => ({ list: () => ROWS }));\n`);
+      `const ROWS = vi.hoisted(() => [{ sku: "A" }]);\nvi.mock("recharts", () => ({ Chart: () => ROWS }));\n`);
     expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(true);
   });
 
@@ -173,6 +216,32 @@ describe("checkTestSmells", () => {
     write(dir2, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
     write(dir2, "tests/test_stock.py", `rows = cur.execute("SELECT * FROM stock_records").fetchall()\n`);
     expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(true);
+  });
+
+  it("does NOT flag the word TABLE inside a docstring/comment (the per-test-capture conftest false positive)", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
+    write(
+      dir,
+      "tests/conftest.py",
+      `def _emit():\n    """Append a per-test TABLE snapshot to .consort/table-snapshots.jsonl, keyed by test id."""\n    pass\n# writes one TABLE snapshot per test\n`,
+    );
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "schema-unsatisfiable-ref")).toBe(false);
+  });
+
+  it("reversible-invariant-round-trip: flags a COVERED forward-only invariant but NOT an uncovered one", () => {
+    // Uncovered reversible invariant → a coverage concern (checkPersistenceCoverage, story-anchored),
+    // NOT this round-trip-quality smell (the PI6-flagged-during-S1 false positive).
+    const d1 = mkProject();
+    write(d1, ".consort/features/F1/architecture.json", JSON.stringify({ persistence_invariants: [{ id: "PI6-x", type: "migration_reversible" }] }));
+    write(d1, ".consort/features/F1/test-list.json", JSON.stringify({ items: [] }));
+    expect(checkTestSmells({ projectDir: d1 }).violations.some((v) => v.smell === "reversible-invariant-round-trip")).toBe(false);
+
+    // Covered by a FORWARD-ONLY test (no downgrade in the description) → correctly flagged.
+    const d2 = mkProject();
+    write(d2, ".consort/features/F1/architecture.json", JSON.stringify({ persistence_invariants: [{ id: "PI6-x", type: "migration_reversible" }] }));
+    write(d2, ".consort/features/F1/test-list.json", JSON.stringify({ items: [{ id: "T1", invariant_id: "PI6-x", description: "apply the migration and assert the index exists" }] }));
+    expect(checkTestSmells({ projectDir: d2 }).violations.some((v) => v.smell === "reversible-invariant-round-trip")).toBe(true);
   });
 
   it("the remediation routes fixes to the test's AUTHOR, never a Driver code repair", () => {

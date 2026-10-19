@@ -7066,7 +7066,7 @@ function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
   const acIds = /* @__PURE__ */ new Set();
   const declaredList = [...declaredPaths].sort().join(", ");
   for (const it of tl.items ?? []) {
-    if (it.kind !== "behavior" && it.kind !== "client") continue;
+    if (it.kind !== "behavior" && it.kind !== "client" && it.kind !== "component") continue;
     const desc = it.description ?? "";
     for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
       const { path, keys } = normalizeEndpoint(tok);
@@ -7340,6 +7340,32 @@ function checkTestlistE2eSpecSuffix(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkTestlistComponentScenarioFile(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "component") continue;
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    if (!/\.test\.tsx?$/.test(sf) || /\/tests\/e2e\//.test(sf)) {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"component" but its scenario_file is ${sf ? `"${sf}"` : "missing"} \u2014 an isolated component test must name a Vitest file at client/tests/<...>.test.tsx (never an e2e .spec.ts). Name the file so the build knows where to author it.`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function isMigrationReversibilityDescription(desc) {
+  const mentionsDowngrade = /\bdowngrad\w*/i;
+  const reversibilityContext = /\bdowngrad\w*[\s\S]*?\bupgrad\w*|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
+  return mentionsDowngrade.test(desc) && reversibilityContext.test(desc);
+}
 function checkTestlistMigrationRevision(testListJson) {
   let tl;
   try {
@@ -7347,15 +7373,13 @@ function checkTestlistMigrationRevision(testListJson) {
   } catch (err) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
-  const mentionsDowngrade = /\bdowngrade\b/i;
-  const reversibilityContext = /\bdowngrade\b[\s\S]*?\bupgrade\b|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
   const relativeStep = /\bdowngrade\s+-\s*\d+\b|\bsingle-step\s+(?:alembic\s+)?downgrade\b|\bdowngrade\s+(?:by\s+)?one\s+step\b/i;
   const pinned = /\bdown_revision\b|\bits own revision\b|\bexplicit(?:ly)?\b[\s\S]{0,30}\brevision\b|\bdowngrade\s+(?:to\s+)?(?:revision\s+)?["'`]?[0-9a-f]{6,}/i;
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     const desc = it.description ?? "";
-    if (!mentionsDowngrade.test(desc) || !reversibilityContext.test(desc)) continue;
+    if (!isMigrationReversibilityDescription(desc)) continue;
     if (relativeStep.test(desc) && !pinned.test(desc)) {
       violations.push(
         `test item ${it.id ?? "?"} is a migration-reversibility/data-preservation test that downgrades by a RELATIVE step ("${desc.slice(0, 90)}\u2026"). \`downgrade -1\` reverts whatever is HEAD, so it passes on the isolated experiment branch but silently targets the WRONG migration once a later story adds one (head moved). Pin it to the migration-under-test's OWN revision: downgrade to that revision's parent/down_revision (an explicit revision id), assert the schema change reverted, then upgrade head \u2014 never a relative \`downgrade -1\`.`
@@ -7400,6 +7424,27 @@ function checkSchemaChangeOrphan(testListJson, dbDesignJson2) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkMigrationTestSchemaChangeTag(testListJson, dbDesignJson2) {
+  const planned = idedSchemaChanges(dbDesignJson2);
+  if (planned.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    if (!isMigrationReversibilityDescription(it.description ?? "")) continue;
+    if (typeof it.schema_change_id === "string" && it.schema_change_id.length > 0) continue;
+    violations.push(
+      `test item ${it.id ?? "?"} asserts a migration-reversibility round-trip but names no schema_change_id. A migration test must exercise a schema_change the DBA planned in db-design.json \u2014 tag it with that entry's id (e.g. "schema_change_id": "SC5-..."). If NO planned schema_changes[] entry covers it, the DBA did not commit that migration (an index/change the design defers): DROP the test rather than assert a migration the design never ships. Known schema_changes ids: ${[...planned.keys()].join(", ") || "(none)"}.`
+    );
+    if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
   try {
@@ -7410,11 +7455,11 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
-    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    if (it.kind !== "client" && it.kind !== "component" || typeof it.ac_id !== "string") continue;
     const layer = acLayerById[it.ac_id];
     if (layer !== void 0 && layer !== "E2E") {
       violations.push(
-        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+        `test ${it.id ?? "?"} is kind:"${it.kind}" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-side UI test (it renders a component) cannot verify a backend ${layer} AC's contract. Cover the clause in a behavior/fitness test at the ${layer} boundary (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client/component test to a backend-layer AC.`
       );
       acIds.add(it.ac_id);
     }
@@ -7569,7 +7614,7 @@ function checkE2eHelperExports(projectDir) {
           spec: specRel,
           helper: m[3],
           missing,
-          remediation: `${specRel} imports { ${missing.join(", ")} } from "${m[3]}", but that module does not export ${missing.length > 1 ? "them" : "it"} \u2014 the spec fails at load (SyntaxError) and the Playwright suite cannot run. Either import { test, expect } directly from "@playwright/test" (the scaffold convention), or make the shared helper re-export exactly what the specs import (e.g. \`export { test, expect };\`).`
+          remediation: `${specRel} imports { ${missing.join(", ")} } from "${m[3]}", but that module does not export ${missing.length > 1 ? "them" : "it"} \u2014 the spec fails at load (SyntaxError) and the Playwright suite cannot run. Either import { test, expect } from the scaffold's "./consort-fixtures" (the e2e convention \u2014 it re-exports test/expect and tags requests for the per-test capture), or make your shared helper re-export exactly what the specs import (e.g. \`export { test, expect };\`).`
         });
       }
     }
@@ -8038,6 +8083,12 @@ var EVENT_TEMPLATES = {
   "cycle.verified": { template: "VERIFY [{{ac}}] on {{branch}} {{outcome}}: {{summary}}" },
   "cycle.review": { template: "REVIEW [{{ac}}] refactor={{refactor}}: {{rationale}}" },
   "cycle.refactored": { template: "REFACTOR [{{ac}}]: {{change}}" },
+  // Per-TEST status transition within a cycle (code-emitted by the runner as it parses the test
+  // runner's machine-readable output). Unlike cycle.green (one event per cycle, lead test only),
+  // this fires once per test id so the dashboard can reconstruct each test's status as-of any
+  // event index — the historical per-test trail the cycle.* family does not carry. story_id /
+  // ac_id / cycle_id ride in metadata (not template slots), like the other cycle.* events.
+  "test.result": { template: "TEST {{test_id}} {{status}}" },
   "smell.flagged": { template: "SMELL {{smell}} ({{severity}}): {{detail}}" },
   "runner.missing": { template: "NO RUNNER for layer {{layer}} (test {{test_id}})" },
   // Experiment lifecycle (code-emitted)
@@ -8125,8 +8176,13 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
+    checkTestlistComponentScenarioFile(testListJson),
     checkTestlistMigrationRevision(testListJson),
     checkSchemaChangeOrphan(testListJson, dbDesign),
+    // A migration-reversibility test must carry the schema_change_id it exercises, so the orphan
+    // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
+    // un-planned change slips to the semantic reflect — the F1/S2 history).
+    checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
     // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
     // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
     // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a

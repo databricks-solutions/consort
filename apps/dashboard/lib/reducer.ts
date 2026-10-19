@@ -508,6 +508,35 @@ export function fold(
   // at all (a log that never stamps one), everything shows, unchanged.
   const stories = feature ? allStories.filter((s) => s.feature === feature) : allStories;
 
+  // --- per-test status trail (P1) ---
+  // Fold `test.result` events into each story's per-test status AS-OF the playhead, so the test
+  // lightbox can light each bubble by scrubber position from recorded history (not a HEAD
+  // snapshot). Keyed by feature|story so two sprints' S1s never merge; latest event per test id
+  // wins (slice is in order). test_id/status/story_id ride in each event's metadata (folded from
+  // the emit slots).
+  const testStatusByStory = new Map<string, Map<string, string>>();
+  for (const e of slice) {
+    if (e.event !== "test.result") continue;
+    const md = e.metadata ?? {};
+    const story = typeof md.story_id === "string" ? md.story_id : null;
+    const testId = typeof md.test_id === "string" ? md.test_id : null;
+    const stat = typeof md.status === "string" ? md.status : null;
+    if (!story || !testId || !stat) continue;
+    const key = `${featureIdOf(e) ?? ""}|${story}`;
+    let m = testStatusByStory.get(key);
+    if (!m) {
+      m = new Map();
+      testStatusByStory.set(key, m);
+    }
+    m.set(testId, stat);
+  }
+  const storiesWithTestItems = stories.map((s) => {
+    const m = testStatusByStory.get(`${s.feature ?? ""}|${s.id}`);
+    return m && m.size > 0
+      ? { ...s, testItems: [...m.entries()].map(([id, status]) => ({ id, status })) }
+      : s;
+  });
+
   // --- test counts ---
   // In LIVE mode this is the one genuinely unrewindable panel: the log carries only the
   // test_ids that had a cycle.* event (4 in the stockflow run) while the list totals 29, so
@@ -634,7 +663,7 @@ export function fold(
     // edge that comes from the snapshot; scrubbed back it now comes from the playhead, so
     // the design lane stops claiming "all complete" while the run is still designing.
     designPhases: computeDesignPhases(slice, lane),
-    stories,
+    stories: storiesWithTestItems,
     // Derived over the FULL slice, never the recentEvents tail: the orchestrator's latest
     // narration (a gate, a dispatch, a build START) for the story in flight can sit many turns
     // behind the gate you're waiting at, so a tail lookup would go stale.

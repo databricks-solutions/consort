@@ -110,6 +110,18 @@ export interface StoryProgress {
   designPhase: DesignPhaseName | null; // the design phase this story is in (while designing)
   gateApproved: boolean;
   active: boolean; // the story currently being worked (design or build)
+  // Per-test status AS-OF the playhead, folded from the `test.result` trail (reducer.ts). This is
+  // the historical per-test state the test lightbox colours bubbles by — reconstructable at any
+  // event index, unlike the HEAD-only `test-list-per-story.json` file. Only tests whose trail has
+  // been reached by the playhead appear; the lightbox defaults the rest to "pending". Absent when
+  // the story has emitted no `test.result` yet (e.g. design-only, pre-build).
+  testItems?: TestItemProgress[];
+}
+
+// One test's status as reconstructed from the recorded trail, keyed by its test-list id.
+export interface TestItemProgress {
+  id: string;
+  status: string; // raw status from the trail: pending | red | green | refactored | skipped
 }
 
 // One entry per feature a run has touched, in first-seen (log) order. Powers the header's

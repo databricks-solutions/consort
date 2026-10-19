@@ -31,6 +31,16 @@ export interface TransportProps {
   // A recorded run is always being REVIEWED (never live/running/waiting on you), so the state
   // readout stays "REVIEWING" at every playhead — the RUNNING/RAISED/WAITING states are live-run only.
   replay?: boolean;
+  // Replay GRANULARITY. "events" (default) scrubs the event log (`at`, null = follow live). "lines"
+  // scrubs the flattened agent-log timeline — each tool action / reasoning line a step, turns the
+  // checkpoints (`checkpoints`). The same controls drive whichever mode is active.
+  granularity?: "events" | "lines";
+  onGranularityChange?: (g: "events" | "lines") => void;
+  lineTotal?: number;
+  lineAt?: number;
+  onLineChange?: (n: number) => void;
+  /** Turn start positions (line indices) rendered as checkpoint ticks on the track in lines mode. */
+  checkpoints?: number[];
 }
 
 const SPEEDS = [0.25, 0.5, 1, 2, 5, 20] as const;
@@ -50,37 +60,77 @@ export function Transport({
   awaitingGate = false,
   escalated = false,
   replay = false,
+  granularity = "events",
+  onGranularityChange,
+  lineTotal = 0,
+  lineAt = 0,
+  onLineChange,
+  checkpoints,
 }: TransportProps) {
-  const live = at === null;
-  const pos = live ? total : Math.max(0, Math.min(at, total));
-  const atEnd = pos >= total;
+  // Two scrub modes share ONE set of controls. "events": the event log (`at` null = follow live).
+  // "lines": the flattened agent-log timeline (a plain index, no live edge to follow).
+  const isLines = granularity === "lines";
+  const live = !isLines && at === null;
+  const activeTotal = isLines ? lineTotal : total;
+  const activePos = isLines
+    ? Math.max(0, Math.min(lineAt, activeTotal))
+    : live
+      ? total
+      : Math.max(0, Math.min(at as number, total));
+  const atEnd = activePos >= activeTotal;
 
-  // Playback advances the playhead on a timer. Reaching the end returns to following live,
-  // so pressing play on a live run leaves you watching it rather than pinned one event back.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onLineChangeRef = useRef(onLineChange);
+  onLineChangeRef.current = onLineChange;
   const onPlayingChangeRef = useRef(onPlayingChange);
   onPlayingChangeRef.current = onPlayingChange;
 
   useEffect(() => {
     if (!playing) return;
     const id = setInterval(() => {
-      const next = pos + 1;
-      if (next >= total) {
-        onChangeRef.current(null); // caught up — resume following
+      const next = activePos + 1;
+      if (next >= activeTotal) {
+        if (isLines) onLineChangeRef.current?.(activeTotal);
+        else onChangeRef.current(null); // caught up — resume following live
         onPlayingChangeRef.current(false);
+      } else if (isLines) {
+        onLineChangeRef.current?.(next);
       } else {
         onChangeRef.current(next);
       }
     }, 1000 / speed);
     return () => clearInterval(id);
-  }, [playing, pos, total, speed]);
+  }, [playing, activePos, activeTotal, speed, isLines]);
 
   const step = (delta: number) => {
     onPlayingChange(false);
-    const next = pos + delta;
-    if (next >= total) onChange(null);
+    const next = activePos + delta;
+    if (isLines) onLineChange?.(Math.max(0, Math.min(next, activeTotal)));
+    else if (next >= total) onChange(null);
     else onChange(Math.max(0, next));
+  };
+  const toStart = () => {
+    onPlayingChange(false);
+    if (isLines) onLineChange?.(0);
+    else onChange(0);
+  };
+  const toEnd = () => {
+    onPlayingChange(false);
+    if (isLines) onLineChange?.(activeTotal);
+    else onChange(null);
+  };
+  const scrubTo = (v: number) => {
+    onPlayingChange(false);
+    if (isLines) onLineChange?.(Math.max(0, Math.min(v, activeTotal)));
+    else onChange(v >= total ? null : v);
+  };
+  const playPause = () => {
+    if (!playing && atEnd) {
+      if (isLines) onLineChange?.(0);
+      else onChange(0);
+    }
+    onPlayingChange(!playing);
   };
 
   return (
@@ -100,48 +150,41 @@ export function Transport({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <TransportButton label="⏮" title="jump to start" onClick={() => { onPlayingChange(false); onChange(0); }} />
-        {/* The two STEP buttons are a mirrored pair — bar-then-triangle |◀ and triangle-then-bar ▶| —
-            the frame-step convention (step to the previous / next boundary), distinct from the bare
-            play triangle ▶. Before, step-back was a bare ◀ and step-forward a barred ▶|, so they read
-            as unrelated controls. */}
-        <TransportButton label="|◀" title="step back one event" onClick={() => step(-1)} disabled={pos <= 0} />
-        <TransportButton
-          label={playing ? "❚❚" : "▶"}
-          title={playing ? "pause" : "play"}
-          primary
-          onClick={() => {
-            // Playing from the live edge would have nowhere to go; restart from the top.
-            if (!playing && atEnd) onChange(0);
-            onPlayingChange(!playing);
-          }}
-        />
-        <TransportButton label="▶|" title="step forward one event" onClick={() => step(1)} disabled={atEnd} />
-        {/* Jump to end == GO LIVE: `at=null` snaps to the newest event AND, on an active run, keeps
-            following the live edge as new events arrive (the natural "watch it happen now" state); on
-            a finished run it simply pins at the last event. Stops playback so you're following, not
-            replaying. Disabled when already following live (nothing to jump to). Mirror of ⏮. */}
-        <TransportButton label="⏭" title="jump to end (follow live)" onClick={() => { onPlayingChange(false); onChange(null); }} disabled={live} />
+        <TransportButton label="⏮" title="jump to start" onClick={toStart} />
+        {/* Mirrored frame-step pair |◀ / ▶| — step to the previous / next boundary (event or line). */}
+        <TransportButton label="|◀" title={isLines ? "step back one line" : "step back one event"} onClick={() => step(-1)} disabled={activePos <= 0} />
+        <TransportButton label={playing ? "❚❚" : "▶"} title={playing ? "pause" : "play"} primary onClick={playPause} />
+        <TransportButton label="▶|" title={isLines ? "step forward one line" : "step forward one event"} onClick={() => step(1)} disabled={atEnd} />
+        {/* Jump to end: events → follow the live edge; lines → the last line. Disabled when already there. */}
+        <TransportButton label="⏭" title={isLines ? "jump to last line" : "jump to end (follow live)"} onClick={toEnd} disabled={isLines ? atEnd : live} />
       </div>
 
-      <input
-        type="range"
-        min={0}
-        max={total}
-        value={pos}
-        onChange={(e) => {
-          onPlayingChange(false);
-          const v = Number(e.target.value);
-          // Dragging to the far right means "follow live" rather than "pin at the end".
-          onChange(v >= total ? null : v);
-        }}
-        aria-label="scrub through the event log"
-        style={{ flex: 1, minWidth: 160, accentColor: "var(--status-play)", cursor: "pointer" }}
-      />
+      <div style={{ flex: 1, minWidth: 160, position: "relative", display: "flex", alignItems: "center" }}>
+        <input
+          type="range"
+          min={0}
+          max={activeTotal}
+          value={activePos}
+          onChange={(e) => scrubTo(Number(e.target.value))}
+          aria-label={isLines ? "scrub through the agent log" : "scrub through the event log"}
+          style={{ flex: 1, accentColor: "var(--status-play)", cursor: "pointer" }}
+        />
+        {/* Turn checkpoints as ticks on the track (lines mode only). */}
+        {isLines && checkpoints && activeTotal > 0
+          ? checkpoints.map((c, i) => (
+              <span
+                key={i}
+                aria-hidden
+                title="turn checkpoint"
+                style={{ position: "absolute", top: "50%", transform: "translate(-50%, -50%)", left: `${(c / activeTotal) * 100}%`, width: 2, height: 11, background: "var(--status-gate)", opacity: 0.55, pointerEvents: "none", borderRadius: 1 }}
+              />
+            ))
+          : null}
+      </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: "0.7rem", color: "var(--text-muted)" }}>
         <span style={{ fontVariantNumeric: "tabular-nums", fontFamily: font.mono }}>
-          {pos} / {total}
+          {activePos} / {activeTotal}
         </span>
         <span style={{ fontVariantNumeric: "tabular-nums", fontFamily: font.mono, color: "var(--text-faint)" }}>
           {atTimestamp ? atTimestamp.slice(11, 19) : "--:--:--"}
@@ -170,6 +213,35 @@ export function Transport({
           <span style={{ color: "var(--status-good)", fontWeight: 700 }}>RUNNING</span>
         )}
       </div>
+
+      {onGranularityChange ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.66rem" }}>
+          <span style={{ color: "var(--text-faint)" }}>scrub:</span>
+          {(["events", "lines"] as const).map((g) => {
+            const disabled = g === "lines" && lineTotal === 0;
+            return (
+              <button
+                key={g}
+                onClick={() => onGranularityChange(g)}
+                disabled={disabled}
+                title={g === "lines" ? "step the agent log line by line (turns are the checkpoints)" : "step the event log"}
+                style={{
+                  border: `1px solid ${granularity === g ? "var(--status-play-border)" : "var(--border-default)"}`,
+                  background: granularity === g ? "var(--status-play)" : "var(--surface-card)",
+                  color: granularity === g ? "#ffffff" : "var(--text-muted)",
+                  borderRadius: radius.chip,
+                  padding: "2px 7px",
+                  fontSize: "0.64rem",
+                  cursor: disabled ? "not-allowed" : "pointer",
+                  opacity: disabled ? 0.4 : 1,
+                }}
+              >
+                {g}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.68rem" }}>
         <span style={{ color: "var(--text-faint)" }}>speed:</span>

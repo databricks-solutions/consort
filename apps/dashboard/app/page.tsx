@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePolledState } from "./usePolledState";
 import { Transport } from "./Transport";
+import type { ActivityTimeline } from "./AgentLogReplay";
 import { WorkflowGraph } from "./WorkflowGraph";
 import { LaneGraph } from "./LaneGraph";
 import { DrilldownPanel, type DrilldownTarget, type DrilldownReveal } from "./DrilldownPanel";
@@ -24,6 +25,18 @@ export default function Home() {
   const [at, setAt] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(5);
+  // The flattened agent-log timeline (per-turn tool actions + reasoning). The ONE event scrubber picks
+  // the active turn; the event-log pane shows THAT turn's lines (see activeTurn below). No separate
+  // line scrubber — the event playhead is the single control.
+  const [timeline, setTimeline] = useState<ActivityTimeline | null>(null);
+  // The ONE playhead the transport scrubs: a position in the flattened agent-step timeline. The
+  // board's event playhead (`at`) follows — it's set to the active turn's eventIndex as the line
+  // playhead crosses turns — so the single scrubber moves both the step panel and the board.
+  const [lineAt, setLineAt] = useState(0);
+  // True while the line playhead is pinned to the newest step (the live edge). A manual scrub BACK
+  // drops it; scrubbing to the end restores it. Lets the timeline poll auto-advance only when the
+  // user is following live, not when they've scrubbed back to review.
+  const followLineEdge = useRef(true);
   // null = let the server pick. Otherwise an explicit choice, from the mode switch or from
   // `?mode=` on the page URL — the latter so a replay board is linkable and screenshottable,
   // which is how this gap was noticed: driving the page with ?mode=replay silently showed live.
@@ -39,6 +52,37 @@ export default function Home() {
   const [pinned, setPinned] = useState<string | null>(null);
 
   const { state, connected, lastUpdatedAt } = usePolledState(1000, at, mode, pinned);
+
+  // POLL the flattened agent-step timeline (not a one-shot) so a LIVE run's new turns/steps keep
+  // appearing and the scrubber's total grows — otherwise the line scrubber freezes at the empty/stale
+  // total it had at load. While following the live edge, the playhead tracks the newest step; once the
+  // user scrubs back, `followLineEdge` is false and the playhead holds where they left it.
+  useEffect(() => {
+    let alive = true;
+    const pull = () => {
+      const q = mode ? `?mode=${mode}` : "";
+      fetch(`/api/activity-timeline${q}`)
+        .then((r) => r.json())
+        .then((d: { available?: boolean } & ActivityTimeline) => {
+          if (!alive) return;
+          if (d.available) {
+            setTimeline(d);
+            if (followLineEdge.current) setLineAt(d.total); // pinned to the newest step
+          } else {
+            setTimeline(null);
+          }
+        })
+        .catch(() => {
+          /* best-effort */
+        });
+    };
+    pull();
+    const h = setInterval(pull, 2000);
+    return () => {
+      alive = false;
+      clearInterval(h);
+    };
+  }, [mode]);
   const [costMode, setCostMode] = useState<CostMode>("tokens");
   // The ONE open drill-down, if any. Null = closed. A tagged union over the three things a click
   // can open — a recorded turn (transcript + files), a live artifact (one file at HEAD), or a
@@ -92,6 +136,30 @@ export default function Home() {
   // Live's shallower drill-down: HEAD content for an artifact.written path. Only offered when the
   // source can't do the richer turn panel — otherwise a replay board would show both affordances.
   const canOpenArtifact = !canDrillDown && (state?.source?.capabilities.includes("artifactContent") ?? false);
+  // The single scrubber scrubs agent-STEP lines; the board's event playhead `at` follows the turn the
+  // current line is in (its recorded eventIndex) so the board reflects the active turn. At the end,
+  // `at` = null (follow live). Within one turn the eventIndex is constant, so the board only re-folds
+  // when the line playhead crosses into the next turn — the steps in between just reveal.
+  const lineToEventAt = (n: number): number | null => {
+    if (!timeline || n >= timeline.total) return null;
+    const idx = n - 1;
+    // Each line carries the event-log index it maps to (an event line → that event; a tool-step → its
+    // turn's event). Fold EXACTLY there so scrubbing onto a stage line (Verify, Green, a gate, a
+    // deploy) moves the board precisely onto that event and lights it. Carry back over any line
+    // without an index so a gap holds the board rather than snapping it to the live edge. +1 because
+    // fold's `upTo` is EXCLUSIVE — the slice must INCLUDE the mapped event.
+    for (let i = Math.min(idx, timeline.lines.length - 1); i >= 0; i--) {
+      const ev = timeline.lines[i]?.eventIndex;
+      if (ev != null) return ev + 1;
+    }
+    return null;
+  };
+  const onLineChange = (n: number) => {
+    setLineAt(n);
+    // At/after the end → follow the live edge (poll auto-advances); scrubbed back → hold here.
+    followLineEdge.current = timeline ? n >= timeline.total : true;
+    setAt(lineToEventAt(n));
+  };
   // Step-output drill-down on the WorkflowGraph. Capability-gated like the others, so a source
   // without recorded deliverables simply renders non-clickable nodes.
   const canShowStepOutputs = state?.source?.capabilities.includes("stepOutputs") ?? false;
@@ -222,7 +290,7 @@ export default function Home() {
                       static planning sections above by a divider. Also the feature SELECTOR: pin the
                       board to a feature (or follow the run) from here — moved off the header. */}
                   <div style={{ borderTop: `1px solid var(--border-default)`, paddingTop: 16 }}>
-                    <FeatureStatusSection state={state} pinned={pinned} onPin={setPinned} />
+                    <FeatureStatusSection state={state} pinned={pinned} onPin={setPinned} timeline={timeline} lineAt={lineAt} />
                   </div>
                 </div>
               </SidePane>
@@ -250,6 +318,10 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {/* Agent steps is a first-class section at the top of the event-log pane (AgentLogReplay in
+              LogPane): the ONE active turn's steps, revealed line-by-line with the scrubber. The
+              driver-only ticker was removed. */}
 
           {/* Per-agent contribution bar — tokens (default) or $ cost, matching the usage toggle. */}
           <div style={{ background: "var(--surface-card)", border: `1px solid var(--border-default)`, borderRadius: radius.card, padding: "12px 16px", marginBottom: 12 }}>
@@ -295,6 +367,8 @@ export default function Home() {
               onToggle={() => setLogOpen((o) => !o)}
               onOpenTurn={canDrillDown ? (ord) => setDrilldown({ kind: "turn", ord }) : undefined}
               onOpenArtifact={canOpenArtifact ? (path) => setDrilldown({ kind: "artifact", path }) : undefined}
+              timeline={timeline}
+              lineAt={lineAt}
             />
           </div>
           {/* The ONE drill-down surface: whatever you clicked — a ticker row (turn or artifact) or
@@ -373,6 +447,11 @@ export default function Home() {
               awaitingGate={state.focus.kind === "gate"}
               escalated={state.focus.kind === "escalation"}
               replay={state.source?.mode === "replay"}
+              granularity="lines"
+              lineTotal={timeline?.total ?? 0}
+              lineAt={lineAt}
+              onLineChange={onLineChange}
+              checkpoints={timeline?.turns.map((t) => t.startLine) ?? []}
             />
           </div>
         </>

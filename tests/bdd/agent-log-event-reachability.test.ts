@@ -78,6 +78,9 @@ function hasAgentInstruction(name: string): boolean {
 const CODE_EMITTED = new Set<string>([
   "artifact.written",
   "cycle.red", "cycle.green", "cycle.verified", "cycle.review", "cycle.refactored",
+  // Per-test status trail emitted by run-cycle (beginCycle/markGreen/markRefactored)
+  // for every covered test id, so each test's status is reconstructable as-of any event.
+  "test.result",
   "deploy.start", "deploy.verified", "deploy.failed",
   // Deterministic deploy-step events emitted by deployToTarget (it computes
   // reachability + the verify outcome). Promoted from agent-only.

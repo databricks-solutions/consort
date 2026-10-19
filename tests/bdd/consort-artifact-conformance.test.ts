@@ -24,6 +24,7 @@ import {
   checkJsdomBrowserAssertion,
   checkPersistenceCoverage,
   checkSchemaChangeOrphan,
+  checkMigrationTestSchemaChangeTag,
   checkSchemaChangeCoverage,
   checkApiContractConsistency,
   checkInvariantCoverageDistinct,
@@ -913,6 +914,59 @@ describe("checkSchemaChangeOrphan (F1 pre-reflect: a test may only assert a sche
   it("ignores tests with no schema_change_id, and is vacuous when db-design is absent", () => {
     expect(checkSchemaChangeOrphan(tl([{ id: "T1", description: "x", ac_id: "AC1", status: "pending", kind: "behavior" }]), db(ledger))).toEqual({ ok: true });
     expect(checkSchemaChangeOrphan(tl([{ id: "T1", description: "x", ac_id: "AC1", status: "pending", kind: "fitness", schema_change_id: "SC1-create-stock-records" }]), undefined)).toEqual({ ok: true });
+  });
+});
+
+describe("checkMigrationTestSchemaChangeTag (a migration-reversibility test must tag its schema_change_id — the S2/T37 gap)", () => {
+  const db = (changes: object[]) => JSON.stringify({ feature_id: "F1-x", tables: [], schema_changes: changes });
+  const tl = (items: object[]) => JSON.stringify({ feature_id: "F1-x", items });
+  const ledger = [
+    { id: "SC1-create-stock-records", story_id: "S1", kind: "create_table", table: "stock_records", detail: "create" },
+    { id: "SC5-add-location-sku-index", story_id: "S2", kind: "add_index", table: "stock_records", detail: "index" },
+  ];
+  // The live S2 wording — a GERUND round-trip, which the exact-lemma detector would have missed.
+  const reversibilityDesc =
+    "Downgrading the add-index migration to its own down_revision then upgrading head recreates ix_stock_records_location_sku on stock_records";
+
+  it("FLAGS a migration-reversibility test carrying NO schema_change_id (so checkSchemaChangeOrphan has nothing to reconcile)", () => {
+    const r = checkMigrationTestSchemaChangeTag(
+      tl([{ id: "T37", description: reversibilityDesc, ac_id: "AC1-table", status: "pending", kind: "fitness" }]),
+      db(ledger),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/T37/);
+      expect(r.violations.join(" ")).toMatch(/schema_change_id/);
+      expect(r.acIds).toContain("AC1-table"); // scoped for a targeted revise
+    }
+  });
+
+  it("passes when the reversibility test tags a schema_change_id (orphan then reconciles it against the ledger)", () => {
+    expect(
+      checkMigrationTestSchemaChangeTag(
+        tl([{ id: "T37", description: reversibilityDesc, ac_id: "AC1-table", status: "pending", kind: "fitness", schema_change_id: "SC5-add-location-sku-index" }]),
+        db(ledger),
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("ignores a NON-migration item (a plain list/behavior test is not a reversibility round-trip)", () => {
+    expect(
+      checkMigrationTestSchemaChangeTag(
+        tl([{ id: "T30", description: "GET /api/stock/records lists rows by location", ac_id: "AC1-table", status: "pending", kind: "behavior" }]),
+        db(ledger),
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it("is VACUOUS on a legacy un-id'd ledger (back-compat, matching checkSchemaChangeOrphan)", () => {
+    const unidd = JSON.stringify({ feature_id: "F1-x", schema_changes: [{ story_id: "S2", kind: "add_index", table: "stock_records", detail: "idx" }] });
+    expect(
+      checkMigrationTestSchemaChangeTag(
+        tl([{ id: "T37", description: reversibilityDesc, ac_id: "AC1-table", status: "pending", kind: "fitness" }]),
+        unidd,
+      ),
+    ).toEqual({ ok: true });
   });
 });
 

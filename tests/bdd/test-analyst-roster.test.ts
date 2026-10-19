@@ -20,9 +20,9 @@ function parseRoster(block: string): { analysts: Array<{ kind: string; focus_pro
 }
 
 describe("renderTestAnalystRoster: uiTrack gates client", () => {
-  it("uiTrack:true renders all three analysts, each with a focus_prompt + inputs", () => {
+  it("uiTrack:true renders all four analysts, each with a focus_prompt + inputs", () => {
     const roster = parseRoster(renderTestAnalystRoster({ projectDir: "/tmp/p", uiTrack: true }));
-    expect(roster.analysts.map((a) => a.kind).sort()).toEqual(["behavior", "client", "fitness"]);
+    expect(roster.analysts.map((a) => a.kind).sort()).toEqual(["behavior", "client", "component", "fitness"]);
     for (const a of roster.analysts) {
       expect(a.focus_prompt.length, `${a.kind} focus_prompt`).toBeGreaterThan(40);
       expect(a.inputs.length, `${a.kind} inputs`).toBeGreaterThan(0);
@@ -107,18 +107,18 @@ describe('resolvePreparer("test-analyst-roster"): reads project.uiTrack from pro
 
   const ctx = (pd: string) => ({ consortDir: join(pd, ".consort"), featureId: "F1-x", story: "S1-y", ac: "", projectDir: pd });
 
-  it("a uiTrack:true project yields the 3-analyst roster", () => {
+  it("a uiTrack:true project yields the 4-analyst roster", () => {
     seedUiTrack(true);
     const roster = parseRoster(resolvePreparer("test-analyst-roster")(ctx(projectDir)));
-    expect(roster.analysts.map((a) => a.kind).sort()).toEqual(["behavior", "client", "fitness"]);
+    expect(roster.analysts.map((a) => a.kind).sort()).toEqual(["behavior", "client", "component", "fitness"]);
   });
   it("a uiTrack:false (or unset) project drops client", () => {
     seedUiTrack(false);
     const roster = parseRoster(resolvePreparer("test-analyst-roster")(ctx(projectDir)));
     expect(roster.analysts.map((a) => a.kind).sort()).toEqual(["behavior", "fitness"]);
   });
-  it("no projectDir => defaults uiTrack ON (all three analysts, client included)", () => {
+  it("no projectDir => defaults uiTrack ON (all four analysts, client + component included)", () => {
     const roster = parseRoster(resolvePreparer("test-analyst-roster")({ consortDir: "/tmp/c", featureId: "F1-x", story: "S1-y", ac: "" }));
-    expect(roster.analysts.map((a) => a.kind).sort()).toEqual(["behavior", "client", "fitness"]);
+    expect(roster.analysts.map((a) => a.kind).sort()).toEqual(["behavior", "client", "component", "fitness"]);
   });
 });

@@ -258,8 +258,9 @@ export function checkE2eHelperExports(projectDir: string): E2eHelperExportResult
           remediation:
             `${specRel} imports { ${missing.join(", ")} } from "${m[3]}", but that module does not export ` +
             `${missing.length > 1 ? "them" : "it"} — the spec fails at load (SyntaxError) and the Playwright suite ` +
-            `cannot run. Either import { test, expect } directly from "@playwright/test" (the scaffold convention), ` +
-            `or make the shared helper re-export exactly what the specs import (e.g. \`export { test, expect };\`).`,
+            `cannot run. Either import { test, expect } from the scaffold's "./consort-fixtures" (the e2e convention — ` +
+            `it re-exports test/expect and tags requests for the per-test capture), or make your shared helper re-export ` +
+            `exactly what the specs import (e.g. \`export { test, expect };\`).`,
         });
       }
     }

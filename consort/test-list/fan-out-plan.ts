@@ -179,7 +179,7 @@ export function mergeOrdered(preserved: unknown[], fresh: unknown[]): unknown[] 
  * so coverage is never lost; the navigator reflect + human spec gate still review. Pure + testable.
  */
 export function assembleSlices(slices: Array<{ kind: string; items: unknown[] }>, startId: number, storyAcs: string[]): unknown[] {
-  const KIND_ORDER = ["behavior", "fitness", "client"];
+  const KIND_ORDER = ["behavior", "fitness", "component", "client"];
   const acRank = (ac: string): number => {
     const i = storyAcs.indexOf(ac);
     return i === -1 ? storyAcs.length : i;
@@ -246,19 +246,19 @@ export function validateTestlistItems(
 ): string[] {
   if (!Array.isArray(items)) return ["output is not a JSON array of test-list items"];
   const problems: string[] = [];
-  const kinds = new Set(["behavior", "fitness", "client"]);
+  const kinds = new Set(["behavior", "fitness", "client", "component"]);
   const acSet = new Set(storyAcs);
   const seenIds = new Set<string>();
   // A real Playwright e2e spec lives under client/tests/e2e and ends .spec.ts — NOT a *.e2e.ts file
   // (Playwright's default testMatch misses it) and NOT a pages/*.test.tsx component harness (jsdom,
-  // mocked fetch — cannot verify an E2E AC's real browser↔server contract).
+  // one screen — real-DB now, but component-SCOPED, not the full browser journey an E2E AC verifies).
   const E2E_SPEC = /client\/tests\/e2e\/.+\.spec\.ts$/;
   items.forEach((raw, i) => {
     const it = (raw ?? {}) as Record<string, unknown>;
     const where = `item ${i + 1} (id ${String(it.id ?? "?")})`;
     if (typeof it.id !== "string" || it.id.length === 0) problems.push(`${where}: missing a non-empty "id"`);
     if (typeof it.description !== "string" || it.description.length === 0) problems.push(`${where}: missing a non-empty "description"`);
-    if (typeof it.kind !== "string" || !kinds.has(it.kind)) problems.push(`${where}: "kind" must be behavior|fitness|client (got ${JSON.stringify(it.kind)})`);
+    if (typeof it.kind !== "string" || !kinds.has(it.kind)) problems.push(`${where}: "kind" must be behavior|fitness|client|component (got ${JSON.stringify(it.kind)})`);
     const ac = typeof it.ac_id === "string" ? it.ac_id : "";
     if (!ac) problems.push(`${where}: missing a string "ac_id"`);
     else if (storyAcs.length > 0 && !acSet.has(ac)) {
@@ -289,6 +289,17 @@ export function validateTestlistItems(
             `next run hits a unique-violation (or asserts a stale duplicate). Key the created record on a ` +
             `per-run-unique business key ('SKU-' + crypto.randomUUID().slice(0,8); built-in, never import "uuid") ` +
             `and use that SAME value in both the create fill and the assertion locator`,
+        );
+      }
+    }
+    // A component item is an isolated jsdom test — its scenario_file must be a `.test.tsx` under
+    // client/tests/ (NOT an e2e `.spec.ts`): the inverse of the client/e2e rule above.
+    if (it.kind === "component") {
+      const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+      if (!/\.test\.tsx?$/.test(sf) || /\/tests\/e2e\//.test(sf)) {
+        problems.push(
+          `${where}: a kind:"component" test must be an isolated component test at client/tests/<...>.test.tsx ` +
+            `(got "${sf || "no scenario_file"}") — not an e2e .spec.ts; the full browser journey is kind:"client"`,
         );
       }
     }

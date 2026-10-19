@@ -7371,7 +7371,7 @@ function checkE2eLayerPresent(architectureJson2, evidence) {
   return {
     ok: false,
     violations: [
-      `the feature ${why} but NO acceptance criterion is tagged layer:"E2E"; a feature that renders a UI has at least one client<->server contract (a form submit, an inline validation rejection, a success/empty state) whose ONLY real verification is a Playwright e2e against the live API \u2013 tag that AC layer:"E2E" (a mocked component test stubs the response envelope, so a fabricated shape passes green while the real wire contract drifts). NOTE: an outcome phrased as "record WHO performed the action" or "the pick is saved", when the operator enters their name on a form with no auth, IS a client form submission (layer:"E2E") \u2013 do not flatten it into a backend "API" AC. If the endpoint is genuinely not consumed by any client, reconsider \u2013 that is unusual for a UI-track feature.`
+      `the feature ${why} but NO acceptance criterion is tagged layer:"E2E"; a feature that renders a UI has at least one client<->server contract (a form submit, an inline validation rejection, a success/empty state) whose ONLY real verification is a browser Playwright e2e against the live API \u2013 tag that AC layer:"E2E" (a narrower component test exercises one screen, not the full user journey the E2E layer verifies). NOTE: an outcome phrased as "record WHO performed the action" or "the pick is saved", when the operator enters their name on a form with no auth, IS a client form submission (layer:"E2E") \u2013 do not flatten it into a backend "API" AC. If the endpoint is genuinely not consumed by any client, reconsider \u2013 that is unusual for a UI-track feature.`
     ]
   };
 }
@@ -7439,7 +7439,7 @@ function checkE2ECoverage(testListJson, e2eAcIds) {
     if (forAc.some((i) => isE2e(i.scenario_file))) continue;
     const how = forAc.length ? `covered only by ${forAc.map((i) => i.scenario_file ?? `kind:${i.kind ?? "?"}`).join(", ")}` : "has no covering test";
     violations.push(
-      `E2E-layer AC ${acId} ${how} \u2013 a mocked component test cannot verify the real client<->server contract (a fabricated response envelope passes green while the real wire shape drifts). Add a real Playwright e2e (scenario_file under client/tests/e2e/) that drives the deployed app against the live API`
+      `E2E-layer AC ${acId} ${how} \u2013 a narrower component test (one screen) is not the full user journey an E2E AC verifies; the bar is SCOPE, not mock-vs-real (component tests are real-DB too). Add a real browser Playwright e2e (scenario_file under client/tests/e2e/) that drives the deployed app against the live API`
     );
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
@@ -7526,7 +7526,7 @@ function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
   const acIds = /* @__PURE__ */ new Set();
   const declaredList = [...declaredPaths].sort().join(", ");
   for (const it of tl.items ?? []) {
-    if (it.kind !== "behavior" && it.kind !== "client") continue;
+    if (it.kind !== "behavior" && it.kind !== "client" && it.kind !== "component") continue;
     const desc = it.description ?? "";
     for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
       const { path: path4, keys } = normalizeEndpoint(tok);
@@ -8034,6 +8034,32 @@ function checkTestlistE2eSpecSuffix(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkTestlistComponentScenarioFile(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    if (it.kind !== "component") continue;
+    const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
+    if (!/\.test\.tsx?$/.test(sf) || /\/tests\/e2e\//.test(sf)) {
+      violations.push(
+        `test ${it.id ?? "?"} is kind:"component" but its scenario_file is ${sf ? `"${sf}"` : "missing"} \u2014 an isolated component test must name a Vitest file at client/tests/<...>.test.tsx (never an e2e .spec.ts). Name the file so the build knows where to author it.`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function isMigrationReversibilityDescription(desc) {
+  const mentionsDowngrade = /\bdowngrad\w*/i;
+  const reversibilityContext = /\bdowngrad\w*[\s\S]*?\bupgrad\w*|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
+  return mentionsDowngrade.test(desc) && reversibilityContext.test(desc);
+}
 function checkTestlistMigrationRevision(testListJson) {
   let tl;
   try {
@@ -8041,15 +8067,13 @@ function checkTestlistMigrationRevision(testListJson) {
   } catch (err) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
-  const mentionsDowngrade = /\bdowngrade\b/i;
-  const reversibilityContext = /\bdowngrade\b[\s\S]*?\bupgrade\b|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
   const relativeStep = /\bdowngrade\s+-\s*\d+\b|\bsingle-step\s+(?:alembic\s+)?downgrade\b|\bdowngrade\s+(?:by\s+)?one\s+step\b/i;
   const pinned = /\bdown_revision\b|\bits own revision\b|\bexplicit(?:ly)?\b[\s\S]{0,30}\brevision\b|\bdowngrade\s+(?:to\s+)?(?:revision\s+)?["'`]?[0-9a-f]{6,}/i;
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
     const desc = it.description ?? "";
-    if (!mentionsDowngrade.test(desc) || !reversibilityContext.test(desc)) continue;
+    if (!isMigrationReversibilityDescription(desc)) continue;
     if (relativeStep.test(desc) && !pinned.test(desc)) {
       violations.push(
         `test item ${it.id ?? "?"} is a migration-reversibility/data-preservation test that downgrades by a RELATIVE step ("${desc.slice(0, 90)}\u2026"). \`downgrade -1\` reverts whatever is HEAD, so it passes on the isolated experiment branch but silently targets the WRONG migration once a later story adds one (head moved). Pin it to the migration-under-test's OWN revision: downgrade to that revision's parent/down_revision (an explicit revision id), assert the schema change reverted, then upgrade head \u2014 never a relative \`downgrade -1\`.`
@@ -8092,6 +8116,27 @@ function checkSchemaChangeOrphan(testListJson, dbDesignJson2) {
       );
       if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkMigrationTestSchemaChangeTag(testListJson, dbDesignJson2) {
+  const planned = idedSchemaChanges(dbDesignJson2);
+  if (planned.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    if (!isMigrationReversibilityDescription(it.description ?? "")) continue;
+    if (typeof it.schema_change_id === "string" && it.schema_change_id.length > 0) continue;
+    violations.push(
+      `test item ${it.id ?? "?"} asserts a migration-reversibility round-trip but names no schema_change_id. A migration test must exercise a schema_change the DBA planned in db-design.json \u2014 tag it with that entry's id (e.g. "schema_change_id": "SC5-..."). If NO planned schema_changes[] entry covers it, the DBA did not commit that migration (an index/change the design defers): DROP the test rather than assert a migration the design never ships. Known schema_changes ids: ${[...planned.keys()].join(", ") || "(none)"}.`
+    );
+    if (typeof it.ac_id === "string") acIds.add(it.ac_id);
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
@@ -8174,11 +8219,11 @@ function checkClientKindLayerCoherence(testListJson, acLayerById) {
   const violations = [];
   const acIds = /* @__PURE__ */ new Set();
   for (const it of tl.items ?? []) {
-    if (it.kind !== "client" || typeof it.ac_id !== "string") continue;
+    if (it.kind !== "client" && it.kind !== "component" || typeof it.ac_id !== "string") continue;
     const layer = acLayerById[it.ac_id];
     if (layer !== void 0 && layer !== "E2E") {
       violations.push(
-        `test ${it.id ?? "?"} is kind:"client" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-harness test cannot verify a backend ${layer} AC (a mechanism conflict: it mocks the response envelope instead of exercising the real contract). Cover the clause in the ${layer} test itself (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client test to a backend-layer AC.`
+        `test ${it.id ?? "?"} is kind:"${it.kind}" but anchored to ${it.ac_id} (layer: ${layer}) \u2013 a client-side UI test (it renders a component) cannot verify a backend ${layer} AC's contract. Cover the clause in a behavior/fitness test at the ${layer} boundary (e.g. an API integration assertion on a non-error 2xx response) or re-slice the AC; never tag a client/component test to a backend-layer AC.`
       );
       acIds.add(it.ac_id);
     }
@@ -9232,6 +9277,12 @@ var EVENT_TEMPLATES = {
   "cycle.verified": { template: "VERIFY [{{ac}}] on {{branch}} {{outcome}}: {{summary}}" },
   "cycle.review": { template: "REVIEW [{{ac}}] refactor={{refactor}}: {{rationale}}" },
   "cycle.refactored": { template: "REFACTOR [{{ac}}]: {{change}}" },
+  // Per-TEST status transition within a cycle (code-emitted by the runner as it parses the test
+  // runner's machine-readable output). Unlike cycle.green (one event per cycle, lead test only),
+  // this fires once per test id so the dashboard can reconstruct each test's status as-of any
+  // event index — the historical per-test trail the cycle.* family does not carry. story_id /
+  // ac_id / cycle_id ride in metadata (not template slots), like the other cycle.* events.
+  "test.result": { template: "TEST {{test_id}} {{status}}" },
   "smell.flagged": { template: "SMELL {{smell}} ({{severity}}): {{detail}}" },
   "runner.missing": { template: "NO RUNNER for layer {{layer}} (test {{test_id}})" },
   // Experiment lifecycle (code-emitted)
@@ -9346,6 +9397,40 @@ function logCycleEvent(consortDir, event) {
   } catch {
   }
 }
+function logTestResults(consortDir, cycle, status, role) {
+  const realTs = realTestTimestamps(consortDir, status);
+  for (const testId of coveredTestIds(cycle)) {
+    const ts = realTs.get(testId);
+    try {
+      emitAgentLogEvent(
+        {
+          role,
+          level: "info",
+          event: "test.result",
+          feature_id: cycle.feature_id,
+          cycle_id: cycle.cycle_id,
+          slots: { test_id: testId, status, story_id: cycle.story_id, ac_id: cycle.ac_id ?? "unknown" }
+        },
+        { consortDir, ...ts ? { now: () => new Date(ts) } : {} }
+      );
+    } catch {
+    }
+  }
+}
+function realTestTimestamps(consortDir, status) {
+  const out = /* @__PURE__ */ new Map();
+  try {
+    const text = readFileSync12(join12(consortDir, "test-run.jsonl"), "utf8");
+    for (const line of text.split("\n")) {
+      const s = line.trim();
+      if (!s) continue;
+      const o = JSON.parse(s);
+      if (o.test_id && o.status === status && typeof o.ts === "string") out.set(o.test_id, o.ts);
+    }
+  } catch {
+  }
+  return out;
+}
 function readAcLayer2(consortDir, featureId, acId) {
   return readAcLayer(consortDir, featureId, acId);
 }
@@ -9411,6 +9496,7 @@ function beginCycle(args) {
       batch: args.test_ids && args.test_ids.length > 0 ? args.test_ids.length : 1
     }
   });
+  logTestResults(args.consortDir, artifact, "red", "navigator");
   return artifact;
 }
 function recordRunnerOutcome(args) {
@@ -9459,6 +9545,7 @@ function markGreen(scope, cycleId, driverChanges) {
     cycle_id: cycleId,
     slots: { test_id: a.test_id, ac: a.ac_id ?? "unknown", change: driverChanges ?? "minimal honest code" }
   });
+  logTestResults(scope.consortDir, a, "green", "driver");
   return a;
 }
 
@@ -10961,7 +11048,9 @@ var SMELL_FIX = {
   "relative-migration-revision": "a reversibility test asserts a NAMED column is absent after a RELATIVE `downgrade -1` (and/or restores with `upgrade head`) \u2013 this assumes THAT column's migration is the current head, so the moment a later feature stacks a migration on top, `-1` reverses the WRONG migration and the column-absence assertion can never pass again (the F6/S1-broke-F1/S3 par_level class). Pin the migration's OWN revision instead: downgrade to its down_revision and upgrade to its revision, so the round-trip validates THIS migration independent of any later head",
   "reversible-invariant-round-trip": "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility \u2013 and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade \u2192 seed/migrate \u2192 upgrade \u2192 assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
   "pytest-bdd-parse-conversion": "a parse()/parsers.parse() step pattern uses a Python str.format conversion flag (!r / !s / !a); the `parse` library backing pytest-bdd supports the format SPEC ({name:type}) but NOT conversions, so the step text never matches the feature and the step raises StepDefinitionNotFoundError \u2013 the app can never green it. Drop the conversion and quote the value in the pattern instead (e.g. parse('\u2026 \"{name}\"') to match a quoted feature value, or parse('\u2026 {name}') for a bare token), matching how the .feature file writes it",
-  "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it"
+  "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it",
+  "component-test-mock": "a client COMPONENT test (client/**/*.test.tsx) MOCKS the data path (a stubbed/spied/assigned global `fetch`, MSW, or a `vi.mock` of the app's api/service/http module). Kit principle: NEVER mock when a real counterpart exists \u2014 a component that talks to the backend in production must talk to the REAL backend in test. The vitest harness boots a real backend (vitest.globalSetup.ts) and the fetch shim (tests/setup.ts) routes `/api` to it, so render the component and let its real `/api` calls hit the live service against the paired-branch DB; assert on what comes back. Remove the mock. (A clock \u2014 vi.useFakeTimers \u2014 or a genuinely third-party module with no real counterpart stays allowed.)",
+  "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example (postgresql://someuser:pw@dbhost.invalid) matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal."
 };
 function forwardMigrationRegion(body) {
   const m = body.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
@@ -11026,6 +11115,38 @@ function liveReferenceLines(body, col) {
     const slash = line.indexOf("//");
     if (slash >= 0) line = line.slice(0, slash);
     if (re.test(line)) out.push(i + 1);
+  }
+  return out;
+}
+function blankCommentsAndDocstrings(lines) {
+  const out = [];
+  let inDoc = false;
+  let docQuote = "";
+  for (let line of lines) {
+    if (inDoc) {
+      if (line.includes(docQuote)) {
+        inDoc = false;
+        line = line.slice(line.indexOf(docQuote) + 3);
+      } else {
+        out.push("");
+        continue;
+      }
+    }
+    const tq = line.match(/"""|'''/);
+    if (tq) {
+      const q = tq[0];
+      const after = line.slice(line.indexOf(q) + 3);
+      if (!after.includes(q)) {
+        line = line.slice(0, line.indexOf(q));
+        inDoc = true;
+        docQuote = q;
+      }
+    }
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const slash = line.indexOf("//");
+    if (slash >= 0) line = line.slice(0, slash);
+    out.push(line);
   }
   return out;
 }
@@ -11100,7 +11221,7 @@ function checkReversibleInvariantRoundTrip(projectDir) {
         const d = it.description ?? "";
         return /\bround.?trip\b/i.test(d) || /\bdowngrad\w*/i.test(d) && /\bupgrad\w*/i.test(d);
       });
-      if (!hasRoundTrip) {
+      if (covering.length > 0 && !hasRoundTrip) {
         out.push({
           smell: "reversible-invariant-round-trip",
           file: relative3(projectDir, featureDir(tdd, feature)),
@@ -11132,6 +11253,7 @@ function checkTestSmells(args) {
       const body = lines.join("\n");
       const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
       const isPy = file.endsWith(".py");
+      const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
       if (isJs && body.includes("vi.mock(") && !body.includes("vi.hoisted")) {
         const constBefore = body.match(/^const\s+(\w+)\s*=[\s\S]{0,400}?vi\.mock\(/m);
         if (constBefore && new RegExp(`\\b${constBefore[1]}\\b`).test(body.slice(body.indexOf("vi.mock(")))) {
@@ -11140,6 +11262,7 @@ function checkTestSmells(args) {
         }
       }
       let teardownDepth = 0;
+      const codeLines = blankCommentsAndDocstrings(lines);
       lines.forEach((text, i) => {
         const line = i + 1;
         if (/^\s*(afterEach|afterAll|teardown|tearDown|def\s+tear\w*|def\s+cleanup)\b/.test(text)) teardownDepth = 1;
@@ -11157,8 +11280,20 @@ function checkTestSmells(args) {
             push("framenavigated-reload-detector", rel, line, text);
           }
         }
+        if (isComponentTest) {
+          if (/vi\.stubGlobal\(\s*["']fetch["']/.test(text) || /vi\.spyOn\([^)]*,\s*["']fetch["']\s*\)/.test(text) || /(?:globalThis|global|window)\.fetch\s*=/.test(text)) {
+            push("component-test-mock", rel, line, text, "stubs the global fetch");
+          } else if (/from\s+["']msw["']/.test(text) || /\bsetupServer\(/.test(text)) {
+            push("component-test-mock", rel, line, text, "MSW network mock");
+          } else if (/vi\.mock\(\s*["'][^"']*(?:\/api\b|\bapi\/|service|\/http\b|repository|fetch)[^"']*["']/i.test(text)) {
+            push("component-test-mock", rel, line, text, "vi.mock of the app's data/API module");
+          }
+        }
         if (teardownDepth > 0 && /DELETE\s+FROM|deleteMany\(|\.delete\(\s*\{|TRUNCATE/i.test(text)) {
           push("delete-teardown", rel, line, text);
+        }
+        if (/\b(?:postgres(?:ql)?|mysql|mongodb|redis|amqp)(?:\+\w+)?:\/\/[^\s/@"'`]*:[^\s/@"'`]*@/.test(text)) {
+          push("dsn-inline-credentials", rel, line, text, "inline user:pass@ in a DSN literal");
         }
         if (isPy) {
           const m = text.match(/^\s*except\s*(IntegrityError|Exception)\b(?:\s+as\s+(\w+))?/);
@@ -11183,8 +11318,10 @@ function checkTestSmells(args) {
           }
         }
         if (knownTables.size > 0) {
-          for (const m of text.matchAll(/\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+["'`]?(\w+)["'`]?/g)) {
-            const ref = m[1].toLowerCase();
+          for (const m of codeLines[i].matchAll(
+            /\b(?:FROM|JOIN|INTO|UPDATE)\s+["'`]?(\w+)["'`]?|\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?["'`]?(\w+)/g
+          )) {
+            const ref = (m[1] ?? m[2]).toLowerCase();
             if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !knownTables.has(ref)) {
               push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
             }
@@ -11990,8 +12127,13 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
+    checkTestlistComponentScenarioFile(testListJson),
     checkTestlistMigrationRevision(testListJson),
     checkSchemaChangeOrphan(testListJson, dbDesign),
+    // A migration-reversibility test must carry the schema_change_id it exercises, so the orphan
+    // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
+    // un-planned change slips to the semantic reflect — the F1/S2 history).
+    checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
     // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
     // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
     // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a

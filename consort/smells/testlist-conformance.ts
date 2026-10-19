@@ -41,8 +41,10 @@ import {
   checkTestlistScenarioFileCoherence,
   checkTestlistEndpointCoherence,
   checkTestlistE2eSpecSuffix,
+  checkTestlistComponentScenarioFile,
   checkTestlistMigrationRevision,
   checkSchemaChangeOrphan,
+  checkMigrationTestSchemaChangeTag,
   checkFitnessSingularCoverage,
   checkFitnessClauseCoverage,
   extractApiEndpoints,
@@ -167,8 +169,13 @@ export function testlistConformanceForContent(
     checkTestlistScenarioFileCoherence(testListJson),
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
+    checkTestlistComponentScenarioFile(testListJson),
     checkTestlistMigrationRevision(testListJson),
     checkSchemaChangeOrphan(testListJson, dbDesign),
+    // A migration-reversibility test must carry the schema_change_id it exercises, so the orphan
+    // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
+    // un-planned change slips to the semantic reflect — the F1/S2 history).
+    checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
     // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
     // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
     // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a

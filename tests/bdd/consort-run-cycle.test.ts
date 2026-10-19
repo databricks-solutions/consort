@@ -78,6 +78,27 @@ describe("run-cycle (hermetic)", () => {
     expect(green?.message).toContain("GREEN T1");
   });
 
+  it("emits a per-test test.result trail for EVERY covered test id (not just the lead) across RED/GREEN/REFACTOR", () => {
+    // A story-batch cycle covers several tests; cycle.* names only the lead, so the per-test trail
+    // is what lets a reader reconstruct each test's status. Layer-less so markGreen's runner guard
+    // is skipped in this hermetic scope.
+    const a = beginCycle({ ...scope, test_id: "T1", test_ids: ["T1", "T2", "T3"], test_description: "batch" });
+
+    const afterRed = readAgentLog({ consortDir: tdd }).filter((e) => e.event === "test.result");
+    expect(afterRed.map((e) => e.message)).toEqual(["TEST T1 red", "TEST T2 red", "TEST T3 red"]);
+    // story_id rides in metadata so the reader attributes each result to its story.
+    expect(afterRed.every((e) => e.metadata?.story_id === "S1")).toBe(true);
+    expect(afterRed.every((e) => e.metadata?.test_id && e.metadata?.status === "red")).toBe(true);
+
+    markGreen(scope, a.cycle_id);
+    const greens = readAgentLog({ consortDir: tdd }).filter((e) => e.event === "test.result" && e.message.includes("green"));
+    expect(greens.map((e) => e.message)).toEqual(["TEST T1 green", "TEST T2 green", "TEST T3 green"]);
+
+    markRefactored(scope, a.cycle_id);
+    const refs = readAgentLog({ consortDir: tdd }).filter((e) => e.event === "test.result" && e.message.includes("refactored"));
+    expect(refs.map((e) => e.message)).toEqual(["TEST T1 refactored", "TEST T2 refactored", "TEST T3 refactored"]);
+  });
+
   it("markRefactored sets refactored_at and notes", () => {
     const a = beginCycle({ ...scope, test_id: "T1", test_description: "x" });
     markGreen(scope, a.cycle_id);

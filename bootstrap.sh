@@ -21,7 +21,7 @@
 # "no workspace target yet", which is expected, not a problem to fix.
 #
 # Usage:
-#   bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/consort/main/bootstrap.sh)
+#   bash <(curl -sL https://tinyurl.com/consort-bootstrap)
 #
 #   # Non-interactive: attempt every missing install without prompting.
 #   bash <(curl -sL .../bootstrap.sh) --yes
