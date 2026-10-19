@@ -847,10 +847,8 @@
       "build": [
         "b-red",
         "b-green",
-        "b-assess",
         "b-review",
         "b-perm",
-        "b-verify",
         "b-repair"
       ]
     },
@@ -867,10 +865,8 @@
       "d-nav",
       "b-red",
       "b-green",
-      "b-assess",
       "b-review",
       "b-perm",
-      "b-verify",
       "b-repair"
     ]
   }

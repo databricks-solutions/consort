@@ -9,8 +9,10 @@ import { LaneGraph } from "./LaneGraph";
 import { DrilldownPanel, type DrilldownTarget, type DrilldownReveal } from "./DrilldownPanel";
 import { BacklogPanel } from "./BacklogPanel";
 import { FeatureStatusSection } from "./FeatureStatusSection";
+import { StoryTestsLightbox } from "./StoryTestsLightbox";
 import { OrchestratorLane } from "./OrchestratorLane";
-import { DriftBanner, LogPane, SidePane, modeFromUrl } from "./board-parts";
+import { DriftBanner, SidePane, modeFromUrl } from "./board-parts";
+import { ActivityDock } from "./ActivityDock";
 import { useTheme } from "./useTheme";
 import type { DashboardState } from "@/lib/types";
 import { colorForRole, font, radius } from "@/lib/theme";
@@ -90,6 +92,11 @@ export default function Home() {
   // are mutually exclusive now: opening any closes the others, which is the "one surface" the merge
   // was missing (before, a step panel and a turn panel could be open at once, in two places).
   const [drilldown, setDrilldown] = useState<DrilldownTarget | null>(null);
+  // The test-list rail (right side) + the test selected within it, lifted here so the bottom dock can
+  // render that test's table capture. The dock's height is resizable (drag its top edge).
+  const [openStory, setOpenStory] = useState<{ feature: string; story: string } | null>(null);
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
+  const [dockHeight, setDockHeight] = useState(320);
   // The drawer is ALWAYS mounted (offscreen when closed) so it can slide in on transform, matching
   // the reference dashboard's `#panel` → `.open`. `shownTarget` trails `drilldown` so the panel's
   // content stays rendered THROUGH the slide-out animation instead of vanishing the instant it's
@@ -160,6 +167,30 @@ export default function Home() {
     followLineEdge.current = timeline ? n >= timeline.total : true;
     setAt(lineToEventAt(n));
   };
+  // The "as-of" timestamp for the selected test's table capture in the dock: the latest revealed test
+  // line's real timestamp, else the current turn's start — so the table reads empty before the test
+  // ran at the playhead, matching the bubble fold.
+  const tableAtTs = (() => {
+    if (!timeline) return "";
+    let ts = "";
+    for (const l of timeline.lines) if (l.kind === "test" && l.idx < lineAt && l.tsLine) ts = l.tsLine;
+    if (!ts) {
+      const idx = lineAt - 1;
+      const cur = timeline.turns.find((t) => idx >= t.startLine && idx < t.startLine + t.lineCount) ?? timeline.turns[timeline.turns.length - 1];
+      ts = cur?.tsStart ?? "";
+    }
+    return ts;
+  })();
+  // Has the scrubber reached the selected test's step? The dock table must stay empty until the
+  // playhead arrives at it — a wall-clock gate can't tell verify tests apart (they share ~one
+  // instant), so gate on the test's OWN latest line being revealed, the same model that lights the
+  // bubble. No per-test line in this corpus (or a test that never ran) → not gated (show at HEAD).
+  const selectedTestReached = (() => {
+    if (!timeline || !selectedTestId) return true;
+    const idxs = timeline.lines.filter((l) => l.kind === "test" && l.testId === selectedTestId).map((l) => l.idx);
+    if (idxs.length === 0) return true;
+    return Math.max(...idxs) < lineAt;
+  })();
   // Step-output drill-down on the WorkflowGraph. Capability-gated like the others, so a source
   // without recorded deliverables simply renders non-clickable nodes.
   const canShowStepOutputs = state?.source?.capabilities.includes("stepOutputs") ?? false;
@@ -231,8 +262,54 @@ export default function Home() {
     return stepTurnOrdinal(stepId) != null ? "full" : "none";
   };
 
+  // A drill-down is "dock-origin" when it was opened from the bottom event-log (a turn/artifact #N
+  // with NO topology `fromStep` tag). Those rise in the bottom SHEET above the dock — co-located with
+  // the #N you clicked. Everything else (a topology step/role, or a turn opened from a lane card) is
+  // "board-origin" and opens in the right-edge DRAWER, so the sheet never rises over the topology you
+  // just clicked in (and you can keep selecting other lane turns while it's open).
+  const isDockOrigin = (t: DrilldownTarget | null): boolean =>
+    !!t && (t.kind === "turn" || t.kind === "artifact") && !(t.kind === "turn" && t.fromStep);
+
+  // Prev/next turn stepping from inside the panel: re-target the drill-down to the adjacent turn
+  // ordinal (preserving `fromStep`, so the panel stays in the SAME surface). Does NOT touch the
+  // playhead — stepping inspects turns without rewinding the board (and so can't trip scrubTo's close).
+  // The order follows the EVENT LOG, not the activity-timeline (which is segmented by actor/topology):
+  // the distinct turn ordinals in `correlation.recentTurns` (aligned to the event stream, oldest→
+  // newest), so ◀/▶ walk turns in the exact order the event log lists them — the surface the #N was
+  // clicked in. Deduped in event order; NOT sorted by ordinal (which would reimpose a non-log order).
+  const turnOrds = (() => {
+    const seen = new Set<number>();
+    const out: number[] = [];
+    for (const ord of state?.source?.correlation?.recentTurns ?? []) {
+      if (typeof ord === "number" && !seen.has(ord)) {
+        seen.add(ord);
+        out.push(ord);
+      }
+    }
+    return out;
+  })();
+  const stepTurn = (delta: number) =>
+    setDrilldown((cur) => {
+      if (!cur || cur.kind !== "turn") return cur;
+      const i = turnOrds.indexOf(cur.ord);
+      const ni = i + delta;
+      if (i < 0 || ni < 0 || ni >= turnOrds.length) return cur;
+      return { ...cur, ord: turnOrds[ni] };
+    });
+  const turnBounds = (t: DrilldownTarget | null): { hasPrev: boolean; hasNext: boolean } => {
+    if (!t || t.kind !== "turn") return { hasPrev: false, hasNext: false };
+    const i = turnOrds.indexOf(t.ord);
+    return { hasPrev: i > 0, hasNext: i >= 0 && i < turnOrds.length - 1 };
+  };
+  // Which surface each drill-down belongs to. `shownTarget` (trailing) drives the rendered content so
+  // it stays up through the slide-out; `drilldown` (live) drives whether the surface is open.
+  const sheetTarget = isDockOrigin(shownTarget) ? shownTarget : null; // bottom sheet (dock #N)
+  const drawerTarget = shownTarget && !isDockOrigin(shownTarget) ? shownTarget : null; // right drawer (topology)
+  const sheetOpen = drilldown !== null && isDockOrigin(drilldown);
+  const drawerOpen = drilldown !== null && !isDockOrigin(drilldown);
+
   return (
-    <main style={{ minHeight: "100vh", background: "var(--surface-page)", padding: "24px 28px 96px", fontFamily: font.sans }}>
+    <main style={{ minHeight: "100vh", background: "var(--surface-page)", padding: `24px 28px ${dockHeight + 82}px`, fontFamily: font.sans }}>
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes softpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); } 50% { box-shadow: 0 0 18px 2px currentColor; opacity: 0.92; } }
@@ -283,14 +360,23 @@ export default function Home() {
               each pane the full length of the board column. */}
           <div style={{ display: "flex", alignItems: "stretch" }}>
             {canShowBacklog ? (
-              <SidePane side="left" title="Backlog · planning · status" open={backlogOpen} onToggle={() => setBacklogOpen((o) => !o)}>
+              <SidePane side="left" title="Backlog · planning · status" width={360} open={backlogOpen} onToggle={() => setBacklogOpen((o) => !o)}>
                 <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 18 }}>
                   <BacklogPanel mode={state.source?.mode ?? null} />
                   {/* Status rollup — folded board state (features + their stories), separated from the
                       static planning sections above by a divider. Also the feature SELECTOR: pin the
                       board to a feature (or follow the run) from here — moved off the header. */}
                   <div style={{ borderTop: `1px solid var(--border-default)`, paddingTop: 16 }}>
-                    <FeatureStatusSection state={state} pinned={pinned} onPin={setPinned} timeline={timeline} lineAt={lineAt} />
+                    <FeatureStatusSection
+                      state={state}
+                      pinned={pinned}
+                      onPin={setPinned}
+                      openStory={openStory}
+                      onOpenStory={(feature, story) => {
+                        setOpenStory({ feature, story });
+                        setSelectedTestId(null);
+                      }}
+                    />
                   </div>
                 </div>
               </SidePane>
@@ -356,20 +442,35 @@ export default function Home() {
           {/* The bottom "Open issues" section was removed as redundant with the Orchestrator status
               card, which now folds the top blocker's source/reason/resolver in on an escalation. */}
             </div>
-
-            {/* The event log lives here now: a collapsible right-side pane that SHARES space with
-                the board (the main column above flexes narrower when it's open) rather than sitting
-                as an overlay — the reference's `#logpane`. Collapsed, it's a slim rail and the board
-                reclaims the width. */}
-            <LogPane
-              state={state}
-              open={logOpen}
-              onToggle={() => setLogOpen((o) => !o)}
-              onOpenTurn={canDrillDown ? (ord) => setDrilldown({ kind: "turn", ord }) : undefined}
-              onOpenArtifact={canOpenArtifact ? (path) => setDrilldown({ kind: "artifact", path }) : undefined}
-              timeline={timeline}
-              lineAt={lineAt}
-            />
+            {/* The test-list RAIL (bubbles) is a FLEX SIBLING of the board — opening it NARROWS the
+                board and re-flows the centre rather than overlaying the topology, exactly like the old
+                event-log pane did. The selected test's table capture renders in the bottom dock. Its
+                width matches the left Backlog/planning/status pane so the two side columns read as a pair. */}
+            {openStory
+              ? (() => {
+                  const st = state.stories.find((s) => s.feature === openStory.feature && s.id === openStory.story);
+                  const foldStatus = Object.fromEntries((st?.testItems ?? []).map((t) => [t.id, t.status]));
+                  return (
+                    <StoryTestsLightbox
+                      feature={openStory.feature}
+                      story={openStory.story}
+                      mode={state.source?.mode ?? null}
+                      atLive={state.atLive}
+                      atEventIndex={state.atEventIndex}
+                      timeline={timeline}
+                      lineAt={lineAt}
+                      foldStatus={foldStatus}
+                      state={state}
+                      selectedTestId={selectedTestId}
+                      onSelectTest={setSelectedTestId}
+                      onClose={() => {
+                        setOpenStory(null);
+                        setSelectedTestId(null);
+                      }}
+                    />
+                  );
+                })()
+              : null}
           </div>
           {/* The ONE drill-down surface: whatever you clicked — a ticker row (turn or artifact) or
               a WorkflowGraph node (step) — opens here. It sits under the stream and scrolls itself
@@ -383,14 +484,12 @@ export default function Home() {
               only ever SET through the capability-gated openers above, and the sole capability-
               changing action — a mode switch — clears it (see onMode). So an open target's source
               can always still satisfy it. */}
-          {/* A FIXED, full-height right-edge drawer that SLIDES in — flush to the top/right, ending
-              just above the play band — exactly like the reference dashboard's `#panel`. It's always
-              mounted and parked offscreen at translateX(105%) (105% so its own left shadow is hidden
-              too); opening a target animates it to translateX(0) over .28s. z-index over the board;
-              the left shadow lifts it off the content it overlays. The ✕ (and any scrub, per scrubTo)
-              closes it, sliding it back out. `shownTarget` keeps the content up through the slide-out. */}
+          {/* BOARD-ORIGIN (topology) drill-downs — a FIXED right-edge drawer that slides in from the
+              right, ending just above the play band. Topology clicks open HERE, not in the bottom
+              sheet, so the inspector never rises over the lanes/workflow you just clicked — you can
+              keep selecting other lane turns with it open. Parked offscreen at translateX(105%). */}
           <div
-            aria-hidden={drilldown === null}
+            aria-hidden={!drawerOpen}
             style={{
               position: "fixed",
               top: 0,
@@ -401,20 +500,68 @@ export default function Home() {
               background: "var(--surface-panel)",
               borderLeft: "1px solid var(--border-default)",
               boxShadow: "-12px 0 40px rgba(0,0,0,0.35)",
-              transform: drilldown ? "translateX(0)" : "translateX(105%)",
+              transform: drawerOpen ? "translateX(0)" : "translateX(105%)",
               transition: "transform 0.28s ease",
+              pointerEvents: drawerOpen ? "auto" : "none",
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
             }}
           >
-            {shownTarget ? (
+            {drawerTarget ? (
               <DrilldownPanel
-                target={shownTarget}
+                target={drawerTarget}
                 mode={state.source?.mode ?? null}
                 feature={state.feature ?? null}
-                reveal={revealFor(shownTarget)}
+                reveal={revealFor(drawerTarget)}
                 onClose={() => setDrilldown(null)}
+                onStepTurn={stepTurn}
+                hasPrevTurn={turnBounds(drawerTarget).hasPrev}
+                hasNextTurn={turnBounds(drawerTarget).hasNext}
+              />
+            ) : null}
+          </div>
+
+          {/* DOCK-ORIGIN (#N) drill-downs — a FIXED BOTTOM SHEET that RISES from the top edge of the
+              live-activity dock. The #N you click lives in the dock (bottom), so the inspector opening
+              upward from that same edge keeps the detail next to its anchor — and it clears the
+              right-side test-list rail. Anchored at `bottom = transport + dock height` so it tracks
+              the dock as it resizes; its right edge steps in when the rail is open. Parked, it must
+              travel its FULL height PLUS the bottom offset to clear the viewport (a bottom-anchored
+              sheet isn't hidden by translateY(100%) alone). The ✕ (and any scrub) closes it. */}
+          <div
+            aria-hidden={!sheetOpen}
+            style={{
+              position: "fixed",
+              left: 28,
+              right: openStory ? 360 + 16 + 28 : 28,
+              bottom: 58 + dockHeight,
+              zIndex: 60,
+              height: "min(56vh, 620px)",
+              maxHeight: `calc(100vh - ${58 + dockHeight + 92}px)`,
+              background: "var(--surface-panel)",
+              border: "1px solid var(--border-strong)",
+              borderBottom: "none",
+              borderRadius: "12px 12px 0 0",
+              boxShadow: "0 -18px 48px rgba(0,0,0,0.42)",
+              transform: sheetOpen ? "translateY(0)" : `translateY(calc(100% + ${58 + dockHeight}px))`,
+              transition: "transform 0.28s ease",
+              pointerEvents: sheetOpen ? "auto" : "none",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            {sheetTarget ? (
+              <DrilldownPanel
+                target={sheetTarget}
+                mode={state.source?.mode ?? null}
+                feature={state.feature ?? null}
+                reveal={revealFor(sheetTarget)}
+                onClose={() => setDrilldown(null)}
+                onStepTurn={stepTurn}
+                hasPrevTurn={turnBounds(sheetTarget).hasPrev}
+                hasNextTurn={turnBounds(sheetTarget).hasNext}
               />
             ) : null}
           </div>
@@ -454,6 +601,23 @@ export default function Home() {
               checkpoints={timeline?.turns.map((t) => t.startLine) ?? []}
             />
           </div>
+          {/* PROTOTYPE: live-activity bottom dock (event timeline + active-event steps side-by-side),
+              pinned just above the transport so the board + left pane + test-list all stay visible. */}
+          <ActivityDock
+            state={state}
+            timeline={timeline}
+            lineAt={lineAt}
+            onOpenTurn={canDrillDown ? (ord) => setDrilldown((cur) => (cur && cur.kind === "turn" && cur.ord === ord ? null : { kind: "turn", ord })) : undefined}
+            onOpenArtifact={canOpenArtifact ? (path) => setDrilldown((cur) => (cur && cur.kind === "artifact" && cur.path === path ? null : { kind: "artifact", path })) : undefined}
+            bottomOffset={58}
+            height={dockHeight}
+            onHeightChange={setDockHeight}
+            tableView={
+              openStory && selectedTestId
+                ? { feature: openStory.feature, story: openStory.story, testId: selectedTestId, atLive: state.atLive, atTs: state.atLive ? "" : tableAtTs, reached: selectedTestReached }
+                : null
+            }
+          />
         </>
       )}
     </main>

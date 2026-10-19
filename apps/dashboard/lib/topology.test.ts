@@ -285,10 +285,10 @@ describe("topology — lane integrity", () => {
 
   it("keeps the honest-GREEN branch structure: assess fans out to repair / permissive / HIL", () => {
     const back = WORKFLOW.lanes.build.backEdges.map(([a, b]) => `${a}->${b}`);
-    expect(back).toContain("b-verify->b-assess"); // verify fails
-    expect(back).toContain("b-assess->b-repair"); // regression
-    expect(back).toContain("b-assess->b-perm"); // supersession
-    expect(back).toContain("b-assess->b-hil"); // genuine → escalate
+    // A failed verify flows into the navigator's review/assess (b-review), which fans out:
+    expect(back).toContain("b-review->b-repair"); // regression
+    expect(back).toContain("b-review->b-perm"); // supersession
+    expect(back).toContain("b-review->b-hil"); // genuine → escalate
     // The repair/perm → GREEN re-verify lines are intentionally NOT drawn (removed from the graph);
     // the recovery paths' re-verify is left implicit rather than cluttering the lane with risers.
     expect(back).not.toContain("b-repair->b-green");
@@ -297,7 +297,7 @@ describe("topology — lane integrity", () => {
 
   it("marks the fail/side paths as branches, not happy path", () => {
     const byId = new Map(WORKFLOW.lanes.build.steps.map((s) => [s.id, s]));
-    for (const id of ["b-assess", "b-repair", "b-perm"]) expect(byId.get(id)?.branch, id).toBe(true);
+    for (const id of ["b-repair", "b-perm"]) expect(byId.get(id)?.branch, id).toBe(true);
     for (const id of ["b-red", "b-green", "b-review"]) expect(byId.get(id)?.branch, id).toBeUndefined();
   });
 
@@ -469,16 +469,16 @@ describe("laneStepForEvent", () => {
       lane: "build",
       step: "b-green",
     });
-    // The Driver's build-cycle GREEN verify (cycle.verified) lights b-verify — the exact-event match
-    // wins over b-green/role:driver. (The release-engineer's deploy `verify.passed` is a SEPARATE stage
-    // and no longer lights this between-green-and-review card.)
+    // The Driver's build-cycle GREEN verify (cycle.verified) is folded INTO green — it's the driver's
+    // own real-branch run that proves the green — so it lights b-green (role:driver), no separate card.
     expect(laneStepForEvent(ev("cycle.verified", "driver"))).toEqual({
       lane: "build",
-      step: "b-verify",
+      step: "b-green",
     });
+    // The navigator's assess is folded into the single review/assess node (b-review).
     expect(
       laneStepForEvent(ev("phase.start", "navigator", { phase: "assess", buildMode: "assess" })),
-    ).toEqual({ lane: "build", step: "b-assess" });
+    ).toEqual({ lane: "build", step: "b-review" });
     expect(
       laneStepForEvent(ev("phase.start", "driver", { phase: "repair", buildMode: "repair" })),
     ).toEqual({ lane: "build", step: "b-repair" });
@@ -555,11 +555,11 @@ describe("laneProgress / passedNodes", () => {
     it("a gate.surfaced(acceptance) playhead → currentGate is the acceptance step (b-accept)", () => {
       expect(laneProgress([ev("gate.surfaced", "orchestrator", { gate: "acceptance", story: "S1" })]).currentGate).toBe("b-accept");
     });
-    // The Driver's build-cycle GREEN verify is a gate STEP that `current` nulls; currentGate names it so
-    // the Verify card glows at the GREEN verify (between GREEN and REVIEW), in the release-engineer colour.
-    it("a driver cycle.verified playhead → b-verify is the CURRENT step (automated verify is work, it lights), not a currentGate", () => {
+    // The driver's honest-green verify (cycle.verified) is folded into GREEN — it's the driver's own
+    // real-branch run that proves the green — so the playhead lights b-green as the driver's work.
+    it("a driver cycle.verified playhead → b-green is the CURRENT step (verify is folded into green), not a currentGate", () => {
       const p = laneProgress([ev("cycle.verified", "driver", { story: "S1" })]);
-      expect(p.current).toEqual({ lane: "build", step: "b-verify" }); // glows as running release-engineer work
+      expect(p.current).toEqual({ lane: "build", step: "b-green" }); // glows as running driver work
       expect(p.currentGate).toBeNull(); // NOT a human gate — only HITL gates (role null) are currentGate
     });
     it("a plain agent-work playhead (driver green) has no currentGate", () => {
@@ -700,7 +700,7 @@ describe("laneProgress / passedNodes", () => {
   it("edgeDone requires both endpoints reached", () => {
     const p = laneProgress(events);
     expect(edgeDone("build", ["b-red", "b-green"], p)).toBe(true);
-    expect(edgeDone("build", ["b-green", "b-verify"], p)).toBe(false);
+    expect(edgeDone("build", ["b-green", "b-review"], p)).toBe(false);
   });
 });
 
@@ -837,10 +837,8 @@ describe("topology — the intended workflow (lanes, steps, nodes)", () => {
       expect(build.steps.map((s) => s.id)).toEqual([
         "b-red",
         "b-green",
-        "b-verify",
         "b-review",
         "b-refactor",
-        "b-assess",
         "b-repair",
         "b-perm",
         "b-hil",
@@ -854,15 +852,13 @@ describe("topology — the intended workflow (lanes, steps, nodes)", () => {
       expect(stepOf("build", "b-green").role).toBe("driver");
       expect(stepOf("build", "b-green").match).toEqual({ role: "driver", buildModeNot: ["refactor", "repair", "refactor-superseded", "refactor-deploy", "green-superseded"] });
       expect(stepOf("build", "b-review").role).toBe("navigator");
-      expect(stepOf("build", "b-review").match).toEqual({ role: "navigator", buildMode: "review" });
+      // The one post-green navigator judgment: review (clean) + assess (verify fail) folded together.
+      expect(stepOf("build", "b-review").match).toEqual({ role: "navigator", buildModeAny: ["review", "assess", "assess-refactor"] });
       expect(stepOf("build", "b-refactor").role).toBe("driver");
       expect(stepOf("build", "b-refactor").match).toEqual({ role: "driver", buildModeAny: ["refactor"] });
     });
 
     it("marks the fail/side steps as branches with their own modes", () => {
-      expect(stepOf("build", "b-assess").role).toBe("navigator");
-      expect(stepOf("build", "b-assess").branch).toBe(true);
-      expect(stepOf("build", "b-assess").match).toEqual({ role: "navigator", buildModeAny: ["assess", "assess-refactor"] });
       expect(stepOf("build", "b-repair").role).toBe("driver");
       expect(stepOf("build", "b-repair").branch).toBe(true);
       expect(stepOf("build", "b-repair").match).toEqual({ role: "driver", buildModeAny: ["repair"] });
@@ -871,14 +867,8 @@ describe("topology — the intended workflow (lanes, steps, nodes)", () => {
       expect(stepOf("build", "b-perm").match).toEqual({ role: "driver", buildModeAny: ["green-superseded", "refactor-superseded"] });
     });
 
-    it("gives verify to the release-engineer colour, lit by the build-cycle GREEN verify (cycle.verified) ALONE", () => {
-      expect(stepOf("build", "b-verify").role).toBe("release-engineer");
-      expect(stepOf("build", "b-verify").gate).toBe(true);
-      expect(stepOf("build", "b-verify").match).toEqual({ eventAny: ["cycle.verified"] });
-    });
-
-    it("lights b-verify (not b-green) off the Driver's build-cycle GREEN verify `cycle.verified` (exact-event precedence)", () => {
-      expect(laneStepForEvent(ev("cycle.verified", "driver"))).toEqual({ lane: "build", step: "b-verify" });
+    it("folds the honest-green verify into GREEN: cycle.verified lights b-green (no separate verify card)", () => {
+      expect(laneStepForEvent(ev("cycle.verified", "driver"))).toEqual({ lane: "build", step: "b-green" });
     });
 
     it("has an acceptance gate and a raise-to-HIL terminal, neither lit by events", () => {
@@ -893,17 +883,15 @@ describe("topology — the intended workflow (lanes, steps, nodes)", () => {
     it("wires the TDD loop spine and the verify-fail back-edges", () => {
       expect(build.edges.map((e) => [...e])).toEqual([
         ["b-red", "b-green"],
-        ["b-green", "b-verify"],
-        ["b-verify", "b-review"],
+        ["b-green", "b-review"],
         ["b-review", "b-refactor"],
         ["b-refactor", "b-red"],
         ["b-refactor", "b-accept"],
       ]);
       expect(build.backEdges.map((e) => [...e])).toEqual([
-        ["b-verify", "b-assess", "verify fails"],
-        ["b-assess", "b-repair", "regression"],
-        ["b-assess", "b-perm", "supersession"],
-        ["b-assess", "b-hil", "genuine"],
+        ["b-review", "b-repair", "regression"],
+        ["b-review", "b-perm", "supersession"],
+        ["b-review", "b-hil", "genuine"],
       ]);
     });
   });
@@ -1193,13 +1181,13 @@ describe("laneStepForEvent — intended lane/step per event", () => {
     });
   });
 
-  it("the Driver's build-cycle GREEN verify `cycle.verified` → build/b-verify (exact-event wins over b-green)", () => {
-    // b-verify matches the build-cycle verify event by exact name (eventAny), and the exact-event pass
-    // wins over b-green (role:driver, declared earlier) which would otherwise swallow this driver event.
-    // The release-engineer's deploy `verify.passed` is a SEPARATE stage and does NOT light this card.
+  it("the Driver's build-cycle GREEN verify `cycle.verified` → build/b-green (verify folded into green)", () => {
+    // The honest-green verify is the driver's own real-branch run that PROVES the green, so it lights
+    // b-green (role:driver) rather than a separate card. The release-engineer's deploy `verify.passed`
+    // is a SEPARATE stage in the deploy lane.
     expect(laneStepForEvent(ev("cycle.verified", "driver", {}))).toEqual({
       lane: "build",
-      step: "b-verify",
+      step: "b-green",
     });
   });
 
@@ -1397,15 +1385,12 @@ describe("topology — reachedThisPass (pass-scoped traversal)", () => {
   });
 
   it("keeps a verify-fail BRANCH that ran this pass, and omits one that did not", () => {
-    const verify = ev("verify.start", "release-engineer", {}); // b-verify (eventPrefix verify)
-    const assess = ev("phase.start", "navigator", { buildMode: "assess" }); // b-assess (branch)
+    const assess = ev("phase.start", "navigator", { buildMode: "assess" }); // review/assess node (b-review)
     const repair = ev("phase.start", "driver", { buildMode: "repair" }); // b-repair (branch)
-    const ran = reachedThisPass([red, green, verify, assess, repair]);
-    expect(ran.has("b-assess")).toBe(true);
-    expect(ran.has("b-repair")).toBe(true);
-    // A pass that went straight through never lights the branch.
+    const ran = reachedThisPass([red, green, assess, repair]);
+    expect(ran.has("b-repair")).toBe(true); // the regression branch lit
+    // A pass that went straight through never lights the repair branch.
     const straight = reachedThisPass([red, green, review, refactor]);
-    expect(straight.has("b-assess")).toBe(false);
     expect(straight.has("b-repair")).toBe(false);
   });
 

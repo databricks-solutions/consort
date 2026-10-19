@@ -47,8 +47,8 @@ export interface StepMatch {
   event?: string;
   // Like `event` but a SET: the event name must equal one of these (decided alone). An exact-event
   // match (event / eventAny) is MORE SPECIFIC than a role match, so laneStepForEvent prefers it — e.g.
-  // the driver's `cycle.verified` (the build-cycle GREEN verify) lights the Verify step (b-verify) over
-  // the Driver step (b-green, role:driver) that also matches a bare driver event.
+  // the deploy `verify.passed` lands on the deploy lane's Verify step (dp-verify) over a bare role
+  // match. (The build-cycle honest-GREEN verify is NOT a separate step — it's folded into b-green.)
   eventAny?: string[];
   // Additional AND-constraint: the event MESSAGE must contain this substring. The promote sub-steps
   // (prepare-pr / wait-ci / merge) emit no distinct event NAME — only the orchestrator's per-action
@@ -102,7 +102,7 @@ export const LANE_IDS: readonly LaneId[] = ["plan", "design", "build", "deploy"]
 //
 // `assess` / `assess-refactor` map to "build": every `assess*` event is a navigator or
 // orchestrator turn carrying `buildMode: assess*` — the honest-GREEN "regression or
-// supersession?" decision inside the build lane (see b-assess below, which matches it there).
+// supersession?" decision inside the build lane (folded into b-review, which matches it there).
 // There is no whitespace- or casing-variant key (e.g. `"estimate "`, `"RED"`): nodeForPhase
 // normalizes the phase first, which covers those and anything similar.
 export const PHASE_TO_NODE: Record<string, string> = {
@@ -533,7 +533,10 @@ const BUILD_LANE: Lane = {
       id: "b-green",
       role: "driver",
       label: "Driver",
-      sub: "minimal honest code (GREEN)",
+      // GREEN subsumes the honest-GREEN verify (the driver's real-branch suite run, cycle.verified):
+      // the code isn't green until that suite passes, so verify is the gate inside this step, not a
+      // separate card. A failing verify flows to the navigator's review/assess (b-review → backEdges).
+      sub: "minimal honest code + verify (GREEN)",
       match: {
         // b-green is declared BEFORE b-repair/b-perm and matches any driver event whose buildMode is
         // not excluded here, so every driver GREEN-outcome variant with its OWN step must be listed
@@ -545,26 +548,17 @@ const BUILD_LANE: Lane = {
       },
     },
     {
-      id: "b-verify",
-      // The build-cycle GREEN VERIFY — the honest-GREEN check that runs BETWEEN the Driver's GREEN and
-      // the Navigator's REVIEW, logged as the Driver's `cycle.verified`. VERIFY is release work, so the
-      // card takes the release-engineer's light-blue (role is for COLOUR only; `isHumanGate` stays false
-      // — no gate KEY — so it never goes purple). It matches `cycle.verified` ALONE via `eventAny` (so the
-      // exact-event match wins over b-green/role:driver, which was swallowing it). It deliberately does
-      // NOT match the release-engineer's SEPARATE pre-acceptance deploy `verify.passed` (a later stage,
-      // after REVIEW, at await-acceptance) — that must not light this between-green-and-review card.
-      role: "release-engineer",
-      label: "Verify",
-      sub: "run vs real branch",
-      gate: true,
-      match: { eventAny: ["cycle.verified"] },
-    },
-    {
       id: "b-review",
       role: "navigator",
       label: "Navigator",
-      sub: "review",
-      match: { role: "navigator", buildMode: "review" },
+      // The navigator's ONE post-green judgment. On a clean GREEN it's a review → refactor; on a
+      // failed verify it's an assess (regression vs supersession vs genuine) → repair/supersede/
+      // escalate. Those are mutually-exclusive OUTCOMES of the same moment, so they're one node, not
+      // two rows — the branch is carried by the outgoing edges (refactor vs repair/perm/hil), not a
+      // separate card. Matches review + assess + assess-refactor; NOT `assess-deploy` (that is the
+      // DEPLOY lane's dp-assess — a deploy-verify contamination check, a different lane's Navigator).
+      sub: "review / assess",
+      match: { role: "navigator", buildModeAny: ["review", "assess", "assess-refactor"] },
     },
     {
       id: "b-refactor",
@@ -572,18 +566,6 @@ const BUILD_LANE: Lane = {
       label: "Driver",
       sub: "refactor (structure)",
       match: { role: "driver", buildModeAny: ["refactor"] },
-    },
-    {
-      id: "b-assess",
-      role: "navigator",
-      label: "Navigator",
-      sub: "assess: regression or supersession?",
-      branch: true,
-      // NOT "assess-deploy": that is the DEPLOY lane's assess (dp-assess) — a deploy-verify
-      // contamination check, not a build-cycle regression. Claiming it here anchored the deploy
-      // self-heal to the wrong lane's Navigator bubble. `assess` + `assess-refactor` are the
-      // build-cycle assesses that belong here.
-      match: { role: "navigator", buildModeAny: ["assess", "assess-refactor"] },
     },
     {
       id: "b-repair",
@@ -620,17 +602,19 @@ const BUILD_LANE: Lane = {
   ],
   edges: [
     ["b-red", "b-green"],
-    ["b-green", "b-verify"],
-    ["b-verify", "b-review"],
+    ["b-green", "b-review"],
     ["b-review", "b-refactor"],
     ["b-refactor", "b-red"],
     ["b-refactor", "b-accept"],
   ] as const,
   backEdges: [
-    ["b-verify", "b-assess", "verify fails"],
-    ["b-assess", "b-repair", "regression"],
-    ["b-assess", "b-perm", "supersession"],
-    ["b-assess", "b-hil", "genuine"],
+    // Green ISN'T green until the honest-GREEN verify (the driver's real-branch suite run, logged as
+    // cycle.verified) passes — verify is the gate INSIDE green, not a separate step. A failing verify
+    // flows into the navigator's review/assess (b-review), which fans out to repair (regression),
+    // permissive-green (supersession), or raise-to-HIL (genuine) — the assess outcomes.
+    ["b-review", "b-repair", "regression"],
+    ["b-review", "b-perm", "supersession"],
+    ["b-review", "b-hil", "genuine"],
   ] as const,
 };
 
@@ -648,8 +632,8 @@ const BUILD_LANE: Lane = {
 //
 // The self-heal arm (deploy-verify contamination) mirrors the build lane's assess fan-out. Both
 // deploy-heal build modes are OWNED here, so they light the Navigator/Driver bubbles in THIS lane,
-// not the build lane's: `assess-deploy` -> `dp-assess` (the build lane's `b-assess` no longer
-// matches it), and `refactor-deploy` -> `dp-refactor` (never had a build-lane claimant).
+// not the build lane's: `assess-deploy` -> `dp-assess` (the build lane's review/assess node `b-review`
+// does NOT match it), and `refactor-deploy` -> `dp-refactor` (never had a build-lane claimant).
 const DEPLOY_LANE: Lane = {
   title: "DEPLOY / PROMOTE",
   steps: [
@@ -829,7 +813,8 @@ function buildModeOf(e: AgentLogEvent): string | null {
 //
 // Field semantics, preserved from the template's evaluator:
 //   eventPrefix  — decided alone: the event name must start with it, and nothing else
-//                  is consulted (this is how `verify.*` lights b-verify regardless of role).
+//                  is consulted (this is how `verify.*` lights the deploy lane's dp-verify
+//                  regardless of role).
 //   event        — decided alone: the event name must equal it exactly (deploy.start /
 //                  deploy.verified light the deploy lane's deterministic steps).
 //   role         — must be equal.
@@ -849,18 +834,16 @@ export function matchesStep(m: StepMatch | null, e: AgentLogEvent): boolean {
   // Exact event-name match, decided alone (the deploy lane lights dp-deploy / dp-verify off specific
   // orchestrator events).
   if (m.event) return e.event === m.event;
-  // Exact event-name in a SET, decided ALONE (never falls through to a role check): b-verify lights off
-  // the Driver's build-cycle GREEN verify `cycle.verified` ONLY — NOT the release-engineer's deploy
-  // `verify.passed`, which must not re-match it via b-verify's role:release-engineer (that role is for
-  // COLOUR only here, not matching).
+  // Exact event-name in a SET, decided ALONE (never falls through to a role check). Used where an
+  // event name must pin a step regardless of role — e.g. the deploy lane's name-pinned steps.
   if (m.eventAny) return m.eventAny.includes(e.event);
 
   // eventPrefix: the event NAME starts with it. When the step ALSO declares a role/phase, treat the
   // two as an OR – the step matches by event name (e.g. p-intake on the seed's `intake.supplied`) OR
   // by role+phase (e.g. p-intake on the metered PO intake turn's `phase.start`/`turn.usage`, which
   // carry phase="intake" but an event name that does not start with "intake"). An eventPrefix-ONLY
-  // step (e.g. b-verify, `eventPrefix:"verify"` with no role/phase) stays NAME-ALONE – a name miss is
-  // a miss, never a fall-through to the always-true tail.
+  // step (e.g. the deploy lane's dp-verify, `eventPrefix:"verify"` with no role/phase) stays NAME-ALONE
+  // – a name miss is a miss, never a fall-through to the always-true tail.
   if (m.eventPrefix) {
     if (typeof e.event === "string" && e.event.startsWith(m.eventPrefix)) return true;
     const hasRoleOrPhase =
@@ -925,7 +908,7 @@ export interface LaneHit {
 // glow comes from the run's parked-gate focus, not from being `current`.
 // HITL gate steps ONLY: a `gate` step with NO owning agent (`role === null`) — the human checkpoints
 // (spec / plan / deploy / promote / acceptance). These must never be the actively-running `current`
-// step; their glow comes from the parked-gate focus. But an AUTOMATED verify (`b-verify` / `dp-verify`,
+// step; their glow comes from the parked-gate focus. But an AUTOMATED verify (`dp-verify`,
 // role=release-engineer) is real agent work and SHOULD light as `current` when the playhead is on it —
 // it was previously lumped with the human gates and so the Verify step never lit up.
 const HITL_GATE_STEP_IDS: ReadonlySet<string> = new Set(
@@ -936,20 +919,19 @@ const HITL_GATE_STEP_IDS: ReadonlySet<string> = new Set(
 // event lights, or null. First match wins.
 export function laneStepForEvent(e: AgentLogEvent | null | undefined): LaneHit | null {
   if (!e) return null;
-  // A per-test result lights the stage that PRODUCED it: a GREEN (or refactored) means the honest-GREEN
-  // VERIFY ran the suite against the real paired branch and that test passed → the Verify card (b-verify);
-  // a RED means the Navigator wrote it failing → the RED card (b-red). So scrubbing the per-test greens
-  // keeps the Verify card lit (the tests are being verified against the branch), the RED greens light
-  // the Navigator — matching what actually runs them.
+  // A per-test result lights the stage that PRODUCED it. A GREEN (or refactored) is the DRIVER's
+  // green step — the driver wrote the minimal code and the test passes → the Green card (b-green); a
+  // RED is the Navigator writing it failing → the RED card (b-red). The honest-GREEN VERIFY is folded
+  // INTO green (cycle.verified is the driver's own real-branch run that proves the green), so greening
+  // the whole cycle (tests + verify included) is the driver's; it is NOT a separate card.
   if (e.event === "test.result") {
     const st = (e.metadata as Record<string, unknown> | undefined)?.status;
-    if (st === "green" || st === "refactored") return { lane: "build", step: "b-verify" };
+    if (st === "green" || st === "refactored") return { lane: "build", step: "b-green" };
     if (st === "red") return { lane: "build", step: "b-red" };
   }
   // PASS 1 — exact-event matches (m.event / m.eventAny) win regardless of lane/step order, because an
-  // exact event name is MORE SPECIFIC than a role/phase match. This is why the driver's `cycle.verified`
-  // (the build-cycle GREEN verify) lights the Verify step (b-verify, eventAny) rather than the Driver
-  // step (b-green, role:driver, declared earlier) that also matches a bare driver event.
+  // exact event name is MORE SPECIFIC than a role/phase match (e.g. a deploy `verify.passed` lands on
+  // the deploy lane's dp-verify rather than a bare role match).
   for (const lane of LANE_IDS) {
     for (const s of WORKFLOW.lanes[lane].steps) {
       const m = s.match;
@@ -963,6 +945,18 @@ export function laneStepForEvent(e: AgentLogEvent | null | undefined): LaneHit |
     }
   }
   return null;
+}
+
+/** The AGENT that owns an event, by its lane step — NOT the raw `e.role`. An event can fall in a
+ *  turn whose agent isn't its true actor (a release-engineer `deploy.*`, an orchestrator gate).
+ *  Routing through `laneStepForEvent` keeps the event-step attribution identical to the topology
+ *  lanes (so e.g. a per-test GREEN and the folded-in cycle.verified both attribute to the driver's
+ *  green step). Falls back to the event's own role when no lane step claims it (a gate: role null →
+ *  caller uses `e.role`). */
+export function roleForEvent(e: AgentLogEvent | null | undefined): Role | null {
+  const hit = laneStepForEvent(e);
+  if (!hit) return null;
+  return WORKFLOW.lanes[hit.lane].steps.find((s) => s.id === hit.step)?.role ?? null;
 }
 
 /** Map a recorded TURN (from turns/index.json: role + `mode` = its phase) to its lane step, so a
@@ -984,7 +978,7 @@ export function laneStepForTurn(turn: { role?: string | null; mode?: string | nu
     event: "phase.start",
     message: turn.label ?? "",
     // Feed `mode` as BOTH phase and buildMode: design steps match on `phase`, build steps match on
-    // `buildMode` (b-review/b-refactor/b-assess), and a turn record carries only one `mode` field — so
+    // `buildMode` (b-review/b-refactor), and a turn record carries only one `mode` field — so
     // without this, a build VARIANT turn (mode="review") never matched its buildMode-keyed step. The
     // step's own role gate keeps this from cross-lighting (b-* require navigator/driver).
     metadata: mode ? { phase: mode, buildMode: mode } : {},
@@ -1157,10 +1151,10 @@ export interface LaneProgress {
   // The GATE/checkpoint step the playhead is parked AT (step id), for lane-card glow — distinct from
   // `current` (which excludes gate steps for the focus=step path). This is what the run has ARRIVED at:
   //   (a) the playhead IS a gate.surfaced/approved/rejected event → the gate it names (GATE_STEP_BY_KEY);
-  //   (b) the playhead maps to a gate STEP that `current` nulled (the per-story release-engineer verify
-  //       `b-verify`, whose deploy/verify work IS the current locus).
+  //   (b) the playhead maps to a gate STEP that `current` nulled (the deploy lane's automated verify
+  //       `dp-verify`, whose deploy/verify work IS the current locus).
   // It glows the right card for the ship/verify gates that never become a parked `pendingGate` (the
-  // one-turn deploy/promote gates emit no surface→approve window; the per-story verify runs while the
+  // one-turn deploy/promote gates emit no surface→approve window; the deploy verify runs while the
   // acceptance gate stays open), and it TAKES PRECEDENCE over the lingering pendingGate glow so the
   // open-but-not-current acceptance gate doesn't steal the glow from the step the run is actually at.
   currentGate: string | null;
@@ -1208,7 +1202,7 @@ export function laneProgress(events: AgentLogEvent[], upTo?: number, feature?: s
     playhead && playhead.event !== "gate.surfaced" && playhead.event !== "gate.approved"
       ? laneStepForEvent(playhead)
       : null;
-  // Exclude only HUMAN gates from `current` — an automated verify (b-verify / dp-verify) is real
+  // Exclude only HUMAN gates from `current` — an automated verify (dp-verify) is real
   // release-engineer work and SHOULD light as the running step when the playhead is on it.
   const current: LaneHit | null = hit && !HITL_GATE_STEP_IDS.has(hit.step) ? hit : null;
 
@@ -1226,7 +1220,7 @@ export function laneProgress(events: AgentLogEvent[], upTo?: number, feature?: s
       if (typeof gname === "string") currentGate = GATE_STEP_BY_KEY[gname] ?? null;
     } else {
       // A work event that maps to a HUMAN gate step → that gate is parked at. An automated verify
-      // (b-verify / dp-verify) is NOT a currentGate — it lights as `current` above.
+      // (dp-verify) is NOT a currentGate — it lights as `current` above.
       const gateHit = laneStepForEvent(playhead);
       if (gateHit && HITL_GATE_STEP_IDS.has(gateHit.step)) currentGate = gateHit.step;
     }
@@ -1268,7 +1262,7 @@ const LANE_STEP_IDS: Record<LaneId, ReadonlySet<string>> = LANE_IDS.reduce(
  * monotonic done-set. This is "what the DAG followed, this iteration": fold events[0..upTo),
  * light each step, and when a lane's FIRST step is re-entered (the `b-refactor → b-red` loop
  * edge, or a new story's red) CLEAR that lane's accumulated steps and start the pass fresh. A
- * verify-fail branch (b-assess/b-repair) that ran THIS pass stays reached; one that didn't is
+ * verify-fail branch (b-review/b-repair) that ran THIS pass stays reached; one that didn't is
  * absent. Upstream lanes never re-enter their first step, so their steps stay reached (a build
  * playhead keeps design full). This is the single source for every node-state surface — reveal,
  * the per-step cards, and the lane shading — so a node can never read "done" in one and

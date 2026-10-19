@@ -64,7 +64,7 @@ const VERB_TONE: Record<string, string> = {
 };
 const displayVerb = (v: string | undefined): string => (v === "Bash" ? "Command" : v ?? "");
 
-export function AgentLogReplay({ timeline, lineAt }: { timeline: ActivityTimeline | null; lineAt: number }) {
+export function AgentLogReplay({ timeline, lineAt, fill = false }: { timeline: ActivityTimeline | null; lineAt: number; fill?: boolean }) {
   const currentRef = useRef<HTMLDivElement | null>(null);
   // Keep the current (newest-revealed) line in view as the playhead advances.
   useEffect(() => {
@@ -89,14 +89,17 @@ export function AgentLogReplay({ timeline, lineAt }: { timeline: ActivityTimelin
     (currentIdx < 0 ? withLines[0] : withLines[withLines.length - 1]) ??
     null;
 
-  const turnPos = turn ? timeline.turns.findIndex((t) => t.ordinal === turn.ordinal) + 1 : 0;
+  // Position by segment identity (indexOf the found segment), not by ordinal — re-segmentation can
+  // give two segments the same recorded ordinal (an agent turn split around a milestone), so an
+  // ordinal lookup would collapse them onto the first.
+  const turnPos = turn ? timeline.turns.indexOf(turn) + 1 : 0;
   // This turn's lines revealed UP TO the playhead — so they appear one at a time as the scrubber steps.
   const end = turn ? Math.min(turn.startLine + turn.lineCount, revealed) : 0;
   const lines = turn ? timeline.lines.slice(turn.startLine, Math.max(turn.startLine, end)) : [];
   const lineInTurn = turn ? Math.max(0, Math.min(revealed - turn.startLine, turn.lineCount)) : 0;
 
   return (
-    <div style={{ flex: "none", display: "flex", flexDirection: "column", gap: 4, maxHeight: "48%", overflow: "auto", borderBottom: "1px solid var(--border-default)", padding: "10px 12px" }}>
+    <div style={{ ...(fill ? { flex: 1, minHeight: 0 } : { flex: "none", maxHeight: "48%" }), display: "flex", flexDirection: "column", gap: 4, overflow: "auto", borderBottom: fill ? "none" : "1px solid var(--border-default)", padding: "10px 12px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <span style={{ fontSize: "0.66rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-faint)" }}>Agent steps</span>
         {turn ? (
@@ -152,14 +155,16 @@ export function AgentLogReplay({ timeline, lineAt }: { timeline: ActivityTimelin
                         <span style={{ color: testColor, fontWeight: 700, minWidth: 64, flex: "0 0 auto" }}>
                           {l.status === "red" ? "✗ test" : "✓ test"}
                         </span>
-                        <span style={{ color: testColor, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.testId}</span>
+                        <span style={{ color: testColor, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.testId}</span>
                       </>
                     ) : isEvent ? (
                       // A non-tool event-log STAGE (verify / green / gate / deploy / …): the verb is the
-                      // stage label (in the turn role's colour), the target is the event's message.
+                      // stage label (in the ACTOR's colour), the target is the event's message. The
+                      // actor now owns its own turn segment (see the route's re-segmentation), so the
+                      // stage reads under its own role header — no per-line actor tag needed.
                       <>
                         <span style={{ color: colorForRole(l.role ?? ""), fontWeight: 700, minWidth: 64, flex: "0 0 auto" }}>{l.verb}</span>
-                        <span style={{ color: "var(--text-body)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.target}</span>
+                        <span style={{ color: "var(--text-body)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.target}</span>
                       </>
                     ) : (
                       <>

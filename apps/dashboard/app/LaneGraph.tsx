@@ -374,12 +374,12 @@ function LaneSvg({
   let nRows: number;
   if (laneId === "build") {
     const grid: Record<string, [number, number]> = {
-      "b-red": [0, 0], "b-green": [0, 1], "b-verify": [0, 2], "b-review": [0, 3], "b-refactor": [0, 4], "b-accept": [0, 5],
-      "b-assess": [1, 2],
-      "b-repair": [2, 1], "b-perm": [2, 2], "b-hil": [2, 3],
+      "b-red": [0, 0], "b-green": [0, 1], "b-review": [0, 2], "b-refactor": [0, 3], "b-accept": [0, 4],
+      // The review/assess fan-out (verify-fail outcomes) drops to row 1 under b-review (col 2).
+      "b-repair": [1, 1], "b-perm": [1, 2], "b-hil": [1, 3],
     };
     lane.steps.forEach((s) => place(s.id, ...(grid[s.id] ?? [0, 0])));
-    nRows = 3;
+    nRows = 2;
   } else if (laneId === "deploy") {
     // The combined ship lane, also a 3-row grid. Row 0 is the happy path with a one-column GAP
     // (col 3) between the Deploy section (dp-deploy…dp-gate) and the Promote section (dp-pr…
@@ -665,17 +665,17 @@ function LaneSvg({
                     ? "left"
                     : undefined
                 : undefined,
-            // Spread the build assess→ fan-out: regression drops at 1/3 across the box, genuine at
-            // 2/3, so their down-lines (and arrows) sit apart from supersession's centred drop.
+            // Spread the build review/assess→ fan-out: regression drops at 1/3 across the box, genuine
+            // at 2/3, so their down-lines (and arrows) sit apart from supersession's centred drop.
             dropFrac:
-              be[0] === "b-assess" && be[1] === "b-repair"
+              be[0] === "b-review" && be[1] === "b-repair"
                 ? 1 / 3
-                : be[0] === "b-assess" && be[1] === "b-hil"
+                : be[0] === "b-review" && be[1] === "b-hil"
                   ? 2 / 3
                   : undefined,
             // Supersession's centred drop sits its label BELOW the horizontal fan-out lines so it
             // doesn't collide with the regression/genuine labels above.
-            labelBelow: be[0] === "b-assess" && be[1] === "b-perm",
+            labelBelow: be[0] === "b-review" && be[1] === "b-perm",
           }),
         )}
 
@@ -716,17 +716,17 @@ function stepState(
   // parked on pulses red ("escalation-current"). Both read from the single focus. Every OTHER gate —
   // passed or upcoming — is neutral; purple/red is only ever the currently-parked one.
   // The gate/checkpoint step the playhead is parked AT glows (purple), and TAKES PRECEDENCE over the
-  // focus/pendingGate glow: it lights the one-turn ship gates (deploy/promote) + the per-story
-  // release-engineer verify (b-verify) that never become a parked `pendingGate`, and it stops a
-  // lingering surfaced-but-not-cleared gate (acceptance, still open while the release-engineer verifies)
-  // from stealing the glow from the step the run is actually at. When the playhead is NOT at a gate
-  // step, fall back to the parked-gate focus (the spec/acceptance surface→approve window).
+  // focus/pendingGate glow: it lights the one-turn ship gates (deploy/promote) + the deploy-lane
+  // automated verify (dp-verify) that never become a parked `pendingGate`, and it stops a lingering
+  // surfaced-but-not-cleared gate (acceptance, still open while the release-engineer verifies) from
+  // stealing the glow from the step the run is actually at. When the playhead is NOT at a gate step,
+  // fall back to the parked-gate focus (the spec/acceptance surface→approve window).
   const gateKey = GATE_KEY_BY_STEP[s.id];
   if (state.topology.laneGate) {
     // A HITL human-decision gate (acceptance/deploy/promote/spec/plan/intake/backlog — it carries a
     // gate KEY) glows purple ("gate-current"). A role-worked checkpoint the playhead is at — the
-    // release-engineer's verify (`b-verify`: gate:true but NOT a HITL gate, so no key) — is the role's
-    // active WORK, so it glows in that ROLE's colour ("current"), never gate-purple.
+    // deploy-lane automated verify (`dp-verify`: gate:true but NOT a HITL gate, so no key) — is the
+    // role's active WORK, so it glows in that ROLE's colour ("current"), never gate-purple.
     if (s.id === state.topology.laneGate) return gateKey ? "gate-current" : "current";
   } else if (gateKey && state.focus.kind === "gate" && gateKey === state.focus.gate) {
     return "gate-current";
@@ -842,7 +842,7 @@ function StepBox({
   const glowColor = "var(--text-strong)";
 
   // A role-bearing step opens that agent's turn drill-down — the SAME behavior as clicking its
-  // Current-State bubble. Gate steps (b-accept / p-gate / d-gate / b-verify) and escalation
+  // Current-State bubble. Gate steps (b-accept / p-gate / d-gate / dp-verify) and escalation
   // terminals (b-hil / p-hil / d-hil) carry no role and stay inert. Not gate-controlled: opening a
   // role panel is a safe fallback even with no recorded turn, exactly like the bubble.
   const clickable = step.role != null && !!onOpenRole;
