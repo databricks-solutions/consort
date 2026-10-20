@@ -103,6 +103,15 @@ describe("refreshSurface – brings agents + commands to the target + stamps the
     expect(existsSync(join(proj, ".claude", "agents", "architect-reviewer.md"))).toBe(true);
     expect(existsSync(join(proj, "scripts", "run-tests.sh"))).toBe(true); // kit-owned helper
     expect(existsSync(join(proj, ".github", "workflows", "merge.yml"))).toBe(true); // CI
+    // Generalized root-file copy: EVERY kit-owned common/ root file lands at the project root (the
+    // gap that shipped projects missing the test-capture files). The list is read from the kit dir,
+    // never enumerated, so a new kit root file flows automatically.
+    expect(r.rootFiles).toEqual(expect.arrayContaining(["consort-capture.ts", "consort-test-reporter.ts", "playwright.config.ts"]));
+    expect(existsSync(join(proj, "consort-capture.ts"))).toBe(true); // root kit file copied to the project root
+    expect(existsSync(join(proj, "consort-test-reporter.ts"))).toBe(true);
+    // Project-owned config / scaffold-source files are deliberately NOT copied (would clobber the project).
+    expect(r.rootFiles).not.toContain("deploy-targets.yaml");
+    expect(existsSync(join(proj, "deploy-targets.yaml"))).toBe(false);
     // The marker is set to the target so the next drive's resync sees the surface current.
     expect(readFileSync(join(proj, ".claude", "agents", ".kit-version"), "utf8").trim()).toBe("9.9.9-test");
   });

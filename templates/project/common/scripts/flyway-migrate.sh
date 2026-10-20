@@ -66,10 +66,63 @@ elif [ -f "$REPO_ROOT/requirements.txt" ] || [ -f "$REPO_ROOT/pyproject.toml" ];
     source .venv/bin/activate
   fi
   alembic upgrade head "$@"
+elif [ -n "$(find "$REPO_ROOT" -maxdepth 1 \( -name '*.sln' -o -name '*.slnx' -o -name '*.csproj' \) -print -quit 2>/dev/null)" ]; then
+  # .NET: EF Core or Flyway (db/migrations/).
+  if [ -n "${DATABASE_URL:-}" ]; then
+    # Explicit target (CI secret, ephemeral-verify DSN): run the tool directly.
+    if [ -d "$REPO_ROOT/db/migrations" ]; then
+      _np="${DATABASE_URL#postgresql://}"; _cr="${_np%%@*}"; _hp="${_np#*@}"
+      # Decode %XX only ('+' is literal in URL userinfo, and backslashes in a
+      # credential must not be interpreted as escapes).
+      _urldecode() {
+        local s="$1" out="" c
+        while [ -n "$s" ]; do
+          c="${s:0:1}"; s="${s:1}"
+          if [ "$c" = "%" ] && [ "${#s}" -ge 2 ]; then
+            out+="$(printf "\\x${s:0:2}")"; s="${s:2}"
+          else
+            out+="$c"
+          fi
+        done
+        printf '%s' "$out"
+      }
+      FLYWAY_URL="jdbc:postgresql://${_hp}" \
+      FLYWAY_USER="$(_urldecode "${_cr%%:*}")" \
+      FLYWAY_PASSWORD="$(_urldecode "${_cr#*:}")" \
+        flyway "-locations=filesystem:$REPO_ROOT/db/migrations" \
+          -baselineOnMigrate=true -baselineVersion=0 migrate "$@"
+    else
+      # Relative to the repo root (the cwd here): an absolute path through a
+      # symlinked directory (e.g. macOS /tmp -> /private/tmp) makes MSBuild see
+      # two different project paths and dotnet ef then loses the build output.
+      _csproj="$(grep -l "Microsoft.EntityFrameworkCore.Design" \
+        $(find . -maxdepth 3 -name '*.csproj' -not -path '*/tests/*' -not -path '*/test/*' \
+            -not -path '*/client/*' -not -path '*/bin/*' -not -path '*/obj/*' -not -path '*/node_modules/*' | sort) \
+        2>/dev/null | head -1)"
+      [ -n "$_csproj" ] || { echo "No *.csproj references Microsoft.EntityFrameworkCore.Design." >&2; exit 1; }
+      # dotnet ef reads project metadata before it builds, so restore first
+      # (a fresh clone or a cleaned obj/ has no assets file).
+      if [ -f .config/dotnet-tools.json ]; then dotnet tool restore >/dev/null; fi
+      dotnet restore "$_csproj" >/dev/null
+      # The design-time DbContext factory reads DATABASE_URL, so no password
+      # is passed on the command line.
+      dotnet ef database update --project "$_csproj" "$@"
+    fi
+  else
+    # Paired branch from .env metadata: the kit's tool-agnostic migrate CLI
+    # picks the tool, mints a fresh credential, and refuses protected tiers,
+    # exactly as CI does.
+    if [ ! -x "$SCRIPT_DIR/lk" ] || [ -z "${LAKEBASE_PROJECT_ID:-}" ] || [ -z "${LAKEBASE_BRANCH_ID:-}" ]; then
+      echo "Cannot migrate: need scripts/lk plus LAKEBASE_PROJECT_ID and LAKEBASE_BRANCH_ID (written to .env by the post-checkout hook), or DATABASE_URL." >&2
+      exit 1
+    fi
+    "$SCRIPT_DIR/lk" lakebase-schema-migrate apply \
+      --instance "$LAKEBASE_PROJECT_ID" --branch "$LAKEBASE_BRANCH_ID" "$@"
+  fi
 elif [ -f "$REPO_ROOT/package.json" ]; then
   # Node.js / Knex
   npx knex migrate:latest "$@"
 else
-  echo "Could not detect project language. Expected pom.xml (Java), pyproject.toml/requirements.txt (Python), or package.json (Node.js)."
+  echo "Could not detect project language. Expected pom.xml (Java), pyproject.toml/requirements.txt (Python), *.sln/*.csproj (.NET), or package.json (Node.js)."
   exit 1
 fi

@@ -10,23 +10,72 @@ application-local.properties
 # re-initialized each run, so they must never enter git history (a stray
 # `git add -A` from a build commit would otherwise carry one feature's log onto
 # the next branch). The committed .consort corpus (features/, planning/, sprints/,
-# workflow-state.json, product-overview.md, nfrs.md, design/) is unaffected.
-# Legacy artifact-root names (.sftdd/.tdd) are covered too so an older-layout
-# project scaffolded before the rename still ignores its per-run files.
+# workflow-state.json, product-overview.md, nfrs.md, design/) is unaffected. The
+# legacy roots (.sftdd/.tdd) are kept for projects created before the rename.
 .consort/agent-log.jsonl
 .consort/run-config.json
+.consort/drive-live.log
+# The detached drive's live pid file (consort-drive --detach writes it, consort-watch reads it).
+# Per-run scratch; an untracked drive.pid otherwise re-dirties the tree and re-blocks the next
+# experiment cut's clean-tree check.
+.consort/drive.pid
+.consort/diagnostics/
+# next.json is the drive's stop-state pointer, rewritten on EVERY stop. Committing it dirties the
+# tree on the next stop and re-blocks the experiment cut's clean-tree check , it is per-run state,
+# not corpus, so it never enters history.
+.consort/next.json
+# The build lane's TRANSIENT run-state: per-cycle records (cycles/), per-experiment scratch
+# (experiments/), and the live build-pipeline pointer (pipeline.json). These churn every cycle and
+# describe the mechanics of a single run, not the design corpus, so they are gitignored the same way
+# next.json is , otherwise their per-cycle churn re-dirties the tree and re-blocks the next
+# experiment cut. The DESIGN corpus (features/, planning/, sprints/, workflow-state.json,
+# product-overview.md, nfrs.md, design/, architecture/) is committed, not ignored (Consort persists
+# it on the feature branch at each cut so the spec history survives for later stories).
+.consort/cycles/
+.consort/experiments/
+.consort/pipeline.json
+# NOTE: the PER-FEATURE ledger .consort/features/<id>/pipeline.json is deliberately NOT ignored —
+# it is the durable per-story pipeline state (persisted on the feature branch so it survives across
+# sessions). Ignoring it lost the ledger. A promotion-merge conflict on it is resolved at the MERGE
+# layer (scm-merge reconciles it to the run side), never by untracking it.
+# The turn recorder's per-run observability: its internal file-hash map
+# (.recorder-state.json, used for delta computation), the routing-decision
+# diagnostic stream (routing-decisions.jsonl), and the per-turn record dirs
+# (turns/). All three are re-created every run and describe a single run's
+# mechanics, not the design corpus (the curated replay corpus lives in the kit
+# repo, never in a scaffolded project). The recorder already treats them as
+# internal; ignore them here so a corpus commit never sweeps them into history
+# and an untracked one never blocks the experiment / feature-branch fork's
+# clean-tree check.
+.consort/.recorder-state.json
+.consort/routing-decisions.jsonl
+.consort/turns/
+# Playwright-MCP's browser scratch (screenshots/traces a UX/review turn drops). Transient
+# tool output, not corpus; ignore it so it never dirties the tree before an experiment cut.
+.playwright-mcp/
 .sftdd/agent-log.jsonl
 .sftdd/run-config.json
 .tdd/agent-log.jsonl
 .tdd/run-config.json
 
-# The kit-ref RUN PIN: a WORKSPACE-local, checkout-proof override of the committed
-# `.lakebase/kit-ref`. The drive writes it at launch to pin the run's kit version
-# for the whole run; it MUST stay gitignored so a branch checkout/reset (which
-# forks from origin/<parent>) can never restore a branch-committed kit-ref out from
-# under the run and silently execute the wrong kit version. The committed
-# `.lakebase/kit-ref` stays tracked (CI resolves its KIT_REF from it).
+# The RUN PINs: WORKSPACE-local, checkout-proof overrides of the committed
+# `.lakebase/kit-ref` (Consort kit) and `.lakebase/scm-utils-ref` (substrate). The
+# drive writes them at launch to pin the run's versions for the whole run; they
+# MUST stay gitignored so a branch checkout/reset (which forks from
+# origin/<parent>) can never restore a branch-committed ref out from under the run
+# and silently execute the wrong version. The committed `.lakebase/kit-ref` and
+# `.lakebase/scm-utils-ref` stay tracked (CI resolves KIT_REF / SCM_UTILS_REF from
+# them).
 .lakebase/kit-ref.local
+.lakebase/scm-utils-ref.local
+
+# The runtime SCM CLAIM state: per working tree, rewritten by every SCM transition
+# (claim / pr-ready / ci-green / merged). If it is git-tracked, a branch checkout
+# or `git reset --hard origin/<tier>` restores a branch-COMMITTED stale claim over
+# the live one, and the next feature's claim then refuses "already-claimed-other"
+# until a manual abandon+reclaim (issue #203 / Finding 28). Never track it; the
+# committed kit-ref / scm-utils-ref pins above stay tracked deliberately.
+.lakebase/workflow-state.json
 
 # Per-agent local memory: each role subagent (memory: project) persists its own
 # learnings here mid-run. It is local + churny (re-written every run), not feature
@@ -34,3 +83,9 @@ application-local.properties
 # untracked .claude/agent-memory/ otherwise blocks the experiment-branch fork
 # (assertCleanForFork) the moment a role saves a memory.
 .claude/agent-memory/
+
+# Unrelated agent tooling writes a local .isaac/ config dir. It is not project
+# source and churns per run; the experiment-cut guard already tolerates it by
+# name, so ignore it here too so it never enters git nor blocks a fork on a kit
+# whose clean-tree check still counts untracked files.
+.isaac/

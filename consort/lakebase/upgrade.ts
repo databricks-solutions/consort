@@ -149,6 +149,7 @@ export interface RefreshSurfaceResult {
   agents: number; // files added/updated
   commands: number;
   skills: number; // kit-owned .claude/skills/ docs refreshed
+  rootFiles: string[]; // kit-owned common/ ROOT files copied to the project root (consort-capture.ts, ...)
   scripts: number; // kit-owned scripts copied
   workflows: number; // CI workflow files copied
   e2e: boolean; // whether the Playwright E2E block was (re)wired into run-tests.sh (UI projects)
@@ -260,6 +261,19 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
   const scripts = copyKitTree(path.join(commonDir, "scripts"), path.join(projectDir, "scripts"));
   const workflowsDir = path.join(projectDir, ".github", "workflows");
   const workflows = copyKitTree(path.join(commonDir, ".github", "workflows"), workflowsDir);
+  // Root-level kit files under common/ (consort-capture.ts, consort-test-reporter.ts,
+  // playwright.config.ts, ...): GENERALIZED — copy EVERY file at the common/ root EXCEPT the
+  // project-owned config + scaffold-source files, so a NEW kit root file flows automatically and is
+  // never dropped by a hand-maintained enumeration (exactly the gap that shipped projects missing
+  // the 0.3.4 root test-capture files, so the build halted on a `scaffold-defect`). These are kit
+  // CODE, not `{{...}}` templates, so no substitution; the skip-set is project-owned/scaffold-source.
+  const COMMON_ROOT_PROJECT_OWNED = new Set(["deploy-targets.yaml", ".env.example", ".gitignore.base", "DO-NOT-MODIFY.md"]);
+  const rootFiles: string[] = [];
+  for (const entry of fs.readdirSync(commonDir, { withFileTypes: true })) {
+    if (!entry.isFile() || COMMON_ROOT_PROJECT_OWNED.has(entry.name)) continue;
+    fs.copyFileSync(path.join(commonDir, entry.name), path.join(projectDir, entry.name));
+    rootFiles.push(entry.name);
+  }
   // Substitute the scaffold-time {{LAKEBASE_SCM_UTILS_VERSION}} placeholder the raw copies above
   // just shipped verbatim – leaving the literal breaks the CI ref's bash expansion (workflows)
   // AND the post-checkout/setup-federation scripts' `scm-utils/<version>` connection label. The
@@ -311,7 +325,7 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
     /* best-effort: the drive's resyncAgentsOnKitDrift will refresh again if the marker is stale */
   }
   const count = (files: Array<{ outcome: string }>): number => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
-  return { agents: count(a.files), commands: count(c.files), skills, scripts, workflows, e2e };
+  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, scripts, workflows, e2e };
 }
 
 /** The kit-owned tracked paths refreshSurface + pinBoth rewrite. Committed by EXACT path so the
@@ -342,6 +356,10 @@ export interface CommitSurfaceResult {
 export function commitRefreshedSurface(
   projectDir: string,
   targetVersion: string,
+  // The kit-owned common/ ROOT files refreshSurface just wrote (its `rootFiles`), so the commit
+  // stages whatever was refreshed instead of a second hand-maintained enumeration — a new kit root
+  // file is committed automatically, never left dirty to block the next fork.
+  extraPaths: string[] = [],
   git: (args: string[]) => { status: number | null; stdout: string } = (a) => {
     const r = spawnSync("git", ["-C", projectDir, ...a], { encoding: "utf8" });
     return { status: r.status, stdout: r.stdout ?? "" };
@@ -349,7 +367,7 @@ export function commitRefreshedSurface(
 ): CommitSurfaceResult {
   if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) return { committed: false, reason: "not-a-git-repo" };
   // Only stage paths that exist – `git add` fails the whole command on a missing pathspec.
-  const paths = KIT_SURFACE_PATHS.filter((p) => fs.existsSync(path.join(projectDir, p)));
+  const paths = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs.existsSync(path.join(projectDir, p)));
   if (!paths.length) return { committed: false, reason: "nothing-to-commit" };
   git(["add", "--", ...paths]);
   // Anything actually staged under the kit paths? (exit 0 = no diff => nothing to commit)

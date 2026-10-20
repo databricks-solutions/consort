@@ -19,9 +19,18 @@ targets:
     run: make run
     # Preferred port. The deploy probes upward for a free one if this is busy, then
     # threads the chosen port via PORT / E2E_BACKEND_PORT / BASE_URL to the app + verify.
-    base_url: http://localhost:8000
-    # Any HTTP response on this path means the server is up (200 not required).
-    health_path: /
+    # Use 127.0.0.1, NOT localhost: the app binds IPv4 (uvicorn's default host is
+    # 127.0.0.1), but on macOS `localhost` resolves to IPv6 ::1 FIRST, so the
+    # reachability poll stalls on ::1 where nothing listens and the deploy/verify
+    # reports the app "not reachable after 60s" even though it is healthy on IPv4.
+    base_url: http://127.0.0.1:8000
+    # Probe the app's real health endpoint. /health returns 200 in EVERY lane
+    # (build/honest-GREEN, dev, and production). Do NOT use "/": it is reserved for
+    # the React SPA catch-all that mounts ONLY when client/dist exists, so in the
+    # build lane "/" 404s and readiness false-negatives even though the app is
+    # healthy. /health is defined before the catch-all (which excludes it), so it
+    # answers 200 whether or not the SPA is built.
+    health_path: /health
     ready_timeout_seconds: 60
     # Verify the running app actually works: the language-agnostic test entrypoint
     # (runs pending migrations + the project's test suite against the branch DB,
