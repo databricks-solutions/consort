@@ -12860,12 +12860,12 @@ import { readFileSync as readFileSync41, existsSync as existsSync44, mkdirSync a
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 var AGENT_SYNC_MARKER = path8.join(".claude", "agents", ".kit-version");
 var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
-function commitRefreshedSurface(projectDir, targetVersion, git = (a) => {
+function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], git = (a) => {
   const r = spawnSync("git", ["-C", projectDir, ...a], { encoding: "utf8" });
   return { status: r.status, stdout: r.stdout ?? "" };
 }) {
   if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) return { committed: false, reason: "not-a-git-repo" };
-  const paths = KIT_SURFACE_PATHS.filter((p) => fs12.existsSync(path8.join(projectDir, p)));
+  const paths = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs12.existsSync(path8.join(projectDir, p)));
   if (!paths.length) return { committed: false, reason: "nothing-to-commit" };
   git(["add", "--", ...paths]);
   if (git(["diff", "--cached", "--quiet", "--", ...paths]).status === 0) {
@@ -12930,7 +12930,7 @@ import * as readline from "readline";
 
 // consort/logging/replay-artifacts.ts
 init_esm_shims();
-import { existsSync as existsSync47, mkdirSync as mkdirSync27, readdirSync as readdirSync29, copyFileSync as copyFileSync4, statSync as statSync16 } from "fs";
+import { existsSync as existsSync47, mkdirSync as mkdirSync27, readdirSync as readdirSync29, copyFileSync as copyFileSync5, statSync as statSync16 } from "fs";
 import { join as join42, dirname as dirname22 } from "path";
 var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
   "spec-author",
@@ -12943,7 +12943,7 @@ var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
 function cp(src, dst) {
   if (!existsSync47(src)) return false;
   mkdirSync27(dirname22(dst), { recursive: true });
-  copyFileSync4(src, dst);
+  copyFileSync5(src, dst);
   return true;
 }
 function cpDir(srcDir, dstDir) {
@@ -12953,7 +12953,7 @@ function cpDir(srcDir, dstDir) {
   for (const name of readdirSync29(srcDir)) {
     const s = join42(srcDir, name);
     if (!statSync16(s).isFile()) continue;
-    copyFileSync4(s, join42(dstDir, name));
+    copyFileSync5(s, join42(dstDir, name));
     copied = true;
   }
   return copied;

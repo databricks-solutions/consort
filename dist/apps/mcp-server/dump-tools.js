@@ -7353,7 +7353,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync19, readFileSync as readFileSync20, readdirSync as readdirSync14, writeFileSync as writeFileSync16, mkdirSync as mkdirSync15, copyFileSync as copyFileSync3 } from "fs";
+import { existsSync as existsSync19, readFileSync as readFileSync20, readdirSync as readdirSync14, writeFileSync as writeFileSync16, mkdirSync as mkdirSync15, copyFileSync as copyFileSync4 } from "fs";
 import { join as join19, dirname as dirname13, basename } from "path";
 
 // consort/architecture/layering-clean.ts

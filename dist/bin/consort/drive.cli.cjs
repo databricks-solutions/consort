@@ -12862,12 +12862,12 @@ var import_node_fs18 = require("fs");
 var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var AGENT_SYNC_MARKER = path7.join(".claude", "agents", ".kit-version");
 var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
-function commitRefreshedSurface(projectDir, targetVersion, git = (a) => {
+function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], git = (a) => {
   const r = (0, import_node_child_process7.spawnSync)("git", ["-C", projectDir, ...a], { encoding: "utf8" });
   return { status: r.status, stdout: r.stdout ?? "" };
 }) {
   if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) return { committed: false, reason: "not-a-git-repo" };
-  const paths = KIT_SURFACE_PATHS.filter((p) => fs12.existsSync(path7.join(projectDir, p)));
+  const paths = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs12.existsSync(path7.join(projectDir, p)));
   if (!paths.length) return { committed: false, reason: "nothing-to-commit" };
   git(["add", "--", ...paths]);
   if (git(["diff", "--cached", "--quiet", "--", ...paths]).status === 0) {

@@ -10268,7 +10268,7 @@ import * as readline from "readline";
 
 // consort/logging/replay-artifacts.ts
 init_esm_shims();
-import { existsSync as existsSync18, mkdirSync as mkdirSync13, readdirSync as readdirSync11, copyFileSync as copyFileSync3, statSync as statSync5 } from "fs";
+import { existsSync as existsSync18, mkdirSync as mkdirSync13, readdirSync as readdirSync11, copyFileSync as copyFileSync4, statSync as statSync5 } from "fs";
 import { join as join18, dirname as dirname13 } from "path";
 var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
   "spec-author",
@@ -10281,7 +10281,7 @@ var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
 function cp(src, dst) {
   if (!existsSync18(src)) return false;
   mkdirSync13(dirname13(dst), { recursive: true });
-  copyFileSync3(src, dst);
+  copyFileSync4(src, dst);
   return true;
 }
 function cpDir(srcDir, dstDir) {
@@ -10291,7 +10291,7 @@ function cpDir(srcDir, dstDir) {
   for (const name of readdirSync11(srcDir)) {
     const s = join18(srcDir, name);
     if (!statSync5(s).isFile()) continue;
-    copyFileSync3(s, join18(dstDir, name));
+    copyFileSync4(s, join18(dstDir, name));
     copied = true;
   }
   return copied;
@@ -13591,7 +13591,7 @@ function storyDeployVerified(consortDir, featureId, storyId) {
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync36, readFileSync as readFileSync36, readdirSync as readdirSync25, writeFileSync as writeFileSync23, mkdirSync as mkdirSync25, copyFileSync as copyFileSync4 } from "fs";
+import { existsSync as existsSync36, readFileSync as readFileSync36, readdirSync as readdirSync25, writeFileSync as writeFileSync23, mkdirSync as mkdirSync25, copyFileSync as copyFileSync5 } from "fs";
 import { join as join36, dirname as dirname22, basename as basename5 } from "path";
 
 // consort/architecture/layering-clean.ts

@@ -7325,12 +7325,12 @@ import { readFileSync as readFileSync8, existsSync as existsSync8, mkdirSync as 
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 var AGENT_SYNC_MARKER = path5.join(".claude", "agents", ".kit-version");
 var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
-function commitRefreshedSurface(projectDir, targetVersion, git = (a) => {
+function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], git = (a) => {
   const r = spawnSync("git", ["-C", projectDir, ...a], { encoding: "utf8" });
   return { status: r.status, stdout: r.stdout ?? "" };
 }) {
   if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) return { committed: false, reason: "not-a-git-repo" };
-  const paths = KIT_SURFACE_PATHS.filter((p) => fs5.existsSync(path5.join(projectDir, p)));
+  const paths = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs5.existsSync(path5.join(projectDir, p)));
   if (!paths.length) return { committed: false, reason: "nothing-to-commit" };
   git(["add", "--", ...paths]);
   if (git(["diff", "--cached", "--quiet", "--", ...paths]).status === 0) {
@@ -7395,7 +7395,7 @@ import * as readline from "readline";
 
 // consort/logging/replay-artifacts.ts
 init_esm_shims();
-import { existsSync as existsSync11, mkdirSync as mkdirSync11, readdirSync as readdirSync7, copyFileSync as copyFileSync3, statSync as statSync3 } from "fs";
+import { existsSync as existsSync11, mkdirSync as mkdirSync11, readdirSync as readdirSync7, copyFileSync as copyFileSync4, statSync as statSync3 } from "fs";
 import { join as join11, dirname as dirname10 } from "path";
 var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
   "spec-author",
@@ -7408,7 +7408,7 @@ var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
 function cp(src, dst) {
   if (!existsSync11(src)) return false;
   mkdirSync11(dirname10(dst), { recursive: true });
-  copyFileSync3(src, dst);
+  copyFileSync4(src, dst);
   return true;
 }
 function cpDir(srcDir, dstDir) {
@@ -7418,7 +7418,7 @@ function cpDir(srcDir, dstDir) {
   for (const name of readdirSync7(srcDir)) {
     const s = join11(srcDir, name);
     if (!statSync3(s).isFile()) continue;
-    copyFileSync3(s, join11(dstDir, name));
+    copyFileSync4(s, join11(dstDir, name));
     copied = true;
   }
   return copied;
@@ -14682,7 +14682,7 @@ function storyDeployVerified(consortDir, featureId, storyId) {
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync39, readFileSync as readFileSync34, readdirSync as readdirSync25, writeFileSync as writeFileSync22, mkdirSync as mkdirSync25, copyFileSync as copyFileSync4 } from "fs";
+import { existsSync as existsSync39, readFileSync as readFileSync34, readdirSync as readdirSync25, writeFileSync as writeFileSync22, mkdirSync as mkdirSync25, copyFileSync as copyFileSync5 } from "fs";
 import { join as join38, dirname as dirname21, basename as basename4 } from "path";
 function readAppIconFromGuide(consortDir) {
   try {
