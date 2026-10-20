@@ -209,6 +209,15 @@ for r in getattr(app, 'routes', []):
   fi
 
   uv run uvicorn app.main:app --reload --host "$HOST" --port "$PORT" "$@"
+elif [ -n "$(find "$REPO_ROOT" -maxdepth 1 \( -name '*.sln' -o -name '*.slnx' -o -name '*.csproj' \) -print -quit 2>/dev/null)" ]; then
+  # .NET / ASP.NET Core. The app reads .env itself and mints its own credential.
+  PORT="$(resolve_port 8000)"
+  export PORT HOST
+  # Relative paths (cwd is the repo root): see the symlink note in flyway-migrate.sh.
+  _app="$(find src -maxdepth 2 -name '*.csproj' 2>/dev/null | head -1)"
+  _app="${_app:-$(find . -maxdepth 1 -name '*.csproj' 2>/dev/null | head -1)}"
+  echo "Serving on http://${HOST}:${PORT}  (Ctrl-C to stop). Open it in your browser."
+  dotnet watch --project "$_app" run -- --urls "http://${HOST}:${PORT}" "$@"
 elif [ -f "$REPO_ROOT/package.json" ]; then
   # Node.js – prefer a "dev" script, fall back to "start".
   PORT="$(resolve_port 8000)"
@@ -220,6 +229,6 @@ elif [ -f "$REPO_ROOT/package.json" ]; then
     npm start -- "$@"
   fi
 else
-  echo "Could not detect project language. Expected pom.xml (Java), pyproject.toml/requirements.txt (Python), or package.json (Node.js)."
+  echo "Could not detect project language. Expected pom.xml (Java), pyproject.toml/requirements.txt (Python), *.sln/*.csproj (.NET), or package.json (Node.js)."
   exit 1
 fi

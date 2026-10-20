@@ -139,7 +139,7 @@ async function main(): Promise<number> {
   // 5. Commit the refreshed kit-owned surface so the tree is CLEAN. Without this, the refreshed
   //    tracked files (agents/commands/scripts/workflows/kit-ref) sit uncommitted and the run's
   //    NEXT experiment/feature fork refuses to fork a dirty tree – the mid-run-upgrade failure.
-  const committed = commitRefreshedSurface(args.projectDir, ref);
+  const committed = commitRefreshedSurface(args.projectDir, ref, surf.rootFiles);
 
   process.stdout.write(
     `consort-upgrade: UPGRADED to ${ref}.\n` +

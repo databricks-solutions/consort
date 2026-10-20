@@ -107,6 +107,11 @@ if [ -d src/main/resources/db/migration ]; then
     desc="$(echo "$base" | sed -n 's/^V[0-9.]*__\(.*\)\.sql$/\1/p' | tr '_' ' ')"
     [ -n "$ver" ] && echo "| V$ver | $desc |" >> "$MD"
   done
+elif [ -n "$(find . -maxdepth 1 \( -name '*.sln' -o -name '*.slnx' -o -name '*.csproj' \) -print -quit 2>/dev/null)" ] \
+    && [ -x "$WORK_TREE/scripts/lk" ]; then
+  # .NET (EF Core or Flyway): the kit's canonical discovery picks the tool + files.
+  "$WORK_TREE/scripts/lk" lakebase-schema-migrate list 2>/dev/null \
+    | jq -r '.[] | if .tool == "flyway" then "| V\(.version) | \(.description) |" else "| \(.version) | \(.description) (EF Core) |" end' >> "$MD" || true
 elif [ -d alembic/versions ]; then
   # Alembic / Python
   for f in alembic/versions/*.py; do
