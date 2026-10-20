@@ -176,3 +176,31 @@ describe("consort hard rules", () => {
     expect(arch).toMatch(/iaNamesSeam/);
   });
 });
+
+// Pass-2 shift-left canon (the four design-lane defects from the F1 run analysis): assert the
+// directives are present so a doc refactor can't silently drop the authoring guidance that pairs
+// with the deterministic gate(s).
+describe("Pass-2 shift-left canon", () => {
+  const arch = readFileSync(join(SKILL_DIR, "agents", "architect-reviewer.md"), "utf8");
+  const spec = readFileSync(join(SKILL_DIR, "agents", "spec-author.md"), "utf8");
+
+  it("architect-reviewer requires an API-layer AC for a backend WRITE RULE (lockstep with the gate)", () => {
+    expect(arch).toMatch(/WRITE RULE needs its own `API` AC/);
+    expect(arch).toContain("serviceRuleTaggedE2eReason"); // names the LIVE deterministic gate
+  });
+
+  it("architect-reviewer forbids an AC that presupposes an unresolved open decision", () => {
+    expect(arch).toMatch(/PRESUPPOSES an `open_decisions\[\]` entry still `open`/);
+    expect(arch).toMatch(/empty-location/i); // the worked defect it prevents
+  });
+
+  it("spec-author pins a cross-cutting data fact once as a feature-level semantic", () => {
+    expect(spec).toMatch(/## Data semantics/);
+    expect(spec).toMatch(/quantity-0/); // the worked defect
+  });
+
+  it("spec-author requires a producing AC in the write story for every state a reader consumes", () => {
+    expect(spec).toMatch(/producing-AC coverage/);
+    expect(spec).toMatch(/OPTIONAL \/ NULLABLE field/);
+  });
+});

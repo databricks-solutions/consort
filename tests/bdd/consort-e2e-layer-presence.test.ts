@@ -13,7 +13,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkE2eLayerPresent } from "../../consort/orchestrator/validators/conformance/artifact-conformance";
-import { e2eLayerPresentReason, storyRequiresE2eReason, uiTrackFlattenReason, featureDir as fdirOf } from "../../consort/gates/gate-conformance-guard";
+import { e2eLayerPresentReason, storyRequiresE2eReason, uiTrackFlattenReason, serviceRuleTaggedE2eReason, featureDir as fdirOf } from "../../consort/gates/gate-conformance-guard";
 import { initPipeline, surfaceForGate, writePipeline, approveStoryGateFromDisk } from "../../consort/pipeline/story-pipeline";
 
 const REACT_BOUNDARY = JSON.stringify({
@@ -276,5 +276,56 @@ describe("approveStoryGateFromDisk enforces requires_e2e (fail-closed at the per
     ac("AC2-submit-via-form", "E2E");
     const r = approveStoryGateFromDisk(tdd, F, S, { approver: "po@example.com" });
     expect(r.ok).toBe(true);
+  });
+});
+
+// serviceRuleTaggedE2eReason: a backend WRITE endpoint (mutating api_contract) referenced ONLY by
+// E2E ACs leaves the BEHAVIOR analyst with no backend slice -> 0 behavior tests for the write rule
+// (the real S1 collision-resolved-at-write defect). Lives in the LIVE spec-gate home (NOT the legacy
+// analyzeForGate). Structured: keys on api_contract_id -> architecture method + AC layer.
+describe("serviceRuleTaggedE2eReason (write rule needs an API AC, else 0 BDD)", () => {
+  const F = "F1-stock-visibility";
+  let tmp: string;
+  let consortDir: string;
+  beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), "svc-rule-")); consortDir = join(tmp, ".consort"); });
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }));
+
+  function arch(contracts: Array<{ id: string; method: string }>): void {
+    const p = join(consortDir, "features", F, "architecture.json");
+    mkdirSync(join(p, ".."), { recursive: true });
+    writeFileSync(p, JSON.stringify({ feature_id: F, api_contracts: contracts }));
+  }
+  function ac(story: string, id: string, layer: "API" | "E2E" | "Infra", apiContractId?: string): void {
+    const p = join(consortDir, "features", F, "stories", story, "acs", `${id}.json`);
+    mkdirSync(join(p, ".."), { recursive: true });
+    writeFileSync(p, JSON.stringify({ id, layer, ...(apiContractId ? { api_contract_id: apiContractId } : {}), given: "g", when: "w", then: "t" }));
+  }
+
+  it("a POST endpoint referenced only by E2E ACs => BLOCK (the 0-BDD write-rule defect)", () => {
+    arch([{ id: "EP1-file-stock", method: "POST" }, { id: "EP2-get", method: "GET" }]);
+    ac("S1-file-stock", "AC1-file-stock-record", "E2E", "EP1-file-stock");
+    ac("S1-file-stock", "AC3-collision-resolved-at-write", "E2E", "EP1-file-stock");
+    const r = serviceRuleTaggedE2eReason(consortDir, F);
+    expect(r).not.toBeNull();
+    expect(r).toMatch(/EP1-file-stock.*POST/);
+    expect(r).toMatch(/0 behavior tests/);
+  });
+
+  it("the same write endpoint WITH an API-layer AC => ok (a legit E2E form AC is fine)", () => {
+    arch([{ id: "EP1-file-stock", method: "POST" }]);
+    ac("S1-file-stock", "AC1-file-form", "E2E", "EP1-file-stock"); // the form UX
+    ac("S1-file-stock", "AC2-write-rule", "API", "EP1-file-stock"); // the rule -> behavior analyst covers it
+    expect(serviceRuleTaggedE2eReason(consortDir, F)).toBeNull();
+  });
+
+  it("only READ (GET) endpoints referenced by E2E ACs => ok (never a write rule)", () => {
+    arch([{ id: "EP4-list", method: "GET" }, { id: "EP5-detail", method: "GET" }]);
+    ac("S2-table", "AC1-table", "E2E", "EP4-list");
+    ac("S3-detail", "AC1-detail", "E2E", "EP5-detail");
+    expect(serviceRuleTaggedE2eReason(consortDir, F)).toBeNull();
+  });
+
+  it("no architecture / no api_contracts yet => null (vacuous, back-compat)", () => {
+    expect(serviceRuleTaggedE2eReason(consortDir, F)).toBeNull();
   });
 });

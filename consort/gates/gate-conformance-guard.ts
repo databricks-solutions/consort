@@ -336,6 +336,75 @@ function apiContractConsistencyReason(consortDir: string, featureId: string): st
   return r.ok ? null : `api-contract consistency failed: ${r.violations.join("; ")}`;
 }
 
+/** HTTP methods that MUTATE state. An api_contract with one of these is a backend WRITE whose domain
+ *  rule (validation, collision resolution, transactional guarantee) is exactly what a BEHAVIOR
+ *  (pytest-bdd) test exists to cover. GET/HEAD/OPTIONS are reads. */
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * BDD-coverage spec-gate condition (Gate 3): a backend WRITE endpoint must have an API-layer AC so
+ * the BEHAVIOR analyst can author a backend test for its domain rule. When a mutating api_contract
+ * (POST/PUT/PATCH/DELETE) is referenced ONLY by E2E/UI ACs — no `API`/`Infra` AC — the behavior
+ * analyst's slice is empty for that write (its catalogue canon FORBIDS anchoring a backend behavior
+ * to a UI AC), so the write rule (e.g. S1's collision-resolved-at-write) ships with ZERO behavior
+ * tests. Structured + conservative (no prose/NLP): keys only on `ac.api_contract_id` ->
+ * `architecture api_contracts[].method` + the AC `layer`. A read (GET) endpoint, a UI AC with no
+ * api_contract_id, and a write already carrying an API AC never trip it — so a legitimate E2E
+ * "filing form" AC is fine as long as the write RULE has an API AC. Vacuous until the architect
+ * declares api_contracts + assigns layers (back-compat). Scoped per story (the write story owns its
+ * endpoint's rule AC).
+ */
+export function serviceRuleTaggedE2eReason(consortDir: string, featureId: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  let methodById: Map<string, string>;
+  try {
+    const a = JSON.parse(arch) as { api_contracts?: { id?: string; method?: string }[] };
+    methodById = new Map(
+      (a.api_contracts ?? [])
+        .filter((c) => typeof c.id === "string")
+        .map((c) => [c.id as string, String(c.method ?? "").toUpperCase()]),
+    );
+  } catch {
+    return null; // unparseable architecture -> apiContractConsistencyReason reports it
+  }
+  if (methodById.size === 0) return null;
+  const storiesDir = join(featureResolved(consortDir, featureId), "stories");
+  if (!existsSync(storiesDir)) return null;
+  for (const s of readdirSync(storiesDir)) {
+    const acsDir = join(storiesDir, s, "acs");
+    if (!existsSync(acsDir)) continue;
+    const e2eByEndpoint = new Map<string, string[]>();
+    const hasBackendAc = new Set<string>();
+    for (const f of readdirSync(acsDir)) {
+      if (!f.endsWith(".json")) continue;
+      let ac: { id?: string; layer?: string; api_contract_id?: string };
+      try {
+        ac = JSON.parse(readFileSync(join(acsDir, f), "utf8"));
+      } catch {
+        continue; // malformed AC -> storyAcProblems reports it
+      }
+      const ep = ac.api_contract_id;
+      if (!ep || !methodById.has(ep) || !MUTATION_METHODS.has(methodById.get(ep) as string)) continue;
+      if (ac.layer === "API" || ac.layer === "Infra") hasBackendAc.add(ep);
+      else if (ac.layer === "E2E") {
+        const id = ac.id ?? f.replace(/\.json$/, "");
+        (e2eByEndpoint.get(ep) ?? e2eByEndpoint.set(ep, []).get(ep)!).push(id);
+      }
+    }
+    for (const [ep, e2eAcs] of e2eByEndpoint) {
+      if (hasBackendAc.has(ep)) continue; // a backend AC already covers the write rule
+      return (
+        `story ${s}: backend write endpoint "${ep}" (${methodById.get(ep)}) is exercised only by E2E/UI ` +
+        `AC(s) ${e2eAcs.join(", ")} — no API-layer AC covers the write rule, so the BEHAVIOR analyst has no ` +
+        `backend scenario for it and the rule ships with 0 behavior tests. Retag the rule-bearing AC to ` +
+        `layer:"API" (or add an API-layer AC for the write behavior beside the E2E form AC).`
+      );
+    }
+  }
+  return null;
+}
+
 /** Read architecture.json content for the feature, or undefined when absent. */
 function readArchitecture(consortDir: string, featureId: string): string | undefined {
   const f = architectureJson(consortDir, featureId);
@@ -995,6 +1064,11 @@ export function resolveArtifactInputs(
       // endpoint may be declared with conflicting shapes (the S3 par_level contradiction).
       const apiContractReason = apiContractConsistencyReason(consortDir, featureId);
       if (apiContractReason !== null) return { reason: apiContractReason };
+      // BDD coverage: a backend WRITE rule (a mutating endpoint) must carry an API-layer AC so the
+      // BEHAVIOR analyst authors a backend test for it — else the rule ships with 0 behavior tests
+      // (every AC tagged E2E). Runs here, in the LIVE spec-gate home (NOT the legacy analyzeForGate).
+      const serviceRuleReason = serviceRuleTaggedE2eReason(consortDir, featureId);
+      if (serviceRuleReason !== null) return { reason: serviceRuleReason };
       // Architecture conformance (Gate 2, surfaced through the per-story spec gate
       // since the design lane runs the architect before surfacing it). First the
       // service_backed determination itself: a feature that under-declares (not
