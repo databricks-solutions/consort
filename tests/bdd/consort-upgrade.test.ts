@@ -121,6 +121,29 @@ describe("refreshSurface – brings agents + commands to the target + stamps the
     expect(readFileSync(join(proj, ".claude", "agents", ".kit-version"), "utf8").trim()).toBe("9.9.9-test");
   });
 
+  // Self-heal: a pre-fix kit blanket-copied a ROOT playwright.config.ts onto client/-based projects,
+  // which breaks CI (root E2E fires on the config's presence but there's no root @playwright/test).
+  // Not copying it (above) only helps fresh scaffolds; refreshSurface must REMOVE a stale one so
+  // consort-upgrade cleans up already-contaminated projects. Only for a client/ project — a root-app
+  // project keeps its root config (enableE2eForProject owns it there).
+  it("self-heals a stale root playwright.config.ts on a client/ project (removed), but keeps it on a root-app project", () => {
+    // client project with a stale root config
+    mkdirSync(join(proj, "client"), { recursive: true });
+    writeFileSync(join(proj, "client", "package.json"), JSON.stringify({ name: "c" }));
+    writeFileSync(join(proj, "playwright.config.ts"), "// stale root config\n");
+    const r = refreshSurface(proj, repoRoot, "9.9.9-test");
+    expect(r.removedRootFiles).toContain("playwright.config.ts");
+    expect(existsSync(join(proj, "playwright.config.ts"))).toBe(false); // removed
+
+    // root-app project (no client/): a root config is legitimate → NOT removed
+    const rootApp = mkdtempSync(join(tmpdir(), "upgrade-rootapp-"));
+    writeFileSync(join(rootApp, "playwright.config.ts"), "// legit root-app config\n");
+    const r2 = refreshSurface(rootApp, repoRoot, "9.9.9-test");
+    expect(r2.removedRootFiles).not.toContain("playwright.config.ts");
+    expect(existsSync(join(rootApp, "playwright.config.ts"))).toBe(true); // kept
+    rmSync(rootApp, { recursive: true, force: true });
+  });
+
   // Regression: the `.claude/skills/` tree was laid down at scaffold by install.sh and NEVER
   // refreshed on upgrade, so a kit fix that landed in `.claude/agents/<role>.md` (updateAgents) left
   // the parallel skill-doc copy `.claude/skills/consort/agents/<role>.md` frozen at the scaffolded

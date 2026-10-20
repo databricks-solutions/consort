@@ -150,6 +150,7 @@ export interface RefreshSurfaceResult {
   commands: number;
   skills: number; // kit-owned .claude/skills/ docs refreshed
   rootFiles: string[]; // kit-owned common/ ROOT files copied to the project root (consort-capture.ts, ...)
+  removedRootFiles: string[]; // stale root files self-healed (removed) — e.g. a vestigial root playwright.config.ts on a client project
   scripts: number; // kit-owned scripts copied
   workflows: number; // CI workflow files copied
   e2e: boolean; // whether the Playwright E2E block was (re)wired into run-tests.sh (UI projects)
@@ -281,6 +282,23 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
     fs.copyFileSync(path.join(commonDir, entry.name), path.join(projectDir, entry.name));
     rootFiles.push(entry.name);
   }
+  // SELF-HEAL the vestigial ROOT playwright.config.ts. Skipping the copy (above) stops ADDING it, but
+  // a project contaminated by a pre-fix kit (that blanket-copied it) still carries a stale one — and
+  // on a client/-based project that breaks CI (root E2E fires on hashFiles('playwright.config.ts') but
+  // there is no root @playwright/test). So on a client project, REMOVE a stale root playwright.config.ts
+  // (E2E runs via client/playwright.config.ts); its deletion is staged by commitRefreshedSurface so the
+  // tree stays clean for the next fork. This makes consort-upgrade clean up already-contaminated
+  // projects, not just fresh scaffolds. (A root-app project keeps its root config — enableE2eForProject
+  // owns it there.)
+  const removedRootFiles: string[] = [];
+  const hasClient = fs.existsSync(path.join(projectDir, "client", "package.json"));
+  if (hasClient) {
+    const staleRootPlaywright = path.join(projectDir, "playwright.config.ts");
+    if (fs.existsSync(staleRootPlaywright)) {
+      fs.rmSync(staleRootPlaywright);
+      removedRootFiles.push("playwright.config.ts");
+    }
+  }
   // Substitute the scaffold-time {{LAKEBASE_SCM_UTILS_VERSION}} placeholder the raw copies above
   // just shipped verbatim – leaving the literal breaks the CI ref's bash expansion (workflows)
   // AND the post-checkout/setup-federation scripts' `scm-utils/<version>` connection label. The
@@ -332,7 +350,7 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
     /* best-effort: the drive's resyncAgentsOnKitDrift will refresh again if the marker is stale */
   }
   const count = (files: Array<{ outcome: string }>): number => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
-  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, scripts, workflows, e2e };
+  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e };
 }
 
 /** The kit-owned tracked paths refreshSurface + pinBoth rewrite. Committed by EXACT path so the
@@ -367,14 +385,21 @@ export function commitRefreshedSurface(
   // stages whatever was refreshed instead of a second hand-maintained enumeration — a new kit root
   // file is committed automatically, never left dirty to block the next fork.
   extraPaths: string[] = [],
+  // Paths refreshSurface self-healed by REMOVING (its `removedRootFiles`, e.g. a vestigial root
+  // playwright.config.ts). Staged as deletions so the tree is clean for the next fork.
+  removedPaths: string[] = [],
   git: (args: string[]) => { status: number | null; stdout: string } = (a) => {
     const r = spawnSync("git", ["-C", projectDir, ...a], { encoding: "utf8" });
     return { status: r.status, stdout: r.stdout ?? "" };
   },
 ): CommitSurfaceResult {
   if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) return { committed: false, reason: "not-a-git-repo" };
-  // Only stage paths that exist – `git add` fails the whole command on a missing pathspec.
-  const paths = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs.existsSync(path.join(projectDir, p)));
+  // Stage: copied/refreshed paths that exist (`git add` errors on a never-existed pathspec), PLUS
+  // self-healed DELETIONS — a removed path that git tracks (`git add` stages the deletion; filter to
+  // tracked so a removed-untracked file can never error the whole add).
+  const existing = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs.existsSync(path.join(projectDir, p)));
+  const deletions = removedPaths.filter((p) => git(["ls-files", "--error-unmatch", "--", p]).status === 0);
+  const paths = [...existing, ...deletions];
   if (!paths.length) return { committed: false, reason: "nothing-to-commit" };
   git(["add", "--", ...paths]);
   // Anything actually staged under the kit paths? (exit 0 = no diff => nothing to commit)
