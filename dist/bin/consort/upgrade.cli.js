@@ -396,10 +396,18 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
   const scripts = copyKitTree(path5.join(commonDir, "scripts"), path5.join(projectDir, "scripts"));
   const workflowsDir = path5.join(projectDir, ".github", "workflows");
   const workflows = copyKitTree(path5.join(commonDir, ".github", "workflows"), workflowsDir);
-  const COMMON_ROOT_PROJECT_OWNED = /* @__PURE__ */ new Set(["deploy-targets.yaml", ".env.example", ".gitignore.base", "DO-NOT-MODIFY.md"]);
+  const COMMON_ROOT_SKIP = /* @__PURE__ */ new Set([
+    "deploy-targets.yaml",
+    ".env.example",
+    ".gitignore.base",
+    "DO-NOT-MODIFY.md",
+    // project-owned / scaffold-source
+    "playwright.config.ts"
+    // E2E-config owned by enableE2eForProject; never blanket-copy it to the root
+  ]);
   const rootFiles = [];
   for (const entry of fs5.readdirSync(commonDir, { withFileTypes: true })) {
-    if (!entry.isFile() || COMMON_ROOT_PROJECT_OWNED.has(entry.name)) continue;
+    if (!entry.isFile() || COMMON_ROOT_SKIP.has(entry.name)) continue;
     fs5.copyFileSync(path5.join(commonDir, entry.name), path5.join(projectDir, entry.name));
     rootFiles.push(entry.name);
   }

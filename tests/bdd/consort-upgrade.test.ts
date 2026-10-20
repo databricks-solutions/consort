@@ -103,15 +103,20 @@ describe("refreshSurface – brings agents + commands to the target + stamps the
     expect(existsSync(join(proj, ".claude", "agents", "architect-reviewer.md"))).toBe(true);
     expect(existsSync(join(proj, "scripts", "run-tests.sh"))).toBe(true); // kit-owned helper
     expect(existsSync(join(proj, ".github", "workflows", "merge.yml"))).toBe(true); // CI
-    // Generalized root-file copy: EVERY kit-owned common/ root file lands at the project root (the
+    // Generalized root-file copy: the kit-owned common/ root CODE files land at the project root (the
     // gap that shipped projects missing the test-capture files). The list is read from the kit dir,
     // never enumerated, so a new kit root file flows automatically.
-    expect(r.rootFiles).toEqual(expect.arrayContaining(["consort-capture.ts", "consort-test-reporter.ts", "playwright.config.ts"]));
+    expect(r.rootFiles).toEqual(expect.arrayContaining(["consort-capture.ts", "consort-test-reporter.ts"]));
     expect(existsSync(join(proj, "consort-capture.ts"))).toBe(true); // root kit file copied to the project root
     expect(existsSync(join(proj, "consort-test-reporter.ts"))).toBe(true);
     // Project-owned config / scaffold-source files are deliberately NOT copied (would clobber the project).
     expect(r.rootFiles).not.toContain("deploy-targets.yaml");
     expect(existsSync(join(proj, "deploy-targets.yaml"))).toBe(false);
+    // playwright.config.ts is E2E-config OWNED by enableE2eForProject (not a blanket root file): a
+    // ROOT copy is vestigial for a client/-based project and breaks CI ("Cannot find @playwright/test").
+    // It must NOT be blanket-copied to the root here.
+    expect(r.rootFiles).not.toContain("playwright.config.ts");
+    expect(existsSync(join(proj, "playwright.config.ts"))).toBe(false);
     // The marker is set to the target so the next drive's resync sees the surface current.
     expect(readFileSync(join(proj, ".claude", "agents", ".kit-version"), "utf8").trim()).toBe("9.9.9-test");
   });

@@ -167,6 +167,24 @@ export default function Home() {
     followLineEdge.current = timeline ? n >= timeline.total : true;
     setAt(lineToEventAt(n));
   };
+  // Clock readout for the scrubber. The scrubber walks the ONE unified timeline (event lines + agent
+  // activity lines together), so the clock must read the time at that line. `topology.atTimestamp` is
+  // EVENT-granular and snaps to the live edge whenever a line maps to no event (lineToEventAt → null),
+  // so using it makes the clock show only the latest turn's time, never the scrubbed position's. Read
+  // the line's OWN time instead: lines carry a `tsLine` only where the log stamped one (event lines /
+  // turn boundaries), so carry BACK to the nearest earlier stamped line (within a turn that's the
+  // turn's event time; it advances as the playhead crosses into later turns), falling back to the
+  // containing turn's start.
+  const lineTimestamp = (n: number): string | null => {
+    if (!timeline) return null;
+    const idx = Math.min(Math.max(n - 1, 0), timeline.lines.length - 1);
+    for (let i = idx; i >= 0; i--) {
+      const ts = timeline.lines[i]?.tsLine;
+      if (ts) return ts;
+    }
+    const turn = timeline.turns.find((t) => n >= t.startLine && n < t.startLine + t.lineCount);
+    return turn?.tsStart ?? timeline.turns[0]?.tsStart ?? null;
+  };
   // The "as-of" timestamp for the selected test's table capture in the dock: the latest revealed test
   // line's real timestamp, else the current turn's start — so the table reads empty before the test
   // ran at the playhead, matching the bubble fold.
@@ -590,7 +608,7 @@ export default function Home() {
               onPlayingChange={setPlaying}
               speed={speed}
               onSpeedChange={setSpeed}
-              atTimestamp={state.topology.atTimestamp}
+              atTimestamp={lineTimestamp(lineAt)}
               awaitingGate={state.focus.kind === "gate"}
               escalated={state.focus.kind === "escalation"}
               replay={state.source?.mode === "replay"}

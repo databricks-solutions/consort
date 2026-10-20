@@ -148,11 +148,6 @@ jobs:
       # the CI branch is provisioned and fail fast. `--if-present` no-ops a
       # client with no `test` script. The client's Playwright E2E runs later
       # (its own step, gated on client/playwright.config.ts).
-      - name: Run client unit tests
-        if: hashFiles('client/package.json') != ''
-        working-directory: client
-        run: npm run test --if-present
-
       # The official action installs to a user-writable path (no sudo). It's
       # a no-op if a compatible databricks CLI is already on PATH.
       - name: Install Databricks CLI
@@ -383,6 +378,20 @@ jobs:
             --branch "$LAKEBASE_BRANCH_NAME" \
             --pretty
           echo "Migrations completed."
+
+      - name: Run client unit tests
+        # The kit's client/vitest.globalSetup.ts boots a REAL backend over the /api
+        # boundary (never mock when a real counterpart exists), so the component suite
+        # NEEDS the CI Lakebase branch + DATABASE_URL. Run it AFTER datasource config +
+        # migrations, not before. No-op when there are no component tests (globalSetup
+        # returns early); skipped when there is no CI Lakebase branch (url empty).
+        if: hashFiles('client/package.json') != '' && steps.lakebase-db.outputs.url != ''
+        working-directory: client
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          DB_USERNAME: ${{ env.DB_USERNAME }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+        run: npm run test --if-present
 
       - name: Run tests
         env:

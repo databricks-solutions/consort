@@ -261,16 +261,23 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
   const scripts = copyKitTree(path.join(commonDir, "scripts"), path.join(projectDir, "scripts"));
   const workflowsDir = path.join(projectDir, ".github", "workflows");
   const workflows = copyKitTree(path.join(commonDir, ".github", "workflows"), workflowsDir);
-  // Root-level kit files under common/ (consort-capture.ts, consort-test-reporter.ts,
-  // playwright.config.ts, ...): GENERALIZED — copy EVERY file at the common/ root EXCEPT the
-  // project-owned config + scaffold-source files, so a NEW kit root file flows automatically and is
-  // never dropped by a hand-maintained enumeration (exactly the gap that shipped projects missing
-  // the 0.3.4 root test-capture files, so the build halted on a `scaffold-defect`). These are kit
-  // CODE, not `{{...}}` templates, so no substitution; the skip-set is project-owned/scaffold-source.
-  const COMMON_ROOT_PROJECT_OWNED = new Set(["deploy-targets.yaml", ".env.example", ".gitignore.base", "DO-NOT-MODIFY.md"]);
+  // Root-level kit files under common/ (consort-capture.ts, consort-test-reporter.ts, ...):
+  // GENERALIZED — copy EVERY file at the common/ root EXCEPT the skip-set, so a NEW kit root file
+  // flows automatically and is never dropped by a hand-maintained enumeration (exactly the gap that
+  // shipped projects missing the 0.3.4 root test-capture files, so the build halted on a
+  // `scaffold-defect`). These are kit CODE, not `{{...}}` templates, so no substitution. The skip-set
+  // is (a) project-owned config + scaffold-source files, and (b) `playwright.config.ts`, which is
+  // E2E-config OWNED by `enableE2eForProject` (called below), NOT a plain root file: a client/-based
+  // project's E2E lives in client/playwright.config.ts, so a blanket-copied ROOT playwright.config.ts
+  // is vestigial AND breaks CI ("Cannot find module '@playwright/test'" — no root @playwright/test).
+  // enableE2eForProject already places a root config only for a root-app (non-client) project.
+  const COMMON_ROOT_SKIP = new Set([
+    "deploy-targets.yaml", ".env.example", ".gitignore.base", "DO-NOT-MODIFY.md", // project-owned / scaffold-source
+    "playwright.config.ts", // E2E-config owned by enableE2eForProject; never blanket-copy it to the root
+  ]);
   const rootFiles: string[] = [];
   for (const entry of fs.readdirSync(commonDir, { withFileTypes: true })) {
-    if (!entry.isFile() || COMMON_ROOT_PROJECT_OWNED.has(entry.name)) continue;
+    if (!entry.isFile() || COMMON_ROOT_SKIP.has(entry.name)) continue;
     fs.copyFileSync(path.join(commonDir, entry.name), path.join(projectDir, entry.name));
     rootFiles.push(entry.name);
   }
