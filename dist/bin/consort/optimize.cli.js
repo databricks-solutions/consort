@@ -13706,6 +13706,50 @@ function apiContractConsistencyReason(consortDir, featureId) {
   const r = checkApiContractConsistency(arch, acJsons);
   return r.ok ? null : `api-contract consistency failed: ${r.violations.join("; ")}`;
 }
+var MUTATION_METHODS = /* @__PURE__ */ new Set(["POST", "PUT", "PATCH", "DELETE"]);
+function serviceRuleTaggedE2eReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  let methodById;
+  try {
+    const a = JSON.parse(arch);
+    methodById = new Map(
+      (a.api_contracts ?? []).filter((c) => typeof c.id === "string").map((c) => [c.id, String(c.method ?? "").toUpperCase()])
+    );
+  } catch {
+    return null;
+  }
+  if (methodById.size === 0) return null;
+  const storiesDir2 = join33(featureResolved(consortDir, featureId), "stories");
+  if (!existsSync34(storiesDir2)) return null;
+  for (const s of readdirSync21(storiesDir2)) {
+    const acsDir2 = join33(storiesDir2, s, "acs");
+    if (!existsSync34(acsDir2)) continue;
+    const e2eByEndpoint = /* @__PURE__ */ new Map();
+    const hasBackendAc = /* @__PURE__ */ new Set();
+    for (const f of readdirSync21(acsDir2)) {
+      if (!f.endsWith(".json")) continue;
+      let ac;
+      try {
+        ac = JSON.parse(readFileSync28(join33(acsDir2, f), "utf8"));
+      } catch {
+        continue;
+      }
+      const ep = ac.api_contract_id;
+      if (!ep || !methodById.has(ep) || !MUTATION_METHODS.has(methodById.get(ep))) continue;
+      if (ac.layer === "API" || ac.layer === "Infra") hasBackendAc.add(ep);
+      else if (ac.layer === "E2E") {
+        const id = ac.id ?? f.replace(/\.json$/, "");
+        (e2eByEndpoint.get(ep) ?? e2eByEndpoint.set(ep, []).get(ep)).push(id);
+      }
+    }
+    for (const [ep, e2eAcs] of e2eByEndpoint) {
+      if (hasBackendAc.has(ep)) continue;
+      return `story ${s}: backend write endpoint "${ep}" (${methodById.get(ep)}) is exercised only by E2E/UI AC(s) ${e2eAcs.join(", ")} \u2014 no API-layer AC covers the write rule, so the BEHAVIOR analyst has no backend scenario for it and the rule ships with 0 behavior tests. Retag the rule-bearing AC to layer:"API" (or add an API-layer AC for the write behavior beside the E2E form AC).`;
+    }
+  }
+  return null;
+}
 function readArchitecture(consortDir, featureId) {
   const f = architectureJson(consortDir, featureId);
   if (!existsSync34(f)) return void 0;
@@ -14080,6 +14124,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (conventionsReason !== null) return { reason: conventionsReason };
       const apiContractReason = apiContractConsistencyReason(consortDir, featureId);
       if (apiContractReason !== null) return { reason: apiContractReason };
+      const serviceRuleReason = serviceRuleTaggedE2eReason(consortDir, featureId);
+      if (serviceRuleReason !== null) return { reason: serviceRuleReason };
       const serviceBacked = serviceBackedReason(consortDir, featureId);
       if (serviceBacked !== null) return { reason: serviceBacked };
       const e2eLayerReason = e2eLayerPresentReason(consortDir, featureId);
