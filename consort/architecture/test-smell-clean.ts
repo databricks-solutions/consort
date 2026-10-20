@@ -179,7 +179,7 @@ const SMELL_FIX: Record<TestSmellName, string> = {
   "component-test-mock":
     "a client COMPONENT test (client/**/*.test.tsx) MOCKS the data path (a stubbed/spied/assigned global `fetch`, MSW, or a `vi.mock` of the app's api/service/http module). Kit principle: NEVER mock when a real counterpart exists — a component that talks to the backend in production must talk to the REAL backend in test. The vitest harness boots a real backend (vitest.globalSetup.ts) and the fetch shim (tests/setup.ts) routes `/api` to it, so render the component and let its real `/api` calls hit the live service against the paired-branch DB; assert on what comes back. Remove the mock. (A clock — vi.useFakeTimers — or a genuinely third-party module with no real counterpart stays allowed.)",
   "dsn-inline-credentials":
-    "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example (postgresql://someuser:pw@dbhost.invalid) matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine — not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
+    "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example — a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) — matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine — not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
 };
 
 /** The upgrade()-path body of an alembic migration (forward operations only) –
@@ -513,8 +513,9 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
 
         // dsn-inline-credentials: a DSN literal carrying inline credentials (scheme://user:pass@host).
         // Scanned on the RAW line (not comment-blanked) because the corporate secret-scanner reads the
-        // whole file, comments included — even a fake example (postgresql://someuser:pw@dbhost.invalid)
-        // trips the postgres-connection-string rule and blocks the merge commit. A credential-less DSN
+        // whole file, comments included — even a fake example (a postgresql:// URL with a someuser:pw@
+        // segment, host dbhost.invalid) trips the postgres-connection-string rule and blocks the merge
+        // commit. A credential-less DSN
         // (postgresql://dbhost.invalid:5432/somedb) does NOT match: the `:…@` credential segment is
         // required. Real connections come from env/fixtures, so a source literal only ever needs the
         // host/port/db an example asserts.
