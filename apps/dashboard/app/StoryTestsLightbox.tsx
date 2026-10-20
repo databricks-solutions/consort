@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { font, radius } from "@/lib/theme";
 import type { DashboardState } from "@/lib/types";
 import type { ActivityTimeline } from "./AgentLogReplay";
@@ -72,16 +72,17 @@ function Legend({ by }: { by: Record<string, number> }) {
 // The true test type for display: `kind` gives behavior/fitness/client, but `client` conflates a
 // Playwright E2E (`.spec.ts`, hits the DB through the app) with a Vitest component test (`.test.tsx`).
 // Distinguish them so the table view can show contents (behavior/fitness/e2e) vs mark "no DB" (component).
-export function testType(t: StoryTest): "behavior" | "fitness" | "e2e" | "component" | "client" {
+export function testType(t: StoryTest): "behavior" | "fitness" | "e2e" | "component" {
   if (t.kind === "behavior") return "behavior";
   if (t.kind === "fitness") return "fitness";
   if (t.kind === "component") return "component"; // the dedicated component-analyst kind
-  if (t.kind === "client") {
-    const f = t.scenario_file ?? "";
-    if (/\.spec\.tsx?$/.test(f) || f.includes("/e2e/")) return "e2e";
-    if (/\.test\.tsx?$/.test(f)) return "component"; // back-compat: a pre-split client component test
-  }
-  return "client";
+  // kind === "client" (or anything unrecognized): a client test is a Playwright E2E by default
+  // (it drives the app/DB through the browser) — the ONLY client exception is a Vitest component
+  // test (`.test.tsx`). There is no bare "CLIENT" type: a `.spec.ts` / `/e2e/` / unlabeled client
+  // test is E2E, a `.test.tsx` one is a component test.
+  const f = t.scenario_file ?? "";
+  if (/\.test\.tsx?$/.test(f)) return "component";
+  return "e2e";
 }
 
 export function testHitsDb(t: StoryTest): boolean {
@@ -99,6 +100,16 @@ const TYPE_PILL: Record<string, { fg: string; bg: string }> = {
   e2e: { fg: "#0d9488", bg: "rgba(13,148,136,0.15)" }, // teal
   component: { fg: "#db2777", bg: "rgba(219,39,119,0.14)" }, // pink
   client: { fg: "var(--text-muted)", bg: "var(--surface-inset)" }, // fallback
+};
+
+// Short pill labels so the type never crowds the T# + status on the tile's top row (the full type
+// is in the hover title). behavior→BDD, fitness→FIT, e2e→E2E, component→COMP.
+const TYPE_LABEL: Record<string, string> = {
+  behavior: "BDD",
+  fitness: "FIT",
+  e2e: "E2E",
+  component: "COMP",
+  client: "CLIENT",
 };
 
 function TypePill({ type }: { type: string }) {
@@ -121,7 +132,7 @@ function TypePill({ type }: { type: string }) {
         flex: "0 0 auto",
       }}
     >
-      {type}
+      {TYPE_LABEL[type] ?? type}
     </span>
   );
 }
@@ -129,11 +140,28 @@ function TypePill({ type }: { type: string }) {
 function Bubble({ t, onSelect, selected }: { t: StoryTest; onSelect?: (id: string) => void; selected?: boolean }) {
   const st = STATUS_STYLE[t.status] ?? STATUS_STYLE.pending;
   const ty = testType(t);
+  // A robust hover card: the tile is small + the description is clamped, so hovering surfaces the
+  // FULL record (unclamped description + every field) in a fixed-position card. Fixed-position so an
+  // overflow:hidden ancestor (the rail) can't clip it; anchored to the LEFT of the tile (the rail is
+  // on the right edge) and clamped into the viewport. Position is captured client-side on enter, so
+  // SSR (tip === null) never touches `window`.
+  const [tip, setTip] = useState<{ top: number; right: number } | null>(null);
+  const openTip = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const W = 300;
+    const M = 12;
+    setTip({
+      top: Math.max(M, Math.min(r.top, window.innerHeight - 240)),
+      right: Math.max(M, Math.min(window.innerWidth - r.left + 8, window.innerWidth - W - M)),
+    });
+  };
   return (
     <div
-      title={t.description}
       data-status={t.status}
       onClick={onSelect ? () => onSelect(t.id) : undefined}
+      onMouseEnter={openTip}
+      onMouseMove={openTip}
+      onMouseLeave={() => setTip(null)}
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onKeyDown={
@@ -160,11 +188,12 @@ function Bubble({ t, onSelect, selected }: { t: StoryTest; onSelect?: (id: strin
         outlineOffset: selected ? 1 : undefined,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      {/* Top row wraps (rowGap) so the T#, type pill, and status never overlap on a narrow tile. */}
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, rowGap: 3 }}>
         <span aria-hidden style={{ width: 9, height: 9, borderRadius: "50%", background: st.dot, flex: "0 0 auto" }} />
         <span style={{ fontFamily: font.mono, fontSize: "0.74rem", fontWeight: 700, color: "var(--text-strong)" }}>{t.id}</span>
         <TypePill type={ty} />
-        <span style={{ marginLeft: "auto", fontSize: "0.56rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: st.fg }}>
+        <span style={{ marginLeft: "auto", fontSize: "0.46rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.03em", color: st.fg }}>
           {st.label}
         </span>
       </div>
@@ -185,6 +214,70 @@ function Bubble({ t, onSelect, selected }: { t: StoryTest; onSelect?: (id: strin
         <span>{t.ac_id}</span>
         {t.invariant_id ? <span>· {t.invariant_id}</span> : null}
         {t.nfr_id ? <span>· {t.nfr_id}</span> : null}
+      </div>
+      {tip ? <TestHoverCard t={t} ty={ty} st={st} top={tip.top} right={tip.right} /> : null}
+    </div>
+  );
+}
+
+// The full-record hover card. Fixed-position (escapes the rail's overflow clip), shows the UNCLAMPED
+// description + every populated field, so the tiny tile never hides information.
+function TestHoverCard({
+  t,
+  ty,
+  st,
+  top,
+  right,
+}: {
+  t: StoryTest;
+  ty: string;
+  st: { dot: string; fg: string; label: string };
+  top: number;
+  right: number;
+}) {
+  const field = (label: string, value?: string) =>
+    value ? (
+      <div style={{ display: "flex", gap: 6 }}>
+        <span style={{ flex: "0 0 auto", width: 58, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.04em", fontSize: "0.56rem" }}>{label}</span>
+        <span style={{ color: "var(--text-body)", fontFamily: font.mono, fontSize: "0.62rem", wordBreak: "break-all" }}>{value}</span>
+      </div>
+    ) : null;
+  return (
+    <div
+      role="tooltip"
+      style={{
+        position: "fixed",
+        top,
+        right,
+        width: 300,
+        zIndex: 90,
+        background: "var(--surface-card)",
+        border: "1px solid var(--border-strong)",
+        borderRadius: radius.panel,
+        boxShadow: "0 12px 36px rgba(0,0,0,0.4)",
+        padding: "10px 12px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 7,
+        pointerEvents: "none",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <span aria-hidden style={{ width: 9, height: 9, borderRadius: "50%", background: st.dot, flex: "0 0 auto" }} />
+        <span style={{ fontFamily: font.mono, fontSize: "0.78rem", fontWeight: 700, color: "var(--text-strong)" }}>{t.id}</span>
+        <TypePill type={ty} />
+        <span style={{ marginLeft: "auto", fontSize: "0.56rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: st.fg }}>{st.label}</span>
+      </div>
+      <div style={{ fontSize: "0.72rem", color: "var(--text-body)", lineHeight: 1.45, textDecoration: STATUS_STYLE[t.status]?.strike ? "line-through" : undefined }}>
+        {t.description}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, borderTop: "1px solid var(--border-default)", paddingTop: 6 }}>
+        {field("Type", ty)}
+        {field("AC", t.ac_id)}
+        {field("Invariant", t.invariant_id)}
+        {field("NFR", t.nfr_id)}
+        {field("File", t.scenario_file)}
+        {field("Kind", t.kind)}
       </div>
     </div>
   );
@@ -211,7 +304,9 @@ export function TestBubbles({
         </span>
         <Legend by={s.by} />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+      {/* Auto-fill wider columns (min 150px) instead of a fixed 3-up: on the ~360px rail that is 2
+          roomier tiles rather than 3 cramped ones, so the top row reads without crushing. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
         {items.map((t) => (
           <Bubble key={t.id} t={t} onSelect={onSelect} selected={selectedId === t.id} />
         ))}

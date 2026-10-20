@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TestBubbles, summarizeTests, type StoryTest } from "./StoryTestsLightbox";
+import { TestBubbles, summarizeTests, testType, type StoryTest } from "./StoryTestsLightbox";
 
 const items: StoryTest[] = [
   { id: "T1", description: "files a stock record and reads it back", ac_id: "AC1", status: "green", kind: "behavior" },
@@ -52,5 +52,47 @@ describe("TestBubbles", () => {
 
   it("renders an explicit empty state when a story has no authored tests", () => {
     expect(renderToStaticMarkup(<TestBubbles items={[]} />)).toContain("No tests authored");
+  });
+});
+
+describe("testType — a client test is E2E, never a bare CLIENT", () => {
+  const t = (over: Partial<StoryTest>): StoryTest => ({ id: "T", description: "d", ac_id: "AC1", status: "pending", ...over });
+
+  it("behavior / fitness / component map straight through", () => {
+    expect(testType(t({ kind: "behavior" }))).toBe("behavior");
+    expect(testType(t({ kind: "fitness" }))).toBe("fitness");
+    expect(testType(t({ kind: "component" }))).toBe("component");
+  });
+
+  it("a client .spec.ts (or /e2e/ path) is E2E", () => {
+    expect(testType(t({ kind: "client", scenario_file: "client/tests/e2e/stock.spec.ts" }))).toBe("e2e");
+    expect(testType(t({ kind: "client", scenario_file: "client/e2e/thing.ts" }))).toBe("e2e");
+  });
+
+  it("a client .test.tsx is a component test (no DB)", () => {
+    expect(testType(t({ kind: "client", scenario_file: "client/src/Foo.test.tsx" }))).toBe("component");
+  });
+
+  it("a client test with no/unrecognized scenario_file defaults to E2E (never CLIENT)", () => {
+    expect(testType(t({ kind: "client" }))).toBe("e2e");
+    expect(testType(t({ kind: "client", scenario_file: "weird" }))).toBe("e2e");
+  });
+
+  it("renders abbreviated type pills (BDD / FIT / E2E / COMP), not the long words", () => {
+    const html = renderToStaticMarkup(
+      <TestBubbles
+        items={[
+          t({ id: "B", kind: "behavior" }),
+          t({ id: "F", kind: "fitness" }),
+          t({ id: "E", kind: "client", scenario_file: "client/tests/e2e/x.spec.ts" }),
+          t({ id: "C", kind: "component" }),
+        ]}
+      />,
+    );
+    expect(html).toContain(">BDD<");
+    expect(html).toContain(">FIT<");
+    expect(html).toContain(">E2E<");
+    expect(html).toContain(">COMP<");
+    expect(html).not.toContain(">CLIENT<");
   });
 });
