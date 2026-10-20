@@ -411,6 +411,7 @@ function substituteScmUtilsVersionInScripts(scriptsDir, version) {
 function refreshSurface(projectDir, kitDir, targetVersion) {
   const a = updateAgents({ projectDir, kitDir, force: true });
   const c = updateCommands({ projectDir, kitDir, force: true });
+  const skills = copyKitTree(path4.join(kitDir, "skills"), path4.join(projectDir, ".claude", "skills"));
   const commonDir = path4.join(kitDir, "templates", "project", "common");
   const scripts = copyKitTree(path4.join(commonDir, "scripts"), path4.join(projectDir, "scripts"));
   const workflowsDir = path4.join(projectDir, ".github", "workflows");
@@ -443,9 +444,9 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
   } catch {
   }
   const count = (files) => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
-  return { agents: count(a.files), commands: count(c.files), scripts, workflows, e2e };
+  return { agents: count(a.files), commands: count(c.files), skills, scripts, workflows, e2e };
 }
-var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
+var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
 function commitRefreshedSurface(projectDir, targetVersion, git = (a) => {
   const r = (0, import_node_child_process2.spawnSync)("git", ["-C", projectDir, ...a], { encoding: "utf8" });
   return { status: r.status, stdout: r.stdout ?? "" };
