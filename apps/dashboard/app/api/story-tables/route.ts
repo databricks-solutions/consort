@@ -16,16 +16,30 @@ export const revalidate = 0;
 // view shows the table as that test left it: at the live edge the view asks for the running test
 // (freshest capture via its poll); on replay it asks for the test at the playhead. Same invocation.
 //
+// SCOPING: test ids are per-STORY (T1,T2… recur in every story AND every feature), so a capture line
+// is matched to the viewed feature+story — not test_id alone, which would cross-contaminate two
+// features' same-id tests (the same leak the lightbox bubbles had). Lines that stamp feature_id/
+// story_id must match; a line that stamps NEITHER (a pre-scoping corpus) is kept, so old runs still
+// render by test_id alone (back-compat).
+//
 // Table names + columns + the story's schema_changes come from the feature's `db-design.json`.
 // SECURITY: fixed-name reads under the project `.consort`, slug-validated feature/story; no DB.
 
 const SNAPSHOT_FILE = "table-snapshots.jsonl";
 const INTERACTIONS_FILE = "test-interactions.jsonl";
 
+/** Scope a capture line to the viewed feature+story. A line that stamps feature_id/story_id must
+ *  match; a line that stamps NEITHER (a pre-scoping corpus) is kept — back-compat, so old runs still
+ *  render by test_id alone. Closes the cross-feature/story test-id collision for new runs. */
+function inScope(e: { featureId?: string; storyId?: string }, feature: string, story: string): boolean {
+  if (!e.featureId && !e.storyId) return true;
+  return (e.featureId ?? "") === feature && (e.storyId ?? "") === story;
+}
+
 /** Per-test RETRIEVED/STORED rows (the precise capture written by the app's per-request events —
  *  app/consort_capture.py), grouped by table. Unlike the whole-table snapshot, these are exactly the
  *  rows THIS test read or wrote. Returns a Map<table, {read, stored}>. */
-function readInteractionsForTest(testId: string, atTs: string): Map<string, { read: Record<string, unknown>[]; stored: Record<string, unknown>[] }> {
+function readInteractionsForTest(testId: string, atTs: string, feature: string, story: string): Map<string, { read: Record<string, unknown>[]; stored: Record<string, unknown>[] }> {
   const byTable = new Map<string, { read: Record<string, unknown>[]; stored: Record<string, unknown>[] }>();
   const abs = resolveContained(consortDir(), INTERACTIONS_FILE);
   if (!abs || !testId) return byTable;
@@ -40,8 +54,11 @@ function readInteractionsForTest(testId: string, atTs: string): Map<string, { re
     const s = line.trim();
     if (!s) continue;
     try {
-      const o = JSON.parse(s) as { test_id?: string; table?: string; op?: string; row?: Record<string, unknown>; ts?: string };
+      const o = JSON.parse(s) as { test_id?: string; table?: string; op?: string; row?: Record<string, unknown>; ts?: string; feature_id?: string; story_id?: string };
       if (o.test_id !== testId || typeof o.table !== "string" || !o.row) continue;
+      // Same feature+story scope as the snapshots — a per-story test id can't borrow another story's
+      // interactions (back-compat: a line without feature_id/story_id is kept, matched by test_id).
+      if (!inScope({ featureId: o.feature_id, storyId: o.story_id }, feature, story)) continue;
       // Scrubber-faithful: skip interactions AFTER the playhead so a test's rows appear only once the
       // playhead reaches the moment it ran — a test that executes LATER in the run shows nothing here.
       if (atTs && typeof o.ts === "string" && o.ts > atTs) continue;
@@ -93,6 +110,8 @@ interface SnapEntry {
   rows: Record<string, unknown>[];
   rowCount: number | null;
   isolated: boolean;
+  featureId?: string;
+  storyId?: string;
 }
 
 /** Read the whole snapshot log once, newest-insertion-order preserved. */
@@ -117,6 +136,8 @@ function readAllSnapshots(): SnapEntry[] {
         rows?: Record<string, unknown>[];
         row_count?: number | null;
         isolated?: boolean;
+        feature_id?: string;
+        story_id?: string;
       };
       if (typeof o.test_id !== "string" || typeof o.table !== "string") continue;
       out.push({
@@ -126,6 +147,8 @@ function readAllSnapshots(): SnapEntry[] {
         rows: o.rows ?? [],
         rowCount: o.row_count ?? null,
         isolated: !!o.isolated,
+        ...(typeof o.feature_id === "string" ? { featureId: o.feature_id } : {}),
+        ...(typeof o.story_id === "string" ? { storyId: o.story_id } : {}),
       });
     } catch {
       continue;
@@ -186,9 +209,9 @@ export async function GET(req: NextRequest) {
   const design = readDbDesign(feature);
   if (!design) return NextResponse.json({ available: false, reason: "no db-design.json" });
 
-  const all = readAllSnapshots().filter((e) => !atTs || e.ts <= atTs);
+  const all = readAllSnapshots().filter((e) => (!atTs || e.ts <= atTs) && inScope(e, feature, story));
   const byTable = snapshotForTest(all, testId);
-  const interactions = readInteractionsForTest(testId, atTs); // precise per-test read/stored rows
+  const interactions = readInteractionsForTest(testId, atTs, feature, story); // precise per-test read/stored rows
 
   // Tables to show = those the story structurally changes (schema_changes) UNION those the VIEWED
   // TEST actually captured a snapshot for OR touched (read/stored). The union is what makes READ-ONLY

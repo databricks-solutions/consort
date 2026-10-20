@@ -4,13 +4,13 @@
   "/api/artifact/route": "/api/artifact",
   "/api/driver-activity/route": "/api/driver-activity",
   "/api/planning/route": "/api/planning",
-  "/api/project-branch/route": "/api/project-branch",
+  "/api/step-outputs/route": "/api/step-outputs",
   "/api/state/route": "/api/state",
   "/api/test-run-live/route": "/api/test-run-live",
   "/api/story-tests/route": "/api/story-tests",
-  "/api/step-outputs/route": "/api/step-outputs",
+  "/api/project-branch/route": "/api/project-branch",
   "/api/activity-timeline/route": "/api/activity-timeline",
-  "/api/turn/[ord]/route": "/api/turn/[ord]",
   "/api/story-tables/route": "/api/story-tables",
+  "/api/turn/[ord]/route": "/api/turn/[ord]",
   "/page": "/"
 }

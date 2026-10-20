@@ -19,6 +19,8 @@ export interface ActivityLine {
   text?: string;
   testId?: string; // `test` line: the test whose status changed here
   status?: string; // `test` line: the status it transitioned to (red/green/refactored)
+  storyId?: string; // `test` line: owning story (test ids recur per story — the lightbox scopes its tail by this)
+  featureId?: string; // `test` line: owning feature (story ids also recur across features)
   tsLine?: string; // the line's real timestamp
   eventIndex?: number; // the event-log index this line maps to (board follows it on scrub)
 }

@@ -185,27 +185,37 @@ export default function Home() {
     const turn = timeline.turns.find((t) => n >= t.startLine && n < t.startLine + t.lineCount);
     return turn?.tsStart ?? timeline.turns[0]?.tsStart ?? null;
   };
-  // The "as-of" timestamp for the selected test's table capture in the dock: the latest revealed test
-  // line's real timestamp, else the current turn's start — so the table reads empty before the test
-  // ran at the playhead, matching the bubble fold.
-  const tableAtTs = (() => {
-    if (!timeline) return "";
-    let ts = "";
-    for (const l of timeline.lines) if (l.kind === "test" && l.idx < lineAt && l.tsLine) ts = l.tsLine;
-    if (!ts) {
-      const idx = lineAt - 1;
-      const cur = timeline.turns.find((t) => idx >= t.startLine && idx < t.startLine + t.lineCount) ?? timeline.turns[timeline.turns.length - 1];
-      ts = cur?.tsStart ?? "";
+  // The test the dock table shows: the pinned one (a clicked bubble) OR — when nothing is pinned —
+  // the test ACTIVE at the playhead, so scrubbing auto-follows the table through each test without a
+  // re-click. "Active" = the latest revealed `test` line, SCOPED to the open story's feature+story
+  // (test ids recur per story/feature, so an unscoped pick would jump to another story's same id).
+  const activeTestAtPlayhead = (() => {
+    if (!timeline || !openStory) return null;
+    let id: string | null = null;
+    for (const l of timeline.lines) {
+      if (l.kind !== "test" || !l.testId || l.idx >= lineAt) continue;
+      if ((l.storyId ?? "") !== (openStory.story ?? "") || (l.featureId ?? "") !== (openStory.feature ?? "")) continue;
+      id = l.testId;
     }
-    return ts;
+    return id;
   })();
-  // Has the scrubber reached the selected test's step? The dock table must stay empty until the
-  // playhead arrives at it — a wall-clock gate can't tell verify tests apart (they share ~one
-  // instant), so gate on the test's OWN latest line being revealed, the same model that lights the
-  // bubble. No per-test line in this corpus (or a test that never ran) → not gated (show at HEAD).
-  const selectedTestReached = (() => {
-    if (!timeline || !selectedTestId) return true;
-    const idxs = timeline.lines.filter((l) => l.kind === "test" && l.testId === selectedTestId).map((l) => l.idx);
+  const effectiveTestId = selectedTestId ?? activeTestAtPlayhead;
+  // Has the scrubber reached the dock test's step? The table must stay empty until the playhead
+  // arrives at it — a wall-clock gate can't tell verify tests apart (they share ~one instant), so
+  // gate on the test's OWN latest line being revealed, the same model that lights the bubble. Scoped
+  // by feature+story (ids recur). No per-test line in this corpus (or a test that never ran) → not
+  // gated (show at HEAD). The auto-followed active test is reached by construction.
+  const effectiveTestReached = (() => {
+    if (!timeline || !effectiveTestId || !openStory) return true;
+    const idxs = timeline.lines
+      .filter(
+        (l) =>
+          l.kind === "test" &&
+          l.testId === effectiveTestId &&
+          (l.storyId ?? "") === (openStory.story ?? "") &&
+          (l.featureId ?? "") === (openStory.feature ?? ""),
+      )
+      .map((l) => l.idx);
     if (idxs.length === 0) return true;
     return Math.max(...idxs) < lineAt;
   })();
@@ -631,8 +641,20 @@ export default function Home() {
             height={dockHeight}
             onHeightChange={setDockHeight}
             tableView={
-              openStory && selectedTestId
-                ? { feature: openStory.feature, story: openStory.story, testId: selectedTestId, atLive: state.atLive, atTs: state.atLive ? "" : tableAtTs, reached: selectedTestReached }
+              openStory && effectiveTestId
+                ? {
+                    feature: openStory.feature,
+                    story: openStory.story,
+                    testId: effectiveTestId,
+                    atLive: state.atLive,
+                    // The playhead's OWN interpolated timestamp (same signal the clock reads), not the
+                    // last test line's — so the table re-queries at the true scrub position on every
+                    // step and a mid-test re-capture (e.g. T23's 27→3 row snapshot) flips live without
+                    // a click. At the live edge it polls (empty `at` = newest).
+                    atTs: state.atLive ? "" : lineTimestamp(lineAt) ?? "",
+                    reached: effectiveTestReached,
+                    pinned: selectedTestId != null,
+                  }
                 : null
             }
           />

@@ -6927,12 +6927,14 @@ import { readFileSync as readFileSync8, existsSync as existsSync8, mkdirSync as 
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 var AGENT_SYNC_MARKER = path5.join(".claude", "agents", ".kit-version");
 var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
-function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], git = (a) => {
+function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], removedPaths = [], git = (a) => {
   const r = spawnSync("git", ["-C", projectDir, ...a], { encoding: "utf8" });
   return { status: r.status, stdout: r.stdout ?? "" };
 }) {
   if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) return { committed: false, reason: "not-a-git-repo" };
-  const paths = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs5.existsSync(path5.join(projectDir, p)));
+  const existing = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs5.existsSync(path5.join(projectDir, p)));
+  const deletions = removedPaths.filter((p) => git(["ls-files", "--error-unmatch", "--", p]).status === 0);
+  const paths = [...existing, ...deletions];
   if (!paths.length) return { committed: false, reason: "nothing-to-commit" };
   git(["add", "--", ...paths]);
   if (git(["diff", "--cached", "--quiet", "--", ...paths]).status === 0) {

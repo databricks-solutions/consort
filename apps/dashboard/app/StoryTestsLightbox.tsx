@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { font, radius } from "@/lib/theme";
 import type { DashboardState } from "@/lib/types";
-import type { ActivityTimeline } from "./AgentLogReplay";
+import type { ActivityLine, ActivityTimeline } from "./AgentLogReplay";
 
 // The per-story test lightbox: the tests the Navigator authored for a story, each a bubble coloured
 // by its current status, in the authored order — so an operator can see at a glance which tests are
@@ -53,6 +53,25 @@ export function summarizeTests(items: StoryTest[]): {
   const passing = (by.green ?? 0) + (by.refactored ?? 0);
   const total = items.length;
   return { by, passing, total, pct: total ? Math.round((passing / total) * 100) : 0 };
+}
+
+// The per-test status tail AS-OF the LINE playhead, SCOPED to one feature+story. Each test's
+// status transition is a `test` line in the flattened stream; fold the lines revealed so far
+// (idx < lineAt), last-revealed winning, so scrubbing flips bubbles one at a time in pass order.
+//
+// Scoping is load-bearing: test ids are per-story (T1,T2… recur in every story AND every feature),
+// so an UNSCOPED fold (keyed by test id alone) leaked one story's statuses onto another story's
+// same-id bubbles — F1's built T1-T22 lit up F2's still-pending T1-T22 all green. Mirrors the
+// reducer's `${feature}|${story}` fold key; absent ids compare as "" so a null-feature corpus
+// still matches a null-feature story.
+export function testTailForStory(lines: ActivityLine[], lineAt: number, feature: string, story: string): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const l of lines) {
+    if (l.kind !== "test" || !l.testId || l.idx >= lineAt) continue;
+    if ((l.storyId ?? "") !== (story ?? "") || (l.featureId ?? "") !== (feature ?? "")) continue;
+    m.set(l.testId, l.status ?? "");
+  }
+  return m;
 }
 
 function Legend({ by }: { by: Record<string, number> }) {
@@ -417,11 +436,9 @@ export function StoryTestsLightbox({
   // stream (placed in the turn that ran it, in pass order); fold the lines REVEALED so far (idx <
   // lineAt), last-revealed status per test winning. So scrubbing forward flips bubbles one at a time
   // in the order they passed — line position, not wall-clock (which collapsed a burst into one step).
-  const testStatusByLine = new Map<string, string>();
-  for (const l of timeline?.lines ?? []) {
-    if (l.kind !== "test" || !l.testId || l.idx >= lineAt) continue;
-    testStatusByLine.set(l.testId, l.status ?? "");
-  }
+  // Per-test status AS-OF the LINE playhead, scoped to THIS feature+story (test ids recur per story,
+  // so an unscoped fold leaks another story's statuses onto this drawer's same-id bubbles).
+  const testStatusByLine = testTailForStory(timeline?.lines ?? [], lineAt, feature, story);
   const haveTestLines = (timeline?.lines ?? []).some((l) => l.kind === "test");
   const liveStatusFor = (t: StoryTest): string | undefined => testStatusByLine.get(t.id);
   const currentTestId = selectedTestId;

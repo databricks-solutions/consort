@@ -431,6 +431,15 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
     fs5.copyFileSync(path4.join(commonDir, entry.name), path4.join(projectDir, entry.name));
     rootFiles.push(entry.name);
   }
+  const removedRootFiles = [];
+  const hasClient = fs5.existsSync(path4.join(projectDir, "client", "package.json"));
+  if (hasClient) {
+    const staleRootPlaywright = path4.join(projectDir, "playwright.config.ts");
+    if (fs5.existsSync(staleRootPlaywright)) {
+      fs5.rmSync(staleRootPlaywright);
+      removedRootFiles.push("playwright.config.ts");
+    }
+  }
   const substrate = resolveSubstrateVersion(kitDir);
   if (substrate) {
     substituteWorkflowVersion(workflowsDir, substrate);
@@ -459,15 +468,17 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
   } catch {
   }
   const count = (files) => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
-  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, scripts, workflows, e2e };
+  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e };
 }
 var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
-function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], git = (a) => {
+function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], removedPaths = [], git = (a) => {
   const r = (0, import_node_child_process2.spawnSync)("git", ["-C", projectDir, ...a], { encoding: "utf8" });
   return { status: r.status, stdout: r.stdout ?? "" };
 }) {
   if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) return { committed: false, reason: "not-a-git-repo" };
-  const paths = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs5.existsSync(path4.join(projectDir, p)));
+  const existing = [...KIT_SURFACE_PATHS, ...extraPaths].filter((p) => fs5.existsSync(path4.join(projectDir, p)));
+  const deletions = removedPaths.filter((p) => git(["ls-files", "--error-unmatch", "--", p]).status === 0);
+  const paths = [...existing, ...deletions];
   if (!paths.length) return { committed: false, reason: "nothing-to-commit" };
   git(["add", "--", ...paths]);
   if (git(["diff", "--cached", "--quiet", "--", ...paths]).status === 0) {
@@ -574,7 +585,7 @@ async function main() {
   }
   const pin = pinBoth(args.projectDir, ref);
   const surf = refreshSurface(args.projectDir, kitRoot(), target);
-  const committed = commitRefreshedSurface(args.projectDir, ref, surf.rootFiles);
+  const committed = commitRefreshedSurface(args.projectDir, ref, surf.rootFiles, surf.removedRootFiles);
   process.stdout.write(
     `consort-upgrade: UPGRADED to ${ref}.
   pins: .local ${pin.previousLocal ?? "(unset)"} -> ${ref}; committed ${pin.previousCommitted ?? "(unset)"} -> ${ref} (in lockstep, no drift).

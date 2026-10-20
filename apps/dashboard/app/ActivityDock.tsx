@@ -38,7 +38,7 @@ export function ActivityDock({
   bottomOffset: number;
   /** When a test is selected in the right rail, its table capture renders as a third dock region
    *  (keyed to the selected test, as-of the playhead). Null → the dock is the 2-region timeline+steps. */
-  tableView?: { feature: string; story: string; testId: string; atLive: boolean; atTs: string; reached: boolean } | null;
+  tableView?: { feature: string; story: string; testId: string; atLive: boolean; atTs: string; reached: boolean; pinned: boolean } | null;
   /** The dock's current height (px) and a setter — lifted to the page so the board's bottom padding
    *  tracks it. The dock is resizable by dragging its top edge. */
   height: number;
@@ -112,7 +112,7 @@ export function ActivityDock({
       bg: "var(--surface-page)",
       node: (
         <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "10px 14px" }}>
-          <StoryTables feature={tableView.feature} story={tableView.story} atLive={tableView.atLive} atTs={tableView.atTs} testId={tableView.testId} reached={tableView.reached} pinned />
+          <StoryTables feature={tableView.feature} story={tableView.story} atLive={tableView.atLive} atTs={tableView.atTs} testId={tableView.testId} reached={tableView.reached} pinned={tableView.pinned} />
         </div>
       ),
     });

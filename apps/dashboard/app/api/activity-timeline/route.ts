@@ -37,6 +37,8 @@ interface ActivityLine {
   text?: string; // reasoning line
   testId?: string; // `test` line: the test id (so the lightbox can light its bubble when this line is revealed)
   status?: string; // `test` line: the status this test TRANSITIONED to here (red → green → …)
+  storyId?: string; // `test` line: the owning story id — test ids recur per story, so the lightbox scopes its tail by this
+  featureId?: string; // `test` line: the owning feature id — scoped alongside storyId (story ids also recur across features)
   tsLine?: string; // the line's real timestamp (for the table panel's as-of-playhead read)
   eventIndex?: number; // the event-log index this line maps to — so the board folds EXACTLY here when scrubbed onto it
 }
@@ -73,13 +75,21 @@ function eventDisplay(e: { event?: string; message?: string; metadata?: Record<s
   target: string;
   testId?: string;
   status?: string;
+  storyId?: string;
+  featureId?: string;
 } {
   const ev = e.event ?? "";
   const md = e.metadata ?? {};
   if (ev === "test.result") {
     const tid = typeof md.test_id === "string" ? md.test_id : "";
     const st = typeof md.status === "string" ? md.status : "";
-    return { kind: "test", verb: st, target: tid, testId: tid, status: st };
+    // Test ids are per-STORY (T1,T2… recur in every story and every feature), so carry the
+    // owning story+feature on the line. Without them the lightbox's per-test tail — keyed by id
+    // alone — leaked one story's greens onto another story's same-id bubbles (F1's build greens
+    // T1-T22 lit up F2's still-pending T1-T22). Both ride in the emit's metadata (run-cycle.ts).
+    const story = typeof md.story_id === "string" ? md.story_id : undefined;
+    const feat = typeof md.feature_id === "string" ? md.feature_id : undefined;
+    return { kind: "test", verb: st, target: tid, testId: tid, status: st, ...(story ? { storyId: story } : {}), ...(feat ? { featureId: feat } : {}) };
   }
   // Drop a leading status word (it duplicates the verb label) and the LEAD test id that `cycle.*`
   // names — e.g. "GREEN T26 [AC1-…]: minimal honest code" → "[AC1-…]: minimal honest code". The lead

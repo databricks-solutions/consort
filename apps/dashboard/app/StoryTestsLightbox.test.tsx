@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TestBubbles, summarizeTests, testType, type StoryTest } from "./StoryTestsLightbox";
+import { TestBubbles, summarizeTests, testTailForStory, testType, type StoryTest } from "./StoryTestsLightbox";
+import type { ActivityLine } from "./AgentLogReplay";
 
 const items: StoryTest[] = [
   { id: "T1", description: "files a stock record and reads it back", ac_id: "AC1", status: "green", kind: "behavior" },
@@ -52,6 +53,51 @@ describe("TestBubbles", () => {
 
   it("renders an explicit empty state when a story has no authored tests", () => {
     expect(renderToStaticMarkup(<TestBubbles items={[]} />)).toContain("No tests authored");
+  });
+});
+
+describe("testTailForStory — the per-test tail is SCOPED to one feature+story (no cross-story leak)", () => {
+  // A multi-feature stream: F1/S1 built its T1,T2 GREEN; F2/S1 is still designing (its T1,T2 have
+  // no `test` line yet). Test ids collide (both stories have T1,T2) — the leak the scope closes.
+  const line = (idx: number, testId: string, status: string, feature: string, story: string): ActivityLine => ({
+    idx,
+    turn: 0,
+    role: "driver",
+    kind: "test",
+    testId,
+    status,
+    featureId: feature,
+    storyId: story,
+  });
+  const lines: ActivityLine[] = [
+    line(0, "T1", "green", "F1", "S1"),
+    line(1, "T2", "green", "F1", "S1"),
+    line(2, "T1", "red", "F2", "S2"), // a DIFFERENT story's T1, interleaved
+  ];
+
+  it("returns ONLY this feature+story's statuses — F1/S1's greens never touch F2/S1", () => {
+    const f2s1 = testTailForStory(lines, 99, "F2", "S1");
+    expect(f2s1.size).toBe(0); // F2/S1 has no test line yet — its bubbles stay pending, not F1's green
+
+    const f1s1 = testTailForStory(lines, 99, "F1", "S1");
+    expect(f1s1.get("T1")).toBe("green");
+    expect(f1s1.get("T2")).toBe("green");
+    expect(f1s1.size).toBe(2);
+
+    const f2s2 = testTailForStory(lines, 99, "F2", "S2");
+    expect(f2s2.get("T1")).toBe("red"); // the same T-id, correctly scoped to its own story
+    expect(f2s2.size).toBe(1);
+  });
+
+  it("folds only lines REVEALED by the playhead (idx < lineAt), last status winning", () => {
+    const partial = testTailForStory(lines, 1, "F1", "S1"); // only line idx 0 revealed
+    expect(partial.get("T1")).toBe("green");
+    expect(partial.has("T2")).toBe(false); // idx 1 not yet revealed
+  });
+
+  it("ignores non-test lines", () => {
+    const withTool: ActivityLine[] = [{ idx: 0, turn: 0, role: "driver", kind: "tool", verb: "Edit", target: "x.ts" }, ...lines];
+    expect(testTailForStory(withTool, 99, "F1", "S1").size).toBe(2);
   });
 });
 
