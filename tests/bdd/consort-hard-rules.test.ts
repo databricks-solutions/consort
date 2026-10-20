@@ -204,3 +204,28 @@ describe("Pass-2 shift-left canon", () => {
     expect(spec).toMatch(/OPTIONAL \/ NULLABLE field/);
   });
 });
+
+// The `dsn-inline-credentials` smell teaches that a literal `scheme://user:pass@host` DSN — even a
+// deliberately fake one — trips the corporate postgres-connection-string secret-scanner on every
+// Databricks machine. The kit's OWN canon and the gate's OWN message had the same self-tripping
+// literal: navigator.md ships into every scaffold's `.claude/**/navigator.md` (so it rode in the
+// scaffold commit and blocked a fresh project's first push), and the test-smell-clean message is
+// bundled into dist and written into `agent-log.jsonl` when the smell fires (which snapshots commit).
+// Both must therefore carry NO contiguous `scheme://user:pass@` literal — describe the pattern, never
+// embed it. (Credential-less example DSNs like `postgresql://dbhost.invalid:5432/somedb` are fine and
+// intentionally kept — they teach the fix and do NOT match the scanner.)
+describe("kit canon/messages carry no self-tripping inline-credential DSN literal", () => {
+  // Literal scheme + concrete user:pass + `@`. Does NOT match the detector's own regex source
+  // (its `:\/\/` is escaped and its user/pass are char-classes, not a concrete token), nor a
+  // credential-less `host:port/db` DSN (no `@` after the port).
+  const INLINE_CRED_DSN = /postgres(?:ql)?:\/\/[A-Za-z0-9_.%+-]+:[A-Za-z0-9_.%+-]+@/;
+  const SMELL_SRC = join(__dirname, "..", "..", "consort", "architecture", "test-smell-clean.ts");
+
+  it("navigator.md (shipped into every scaffold) has no literal scheme://user:pass@host", () => {
+    expect(INLINE_CRED_DSN.test(readFileSync(NAV_PATH, "utf8"))).toBe(false);
+  });
+
+  it("the dsn-inline-credentials gate message/comment has no literal scheme://user:pass@host", () => {
+    expect(INLINE_CRED_DSN.test(readFileSync(SMELL_SRC, "utf8"))).toBe(false);
+  });
+});
