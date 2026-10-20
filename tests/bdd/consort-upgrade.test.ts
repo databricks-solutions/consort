@@ -107,6 +107,24 @@ describe("refreshSurface – brings agents + commands to the target + stamps the
     expect(readFileSync(join(proj, ".claude", "agents", ".kit-version"), "utf8").trim()).toBe("9.9.9-test");
   });
 
+  // Regression: the `.claude/skills/` tree was laid down at scaffold by install.sh and NEVER
+  // refreshed on upgrade, so a kit fix that landed in `.claude/agents/<role>.md` (updateAgents) left
+  // the parallel skill-doc copy `.claude/skills/consort/agents/<role>.md` frozen at the scaffolded
+  // version — the two drifted out of sync. refreshSurface must now also refresh the kit-owned skills
+  // subtree so BOTH navigator copies move together.
+  it("refreshes the .claude/skills/ tree so the skills navigator copy matches the kit (not frozen at scaffold)", () => {
+    // Simulate a stale scaffolded skills copy that an old upgrade would have left behind.
+    const skillNav = join(proj, ".claude", "skills", "consort", "agents", "navigator.md");
+    mkdirSync(dirname(skillNav), { recursive: true });
+    writeFileSync(skillNav, "STALE scaffolded navigator with postgresql://u:p@dbhost.invalid\n");
+    const r = refreshSurface(proj, repoRoot, "9.9.9-test");
+    expect(r.skills).toBeGreaterThan(0);
+    const refreshed = readFileSync(skillNav, "utf8");
+    const kitNav = readFileSync(join(repoRoot, "skills", "consort", "agents", "navigator.md"), "utf8");
+    expect(refreshed).toBe(kitNav); // refreshed FROM the kit, no longer the stale scaffold copy
+    expect(refreshed).not.toContain("u:p@dbhost.invalid"); // the stale literal is gone
+  });
+
   it("leaves a project's scm-utils scripts/lk shim untouched (only kit-owned files move)", () => {
     mkdirSync(join(proj, "scripts"), { recursive: true });
     writeFileSync(join(proj, "scripts", "lk"), "#!/usr/bin/env bash\n# project shim\n");

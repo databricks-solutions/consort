@@ -148,6 +148,7 @@ export function rollbackPins(projectDir: string): RollbackResult {
 export interface RefreshSurfaceResult {
   agents: number; // files added/updated
   commands: number;
+  skills: number; // kit-owned .claude/skills/ docs refreshed
   scripts: number; // kit-owned scripts copied
   workflows: number; // CI workflow files copied
   e2e: boolean; // whether the Playwright E2E block was (re)wired into run-tests.sh (UI projects)
@@ -247,6 +248,14 @@ function substituteScmUtilsVersionInScripts(scriptsDir: string, version: string)
 export function refreshSurface(projectDir: string, kitDir: string, targetVersion: string): RefreshSurfaceResult {
   const a = updateAgents({ projectDir, kitDir, force: true });
   const c = updateCommands({ projectDir, kitDir, force: true });
+  // The `.claude/skills/` tree (the consort + design-principles skill docs) is laid down ONCE at
+  // scaffold time by install.sh and, until now, was NEVER refreshed on upgrade. So a kit fix that
+  // lands in a skill doc — e.g. the skills copy of navigator.md — moved forward in `.claude/agents/`
+  // (updateAgents, above) but left `.claude/skills/consort/agents/navigator.md` frozen at the
+  // scaffolded version, so the two navigator copies drifted out of sync and the stale one kept the
+  // old content (the dsn-inline-credentials literal). Refresh the kit-owned skills subtree from the
+  // target kit too. copyKitTree overwrites kit-owned files and leaves project-only skills untouched.
+  const skills = copyKitTree(path.join(kitDir, "skills"), path.join(projectDir, ".claude", "skills"));
   const commonDir = path.join(kitDir, "templates", "project", "common");
   const scripts = copyKitTree(path.join(commonDir, "scripts"), path.join(projectDir, "scripts"));
   const workflowsDir = path.join(projectDir, ".github", "workflows");
@@ -302,14 +311,14 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
     /* best-effort: the drive's resyncAgentsOnKitDrift will refresh again if the marker is stale */
   }
   const count = (files: Array<{ outcome: string }>): number => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
-  return { agents: count(a.files), commands: count(c.files), scripts, workflows, e2e };
+  return { agents: count(a.files), commands: count(c.files), skills, scripts, workflows, e2e };
 }
 
 /** The kit-owned tracked paths refreshSurface + pinBoth rewrite. Committed by EXACT path so the
  *  commit never touches app code, the `.consort` corpus, the scm-utils `scripts/lk` shim (which
  *  refreshSurface leaves untouched), or the run-local pins (`.lakebase/kit-ref.local` / `.prev`
  *  are gitignored; `.lakebase/kit-ref` is the tracked CI pin). */
-const KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
+const KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
 
 export interface CommitSurfaceResult {
   committed: boolean;
