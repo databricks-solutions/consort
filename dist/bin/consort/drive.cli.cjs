@@ -12009,8 +12009,8 @@ var driver_refactor_superseded_default = {
   inputs: [
     {
       id: "superseded-tests",
-      source: "story:superseded-tests.json",
-      description: "The superseded tests the Navigator flagged during refactor-verify , the Driver edits ONLY these."
+      source: "story:refactor-verify-assess.json",
+      description: "The story-level refactor-verify-assess marker; its flagged_tests is the UNION across the story's ACs the Navigator confirmed superseded. (The Navigator writes superseded-tests.json PER AC; the assess finalize aggregates them into this marker, so the story-granularity step reads IT here , a story-root superseded-tests.json never exists for a multi-AC supersession.) The Driver edits ONLY the flagged tests."
     }
   ],
   outputs: [],
@@ -15161,6 +15161,17 @@ SUPERSEDED TESTS: this AC (${acId}) supersedes behavior encoded in PRIOR tests t
 ${list}
 Do NOT touch any other test; an UNflagged failing test is a genuine regression that must stay red and escalate.`;
 }
+function refactorSupersededDirective(consortDir, featureId, story) {
+  const marker = readRefactorVerifyAssessMarker(consortDir, featureId, story);
+  const tests = marker?.flagged_tests ?? [];
+  if (tests.length === 0) return "";
+  const list = tests.map((t) => `  - ${t}`).join("\n");
+  return `
+
+SUPERSEDED TESTS (the Navigator's refactor-verify assess flagged these PRIOR tests as superseded by story ${story}'s refactor \u2014 the UNION across the story's ACs). Permissively refactor ONLY these so they reflect the retired behavior (update or drop the superseded assertion):
+${list}
+Do NOT touch any other test; an UNflagged failing test is a genuine regression that must stay red and escalate.`;
+}
 function regressionRepairDirective(consortDir, featureId, story) {
   let acId;
   try {
@@ -15361,7 +15372,7 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies after your
       }
       if (action.buildMode === "refactor-superseded") {
         return `The Navigator flagged prior tests that story ${s}'s refactor SUPERSEDED. Permissively refactor ONLY the flagged superseded tests below so they reflect the retired behavior (update or drop the superseded assertion); do NOT change product code and do NOT weaken any CURRENT (non-superseded) test.
-` + supersededTestsDirective(consortDir, featureId, s) + `
+` + refactorSupersededDirective(consortDir, featureId, s) + `
 Edit ONLY the flagged test files. The orchestrator re-verifies the full suite after your turn.`;
       }
       if (action.buildMode === "repair") {

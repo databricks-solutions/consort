@@ -480,6 +480,29 @@ function supersededTestsDirective(consortDir: string, featureId: string, story: 
 }
 
 /**
+ * The STORY-level superseded directive for the refactor-superseded turn. The
+ * refactor-verify assess runs at story granularity, but the Navigator flags
+ * superseded tests PER AC (one flag-superseded call per AC); the assess finalize
+ * aggregates them into the refactor-verify-assess marker's `flagged_tests` (the
+ * UNION across the story's ACs). Read THAT union here — not a single open-AC's
+ * superseded-tests.json (supersededTestsDirective, which is the per-AC GREEN-path
+ * variant and returns nothing once every AC is done). Empty only when nothing is
+ * flagged (the Navigator vetoed), which does not route this turn.
+ */
+function refactorSupersededDirective(consortDir: string, featureId: string, story: string): string {
+  const marker = readRefactorVerifyAssessMarker(consortDir, featureId, story);
+  const tests = marker?.flagged_tests ?? [];
+  if (tests.length === 0) return "";
+  const list = tests.map((t) => `  - ${t}`).join("\n");
+  return (
+    `\n\nSUPERSEDED TESTS (the Navigator's refactor-verify assess flagged these PRIOR tests as superseded by` +
+    ` story ${story}'s refactor — the UNION across the story's ACs). Permissively refactor ONLY these so they` +
+    ` reflect the retired behavior (update or drop the superseded assertion):\n${list}\n` +
+    `Do NOT touch any other test; an UNflagged failing test is a genuine regression that must stay red and escalate.`
+  );
+}
+
+/**
  * The Driver's REPAIR directive: the Navigator assessed the green-failure as a
  * driver-fixable regression and recorded a diagnosis + fix directive on the
  * green-failure marker. Inject both so the Driver fixes the ROOT CAUSE this turn
@@ -1271,7 +1294,7 @@ function roleTaskBody(
           `The Navigator flagged prior tests that story ${s}'s refactor SUPERSEDED. Permissively refactor ONLY the` +
           ` flagged superseded tests below so they reflect the retired behavior (update or drop the superseded` +
           ` assertion); do NOT change product code and do NOT weaken any CURRENT (non-superseded) test.\n` +
-          supersededTestsDirective(consortDir, featureId, s) +
+          refactorSupersededDirective(consortDir, featureId, s) +
           `\nEdit ONLY the flagged test files. The orchestrator re-verifies the full suite after your turn.`
         );
       }

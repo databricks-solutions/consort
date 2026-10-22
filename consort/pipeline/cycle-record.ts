@@ -1057,6 +1057,42 @@ function flagLayeringIfDirty(consortDir: string, featureId: string, story: strin
   }
 }
 
+/**
+ * Deterministic supersession backstop, run at REVIEW (no model cooperation) — the
+ * supersession twin of flagLayeringIfDirty/flagUxAdherenceIfDirty. When a migration
+ * DROPPED a column that PRIOR tests still assert, the new AC supersedes those tests.
+ * The green-failure path (recordGreenResult) catches this ONLY when the GREEN verify
+ * actually fails on them; a LAYER-SCOPED green verify that never runs the prior
+ * story's tests, paired with a rubber-stamp `refactor:false` review, lets the
+ * supersession slip to the deploy gate as a red suite (the routing gap behind the
+ * S2 supersession miss). Run supersededTestCandidates (deterministic: net-dropped
+ * migration symbols × references in the test tree) here and, on candidates, flag the
+ * build-refactor-routable `superseded-tests` smell (idempotently). refactorPending /
+ * firstRefactorPendingAc then routes the Driver's REFACTOR even on refactor:false;
+ * the refactor-verify failure routes the Navigator's supersession assess, which
+ * decides superseded-vs-regression (never a blind auto-retire). Conservative: fires
+ * ONLY on a real column drop (no drop -> candidates empty -> no-op), so an ordinary
+ * review is untouched. Best-effort: never break the review.
+ */
+function flagSupersededTestsIfDirty(consortDir: string, story: string): void {
+  try {
+    if (hasOpenSmell(consortDir, "superseded-tests", story)) return;
+    const superseded = supersededTestCandidates({ projectDir: dirname(consortDir) });
+    if (superseded.candidates.length > 0 && superseded.advisory) {
+      writeSmellsLog(consortDir, [
+        {
+          smell: "superseded-tests",
+          cycle_ids: [],
+          detail: `superseded-test candidates (deterministic review backstop): ${superseded.advisory.slice(0, 600)}`,
+          story_id: story,
+        },
+      ]);
+    }
+  } catch {
+    /* a supersession scan failure is observability, not a gate; never break the review */
+  }
+}
+
 export function reviewAc(consortDir: string, featureId: string, story: string, acId: string): { reviewed: boolean; refactorRequested: boolean } {
   let verdict: { refactor?: boolean; notes?: string } = {};
   const vf = acReviewVerdictJson(consortDir, featureId, story, acId);
@@ -1095,6 +1131,7 @@ export function reviewAc(consortDir: string, featureId: string, story: string, a
   });
   flagUxAdherenceIfDirty(consortDir, story);
   flagLayeringIfDirty(consortDir, featureId, story);
+  flagSupersededTestsIfDirty(consortDir, story);
   return { reviewed: true, refactorRequested };
 }
 
@@ -1301,6 +1338,7 @@ export function reviewStory(
   });
   flagUxAdherenceIfDirty(consortDir, story);
   flagLayeringIfDirty(consortDir, featureId, story);
+  flagSupersededTestsIfDirty(consortDir, story);
   return { reviewed: true, refactorRequested };
 }
 

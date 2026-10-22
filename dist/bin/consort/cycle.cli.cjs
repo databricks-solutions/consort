@@ -11838,6 +11838,23 @@ function flagLayeringIfDirty(consortDir, featureId, story) {
   } catch {
   }
 }
+function flagSupersededTestsIfDirty(consortDir, story) {
+  try {
+    if (hasOpenSmell(consortDir, "superseded-tests", story)) return;
+    const superseded = supersededTestCandidates({ projectDir: (0, import_path12.dirname)(consortDir) });
+    if (superseded.candidates.length > 0 && superseded.advisory) {
+      writeSmellsLog(consortDir, [
+        {
+          smell: "superseded-tests",
+          cycle_ids: [],
+          detail: `superseded-test candidates (deterministic review backstop): ${superseded.advisory.slice(0, 600)}`,
+          story_id: story
+        }
+      ]);
+    }
+  } catch {
+  }
+}
 function reviewAc(consortDir, featureId, story, acId) {
   let verdict = {};
   const vf = acReviewVerdictJson(consortDir, featureId, story, acId);
@@ -11874,6 +11891,7 @@ function reviewAc(consortDir, featureId, story, acId) {
   });
   flagUxAdherenceIfDirty(consortDir, story);
   flagLayeringIfDirty(consortDir, featureId, story);
+  flagSupersededTestsIfDirty(consortDir, story);
   return { reviewed: true, refactorRequested };
 }
 async function refactorAc(consortDir, featureId, story, acId, opts) {
@@ -11955,6 +11973,7 @@ function reviewStory(consortDir, featureId, story) {
   });
   flagUxAdherenceIfDirty(consortDir, story);
   flagLayeringIfDirty(consortDir, featureId, story);
+  flagSupersededTestsIfDirty(consortDir, story);
   return { reviewed: true, refactorRequested };
 }
 async function refactorStory(consortDir, featureId, story, opts) {

@@ -22,6 +22,10 @@ const MANIFEST_FILE = join(
   HERE,
   "../../consort/orchestrator/steps/manifests/navigator-assess-refactor.json",
 );
+const DRIVER_MANIFEST_FILE = join(
+  HERE,
+  "../../consort/orchestrator/steps/manifests/driver-refactor-superseded.json",
+);
 
 interface ManifestInput {
   id: string;
@@ -73,5 +77,33 @@ describe("navigator-assess-refactor input ↔ refactor-verify-assess marker", ()
     expect(existsSync(resolved)).toBe(true);
     expect(written).toBe(resolved);
     expect(basename(written!)).toBe(basename(rel));
+  });
+});
+
+describe("driver-refactor-superseded input ↔ refactor-verify-assess marker (multi-AC union)", () => {
+  it("reads the STORY-level assess marker (its aggregated flagged_tests), not a per-AC superseded-tests.json", () => {
+    const manifest = JSON.parse(readFileSync(DRIVER_MANIFEST_FILE, "utf8")) as { inputs: ManifestInput[] };
+    const input = manifest.inputs.find((i) => i.id === "superseded-tests");
+    if (!input) throw new Error("driver-refactor-superseded manifest has no input 'superseded-tests'");
+    const [scope, ...rest] = input.source.split(":");
+    const rel = rest.join(":");
+    expect(scope).toBe("story");
+    // The defect: the input named `superseded-tests.json`, which the Navigator writes PER AC
+    // (cycles/<f>/<s>/<ac>/superseded-tests.json) via flag-superseded — NEVER at the story root.
+    // A story-granularity supersession spanning >1 AC (e.g. S2's AC1 T41/T42 + AC3 T58/T59) then
+    // had NO story-root file, so resolveInputs fail-louded with "missing input" before the Driver
+    // spawned. The assess finalize aggregates the per-AC files into the story-level marker's
+    // flagged_tests (the UNION), so the step must read THAT marker here.
+    expect(rel).toBe("refactor-verify-assess.json");
+    expect(rel).not.toBe("superseded-tests.json");
+
+    // The marker the writer / assess-finalize produces resolves at exactly story:<rel> — so the
+    // step input is present (no abort) whenever the step is routed (routing requires the marker).
+    const written = writeRefactorVerifyAssessMarker(consortDir, FEATURE, STORY, {
+      summary: "story S1 refactor-verify: full suite failed",
+    });
+    const resolved = join(storyDir(consortDir, FEATURE, STORY), rel);
+    expect(existsSync(resolved)).toBe(true);
+    expect(written).toBe(resolved);
   });
 });

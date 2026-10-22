@@ -8066,8 +8066,8 @@ var driver_refactor_superseded_default = {
   inputs: [
     {
       id: "superseded-tests",
-      source: "story:superseded-tests.json",
-      description: "The superseded tests the Navigator flagged during refactor-verify , the Driver edits ONLY these."
+      source: "story:refactor-verify-assess.json",
+      description: "The story-level refactor-verify-assess marker; its flagged_tests is the UNION across the story's ACs the Navigator confirmed superseded. (The Navigator writes superseded-tests.json PER AC; the assess finalize aggregates them into this marker, so the story-granularity step reads IT here , a story-root superseded-tests.json never exists for a multi-AC supersession.) The Driver edits ONLY the flagged tests."
     }
   ],
   outputs: [],
