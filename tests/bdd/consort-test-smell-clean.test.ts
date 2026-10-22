@@ -229,6 +229,19 @@ describe("checkTestSmells", () => {
     expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "schema-unsatisfiable-ref")).toBe(false);
   });
 
+  it("does NOT flag the Postgres system catalogs (information_schema / pg_catalog), the contract-drop false positive", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
+    // A contract-drop test PROVES the column is gone by querying information_schema — the system
+    // catalog is always present and never migrated, so this is correct, not unsatisfiable. pg_catalog
+    // / pg_* are the same class.
+    write(dir, "tests/test_contract_drop.py",
+      `cols = cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='stock_records'").fetchall()\n` +
+      `tabs = cur.execute("SELECT tablename FROM pg_catalog.pg_tables").fetchall()\n` +
+      `cls = cur.execute("SELECT relname FROM pg_class").fetchall()\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "schema-unsatisfiable-ref")).toBe(false);
+  });
+
   it("reversible-invariant-round-trip: flags a COVERED forward-only invariant but NOT an uncovered one", () => {
     // Uncovered reversible invariant → a coverage concern (checkPersistenceCoverage, story-anchored),
     // NOT this round-trip-quality smell (the PI6-flagged-during-S1 false positive).
@@ -265,16 +278,43 @@ describe("checkTestSmells: dropped-column-dangling-reference", () => {
       `def upgrade():\n    op.drop_column("stock_records", "inventory_code")\n\ndef downgrade():\n    op.add_column("stock_records", sa.Column("inventory_code", sa.String()))\n`);
   }
 
-  it("flags a live app/seed reference to a dropped column", () => {
+  it("flags a model still DECLARING the dropped column (the root cause: SQL emits it)", () => {
     const dir = mkProject();
     seedContractMigrations(dir);
-    write(dir, "seed_dev.py",
-      `ROWS = [StockRecord(sku="S1", location="A1", quantity=1, inventory_code="A12-B7-S001")]\n`);
+    // The model was not updated for the contract drop: it still maps inventory_code, so every
+    // SELECT/INSERT emits SQL for a column the DB no longer has -> runtime crash. This is the
+    // real DB-facing reference the smell exists to catch (shape (b): an ORM column declaration).
+    write(dir, "app/models/stock_record.py",
+      `class StockRecord(Base):\n    __tablename__ = "stock_records"\n    inventory_code = sa.Column(sa.String())\n`);
     const r = checkTestSmells({ projectDir: dir });
     expect(r.clean).toBe(false);
     expect(r.violations[0].smell).toBe("dropped-column-dangling-reference");
-    expect(r.violations[0].file).toBe("seed_dev.py");
+    expect(r.violations[0].file).toBe("app/models/stock_record.py");
     expect(r.violations[0].detail).toMatch(/contract migration/);
+  });
+
+  it("flags an ORM attribute access + raw SQL on the dropped column", () => {
+    const dir = mkProject();
+    seedContractMigrations(dir);
+    write(dir, "app/services/stock.py", `def code(row):\n    return row.inventory_code\n`); // (a)
+    write(dir, "app/repo.py", `rows = cur.execute("SELECT inventory_code FROM stock_records")\n`); // (c)
+    const r = checkTestSmells({ projectDir: dir });
+    const files = r.violations.filter((v) => v.smell === "dropped-column-dangling-reference").map((v) => v.file);
+    expect(files).toContain("app/services/stock.py");
+    expect(files).toContain("app/repo.py");
+  });
+
+  it("does NOT flag a write-only request field, a param annotation, or a positional arg (the F6/S3 false positives)", () => {
+    const dir = mkProject();
+    seedContractMigrations(dir);
+    // All three are the real S3 shapes: a Pydantic request-model field, a function parameter
+    // annotation, and the column passed as a plain argument to a snake_case helper. None reaches
+    // the ORM / emits SQL for stock_records.inventory_code, so none must be flagged.
+    write(dir, "app/routes/stock.py",
+      `class FileStockIn(BaseModel):\n    inventory_code: str | None = None\n`);
+    write(dir, "app/services/stock.py",
+      `def file_stock(self, *, inventory_code: str | None = None):\n    batch, serial = split_inventory_code(_clean(inventory_code))\n    return batch, serial\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "dropped-column-dangling-reference")).toBe(false);
   });
 
   it("does NOT flag a docstring mention of the dropped column (the grep-error the diagnosis made)", () => {

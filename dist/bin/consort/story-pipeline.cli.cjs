@@ -7918,6 +7918,9 @@ var RUNTIME_ARTIFACT_PREFIXES = [
   ".claude/agent-memory/"
 ];
 
+// consort/pipeline/reporter-results.ts
+init_cjs_shims();
+
 // consort/smells/smells.ts
 var SMELL_CATALOG = [
   {

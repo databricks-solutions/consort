@@ -13291,6 +13291,9 @@ Experiment cut from \`${parentBranch ?? "staging"}\`. Strategy + learning notes 
   };
 }
 
+// consort/pipeline/reporter-results.ts
+init_esm_shims();
+
 // consort/pipeline/run-cycle.ts
 function readAcLayer2(consortDir, featureId, acId) {
   return readAcLayer(consortDir, featureId, acId);

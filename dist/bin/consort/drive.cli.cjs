@@ -8637,6 +8637,11 @@ var import_path9 = require("path");
 // consort/pipeline/run-cycle.ts
 init_cjs_shims();
 var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+
+// consort/pipeline/reporter-results.ts
+init_cjs_shims();
+
+// consort/pipeline/run-cycle.ts
 function readAcLayer2(consortDir, featureId, acId) {
   return readAcLayer(consortDir, featureId, acId);
 }

@@ -13,6 +13,7 @@ import {
 } from "../../consort/experiment/experiment";
 import { emitAgentLogEvent, type AgentLogEventInput } from "../../consort/logging/agent-log";
 import { readAcLayer as readAcLayerFromPaths } from "../../consort/config/consort-paths.js";
+import { reconcileTestResultsFromReporter } from "./reporter-results.js";
 
 /**
  * Emit a cycle event to the centralized agent log from the SUBSTRATE, not
@@ -384,6 +385,10 @@ export function markGreen(
   });
   // Per-test trail: every covered test now passes (GREEN).
   logTestResults(scope.consortDir, a, "green", "driver");
+  // ADDITIVE reconciliation: the GREEN verify re-ran the whole suite, so correct every OTHER test the
+  // runner reports (a prior story's test still green -> stale red cleared; a regression -> red). The
+  // cycle-scoped declaration above still owns the covered tests; this only emits reporter deltas.
+  reconcileTestResultsFromReporter(scope.consortDir, "driver");
   return a;
 }
 
@@ -403,6 +408,9 @@ export function markRefactored(scope: CycleScope, cycleId: string, refactorNotes
   });
   // Per-test trail: every covered test survives the refactor (REFACTORED).
   logTestResults(scope.consortDir, a, "refactored", "driver");
+  // ADDITIVE reconciliation: the refactor-verify re-ran the suite; correct every other test's bubble
+  // from the runner's own truth (reporter deltas only — the covered tests keep their declaration).
+  reconcileTestResultsFromReporter(scope.consortDir, "driver");
   return a;
 }
 

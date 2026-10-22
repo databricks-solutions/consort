@@ -7436,6 +7436,9 @@ init_cjs_shims();
 init_cjs_shims();
 var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
+// consort/pipeline/reporter-results.ts
+init_cjs_shims();
+
 // consort/smells/deploy-verify-assess.ts
 init_cjs_shims();
 var fs3 = __toESM(require("fs"), 1);

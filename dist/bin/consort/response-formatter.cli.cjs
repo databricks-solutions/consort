@@ -8117,6 +8117,9 @@ var EVENT_TEMPLATES = {
 };
 var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 
+// consort/pipeline/reporter-results.ts
+init_cjs_shims();
+
 // consort/smells/testlist-conformance.ts
 function storyAcLayers(consortDir, featureId, story) {
   const acLayerById = {};

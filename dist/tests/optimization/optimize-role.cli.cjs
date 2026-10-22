@@ -12115,6 +12115,9 @@ async function deleteExperiment(args) {
   }
 }
 
+// consort/pipeline/reporter-results.ts
+init_cjs_shims();
+
 // consort/pipeline/run-cycle.ts
 function logCycleEvent(consortDir, event) {
   try {

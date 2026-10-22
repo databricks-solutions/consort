@@ -179,8 +179,14 @@ function collectDroppedColumns(projectDir, migrationDirs) {
   }
   return dropped;
 }
+function isDbColumnRef(codeLine, col) {
+  if (!new RegExp(`\\b${col}\\b`).test(codeLine)) return false;
+  if (new RegExp(`\\.\\s*${col}\\b`).test(codeLine)) return true;
+  if (/\b(?:Column|mapped_column)\s*\(|\bMapped\s*\[/.test(codeLine)) return true;
+  if (/["'`]/.test(codeLine) && /\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i.test(codeLine)) return true;
+  return false;
+}
 function liveReferenceLines(body, col) {
-  const re = new RegExp(`\\b${col}\\b`);
   const lines = body.split("\n");
   const out = [];
   let inDoc = false;
@@ -205,7 +211,7 @@ function liveReferenceLines(body, col) {
     if (hash >= 0) line = line.slice(0, hash);
     const slash = line.indexOf("//");
     if (slash >= 0) line = line.slice(0, slash);
-    if (re.test(line)) out.push(i + 1);
+    if (isDbColumnRef(line, col)) out.push(i + 1);
   }
   return out;
 }
@@ -413,7 +419,8 @@ function checkTestSmells(args) {
             /\b(?:FROM|JOIN|INTO|UPDATE)\s+["'`]?(\w+)["'`]?|\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?["'`]?(\w+)/g
           )) {
             const ref = (m[1] ?? m[2]).toLowerCase();
-            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !knownTables.has(ref)) {
+            const systemCatalog = ref === "information_schema" || ref.startsWith("pg_");
+            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !systemCatalog && !knownTables.has(ref)) {
               push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
             }
           }

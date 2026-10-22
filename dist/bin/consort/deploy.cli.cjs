@@ -6933,6 +6933,9 @@ function emitAgentLogEvent(input, opts = {}) {
   return event;
 }
 
+// consort/pipeline/reporter-results.ts
+init_cjs_shims();
+
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
 

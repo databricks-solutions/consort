@@ -9156,6 +9156,9 @@ var RUNTIME_ARTIFACT_PREFIXES = [
   ".claude/agent-memory/"
 ];
 
+// consort/pipeline/reporter-results.ts
+init_esm_shims();
+
 // consort/pipeline/run-cycle.ts
 function readAcLayer2(consortDir, featureId, acId) {
   return readAcLayer(consortDir, featureId, acId);

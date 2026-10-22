@@ -6826,6 +6826,9 @@ var EVENT_TEMPLATES = {
 };
 var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 
+// consort/pipeline/reporter-results.ts
+init_cjs_shims();
+
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
 

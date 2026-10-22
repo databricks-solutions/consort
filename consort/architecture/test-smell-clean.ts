@@ -235,8 +235,28 @@ function collectDroppedColumns(projectDir: string, migrationDirs: string[]): Set
  *  comments and triple-quoted docstring blocks (so an explanatory "the col was
  *  dropped" docstring is never mistaken for a live use, the grep error the live
  *  diagnosis made). Returns 1-based line numbers. */
+/**
+ * True iff a comment-stripped line references the dropped column in a way that actually reaches the
+ * DB — the only shape that crashes at runtime after the column is gone. NOT every token that spells
+ * the column name: a write-only request-model field annotation (`col: str | None = None`), a function
+ * parameter annotation, or a plain argument (`split_col(_clean(col))`) never emits SQL for the column
+ * and must not be flagged (the F6/S3 contract-drop false positives). The DB-facing shapes:
+ *   (a) attribute access `Model.col` / `row.col`  — an ORM column read/write in a query;
+ *   (b) an ORM column DECLARATION still mapping the dropped column (`col = Column(...)` /
+ *       `mapped_column(...)` / `col: Mapped[...]`) — the ROOT cause when the model wasn't updated;
+ *   (c) raw SQL naming the column (a quoted string carrying a SELECT/INSERT/UPDATE/DELETE verb).
+ * Errs toward UNDER-flagging (the kit's no-false-positive-gate stance): a reference that fits none of
+ * these is assumed harmless rather than flagged on a bare name match.
+ */
+function isDbColumnRef(codeLine: string, col: string): boolean {
+  if (!new RegExp(`\\b${col}\\b`).test(codeLine)) return false;
+  if (new RegExp(`\\.\\s*${col}\\b`).test(codeLine)) return true; // (a) attribute access
+  if (/\b(?:Column|mapped_column)\s*\(|\bMapped\s*\[/.test(codeLine)) return true; // (b) ORM column decl
+  if (/["'`]/.test(codeLine) && /\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i.test(codeLine)) return true; // (c) raw SQL
+  return false;
+}
+
 function liveReferenceLines(body: string, col: string): number[] {
-  const re = new RegExp(`\\b${col}\\b`);
   const lines = body.split("\n");
   const out: number[] = [];
   let inDoc = false;
@@ -261,7 +281,7 @@ function liveReferenceLines(body: string, col: string): number[] {
     if (hash >= 0) line = line.slice(0, hash);
     const slash = line.indexOf("//");
     if (slash >= 0) line = line.slice(0, slash);
-    if (re.test(line)) out.push(i + 1);
+    if (isDbColumnRef(line, col)) out.push(i + 1);
   }
   return out;
 }
@@ -580,7 +600,14 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
             /\b(?:FROM|JOIN|INTO|UPDATE)\s+["'`]?(\w+)["'`]?|\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?["'`]?(\w+)/g,
           )) {
             const ref = (m[1] ?? m[2]).toLowerCase();
-            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !knownTables.has(ref)) {
+            // Postgres SYSTEM CATALOGS (information_schema.*, pg_catalog.*, the pg_* tables) are
+            // always present and NEVER created by a migration — a schema-inspection test that reads
+            // information_schema to PROVE a column was dropped (the contract story's whole point) is
+            // correct, not unsatisfiable. `FROM information_schema.columns` captures ref
+            // "information_schema"; `FROM pg_catalog.pg_tables` captures "pg_catalog"; an unqualified
+            // `FROM pg_class` captures "pg_class". Exempt all three shapes.
+            const systemCatalog = ref === "information_schema" || ref.startsWith("pg_");
+            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !systemCatalog && !knownTables.has(ref)) {
               push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
             }
           }

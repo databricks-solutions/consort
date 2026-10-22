@@ -30,6 +30,7 @@ export default defineConfig({
     "bin/consort/diagnose.cli": "bin/consort/diagnose.cli.ts",
     "bin/consort/resolve-escalation.cli": "bin/consort/resolve-escalation.cli.ts",
     "bin/consort/open.cli": "bin/consort/open.cli.ts",
+    "bin/consort/park.cli": "bin/consort/park.cli.ts",
     "bin/consort/dashboard.cli": "bin/consort/dashboard.cli.ts",
     "bin/consort/test-list.cli": "bin/consort/test-list.cli.ts",
     "bin/consort/spec-sync.cli": "bin/consort/spec-sync.cli.ts",

@@ -8635,6 +8635,11 @@ import { join as join13 } from "path";
 // consort/pipeline/run-cycle.ts
 init_esm_shims();
 import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/pipeline/reporter-results.ts
+init_esm_shims();
+
+// consort/pipeline/run-cycle.ts
 function readAcLayer2(consortDir, featureId, acId) {
   return readAcLayer(consortDir, featureId, acId);
 }

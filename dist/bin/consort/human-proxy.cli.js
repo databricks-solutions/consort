@@ -9414,6 +9414,9 @@ var RUNTIME_ARTIFACT_PREFIXES = [
   ".claude/agent-memory/"
 ];
 
+// consort/pipeline/reporter-results.ts
+init_esm_shims();
+
 // consort/smells/smells.ts
 function composeReviseBrief(input) {
   const artifact = input.gate === "spec" ? "acceptance criteria" : input.gate === "architecture" ? "architectural annotations + architecture.json" : input.gate === "ia" ? "information architecture (ia.md) screen/form/flow" : "ordered test list";

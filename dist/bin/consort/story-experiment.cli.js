@@ -7441,6 +7441,9 @@ init_esm_shims();
 init_esm_shims();
 import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
+// consort/pipeline/reporter-results.ts
+init_esm_shims();
+
 // consort/smells/deploy-verify-assess.ts
 init_esm_shims();
 import * as fs3 from "fs";
