@@ -7742,6 +7742,7 @@ function recordBuildTurn(args) {
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
 var import_fs10 = require("fs");
+var import_node_child_process7 = require("child_process");
 var import_path10 = require("path");
 
 // consort/gates/verify-gate-integrity.ts
@@ -8564,6 +8565,59 @@ function checkMigrationTestSchemaChangeTag(testListJson, dbDesignJson2) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function columnDeltaOwners(dbDesignJson2) {
+  const addedBy = /* @__PURE__ */ new Map();
+  const removedBy = /* @__PURE__ */ new Map();
+  if (!dbDesignJson2) return { addedBy, removedBy };
+  try {
+    const db = JSON.parse(dbDesignJson2);
+    for (const sc of db.schema_changes ?? []) {
+      const story = typeof sc.story_id === "string" ? sc.story_id : "";
+      const detail = typeof sc.detail === "string" ? sc.detail : "";
+      for (const m of detail.matchAll(/\bADD\s+COLUMN\s+["'`]?(\w+)/gi)) if (!addedBy.has(m[1].toLowerCase())) addedBy.set(m[1].toLowerCase(), story);
+      for (const m of detail.matchAll(/\bDROP\s+COLUMN\s+["'`]?(\w+)/gi)) if (!removedBy.has(m[1].toLowerCase())) removedBy.set(m[1].toLowerCase(), story);
+    }
+  } catch {
+  }
+  return { addedBy, removedBy };
+}
+function assertsSchemaDiffDelta(desc, col, verb) {
+  const c = col.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${c}\\b[^.;:]*\\b${verb}\\b|\\b${verb}\\b[^.;:]*\\b${c}\\b`, "i").test(desc);
+}
+function checkSchemaDiffCrossStoryColumns(testListJson, dbDesignJson2, story) {
+  const { addedBy, removedBy } = columnDeltaOwners(dbDesignJson2);
+  if (addedBy.size === 0 && removedBy.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (!/\bschema[\s_]*diff\b|parent-aware[^.]*\bdiff\b/i.test(desc)) continue;
+    for (const [col, byStory] of addedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "added")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the parent-aware schema diff lists "${col}" as ADDED, but "${col}" is added by a schema_change of story "${byStory}" (not "${story}"). That column is already on the parent branch this diff compares against, so a correct migration for "${story}" yields added=[] for it \u2014 the assertion is unsatisfiable. Assert ONLY this story's own schema delta; a prior story's column is present/unchanged here, never "added".`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
+    for (const [col, byStory] of removedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "removed")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the schema diff lists "${col}" as REMOVED, but it is dropped by story "${byStory}" (not "${story}") \u2014 not part of this story's own parent-aware diff (unsatisfiable).`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
   try {
@@ -8637,11 +8691,6 @@ var import_path9 = require("path");
 // consort/pipeline/run-cycle.ts
 init_cjs_shims();
 var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-
-// consort/pipeline/reporter-results.ts
-init_cjs_shims();
-
-// consort/pipeline/run-cycle.ts
 function readAcLayer2(consortDir, featureId, acId) {
   return readAcLayer(consortDir, featureId, acId);
 }
@@ -10692,6 +10741,12 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
     // un-planned change slips to the semantic reflect — the F1/S2 history).
     checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
+    // A parent-aware schema-diff test for THIS story must assert only this story's own schema delta —
+    // a column a PRIOR story added/dropped already rides on the parent the diff compares against, so
+    // asserting it as added/removed here is unsatisfiable. Deterministic over the DBA ledger's columns
+    // + owning story; shifts the catch to the test-strategist's in-turn self-check so the design lane
+    // self-corrects instead of the Navigator bouncing it at GREEN.
+    checkSchemaDiffCrossStoryColumns(testListJson, dbDesign, story),
     // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
     // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
     // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a
@@ -12734,7 +12789,7 @@ var import_node_crypto6 = require("crypto");
 
 // consort/orchestrator/drive/claude-runner.ts
 init_cjs_shims();
-var import_node_child_process9 = require("child_process");
+var import_node_child_process10 = require("child_process");
 
 // consort/setup/project-consort-setup.ts
 init_cjs_shims();
@@ -12806,7 +12861,7 @@ function updateAgents(args) {
 init_cjs_shims();
 var fs12 = __toESM(require("fs"), 1);
 var path7 = __toESM(require("path"), 1);
-var import_node_child_process7 = require("child_process");
+var import_node_child_process8 = require("child_process");
 
 // consort/config/kit-ref.ts
 init_cjs_shims();
@@ -12868,7 +12923,7 @@ var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 var AGENT_SYNC_MARKER = path7.join(".claude", "agents", ".kit-version");
 var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
 function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], removedPaths = [], git = (a) => {
-  const r = (0, import_node_child_process7.spawnSync)("git", ["-C", projectDir, ...a], { encoding: "utf8" });
+  const r = (0, import_node_child_process8.spawnSync)("git", ["-C", projectDir, ...a], { encoding: "utf8" });
   return { status: r.status, stdout: r.stdout ?? "" };
 }) {
   if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) return { committed: false, reason: "not-a-git-repo" };
@@ -13244,7 +13299,7 @@ function isTransientApiErrorSignal(line) {
 
 // consort/config/kit-bin.ts
 init_cjs_shims();
-var import_node_child_process8 = require("child_process");
+var import_node_child_process9 = require("child_process");
 var fs14 = __toESM(require("fs"), 1);
 var path9 = __toESM(require("path"), 1);
 var kitRootCache;
@@ -13455,7 +13510,7 @@ var CliEffectError = class extends Error {
 var CLI_CAPTURE_MAX = 16e3;
 function spawnCmd(bin, args, cwd) {
   return new Promise((resolve4, reject) => {
-    const child = (0, import_node_child_process9.spawn)(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
+    const child = (0, import_node_child_process10.spawn)(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const chunks = [];
     child.stdout?.on("data", (d) => {
       process.stdout.write(d);
@@ -13560,7 +13615,7 @@ function defaultTurnMonitor(sink) {
 }
 function spawnClaudeStreaming(args, cwd, monitorOverride) {
   return new Promise((resolve4, reject) => {
-    const child = (0, import_node_child_process9.spawn)("claude", args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
+    const child = (0, import_node_child_process10.spawn)("claude", args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const lines = [];
     let sawTooLong = false;
     let sawTransient = false;
@@ -13721,7 +13776,7 @@ function ensureUxBrowserChromium() {
   uxBrowserEnsured = true;
   try {
     process.stderr.write("[drive] ensuring Playwright Chromium for the ux-designer browser (one-time)\u2026\n");
-    (0, import_node_child_process9.execFileSync)(UX_BROWSER_INSTALL_CMD.command, [...UX_BROWSER_INSTALL_CMD.args], { stdio: "ignore" });
+    (0, import_node_child_process10.execFileSync)(UX_BROWSER_INSTALL_CMD.command, [...UX_BROWSER_INSTALL_CMD.args], { stdio: "ignore" });
   } catch {
     process.stderr.write(
       "[drive] could not pre-install Chromium \u2014 the ux-designer will degrade to the brief if the browser can't launch\n"
@@ -14765,7 +14820,7 @@ function designGuideConformance(consortDir) {
 
 // consort/orchestrator/build/build-context.ts
 init_cjs_shims();
-var import_node_child_process10 = require("child_process");
+var import_node_child_process11 = require("child_process");
 var fs17 = __toESM(require("fs"), 1);
 var import_node_path28 = require("path");
 function artifactRoot(consortDir) {
@@ -14814,7 +14869,7 @@ function rubricSourcesNote(rubric, featureId, root) {
 var defaultDbStateReader = (projectDir) => {
   const one = (args) => {
     try {
-      return (0, import_node_child_process10.execSync)(`uv run --env-file .env alembic ${args}`, { cwd: projectDir, stdio: ["ignore", "pipe", "ignore"], timeout: 6e4 }).toString().trim() || void 0;
+      return (0, import_node_child_process11.execSync)(`uv run --env-file .env alembic ${args}`, { cwd: projectDir, stdio: ["ignore", "pipe", "ignore"], timeout: 6e4 }).toString().trim() || void 0;
     } catch {
       return void 0;
     }
@@ -16523,7 +16578,7 @@ var import_util4 = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // consort/orchestrator/provisioning/credentials.ts
 init_cjs_shims();
-var import_node_child_process11 = require("child_process");
+var import_node_child_process12 = require("child_process");
 var import_lakebase11 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 async function driveAuthPreflight(host, check = import_lakebase11.checkDatabricksAuth) {
   const res = await check(host);
@@ -16740,7 +16795,7 @@ function shouldEmitTelemetry(inp) {
 
 // consort/telemetry/emitter.ts
 init_cjs_shims();
-var import_node_child_process12 = require("child_process");
+var import_node_child_process13 = require("child_process");
 var import_node_fs25 = require("fs");
 var import_node_os = require("os");
 var import_node_path31 = require("path");
@@ -16803,7 +16858,7 @@ function endpointMode(env) {
   return { endpoint, signedOff, willPost: !!endpoint && signedOff };
 }
 function detachedHttpSink(opts) {
-  const spawnImpl = opts.spawnFn ?? import_node_child_process12.spawn;
+  const spawnImpl = opts.spawnFn ?? import_node_child_process13.spawn;
   const dir = opts.tmpDir ?? (0, import_node_os.tmpdir)();
   const url = `${opts.endpoint.replace(/\/$/, "")}/v1/traces`;
   return {

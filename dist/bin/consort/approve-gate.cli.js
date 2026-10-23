@@ -7586,6 +7586,60 @@ function idedSchemaChanges(dbDesignJson2) {
   }
   return out;
 }
+function columnDeltaOwners(dbDesignJson2) {
+  const addedBy = /* @__PURE__ */ new Map();
+  const removedBy = /* @__PURE__ */ new Map();
+  if (!dbDesignJson2) return { addedBy, removedBy };
+  try {
+    const db = JSON.parse(dbDesignJson2);
+    for (const sc of db.schema_changes ?? []) {
+      const story = typeof sc.story_id === "string" ? sc.story_id : "";
+      const detail = typeof sc.detail === "string" ? sc.detail : "";
+      for (const m of detail.matchAll(/\bADD\s+COLUMN\s+["'`]?(\w+)/gi)) if (!addedBy.has(m[1].toLowerCase())) addedBy.set(m[1].toLowerCase(), story);
+      for (const m of detail.matchAll(/\bDROP\s+COLUMN\s+["'`]?(\w+)/gi)) if (!removedBy.has(m[1].toLowerCase())) removedBy.set(m[1].toLowerCase(), story);
+    }
+  } catch {
+  }
+  return { addedBy, removedBy };
+}
+function assertsSchemaDiffDelta(desc, col, verb) {
+  const c = col.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${c}\\b[^.;:]*\\b${verb}\\b|\\b${verb}\\b[^.;:]*\\b${c}\\b`, "i").test(desc);
+}
+function checkSchemaDiffCrossStoryColumnsInAcs(acs, dbDesignJson2, story) {
+  const { addedBy, removedBy } = columnDeltaOwners(dbDesignJson2);
+  if (addedBy.size === 0 && removedBy.size === 0) return { ok: true };
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const { content } of acs) {
+    let ac;
+    try {
+      ac = JSON.parse(content);
+    } catch {
+      continue;
+    }
+    const then = typeof ac.then === "string" ? ac.then : "";
+    const id = typeof ac.id === "string" ? ac.id : "?";
+    if (!/\bschema[\s_]*diff\b|parent-aware[^.]*\bdiff\b/i.test(then)) continue;
+    for (const [col, byStory] of addedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(then, col, "added")) {
+        violations.push(
+          `AC ${id} \`then\` asserts the parent-aware schema diff lists "${col}" as ADDED, but "${col}" is added by a schema_change of story "${byStory}" (not "${story}"). That column is already on the parent branch this diff compares against, so a correct migration for "${story}" yields added=[] for it \u2014 the clause is unsatisfiable. State ONLY this story's own schema delta; a prior story's column is present/unchanged here, never "added".`
+        );
+        acIds.add(id);
+      }
+    }
+    for (const [col, byStory] of removedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(then, col, "removed")) {
+        violations.push(
+          `AC ${id} \`then\` asserts the schema diff lists "${col}" as REMOVED, but it is dropped by story "${byStory}" (not "${story}") \u2014 not part of this story's own parent-aware diff (unsatisfiable).`
+        );
+        acIds.add(id);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkSchemaChangeCoverage(testListJson, dbDesignJson2) {
   const planned = idedSchemaChanges(dbDesignJson2);
   if (planned.size === 0) return { ok: true };
@@ -8547,6 +8601,14 @@ function storyAcProblems(fdir, story) {
   }
   const indep = checkAcIndependence(acs);
   if (!indep.ok) problems.push(...indep.violations.map((v) => `${story}/acs: ${v}`));
+  let dbDesign;
+  try {
+    const dbPath = join12(fdir, "db-design.json");
+    if (existsSync13(dbPath)) dbDesign = readFileSync13(dbPath, "utf8");
+  } catch {
+  }
+  const xStory = checkSchemaDiffCrossStoryColumnsInAcs(acs, dbDesign, story);
+  if (!xStory.ok) problems.push(...xStory.violations.map((v) => `${story}/acs: ${v}`));
   return problems;
 }
 function storyAcsConformanceReason(fdir, story) {

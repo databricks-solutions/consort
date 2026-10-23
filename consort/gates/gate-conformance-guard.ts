@@ -37,6 +37,7 @@ import {
   checkFitnessSingularCoverage,
   checkClientKindLayerCoherence,
   checkJsdomBrowserAssertion,
+  checkSchemaDiffCrossStoryColumnsInAcs,
 } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { acsForStory } from "../test-list/test-list.js";
 import { enabledAnalysts } from "../test-list/test-analyst-catalogue.js";
@@ -103,6 +104,19 @@ function storyAcProblems(fdir: string, story: string): string[] {
   // AC3-subset-of-AC2 overlap that otherwise stalls the build).
   const indep = checkAcIndependence(acs);
   if (!indep.ok) problems.push(...indep.violations.map((v) => `${story}/acs: ${v}`));
+  // Cross-story schema-diff coherence at the AC layer (mirrors the test-list check): an AC `then`
+  // that claims a PRIOR story's column as the parent-aware diff delta ("added"/"removed") is
+  // unsatisfiable against the feature-branch parent (which already carries that column). Reads the
+  // DBA ledger (db-design.json at the feature root) for column ownership; vacuous without one.
+  let dbDesign: string | undefined;
+  try {
+    const dbPath = join(fdir, "db-design.json");
+    if (existsSync(dbPath)) dbDesign = readFileSync(dbPath, "utf8");
+  } catch {
+    /* a malformed db-design is reported by checkDbDesign */
+  }
+  const xStory = checkSchemaDiffCrossStoryColumnsInAcs(acs, dbDesign, story);
+  if (!xStory.ok) problems.push(...xStory.violations.map((v) => `${story}/acs: ${v}`));
   return problems;
 }
 

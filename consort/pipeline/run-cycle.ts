@@ -13,7 +13,6 @@ import {
 } from "../../consort/experiment/experiment";
 import { emitAgentLogEvent, type AgentLogEventInput } from "../../consort/logging/agent-log";
 import { readAcLayer as readAcLayerFromPaths } from "../../consort/config/consort-paths.js";
-import { reconcileTestResultsFromReporter } from "./reporter-results.js";
 
 /**
  * Emit a cycle event to the centralized agent log from the SUBSTRATE, not
@@ -48,14 +47,19 @@ function logTestResults(
   status: "red" | "green" | "refactored",
   role: "navigator" | "driver",
 ): void {
-  // The reporter's REAL per-test transition time (pytest/playwright/vitest append `.consort/
-  // test-run.jsonl` as each `@T<id>` runs). Stamp each `test.result` with WHEN that test actually
-  // reached this status — not the single cycle-marking instant — so a reader can replay each test
-  // lighting in the ORDER it passed, instead of the whole batch flipping together at cycle.green.
-  // Falls back to the emit-time clock for any test with no reporter line (e.g. a refactor-only pass,
-  // or a stack whose runner did not tag that id).
+  // A STREAMED test (one the per-stack reporter tags `@T<id>` and appends to `.consort/test-run.jsonl`)
+  // now RECORDS its own `test.result` into the agent-log AT RUN TIME (consort-capture.ts) — the moment
+  // it passes/fails — so the dashboard lights it live, scrubbing lights it AT its real run position,
+  // and a replay does the same. Re-emitting it here at the cycle-marking instant would append a LATER,
+  // clustered duplicate that the last-wins fold would prefer, collapsing the per-test trail back into a
+  // burst. So for green/refactored, emit ONLY the tests the reporter did NOT stream (architectural
+  // `fitness` runs are not `@T`-tagged) — the streamed ones are already recorded per-test. RED is
+  // declarative (the Navigator just WROTE the failing test; it has not run yet, so nothing streamed),
+  // so RED still emits every covered test.
+  const streamed = status === "red" ? new Set<string>() : streamedTestIds(consortDir);
   const realTs = realTestTimestamps(consortDir, status);
   for (const testId of coveredTestIds(cycle)) {
+    if (streamed.has(testId)) continue; // the reporter recorded this one per-test at run time
     const ts = realTs.get(testId);
     try {
       emitAgentLogEvent(
@@ -73,6 +77,25 @@ function logTestResults(
       // swallow: never let logging break a cycle transition
     }
   }
+}
+
+/** Every test id the reporter STREAMED (any status) in `.consort/test-run.jsonl` — i.e. the tests that
+ *  record their own per-test `test.result` at run time, so the cycle-scoped emit must skip them. Empty
+ *  when the tail is absent (no streamed tests / replay), so the cycle-scoped emit covers everything. */
+function streamedTestIds(consortDir: string): Set<string> {
+  const out = new Set<string>();
+  try {
+    const text = readFileSync(join(consortDir, "test-run.jsonl"), "utf8");
+    for (const line of text.split("\n")) {
+      const s = line.trim();
+      if (!s) continue;
+      const o = JSON.parse(s) as { test_id?: string };
+      if (typeof o.test_id === "string") out.add(o.test_id);
+    }
+  } catch {
+    /* no reporter tail — nothing streamed, so the cycle-scoped emit covers all covered tests */
+  }
+  return out;
 }
 
 /** The LATEST `.consort/test-run.jsonl` timestamp per test id for a given status — the reporter's
@@ -383,12 +406,9 @@ export function markGreen(
     cycle_id: cycleId,
     slots: { test_id: a.test_id, ac: a.ac_id ?? "unknown", change: driverChanges ?? "minimal honest code" },
   });
-  // Per-test trail: every covered test now passes (GREEN).
+  // Per-test trail: every covered test now passes (GREEN). Streamed tests already recorded themselves
+  // per-test at run time (consort-capture.ts); this covers only the non-streamed (fitness) ones.
   logTestResults(scope.consortDir, a, "green", "driver");
-  // ADDITIVE reconciliation: the GREEN verify re-ran the whole suite, so correct every OTHER test the
-  // runner reports (a prior story's test still green -> stale red cleared; a regression -> red). The
-  // cycle-scoped declaration above still owns the covered tests; this only emits reporter deltas.
-  reconcileTestResultsFromReporter(scope.consortDir, "driver");
   return a;
 }
 
@@ -406,11 +426,9 @@ export function markRefactored(scope: CycleScope, cycleId: string, refactorNotes
     cycle_id: cycleId,
     slots: { ac: a.ac_id ?? "unknown", change: refactorNotes ?? "structure improved", test_id: a.test_id },
   });
-  // Per-test trail: every covered test survives the refactor (REFACTORED).
+  // Per-test trail: every covered test survives the refactor (REFACTORED). Streamed tests kept their
+  // own run-time records (reporter); this marks only the non-streamed (fitness) ones.
   logTestResults(scope.consortDir, a, "refactored", "driver");
-  // ADDITIVE reconciliation: the refactor-verify re-ran the suite; correct every other test's bubble
-  // from the runner's own truth (reporter deltas only — the covered tests keep their declaration).
-  reconcileTestResultsFromReporter(scope.consortDir, "driver");
   return a;
 }
 

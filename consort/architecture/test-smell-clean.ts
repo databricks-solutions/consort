@@ -305,6 +305,11 @@ function blankCommentsAndDocstrings(lines: string[]): string[] {
         continue;
       }
     }
+    // Blank any COMPLETE single-line triple-quoted string (a one-line docstring or inline literal)
+    // so prose inside it is never read as SQL — a `"""…BEFORE UPDATE trigger…"""` one-liner tripped
+    // `UPDATE\s+(\w+)` on the word after UPDATE. Only an UNCLOSED `"""` falls through to the
+    // multi-line span handling below (the previous logic blanked ONLY the multi-line case).
+    line = line.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, " ");
     const tq = line.match(/"""|'''/);
     if (tq) {
       const q = tq[0];
@@ -607,7 +612,16 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
             // "information_schema"; `FROM pg_catalog.pg_tables` captures "pg_catalog"; an unqualified
             // `FROM pg_class` captures "pg_class". Exempt all three shapes.
             const systemCatalog = ref === "information_schema" || ref.startsWith("pg_");
-            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !systemCatalog && !knownTables.has(ref)) {
+            // Alembic's migration-version bookkeeping table (`alembic_version`) is created by Alembic
+            // itself, NOT by an app migration, and is present on every migrated branch — so a test that
+            // reads it to assert the current head revision (the natural check for a contract /
+            // reversibility story) is correct, not unsatisfiable. (`alembic_version` is Alembic's
+            // default; a custom version_table is rare and would be a knownTables entry anyway.)
+            const migrationBookkeeping = ref === "alembic_version";
+            // `on`/`of` are never table names: they're TRIGGER-TIMING captures — `CREATE TRIGGER t
+            // BEFORE UPDATE ON <table>` and `AFTER UPDATE OF <col> ON <table>` make `UPDATE\s+(\w+)`
+            // grab "on"/"of", not a real table. Skip them so trigger DDL isn't flagged unsatisfiable.
+            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual|on|of)$/.test(ref) && !systemCatalog && !migrationBookkeeping && !knownTables.has(ref)) {
               push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
             }
           }

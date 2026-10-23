@@ -6806,9 +6806,6 @@ var EVENT_TEMPLATES = {
 };
 var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 
-// consort/pipeline/reporter-results.ts
-init_esm_shims();
-
 // consort/pipeline/run-cycle.ts
 function coveredTestIds(c) {
   if (c.test_ids && c.test_ids.length > 0) return c.test_ids;
@@ -6845,7 +6842,8 @@ function resolveOpenSmells(consortDir, smell, opts) {
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
 import { existsSync as existsSync15, readFileSync as readFileSync15, readdirSync as readdirSync10, statSync as statSync8, writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, rmSync as rmSync5 } from "fs";
-import { join as join18, dirname as dirname9 } from "path";
+import { execFileSync as execFileSync4 } from "child_process";
+import { join as join18, dirname as dirname9, basename as basename2 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();

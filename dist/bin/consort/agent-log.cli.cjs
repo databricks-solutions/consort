@@ -7389,9 +7389,6 @@ var RUNTIME_ARTIFACT_PREFIXES = [
   ".claude/agent-memory/"
 ];
 
-// consort/pipeline/reporter-results.ts
-init_cjs_shims();
-
 // consort/smells/smells.ts
 function writeSmellsLog(consortDir, hits) {
   const file = (0, import_path8.join)(consortDir, "smells.json");
@@ -7418,6 +7415,7 @@ function hasOpenSmell(consortDir, smell, story_id) {
 
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
+var import_node_child_process5 = require("child_process");
 
 // consort/gates/verify-gate-integrity.ts
 init_cjs_shims();

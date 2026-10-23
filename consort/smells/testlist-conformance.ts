@@ -45,6 +45,7 @@ import {
   checkTestlistMigrationRevision,
   checkSchemaChangeOrphan,
   checkMigrationTestSchemaChangeTag,
+  checkSchemaDiffCrossStoryColumns,
   checkFitnessSingularCoverage,
   checkFitnessClauseCoverage,
   extractApiEndpoints,
@@ -176,6 +177,12 @@ export function testlistConformanceForContent(
     // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
     // un-planned change slips to the semantic reflect — the F1/S2 history).
     checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
+    // A parent-aware schema-diff test for THIS story must assert only this story's own schema delta —
+    // a column a PRIOR story added/dropped already rides on the parent the diff compares against, so
+    // asserting it as added/removed here is unsatisfiable. Deterministic over the DBA ledger's columns
+    // + owning story; shifts the catch to the test-strategist's in-turn self-check so the design lane
+    // self-corrects instead of the Navigator bouncing it at GREEN.
+    checkSchemaDiffCrossStoryColumns(testListJson, dbDesign, story),
     // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
     // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
     // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a

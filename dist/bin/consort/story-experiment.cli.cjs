@@ -7405,6 +7405,7 @@ var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
 var import_fs6 = require("fs");
+var import_node_child_process5 = require("child_process");
 var import_path8 = require("path");
 
 // consort/gates/verify-gate-integrity.ts
@@ -7435,9 +7436,6 @@ init_cjs_shims();
 // consort/pipeline/run-cycle.ts
 init_cjs_shims();
 var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
-
-// consort/pipeline/reporter-results.ts
-init_cjs_shims();
 
 // consort/smells/deploy-verify-assess.ts
 init_cjs_shims();

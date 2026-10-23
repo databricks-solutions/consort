@@ -6925,11 +6925,9 @@ function emitAgentLogEvent(input, opts = {}) {
   return event;
 }
 
-// consort/pipeline/reporter-results.ts
-init_esm_shims();
-
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
+import { execFileSync as execFileSync4 } from "child_process";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();

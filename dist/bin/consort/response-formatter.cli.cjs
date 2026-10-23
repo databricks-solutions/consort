@@ -7445,6 +7445,93 @@ function checkMigrationTestSchemaChangeTag(testListJson, dbDesignJson2) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function columnDeltaOwners(dbDesignJson2) {
+  const addedBy = /* @__PURE__ */ new Map();
+  const removedBy = /* @__PURE__ */ new Map();
+  if (!dbDesignJson2) return { addedBy, removedBy };
+  try {
+    const db = JSON.parse(dbDesignJson2);
+    for (const sc of db.schema_changes ?? []) {
+      const story = typeof sc.story_id === "string" ? sc.story_id : "";
+      const detail = typeof sc.detail === "string" ? sc.detail : "";
+      for (const m of detail.matchAll(/\bADD\s+COLUMN\s+["'`]?(\w+)/gi)) if (!addedBy.has(m[1].toLowerCase())) addedBy.set(m[1].toLowerCase(), story);
+      for (const m of detail.matchAll(/\bDROP\s+COLUMN\s+["'`]?(\w+)/gi)) if (!removedBy.has(m[1].toLowerCase())) removedBy.set(m[1].toLowerCase(), story);
+    }
+  } catch {
+  }
+  return { addedBy, removedBy };
+}
+function assertsSchemaDiffDelta(desc, col, verb) {
+  const c = col.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${c}\\b[^.;:]*\\b${verb}\\b|\\b${verb}\\b[^.;:]*\\b${c}\\b`, "i").test(desc);
+}
+function checkSchemaDiffCrossStoryColumns(testListJson, dbDesignJson2, story) {
+  const { addedBy, removedBy } = columnDeltaOwners(dbDesignJson2);
+  if (addedBy.size === 0 && removedBy.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (!/\bschema[\s_]*diff\b|parent-aware[^.]*\bdiff\b/i.test(desc)) continue;
+    for (const [col, byStory] of addedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "added")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the parent-aware schema diff lists "${col}" as ADDED, but "${col}" is added by a schema_change of story "${byStory}" (not "${story}"). That column is already on the parent branch this diff compares against, so a correct migration for "${story}" yields added=[] for it \u2014 the assertion is unsatisfiable. Assert ONLY this story's own schema delta; a prior story's column is present/unchanged here, never "added".`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
+    for (const [col, byStory] of removedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "removed")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the schema diff lists "${col}" as REMOVED, but it is dropped by story "${byStory}" (not "${story}") \u2014 not part of this story's own parent-aware diff (unsatisfiable).`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkSchemaDiffCrossStoryColumnsInAcs(acs, dbDesignJson2, story) {
+  const { addedBy, removedBy } = columnDeltaOwners(dbDesignJson2);
+  if (addedBy.size === 0 && removedBy.size === 0) return { ok: true };
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const { content } of acs) {
+    let ac;
+    try {
+      ac = JSON.parse(content);
+    } catch {
+      continue;
+    }
+    const then = typeof ac.then === "string" ? ac.then : "";
+    const id = typeof ac.id === "string" ? ac.id : "?";
+    if (!/\bschema[\s_]*diff\b|parent-aware[^.]*\bdiff\b/i.test(then)) continue;
+    for (const [col, byStory] of addedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(then, col, "added")) {
+        violations.push(
+          `AC ${id} \`then\` asserts the parent-aware schema diff lists "${col}" as ADDED, but "${col}" is added by a schema_change of story "${byStory}" (not "${story}"). That column is already on the parent branch this diff compares against, so a correct migration for "${story}" yields added=[] for it \u2014 the clause is unsatisfiable. State ONLY this story's own schema delta; a prior story's column is present/unchanged here, never "added".`
+        );
+        acIds.add(id);
+      }
+    }
+    for (const [col, byStory] of removedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(then, col, "removed")) {
+        violations.push(
+          `AC ${id} \`then\` asserts the schema diff lists "${col}" as REMOVED, but it is dropped by story "${byStory}" (not "${story}") \u2014 not part of this story's own parent-aware diff (unsatisfiable).`
+        );
+        acIds.add(id);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
   try {
@@ -8117,9 +8204,6 @@ var EVENT_TEMPLATES = {
 };
 var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 
-// consort/pipeline/reporter-results.ts
-init_cjs_shims();
-
 // consort/smells/testlist-conformance.ts
 function storyAcLayers(consortDir, featureId, story) {
   const acLayerById = {};
@@ -8186,6 +8270,12 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
     // un-planned change slips to the semantic reflect — the F1/S2 history).
     checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
+    // A parent-aware schema-diff test for THIS story must assert only this story's own schema delta —
+    // a column a PRIOR story added/dropped already rides on the parent the diff compares against, so
+    // asserting it as added/removed here is unsatisfiable. Deterministic over the DBA ledger's columns
+    // + owning story; shifts the catch to the test-strategist's in-turn self-check so the design lane
+    // self-corrects instead of the Navigator bouncing it at GREEN.
+    checkSchemaDiffCrossStoryColumns(testListJson, dbDesign, story),
     // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
     // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
     // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a
@@ -8336,6 +8426,7 @@ function checkSpecAuthor(args, v) {
   }
   if (!(0, import_node_fs4.existsSync)(dir)) return;
   const thenById = /* @__PURE__ */ new Map();
+  const acs = [];
   for (const f of (0, import_node_fs4.readdirSync)(dir)) {
     if (!f.endsWith(".json")) continue;
     let content;
@@ -8344,6 +8435,7 @@ function checkSpecAuthor(args, v) {
     } catch {
       continue;
     }
+    acs.push({ name: f.replace(/\.json$/, ""), content });
     const r = checkArtifactConformance(canonicalArtifactName(`${dir}/${f}`), content);
     if (!r.ok) v.push({ artifact: `stories/${story}/acs/${f}`, problem: r.violations.join("; ") });
     try {
@@ -8355,6 +8447,14 @@ function checkSpecAuthor(args, v) {
     } catch {
     }
   }
+  let dbDesign;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if ((0, import_node_fs4.existsSync)(p)) dbDesign = (0, import_node_fs4.readFileSync)(p, "utf8");
+  } catch {
+  }
+  const xStory = checkSchemaDiffCrossStoryColumnsInAcs(acs, dbDesign, story);
+  if (!xStory.ok) for (const problem of xStory.violations) v.push({ artifact: `stories/${story}/acs`, problem });
   const byThen = /* @__PURE__ */ new Map();
   for (const [id, norm] of thenById) (byThen.get(norm) ?? byThen.set(norm, []).get(norm)).push(id);
   for (const ids2 of byThen.values()) {

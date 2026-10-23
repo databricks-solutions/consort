@@ -2054,6 +2054,153 @@ export function checkMigrationTestSchemaChangeTag(testListJson: string, dbDesign
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
 
+/** Column -> the story whose schema_change ADDS it, and column -> the story that DROPS it, parsed from
+ *  the DBA ledger's `ADD COLUMN <c>` / `DROP COLUMN <c>` DDL in each change's `detail` (+ its
+ *  `story_id`). The columns live in prose, so this reads the DDL verbs, not a structured field. */
+function columnDeltaOwners(dbDesignJson: string | undefined): { addedBy: Map<string, string>; removedBy: Map<string, string> } {
+  const addedBy = new Map<string, string>();
+  const removedBy = new Map<string, string>();
+  if (!dbDesignJson) return { addedBy, removedBy };
+  try {
+    const db = JSON.parse(dbDesignJson) as { schema_changes?: Array<{ story_id?: string; detail?: string }> };
+    for (const sc of db.schema_changes ?? []) {
+      const story = typeof sc.story_id === "string" ? sc.story_id : "";
+      const detail = typeof sc.detail === "string" ? sc.detail : "";
+      for (const m of detail.matchAll(/\bADD\s+COLUMN\s+["'`]?(\w+)/gi)) if (!addedBy.has(m[1].toLowerCase())) addedBy.set(m[1].toLowerCase(), story);
+      for (const m of detail.matchAll(/\bDROP\s+COLUMN\s+["'`]?(\w+)/gi)) if (!removedBy.has(m[1].toLowerCase())) removedBy.set(m[1].toLowerCase(), story);
+    }
+  } catch {
+    /* invalid db-design reported by checkDbDesign */
+  }
+  return { addedBy, removedBy };
+}
+
+/** True iff `desc` asserts `col` as the schema-diff DELTA `verb` ("added" | "removed") — the column name
+ *  and the verb in the SAME clause (no `.`/`;`/`:` between), either order. So a description reading
+ *  "<col> ... as added" or "added: <col>" matches, but "<col> still present/unchanged" (the correct
+ *  present-on-parent phrasing) does NOT. */
+function assertsSchemaDiffDelta(desc: string, col: string, verb: "added" | "removed"): boolean {
+  const c = col.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${c}\\b[^.;:]*\\b${verb}\\b|\\b${verb}\\b[^.;:]*\\b${c}\\b`, "i").test(desc);
+}
+
+/**
+ * A story's parent-aware schema diff compares its experiment branch against the FEATURE branch, which
+ * already carries every PRIOR story's schema_changes. So a column a prior story added/dropped is
+ * already on the parent and does NOT appear in THIS story's diff delta. A schema-diff test item for
+ * story S that asserts a column as ADDED/REMOVED when that column's add/drop schema_change belongs to a
+ * DIFFERENT story is therefore UNSATISFIABLE by construction: in an expand->contract (parallel-change)
+ * feature the ADDED columns belong to the expand story's diff and the DROPPED column to the contract
+ * story's, so a contract story claiming the expand story's columns as "added" can never green.
+ * Deterministic over the closed column set (ADD/DROP COLUMN from the DBA ledger) + its owning
+ * story — never a free-text matcher. Shifts the catch LEFT from the Navigator's build-time assess to
+ * the test-strategist's in-turn self-check (self-correction at authoring). Conservative: only a column
+ * genuinely owned by a different story's schema_change, asserted as the diff delta, trips it.
+ */
+export function checkSchemaDiffCrossStoryColumns(
+  testListJson: string,
+  dbDesignJson: string | undefined,
+  story: string,
+): ConformanceResult {
+  const { addedBy, removedBy } = columnDeltaOwners(dbDesignJson);
+  if (addedBy.size === 0 && removedBy.size === 0) return { ok: true };
+  let tl: { items?: Array<{ id?: string; ac_id?: string; description?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    // Only a schema-DIFF assertion item (it names the diff whose added/removed delta it claims).
+    if (!/\bschema[\s_]*diff\b|parent-aware[^.]*\bdiff\b/i.test(desc)) continue;
+    for (const [col, byStory] of addedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "added")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the parent-aware schema diff lists "${col}" as ADDED, but "${col}" is ` +
+            `added by a schema_change of story "${byStory}" (not "${story}"). That column is already on the parent ` +
+            `branch this diff compares against, so a correct migration for "${story}" yields added=[] for it — the ` +
+            `assertion is unsatisfiable. Assert ONLY this story's own schema delta; a prior story's column is ` +
+            `present/unchanged here, never "added".`,
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
+    for (const [col, byStory] of removedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "removed")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the schema diff lists "${col}" as REMOVED, but it is dropped by story ` +
+            `"${byStory}" (not "${story}") — not part of this story's own parent-aware diff (unsatisfiable).`,
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
+ * The AC-layer analog of checkSchemaDiffCrossStoryColumns. A story's acceptance-criterion `then`
+ * clause that references the parent-aware schema diff must state ONLY this story's own schema delta.
+ * A prior story's added/dropped column already rides on the feature-branch parent the per-story diff
+ * compares against, so an AC `then` claiming it as "added"/"removed" in THIS story's diff is
+ * unsatisfiable by construction — the same defect the sibling test-list check catches, one artifact
+ * layer upstream. It matters as its OWN check because a defective AC `then` is otherwise caught only
+ * by the LLM reflect (the test-list check inspects the test-list, not the AC prose), and reflect is
+ * unreliable for it: the spec-author's "split tracking_code INTO batch/serial" mental model keeps
+ * re-authoring "the diff lists batch/serial added" even when a fresh test-list asserts them unchanged.
+ * Same closed structured inputs as the test-list check (ADD/DROP COLUMN owners from the DBA ledger +
+ * assertsSchemaDiffDelta) — never a free-text matcher. Conservative: fires only when the `then`
+ * explicitly invokes the schema diff AND names a column a DIFFERENT story's schema_change owns as the
+ * diff delta, so a feature-level AC that merely describes added columns (no diff framing) never trips.
+ */
+export function checkSchemaDiffCrossStoryColumnsInAcs(
+  acs: Array<{ name: string; content: string }>,
+  dbDesignJson: string | undefined,
+  story: string,
+): ConformanceResult {
+  const { addedBy, removedBy } = columnDeltaOwners(dbDesignJson);
+  if (addedBy.size === 0 && removedBy.size === 0) return { ok: true };
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const { content } of acs) {
+    let ac: { id?: string; then?: string };
+    try {
+      ac = JSON.parse(content) as { id?: string; then?: string };
+    } catch {
+      continue; // a malformed AC is reported by checkArtifactConformance
+    }
+    const then = typeof ac.then === "string" ? ac.then : "";
+    const id = typeof ac.id === "string" ? ac.id : "?";
+    // Only an AC whose `then` names the schema DIFF whose added/removed delta it claims.
+    if (!/\bschema[\s_]*diff\b|parent-aware[^.]*\bdiff\b/i.test(then)) continue;
+    for (const [col, byStory] of addedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(then, col, "added")) {
+        violations.push(
+          `AC ${id} \`then\` asserts the parent-aware schema diff lists "${col}" as ADDED, but "${col}" is ` +
+            `added by a schema_change of story "${byStory}" (not "${story}"). That column is already on the parent ` +
+            `branch this diff compares against, so a correct migration for "${story}" yields added=[] for it — the ` +
+            `clause is unsatisfiable. State ONLY this story's own schema delta; a prior story's column is ` +
+            `present/unchanged here, never "added".`,
+        );
+        acIds.add(id);
+      }
+    }
+    for (const [col, byStory] of removedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(then, col, "removed")) {
+        violations.push(
+          `AC ${id} \`then\` asserts the schema diff lists "${col}" as REMOVED, but it is dropped by story ` +
+            `"${byStory}" (not "${story}") — not part of this story's own parent-aware diff (unsatisfiable).`,
+        );
+        acIds.add(id);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
 /**
  * FINALIZED-test-list coverage check (completeness; runs at the downstream test_list
  * gate alongside checkPersistenceCoverage, NOT pre-reflect — scenario coverage is still

@@ -6660,7 +6660,7 @@ var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // consort/deploy/deploy.ts
 init_cjs_shims();
-var import_node_child_process4 = require("child_process");
+var import_node_child_process5 = require("child_process");
 var import_node_crypto2 = require("crypto");
 var import_node_fs9 = require("fs");
 var import_node_path11 = require("path");
@@ -6933,11 +6933,9 @@ function emitAgentLogEvent(input, opts = {}) {
   return event;
 }
 
-// consort/pipeline/reporter-results.ts
-init_cjs_shims();
-
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
+var import_node_child_process4 = require("child_process");
 
 // consort/gates/verify-gate-integrity.ts
 init_cjs_shims();
@@ -7372,7 +7370,7 @@ function verifyTimeoutMs() {
 function defaultRunVerify(cmd, cwd, env) {
   const timeout = verifyTimeoutMs();
   try {
-    const out = (0, import_node_child_process4.execSync)(cmd, { cwd, stdio: "pipe", env: env ?? process.env, timeout, killSignal: "SIGTERM" });
+    const out = (0, import_node_child_process5.execSync)(cmd, { cwd, stdio: "pipe", env: env ?? process.env, timeout, killSignal: "SIGTERM" });
     return { passed: true, output: out?.toString() ?? "" };
   } catch (err) {
     const e = err;
@@ -7397,7 +7395,7 @@ function writeDeployEvidence(consortDir, evidence) {
   return file;
 }
 function defaultStart(cmd, cwd, env) {
-  const child = (0, import_node_child_process4.spawn)("sh", ["-c", cmd], { cwd, detached: true, stdio: "ignore", env: env ?? process.env });
+  const child = (0, import_node_child_process5.spawn)("sh", ["-c", cmd], { cwd, detached: true, stdio: "ignore", env: env ?? process.env });
   child.unref();
   return child.pid ?? -1;
 }

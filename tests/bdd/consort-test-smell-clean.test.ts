@@ -242,6 +242,35 @@ describe("checkTestSmells", () => {
     expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "schema-unsatisfiable-ref")).toBe(false);
   });
 
+  it("does NOT flag Alembic's `alembic_version` bookkeeping table — the contract/reversibility head-revision-check false positive", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
+    // A contract/atomic-rollback test asserts the current head by reading alembic_version — Alembic
+    // creates that table itself (never an app migration) and it is present on every migrated branch,
+    // so the query is correct, not unsatisfiable.
+    write(dir, "tests/test_contract_atomic_rollback.py",
+      `def test_rollback_leaves_head():\n    version = c.execute(text("SELECT version_num FROM alembic_version")).scalar_one()\n    assert version is not None\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "schema-unsatisfiable-ref")).toBe(false);
+  });
+
+  it("does NOT flag TRIGGER DDL (`BEFORE UPDATE ON <table>`) — the `UPDATE`->`ON` phantom-table false positive", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
+    // A fixture that installs a raise-on-update trigger via raw SQL: `UPDATE\\s+(\\w+)` must NOT read
+    // the "ON" in "BEFORE UPDATE ON stock_records" (nor "OF" in "AFTER UPDATE OF col") as a table.
+    write(dir, "tests/test_trigger.py",
+      `def install():\n    c.execute(sa.text("CREATE TRIGGER trg BEFORE UPDATE ON stock_records FOR EACH ROW EXECUTE FUNCTION f()"))\n    c.execute(sa.text("CREATE TRIGGER trg2 AFTER UPDATE OF quantity ON stock_records FOR EACH ROW EXECUTE FUNCTION g()"))\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "schema-unsatisfiable-ref")).toBe(false);
+  });
+
+  it("does NOT flag a SINGLE-LINE docstring containing a SQL verb (the one-line `\"\"\"…BEFORE UPDATE…\"\"\"` false positive)", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
+    write(dir, "tests/test_doc.py",
+      `def failing_update_trigger():\n    """Install a BEFORE UPDATE raise-on-update function for T5 (ephemeral migration branch)."""\n    pass\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "schema-unsatisfiable-ref")).toBe(false);
+  });
+
   it("reversible-invariant-round-trip: flags a COVERED forward-only invariant but NOT an uncovered one", () => {
     // Uncovered reversible invariant → a coverage concern (checkPersistenceCoverage, story-anchored),
     // NOT this round-trip-quality smell (the PI6-flagged-during-S1 false positive).

@@ -18,7 +18,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { storyAcIds, readAcLayer, readAcArchitecturalNotes, featureTestListJson, acsDir, designGuideJson, designAssetsDir, architectureJson, dbDesignJson, featureSpecJson, storiesDir } from "../../consort/config/consort-paths.js";
-import { checkArtifactConformance, canonicalArtifactName, checkDbDesign, checkStoryIndependence } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
+import { checkArtifactConformance, canonicalArtifactName, checkDbDesign, checkStoryIndependence, checkSchemaDiffCrossStoryColumnsInAcs } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, checkE2eHelperExports, checkE2eRouteAround, checkE2eFixedKeyEmptyState } from "../../consort/architecture/e2e-route-adherence.js";
 import { collectLayeringViolations } from "../../consort/architecture/layering-clean.js";
 import { collectUxViolations } from "../../consort/architecture/design-adherence.js";
@@ -153,6 +153,7 @@ function checkSpecAuthor(args: FormatArgs, v: FormatViolation[]): void {
   // semantic case, one AC's `then` implied by another's, is the test-strategist's
   // ac-overlap judgment, this only catches the exact-duplicate defect).
   const thenById = new Map<string, string>();
+  const acs: Array<{ name: string; content: string }> = [];
   for (const f of readdirSync(dir)) {
     if (!f.endsWith(".json")) continue;
     let content: string;
@@ -161,6 +162,7 @@ function checkSpecAuthor(args: FormatArgs, v: FormatViolation[]): void {
     } catch {
       continue;
     }
+    acs.push({ name: f.replace(/\.json$/, ""), content });
     const r = checkArtifactConformance(canonicalArtifactName(`${dir}/${f}`), content);
     if (!r.ok) v.push({ artifact: `stories/${story}/acs/${f}`, problem: r.violations.join("; ") });
     try {
@@ -173,6 +175,19 @@ function checkSpecAuthor(args: FormatArgs, v: FormatViolation[]): void {
       /* conformance above already flags unparseable JSON */
     }
   }
+  // Cross-story schema-diff coherence at the AC layer (the spec-author analog of the test-strategist's
+  // checkSchemaDiffCrossStoryColumns self-check): an AC `then` that names a PRIOR story's column as the
+  // parent-aware diff delta is unsatisfiable, so flag it HERE — the spec-author self-corrects the `then`
+  // in-turn, instead of the defect slipping to the LLM reflect (which is unreliable for it).
+  let dbDesign: string | undefined;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if (existsSync(p)) dbDesign = readFileSync(p, "utf8");
+  } catch {
+    /* a malformed db-design is reported by checkDbDesign */
+  }
+  const xStory = checkSchemaDiffCrossStoryColumnsInAcs(acs, dbDesign, story);
+  if (!xStory.ok) for (const problem of xStory.violations) v.push({ artifact: `stories/${story}/acs`, problem });
   // Flag exact-duplicate `then` clauses: each pair is a non-independent AC.
   const byThen = new Map<string, string[]>();
   for (const [id, norm] of thenById) (byThen.get(norm) ?? byThen.set(norm, []).get(norm)!).push(id);
