@@ -8871,6 +8871,93 @@ function checkMigrationTestSchemaChangeTag(testListJson, dbDesignJson2) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function columnDeltaOwners(dbDesignJson2) {
+  const addedBy = /* @__PURE__ */ new Map();
+  const removedBy = /* @__PURE__ */ new Map();
+  if (!dbDesignJson2) return { addedBy, removedBy };
+  try {
+    const db = JSON.parse(dbDesignJson2);
+    for (const sc of db.schema_changes ?? []) {
+      const story = typeof sc.story_id === "string" ? sc.story_id : "";
+      const detail = typeof sc.detail === "string" ? sc.detail : "";
+      for (const m of detail.matchAll(/\bADD\s+COLUMN\s+["'`]?(\w+)/gi)) if (!addedBy.has(m[1].toLowerCase())) addedBy.set(m[1].toLowerCase(), story);
+      for (const m of detail.matchAll(/\bDROP\s+COLUMN\s+["'`]?(\w+)/gi)) if (!removedBy.has(m[1].toLowerCase())) removedBy.set(m[1].toLowerCase(), story);
+    }
+  } catch {
+  }
+  return { addedBy, removedBy };
+}
+function assertsSchemaDiffDelta(desc, col, verb) {
+  const c = col.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${c}\\b[^.;:]*\\b${verb}\\b|\\b${verb}\\b[^.;:]*\\b${c}\\b`, "i").test(desc);
+}
+function checkSchemaDiffCrossStoryColumns(testListJson, dbDesignJson2, story) {
+  const { addedBy, removedBy } = columnDeltaOwners(dbDesignJson2);
+  if (addedBy.size === 0 && removedBy.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (!/\bschema[\s_]*diff\b|parent-aware[^.]*\bdiff\b/i.test(desc)) continue;
+    for (const [col, byStory] of addedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "added")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the parent-aware schema diff lists "${col}" as ADDED, but "${col}" is added by a schema_change of story "${byStory}" (not "${story}"). That column is already on the parent branch this diff compares against, so a correct migration for "${story}" yields added=[] for it \u2014 the assertion is unsatisfiable. Assert ONLY this story's own schema delta; a prior story's column is present/unchanged here, never "added".`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
+    for (const [col, byStory] of removedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "removed")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the schema diff lists "${col}" as REMOVED, but it is dropped by story "${byStory}" (not "${story}") \u2014 not part of this story's own parent-aware diff (unsatisfiable).`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkSchemaDiffCrossStoryColumnsInAcs(acs, dbDesignJson2, story) {
+  const { addedBy, removedBy } = columnDeltaOwners(dbDesignJson2);
+  if (addedBy.size === 0 && removedBy.size === 0) return { ok: true };
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const { content } of acs) {
+    let ac;
+    try {
+      ac = JSON.parse(content);
+    } catch {
+      continue;
+    }
+    const then = typeof ac.then === "string" ? ac.then : "";
+    const id = typeof ac.id === "string" ? ac.id : "?";
+    if (!/\bschema[\s_]*diff\b|parent-aware[^.]*\bdiff\b/i.test(then)) continue;
+    for (const [col, byStory] of addedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(then, col, "added")) {
+        violations.push(
+          `AC ${id} \`then\` asserts the parent-aware schema diff lists "${col}" as ADDED, but "${col}" is added by a schema_change of story "${byStory}" (not "${story}"). That column is already on the parent branch this diff compares against, so a correct migration for "${story}" yields added=[] for it \u2014 the clause is unsatisfiable. State ONLY this story's own schema delta; a prior story's column is present/unchanged here, never "added".`
+        );
+        acIds.add(id);
+      }
+    }
+    for (const [col, byStory] of removedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(then, col, "removed")) {
+        violations.push(
+          `AC ${id} \`then\` asserts the schema diff lists "${col}" as REMOVED, but it is dropped by story "${byStory}" (not "${story}") \u2014 not part of this story's own parent-aware diff (unsatisfiable).`
+        );
+        acIds.add(id);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkSchemaChangeCoverage(testListJson, dbDesignJson2) {
   const planned = idedSchemaChanges(dbDesignJson2);
   if (planned.size === 0) return { ok: true };
@@ -12115,9 +12202,6 @@ async function deleteExperiment(args) {
   }
 }
 
-// consort/pipeline/reporter-results.ts
-init_cjs_shims();
-
 // consort/pipeline/run-cycle.ts
 function logCycleEvent(consortDir, event) {
   try {
@@ -12126,8 +12210,10 @@ function logCycleEvent(consortDir, event) {
   }
 }
 function logTestResults(consortDir, cycle, status, role) {
+  const streamed = status === "red" ? /* @__PURE__ */ new Set() : streamedTestIds(consortDir);
   const realTs = realTestTimestamps(consortDir, status);
   for (const testId of coveredTestIds(cycle)) {
+    if (streamed.has(testId)) continue;
     const ts = realTs.get(testId);
     try {
       emitAgentLogEvent(
@@ -12144,6 +12230,20 @@ function logTestResults(consortDir, cycle, status, role) {
     } catch {
     }
   }
+}
+function streamedTestIds(consortDir) {
+  const out = /* @__PURE__ */ new Set();
+  try {
+    const text = (0, import_fs10.readFileSync)((0, import_path9.join)(consortDir, "test-run.jsonl"), "utf8");
+    for (const line of text.split("\n")) {
+      const s = line.trim();
+      if (!s) continue;
+      const o = JSON.parse(s);
+      if (typeof o.test_id === "string") out.add(o.test_id);
+    }
+  } catch {
+  }
+  return out;
 }
 function realTestTimestamps(consortDir, status) {
   const out = /* @__PURE__ */ new Map();
@@ -12226,6 +12326,7 @@ function beginCycle(args) {
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
 var import_fs15 = require("fs");
+var import_node_child_process9 = require("child_process");
 var import_path14 = require("path");
 
 // consort/gates/verify-gate-integrity.ts
@@ -12499,6 +12600,14 @@ function storyAcProblems(fdir, story) {
   }
   const indep = checkAcIndependence(acs);
   if (!indep.ok) problems.push(...indep.violations.map((v) => `${story}/acs: ${v}`));
+  let dbDesign;
+  try {
+    const dbPath = (0, import_node_path13.join)(fdir, "db-design.json");
+    if ((0, import_node_fs9.existsSync)(dbPath)) dbDesign = (0, import_node_fs9.readFileSync)(dbPath, "utf8");
+  } catch {
+  }
+  const xStory = checkSchemaDiffCrossStoryColumnsInAcs(acs, dbDesign, story);
+  if (!xStory.ok) problems.push(...xStory.violations.map((v) => `${story}/acs: ${v}`));
   return problems;
 }
 function acsConformanceReason(fdir) {
@@ -14150,6 +14259,12 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
     // un-planned change slips to the semantic reflect — the F1/S2 history).
     checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
+    // A parent-aware schema-diff test for THIS story must assert only this story's own schema delta —
+    // a column a PRIOR story added/dropped already rides on the parent the diff compares against, so
+    // asserting it as added/removed here is unsatisfiable. Deterministic over the DBA ledger's columns
+    // + owning story; shifts the catch to the test-strategist's in-turn self-check so the design lane
+    // self-corrects instead of the Navigator bouncing it at GREEN.
+    checkSchemaDiffCrossStoryColumns(testListJson, dbDesign, story),
     // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
     // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
     // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a
@@ -18445,7 +18560,7 @@ function formatRoleSweepReport(r) {
 // tests/integration/live/driver-build-support.ts
 init_cjs_shims();
 var import_node_fs35 = require("fs");
-var import_node_child_process12 = require("child_process");
+var import_node_child_process13 = require("child_process");
 var import_node_os3 = require("os");
 var import_node_path42 = require("path");
 
@@ -18527,11 +18642,11 @@ init_cjs_shims();
 
 // consort/orchestrator/provisioning/credentials.ts
 init_cjs_shims();
-var import_node_child_process9 = require("child_process");
+var import_node_child_process10 = require("child_process");
 var import_lakebase11 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 function resolveHostFromProfile(profile, timeoutMs = 15e3) {
   try {
-    const raw = (0, import_node_child_process9.execFileSync)("databricks", ["auth", "describe", "--profile", profile, "-o", "json"], {
+    const raw = (0, import_node_child_process10.execFileSync)("databricks", ["auth", "describe", "--profile", profile, "-o", "json"], {
       encoding: "utf-8",
       timeout: timeoutMs
     });
@@ -18616,7 +18731,7 @@ function clearKitSingleSource() {
 init_cjs_shims();
 var import_node_fs28 = require("fs");
 var import_node_path33 = require("path");
-var import_node_child_process10 = require("child_process");
+var import_node_child_process11 = require("child_process");
 
 // consort/lakebase/create-project.ts
 init_cjs_shims();
@@ -18674,7 +18789,7 @@ async function realRemoveProjectEffects() {
     stopRunner: (name) => scm.stopRunner(name),
     removeRunner: (a) => scm.removeRunner(a),
     deleteGithubRepo: (repo) => {
-      (0, import_node_child_process10.execFileSync)("gh", ["repo", "delete", repo, "--yes"], { stdio: "ignore", timeout: 3e4 });
+      (0, import_node_child_process11.execFileSync)("gh", ["repo", "delete", repo, "--yes"], { stdio: "ignore", timeout: 3e4 });
     },
     deleteLakebaseProject: (a) => scm.deleteLakebaseProject({ projectId: a.projectId, host: a.host })
   };
@@ -18777,11 +18892,11 @@ var catalogueLifecycleDeps = {
 init_cjs_shims();
 var import_node_fs29 = require("fs");
 var import_node_path34 = require("path");
-var import_node_child_process11 = require("child_process");
+var import_node_child_process12 = require("child_process");
 var import_git2 = require("@databricks-solutions/lakebase-scm-utils/git");
 function forceRemoveWorktree(projectDir, wtDir) {
   try {
-    (0, import_node_child_process11.execFileSync)("git", ["worktree", "remove", "--force", wtDir], { cwd: projectDir, stdio: "ignore", timeout: 3e4 });
+    (0, import_node_child_process12.execFileSync)("git", ["worktree", "remove", "--force", wtDir], { cwd: projectDir, stdio: "ignore", timeout: 3e4 });
     return;
   } catch {
   }
@@ -18790,7 +18905,7 @@ function forceRemoveWorktree(projectDir, wtDir) {
   } catch {
   }
   try {
-    (0, import_node_child_process11.execFileSync)("git", ["worktree", "prune"], { cwd: projectDir, stdio: "ignore", timeout: 3e4 });
+    (0, import_node_child_process12.execFileSync)("git", ["worktree", "prune"], { cwd: projectDir, stdio: "ignore", timeout: 3e4 });
   } catch {
   }
 }
@@ -21608,8 +21723,8 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
   const projectDir = wtDir;
   try {
     layBundle(projectDir, consortDir, driverTurn, b);
-    (0, import_node_child_process12.execFileSync)("git", ["add", "-A"], { cwd: projectDir, stdio: "pipe" });
-    (0, import_node_child_process12.execFileSync)("git", ["commit", "-m", `seed: pre-turn F6/S3 snapshot for driver ${driverTurn} (live)`, "--no-verify"], { cwd: projectDir, stdio: "pipe" });
+    (0, import_node_child_process13.execFileSync)("git", ["add", "-A"], { cwd: projectDir, stdio: "pipe" });
+    (0, import_node_child_process13.execFileSync)("git", ["commit", "-m", `seed: pre-turn F6/S3 snapshot for driver ${driverTurn} (live)`, "--no-verify"], { cwd: projectDir, stdio: "pipe" });
     await cutExperiment({
       instance: lakebaseProjectId,
       consortDir,
@@ -21927,7 +22042,7 @@ function loadExperimentConfig(path11) {
 
 // consort/evaluation/semantic-gate.ts
 init_cjs_shims();
-var import_node_child_process13 = require("child_process");
+var import_node_child_process14 = require("child_process");
 var import_node_fs36 = require("fs");
 var import_node_path43 = require("path");
 var SEMANTIC_THRESHOLD = 0.85;
@@ -22129,7 +22244,7 @@ function makeOpusJudge(opts) {
   const model = opts.model ?? "opus";
   return ({ step, reference, candidate, functional }) => new Promise((resolve4) => {
     const prompt = functional ? buildFunctionalJudgePrompt(functional, reference, candidate) : buildJudgePrompt(step, reference, candidate);
-    (0, import_node_child_process13.execFile)(
+    (0, import_node_child_process14.execFile)(
       "claude",
       ["-p", prompt, "--model", model, "--permission-mode", "acceptEdits", "--strict-mcp-config", "--output-format", "json"],
       { cwd: opts.cwd, maxBuffer: 32 * 1024 * 1024, timeout: 5 * 6e4 },
@@ -22151,7 +22266,7 @@ function makeOpusJudge(opts) {
 }
 function spawnOpusJudge(cwd, prompt, parse, onFail) {
   return new Promise((resolve4) => {
-    (0, import_node_child_process13.execFile)(
+    (0, import_node_child_process14.execFile)(
       "claude",
       ["-p", prompt, "--model", "opus", "--permission-mode", "acceptEdits", "--strict-mcp-config", "--output-format", "json"],
       { cwd, maxBuffer: 32 * 1024 * 1024, timeout: 5 * 6e4 },

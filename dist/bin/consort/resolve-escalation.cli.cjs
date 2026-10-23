@@ -6801,9 +6801,6 @@ var EVENT_TEMPLATES = {
 };
 var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 
-// consort/pipeline/reporter-results.ts
-init_cjs_shims();
-
 // consort/pipeline/run-cycle.ts
 function coveredTestIds(c) {
   if (c.test_ids && c.test_ids.length > 0) return c.test_ids;
@@ -6840,6 +6837,7 @@ function resolveOpenSmells(consortDir, smell, opts) {
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
 var import_fs3 = require("fs");
+var import_node_child_process5 = require("child_process");
 var import_path5 = require("path");
 
 // consort/gates/verify-gate-integrity.ts

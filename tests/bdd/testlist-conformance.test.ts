@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { testlistConformanceReason, recordTestListGate } from "../../consort/smells/testlist-conformance.js";
-import { checkTestlistEndpointCoherence, checkTestlistE2eSpecSuffix, checkTestlistComponentScenarioFile, checkTestlistMigrationRevision } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
+import { checkTestlistEndpointCoherence, checkTestlistE2eSpecSuffix, checkTestlistComponentScenarioFile, checkTestlistMigrationRevision, checkSchemaDiffCrossStoryColumns, checkSchemaDiffCrossStoryColumnsInAcs } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { readSmellsLog } from "../../consort/smells/smells.js";
 
 const F = "F1";
@@ -287,6 +287,119 @@ describe("checkTestlistMigrationRevision (relative `downgrade -1` reversibility 
 
   it("is vacuously OK for a non-migration test that happens to mention nothing of downgrades", () => {
     expect(checkTestlistMigrationRevision(tl([item({ kind: "behavior", description: "PUT /api/stock/SKU-100/A-01 returns created:true" })])).ok).toBe(true);
+  });
+});
+
+describe("checkSchemaDiffCrossStoryColumns (the F6/S3 spec-defect: a parent-aware schema-diff test asserting a PRIOR story's column as added/removed)", () => {
+  // The real F6 ledger: S1 ADDs batch_number/serial_number (expand), S3 DROPs tracking_code (contract).
+  const db = JSON.stringify({
+    schema_changes: [
+      { id: "SC1", story_id: "S1-expand", kind: "add_column", table: "stock_records", detail: "ADD COLUMN batch_number text NULL, ADD COLUMN serial_number text NULL" },
+      { id: "SC2", story_id: "S3-contract", kind: "drop", table: "stock_records", detail: "DROP COLUMN tracking_code" },
+    ],
+  });
+  const tl = (desc: string): string => JSON.stringify({ items: [{ id: "T44", kind: "behavior", ac_id: "AC1", description: desc }] });
+
+  it("FLAGS a contract (S3) schema-diff test that asserts S1's batch/serial as ADDED (unsatisfiable — they ride on the parent)", () => {
+    const r = checkSchemaDiffCrossStoryColumns(
+      tl("The parent-aware schema diff against the paired branch lists tracking_code as removed and batch_number and serial_number as added"),
+      db,
+      "S3-contract",
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/batch_number.*ADDED|serial_number.*ADDED/i);
+      expect(r.violations.join(" ")).toMatch(/S1-expand/);
+      expect(r.acIds).toEqual(["AC1"]);
+    }
+  });
+
+  it("does NOT flag the CORRECT S3 assertion (tracking_code removed, batch/serial still present — not 'added')", () => {
+    const r = checkSchemaDiffCrossStoryColumns(
+      tl("The parent-aware schema diff lists tracking_code as removed; batch_number and serial_number are still present and unchanged"),
+      db,
+      "S3-contract",
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it("does NOT flag the SAME story asserting its OWN added columns (S1's expand diff legitimately lists batch/serial added)", () => {
+    const r = checkSchemaDiffCrossStoryColumns(
+      tl("The parent-aware schema diff for the expand lists batch_number and serial_number as added"),
+      db,
+      "S1-expand",
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it("does NOT flag a NON-schema-diff item that merely mentions the columns", () => {
+    const r = checkSchemaDiffCrossStoryColumns(
+      tl("GET /api/stock returns batch_number and serial_number populated after the expand added them"),
+      db,
+      "S3-contract",
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it("is vacuously OK with no db-design ledger (nothing to attribute columns against)", () => {
+    expect(checkSchemaDiffCrossStoryColumns(tl("the schema diff lists batch_number as added"), undefined, "S3-contract").ok).toBe(true);
+  });
+});
+
+describe("checkSchemaDiffCrossStoryColumnsInAcs (AC-layer analog: an AC `then` claiming a PRIOR story's column as the parent-aware diff delta)", () => {
+  const db = JSON.stringify({
+    schema_changes: [
+      { id: "SC1", story_id: "S1-expand", kind: "add_column", table: "stock_records", detail: "ADD COLUMN batch_number text NULL, ADD COLUMN serial_number text NULL" },
+      { id: "SC2", story_id: "S3-contract", kind: "drop", table: "stock_records", detail: "DROP COLUMN tracking_code" },
+    ],
+  });
+  const acs = (then: string, id = "AC1-tracking-code-dropped"): Array<{ name: string; content: string }> => [
+    { name: id, content: JSON.stringify({ id, given: "a migrated branch", when: "the contract migration runs", then }) },
+  ];
+
+  it("FLAGS an AC `then` that asserts the parent-aware diff lists S1's batch/serial as ADDED in the contract story (unsatisfiable)", () => {
+    const r = checkSchemaDiffCrossStoryColumnsInAcs(
+      acs("the stock table no longer has a tracking_code column, and the parent-aware schema diff lists tracking_code as removed alongside batch_number and serial_number added"),
+      db,
+      "S3-contract",
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/batch_number.*ADDED|serial_number.*ADDED/i);
+      expect(r.violations.join(" ")).toMatch(/S1-expand/);
+      expect(r.acIds).toEqual(["AC1-tracking-code-dropped"]);
+    }
+  });
+
+  it("does NOT flag the CORRECT AC `then` (tracking_code removed; batch/serial present-unchanged, not 'added')", () => {
+    const r = checkSchemaDiffCrossStoryColumnsInAcs(
+      acs("the parent-aware schema diff shows tracking_code as the only removed column; batch_number and serial_number remain present, unchanged"),
+      db,
+      "S3-contract",
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it("does NOT flag the expand story's OWN AC legitimately asserting its added columns in its own diff", () => {
+    const r = checkSchemaDiffCrossStoryColumnsInAcs(
+      acs("the parent-aware schema diff for this story lists batch_number and serial_number as added", "AC1-columns-added"),
+      db,
+      "S1-expand",
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it("does NOT flag an AC `then` that mentions the columns WITHOUT invoking the schema diff", () => {
+    const r = checkSchemaDiffCrossStoryColumnsInAcs(
+      acs("the API response for each record includes batch_number and serial_number after the expand added them"),
+      db,
+      "S3-contract",
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it("is vacuously OK with no db-design ledger", () => {
+    expect(checkSchemaDiffCrossStoryColumnsInAcs(acs("the schema diff lists batch_number as added"), undefined, "S3-contract").ok).toBe(true);
   });
 });
 

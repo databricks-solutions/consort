@@ -19,6 +19,7 @@
 // cycle with `status:"red"` instead of the `red_at` the probe reads).
 
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync } from "fs";
+import { execFileSync } from "node:child_process";
 import { consortEnv } from "../../consort/config/consort-env.js";
 import { join, dirname, basename } from "path";
 import {
@@ -513,10 +514,40 @@ export type GreenVerifier = (args: {
   /** The open cycle's test layer (E2E/API/Infra), threaded to the verify so run-tests.sh runs
    *  the slow client Playwright E2E only on an E2E-layer cycle (else the deploy gate). */
   cycleLayer?: string;
+  /** Tiered verify: whether this cycle touched a migration (file or @migration test). When false, the
+   *  verify skips the slow isolated-branch migration pass (see CycleVerifyArgs.cycleTouchedMigrations).
+   *  Undefined on refactor/deploy => the full migration pass runs. */
+  cycleTouchedMigrations?: boolean;
 }) => Promise<{ passed: boolean; summary: string; failureOutput?: string }>;
 
-const defaultGreenVerifier: GreenVerifier = async ({ projectDir, branchId, cycleLayer }) => {
-  const r = await ensureDeployedAndVerify({ projectDir, lakebaseBranch: branchId, cycleLayer });
+/** Tiered verify: did THIS cycle's working-tree changes touch a migration — an `alembic/versions/**`
+ *  (or other known migration-dir) file, OR a changed/new TEST file that declares `@pytest.mark.migration`
+ *  (the cycle added a reversibility test, which must run this cycle to green honestly)? Drives whether
+ *  the slow isolated-branch migration pass runs this cycle. FAIL-SAFE: any git error returns true (run
+ *  the pass) so uncertainty never skips coverage; the story-close REFACTOR + feature-deploy gates run
+ *  the full migration pass regardless. */
+function detectCycleTouchedMigrations(projectDir: string): boolean {
+  try {
+    const list = (args: string[]): string[] =>
+      execFileSync("git", args, { cwd: projectDir, encoding: "utf8" }).split("\n").map((l) => l.trim()).filter(Boolean);
+    const files = [...list(["diff", "--name-only", "HEAD"]), ...list(["ls-files", "--others", "--exclude-standard"])];
+    if (files.some((f) => /(^|\/)(alembic\/versions|migrations|db\/migrations|src\/migrations)\//.test(f))) return true;
+    for (const f of files) {
+      if (!/(^|\/)tests?\//.test(f) && !/(^|\/)(test_|.*_test\.)/.test(basename(f))) continue;
+      try {
+        if (/\bmark\.migration\b/.test(readFileSync(join(projectDir, f), "utf8"))) return true;
+      } catch {
+        /* file deleted this cycle — cannot declare a marker */
+      }
+    }
+    return false;
+  } catch {
+    return true; // git unavailable / not a repo — fail safe, run the migration pass
+  }
+}
+
+const defaultGreenVerifier: GreenVerifier = async ({ projectDir, branchId, cycleLayer, cycleTouchedMigrations }) => {
+  const r = await ensureDeployedAndVerify({ projectDir, lakebaseBranch: branchId, cycleLayer, ...(cycleTouchedMigrations !== undefined ? { cycleTouchedMigrations } : {}) });
   // Surface the verify's captured failure output so greenOpenCycle can record it into
   // green-failure.json – the ASSESS turn then starts from the real failure, not a re-scan.
   return { passed: r.passed, summary: r.summary, ...(r.failureOutput ? { failureOutput: r.failureOutput } : {}) };
@@ -577,7 +608,11 @@ export async function greenOpenCycle(
   // here leaves the cycle RED and raises an escalation to the HIL; the
   // orchestration then routes to raise-to-hil rather than advancing.
   const verify = args.verify ?? defaultGreenVerifier;
-  let result = await verify({ projectDir: dirname(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
+  // Tiered verify: tell the verifier whether this per-cycle GREEN touched a migration, so a
+  // non-migration behavior/client cycle skips the slow isolated-branch migration pass (the full pass
+  // still runs at the story-close REFACTOR + feature-deploy gates, which pass no flag).
+  const touchedMigrations = detectCycleTouchedMigrations(dirname(consortDir));
+  let result = await verify({ projectDir: dirname(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer, cycleTouchedMigrations: touchedMigrations });
   // A deterministic test-authoring smell converts a green verify to a fail (below);
   // captured here so the green-failure enrichment records it as a surgical driver
   // fixDirective (path (b)), never a spec-defect reopen (the churn-killer).

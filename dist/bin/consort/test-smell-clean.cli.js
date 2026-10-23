@@ -206,6 +206,7 @@ function blankCommentsAndDocstrings(lines) {
         continue;
       }
     }
+    line = line.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, " ");
     const tq = line.match(/"""|'''/);
     if (tq) {
       const q = tq[0];
@@ -397,7 +398,8 @@ function checkTestSmells(args) {
           )) {
             const ref = (m[1] ?? m[2]).toLowerCase();
             const systemCatalog = ref === "information_schema" || ref.startsWith("pg_");
-            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual)$/.test(ref) && !systemCatalog && !knownTables.has(ref)) {
+            const migrationBookkeeping = ref === "alembic_version";
+            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual|on|of)$/.test(ref) && !systemCatalog && !migrationBookkeeping && !knownTables.has(ref)) {
               push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
             }
           }

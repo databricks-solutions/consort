@@ -6942,9 +6942,6 @@ var EVENT_TEMPLATES = {
 };
 var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 
-// consort/pipeline/reporter-results.ts
-init_cjs_shims();
-
 // consort/smells/smells.ts
 function writeSmellsLog(consortDir2, hits) {
   const file = (0, import_path2.join)(consortDir2, "smells.json");

@@ -7451,9 +7451,6 @@ var RUNTIME_ARTIFACT_PREFIXES = [
   ".claude/agent-memory/"
 ];
 
-// consort/pipeline/reporter-results.ts
-init_cjs_shims();
-
 // consort/pipeline/run-cycle.ts
 function readAcLayer2(consortDir, featureId, acId) {
   return readAcLayer(consortDir, featureId, acId);
@@ -7466,6 +7463,7 @@ function coveredTestIds(c) {
 // consort/pipeline/cycle-record.ts
 init_cjs_shims();
 var import_fs5 = require("fs");
+var import_node_child_process5 = require("child_process");
 var import_path7 = require("path");
 
 // consort/gates/verify-gate-integrity.ts
@@ -8241,6 +8239,59 @@ function checkMigrationTestSchemaChangeTag(testListJson, dbDesignJson2) {
       `test item ${it.id ?? "?"} asserts a migration-reversibility round-trip but names no schema_change_id. A migration test must exercise a schema_change the DBA planned in db-design.json \u2014 tag it with that entry's id (e.g. "schema_change_id": "SC5-..."). If NO planned schema_changes[] entry covers it, the DBA did not commit that migration (an index/change the design defers): DROP the test rather than assert a migration the design never ships. Known schema_changes ids: ${[...planned.keys()].join(", ") || "(none)"}.`
     );
     if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function columnDeltaOwners(dbDesignJson2) {
+  const addedBy = /* @__PURE__ */ new Map();
+  const removedBy = /* @__PURE__ */ new Map();
+  if (!dbDesignJson2) return { addedBy, removedBy };
+  try {
+    const db = JSON.parse(dbDesignJson2);
+    for (const sc of db.schema_changes ?? []) {
+      const story = typeof sc.story_id === "string" ? sc.story_id : "";
+      const detail = typeof sc.detail === "string" ? sc.detail : "";
+      for (const m of detail.matchAll(/\bADD\s+COLUMN\s+["'`]?(\w+)/gi)) if (!addedBy.has(m[1].toLowerCase())) addedBy.set(m[1].toLowerCase(), story);
+      for (const m of detail.matchAll(/\bDROP\s+COLUMN\s+["'`]?(\w+)/gi)) if (!removedBy.has(m[1].toLowerCase())) removedBy.set(m[1].toLowerCase(), story);
+    }
+  } catch {
+  }
+  return { addedBy, removedBy };
+}
+function assertsSchemaDiffDelta(desc, col, verb) {
+  const c = col.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${c}\\b[^.;:]*\\b${verb}\\b|\\b${verb}\\b[^.;:]*\\b${c}\\b`, "i").test(desc);
+}
+function checkSchemaDiffCrossStoryColumns(testListJson, dbDesignJson2, story) {
+  const { addedBy, removedBy } = columnDeltaOwners(dbDesignJson2);
+  if (addedBy.size === 0 && removedBy.size === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const desc = it.description ?? "";
+    if (!/\bschema[\s_]*diff\b|parent-aware[^.]*\bdiff\b/i.test(desc)) continue;
+    for (const [col, byStory] of addedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "added")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the parent-aware schema diff lists "${col}" as ADDED, but "${col}" is added by a schema_change of story "${byStory}" (not "${story}"). That column is already on the parent branch this diff compares against, so a correct migration for "${story}" yields added=[] for it \u2014 the assertion is unsatisfiable. Assert ONLY this story's own schema delta; a prior story's column is present/unchanged here, never "added".`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
+    for (const [col, byStory] of removedBy) {
+      if (byStory && byStory !== story && assertsSchemaDiffDelta(desc, col, "removed")) {
+        violations.push(
+          `test item ${it.id ?? "?"} asserts the schema diff lists "${col}" as REMOVED, but it is dropped by story "${byStory}" (not "${story}") \u2014 not part of this story's own parent-aware diff (unsatisfiable).`
+        );
+        if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+      }
+    }
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
@@ -9284,6 +9335,12 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
     // un-planned change slips to the semantic reflect — the F1/S2 history).
     checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
+    // A parent-aware schema-diff test for THIS story must assert only this story's own schema delta —
+    // a column a PRIOR story added/dropped already rides on the parent the diff compares against, so
+    // asserting it as added/removed here is unsatisfiable. Deterministic over the DBA ledger's columns
+    // + owning story; shifts the catch to the test-strategist's in-turn self-check so the design lane
+    // self-corrects instead of the Navigator bouncing it at GREEN.
+    checkSchemaDiffCrossStoryColumns(testListJson, dbDesign, story),
     // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
     // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
     // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a
@@ -9969,7 +10026,7 @@ var import_node_crypto5 = require("crypto");
 
 // consort/orchestrator/drive/claude-runner.ts
 init_cjs_shims();
-var import_node_child_process7 = require("child_process");
+var import_node_child_process8 = require("child_process");
 
 // consort/setup/project-consort-setup.ts
 init_cjs_shims();
@@ -9992,7 +10049,7 @@ var path5 = __toESM(require("path"), 1);
 init_cjs_shims();
 var fs11 = __toESM(require("fs"), 1);
 var path7 = __toESM(require("path"), 1);
-var import_node_child_process5 = require("child_process");
+var import_node_child_process6 = require("child_process");
 
 // consort/config/kit-ref.ts
 init_cjs_shims();
@@ -10053,7 +10110,7 @@ init_cjs_shims();
 
 // consort/config/kit-bin.ts
 init_cjs_shims();
-var import_node_child_process6 = require("child_process");
+var import_node_child_process7 = require("child_process");
 var fs13 = __toESM(require("fs"), 1);
 var path9 = __toESM(require("path"), 1);
 
@@ -10088,7 +10145,7 @@ var CliEffectError = class extends Error {
 var CLI_CAPTURE_MAX = 16e3;
 function spawnCmd(bin, args, cwd) {
   return new Promise((resolve5, reject) => {
-    const child = (0, import_node_child_process7.spawn)(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
+    const child = (0, import_node_child_process8.spawn)(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
     const chunks = [];
     child.stdout?.on("data", (d) => {
       process.stdout.write(d);
@@ -10160,7 +10217,7 @@ function designGuideConformance(consortDir) {
 
 // consort/orchestrator/build/build-context.ts
 init_cjs_shims();
-var import_node_child_process8 = require("child_process");
+var import_node_child_process9 = require("child_process");
 var fs16 = __toESM(require("fs"), 1);
 var import_node_path27 = require("path");
 

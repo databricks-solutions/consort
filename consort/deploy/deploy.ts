@@ -893,6 +893,13 @@ export interface CycleVerifyArgs {
    *  suite. Omitted here (deploy feature-verify / whole-story refactor re-verify) => unset
    *  => run the full E2E (the fail-safe: only an explicit non-E2E layer skips it). */
   cycleLayer?: string;
+  /** Tiered verify: whether THIS per-cycle GREEN touched a migration (an `alembic/versions/**` file
+   *  or a `@pytest.mark.migration` test). The `migration`-marked reversibility pass runs on its own
+   *  isolated ephemeral branch and is the slowest part of verify; a non-migration cycle (a behavior or
+   *  client test) cannot change its outcome, so we skip it per-cycle and let the full migration pass
+   *  run at the story-close REFACTOR + feature-deploy gates (which leave this `undefined`). FAIL-SAFE:
+   *  only an explicit `false` skips it — `undefined` (refactor/deploy, or detection failed) runs it. */
+  cycleTouchedMigrations?: boolean;
   startProcess?: (cmd: string, cwd: string, env?: NodeJS.ProcessEnv) => number;
   reachable?: (url: string) => Promise<boolean>;
   runVerify?: (cmd: string, cwd: string, env?: NodeJS.ProcessEnv) => boolean | { passed: boolean; output?: string };
@@ -1011,9 +1018,14 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
       );
       const mainPassed = mainRun.passed;
       if (!mainPassed) failOut = mainRun.output;
-      // Only isolate the migration pass if the main suite is green (else the
-      // failure is already surfaced; skip the extra branch cut).
-      const migRun = mainPassed
+      // TIERED VERIFY: run the slow isolated-branch `migration` pass only when the main suite is green
+      // AND this cycle could have changed a migration's outcome. A per-cycle GREEN that touched no
+      // migration (cycleTouchedMigrations === false) skips it — the migration tests passed when the
+      // migration was authored and nothing here changed them; the full migration pass still runs at the
+      // REFACTOR + feature-deploy gates (which leave cycleTouchedMigrations undefined). Fail-safe: only
+      // an explicit false skips; undefined runs it.
+      const runMigrationPass = mainPassed && args.cycleTouchedMigrations !== false;
+      const migRun = runMigrationPass
         ? await runVerifyMaybeEphemeral(
             runVerify,
             cfg.verify,

@@ -899,6 +899,48 @@ describe("ensureDeployedAndVerify: migration-isolation two-pass (Python)", () =>
     expect(markers).toEqual(["not migration"]); // migration pass not attempted
   });
 
+  it("TIERED: SKIPS the migration pass when the cycle touched no migration (cycleTouchedMigrations=false)", async () => {
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname = 'x'\n");
+    const markers: string[] = [];
+    const res = await ensureDeployedAndVerify({
+      projectDir: dir,
+      targetName: "localv",
+      cycleTouchedMigrations: false, // a behavior/client cycle — no migration changed
+      startProcess: () => 4242,
+      reachable: async () => true,
+      runVerify: (_cmd, _cwd, env) => {
+        markers.push(env?.SFTDD_PYTEST_MARKER ?? "<unset>");
+        return true;
+      },
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(res.passed).toBe(true);
+    expect(markers).toEqual(["not migration"]); // migration pass skipped — the tiered optimization
+  });
+
+  it("TIERED: RUNS the migration pass when the cycle touched a migration (cycleTouchedMigrations=true)", async () => {
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname = 'x'\n");
+    const markers: string[] = [];
+    const res = await ensureDeployedAndVerify({
+      projectDir: dir,
+      targetName: "localv",
+      cycleTouchedMigrations: true,
+      startProcess: () => 4242,
+      reachable: async () => true,
+      runVerify: (_cmd, _cwd, env) => {
+        markers.push(env?.SFTDD_PYTEST_MARKER ?? "<unset>");
+        return true;
+      },
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(res.passed).toBe(true);
+    expect(markers).toEqual(["not migration", "migration"]); // full pass, same as undefined (refactor/deploy)
+  });
+
   it("a non-Python project keeps ONE full pass (no marker split, no double run)", async () => {
     const markers: string[] = [];
     const res = await ensureDeployedAndVerify({

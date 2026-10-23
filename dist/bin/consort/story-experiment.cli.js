@@ -7410,7 +7410,8 @@ import { mergePaired } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
 import { existsSync as existsSync19, readFileSync as readFileSync19, readdirSync as readdirSync14, statSync as statSync10, writeFileSync as writeFileSync11, mkdirSync as mkdirSync12, rmSync as rmSync6 } from "fs";
-import { join as join21, dirname as dirname11 } from "path";
+import { execFileSync as execFileSync4 } from "child_process";
+import { join as join21, dirname as dirname11, basename as basename2 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -7440,9 +7441,6 @@ init_esm_shims();
 // consort/pipeline/run-cycle.ts
 init_esm_shims();
 import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-
-// consort/pipeline/reporter-results.ts
-init_esm_shims();
 
 // consort/smells/deploy-verify-assess.ts
 init_esm_shims();
