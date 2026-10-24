@@ -518,6 +518,13 @@ export type GreenVerifier = (args: {
    *  verify skips the slow isolated-branch migration pass (see CycleVerifyArgs.cycleTouchedMigrations).
    *  Undefined on refactor/deploy => the full migration pass runs. */
   cycleTouchedMigrations?: boolean;
+  /** Per-cycle SCOPE: the current story's test ids, so the per-cycle verify runs only this story's
+   *  tests (the full cross-story suite runs at the unscoped refactor/deploy gates). */
+  storyTestIds?: string[];
+  /** Per-cycle server SCOPE: whether this story has any client/component/e2e test. When false (a pure
+   *  backend/migration story), the per-cycle verify skips the serving app + the client pass (backend
+   *  pytest is in-process). Undefined on refactor/deploy => full behavior. */
+  storyHasClientTests?: boolean;
 }) => Promise<{ passed: boolean; summary: string; failureOutput?: string }>;
 
 /** Tiered verify: did THIS cycle's working-tree changes touch a migration — an `alembic/versions/**`
@@ -546,8 +553,49 @@ function detectCycleTouchedMigrations(projectDir: string): boolean {
   }
 }
 
-const defaultGreenVerifier: GreenVerifier = async ({ projectDir, branchId, cycleLayer, cycleTouchedMigrations }) => {
-  const r = await ensureDeployedAndVerify({ projectDir, lakebaseBranch: branchId, cycleLayer, ...(cycleTouchedMigrations !== undefined ? { cycleTouchedMigrations } : {}) });
+/** The current story's test ids (every item in its per-story test-list), for the per-cycle verify
+ *  SCOPE: the per-cycle GREEN runs only these (its own story) instead of every feature's suite. Empty
+ *  on any read error => unscoped (full) verify, the safe default. */
+function storyTestIdsFor(consortDir: string, featureId: string, story: string): string[] {
+  try {
+    const tl = JSON.parse(readFileSync(storyTestListJson(consortDir, featureId, story), "utf8")) as { items?: Array<{ id?: unknown }> };
+    return (tl.items ?? []).map((it) => it.id).filter((id): id is string => typeof id === "string");
+  } catch {
+    return [];
+  }
+}
+
+/** The kinds a test-list item carries that the CLIENT pass (Vitest real-backend + Playwright E2E)
+ *  covers — everything else (behavior/fitness) is a BACKEND pytest, which runs in-process (TestClient
+ *  + direct DB) and needs no serving app. */
+const CLIENT_TEST_KINDS = new Set(["client", "component", "e2e"]);
+
+/** Does the current story have ANY client/component/e2e test? When FALSE (a pure backend/migration
+ *  story — e.g. an expand/contract schema story of only behavior+fitness tests), the per-cycle GREEN
+ *  verify can skip starting the serving app AND skip the client Vitest/E2E pass entirely, because the
+ *  backend pytest passes are in-process. FAIL-SAFE: any read error returns true (start the server + run
+ *  the client pass, the full behavior), and the story-close REFACTOR + feature-deploy gates run the
+ *  full client pass regardless. */
+function storyHasClientTestsFor(consortDir: string, featureId: string, story: string): boolean {
+  try {
+    const tl = JSON.parse(readFileSync(storyTestListJson(consortDir, featureId, story), "utf8")) as {
+      items?: Array<{ kind?: unknown }>;
+    };
+    return (tl.items ?? []).some((it) => typeof it.kind === "string" && CLIENT_TEST_KINDS.has(it.kind));
+  } catch {
+    return true;
+  }
+}
+
+const defaultGreenVerifier: GreenVerifier = async ({ projectDir, branchId, cycleLayer, cycleTouchedMigrations, storyTestIds, storyHasClientTests }) => {
+  const r = await ensureDeployedAndVerify({
+    projectDir,
+    lakebaseBranch: branchId,
+    cycleLayer,
+    ...(cycleTouchedMigrations !== undefined ? { cycleTouchedMigrations } : {}),
+    ...(storyTestIds && storyTestIds.length > 0 ? { storyTestIds } : {}),
+    ...(storyHasClientTests !== undefined ? { storyHasClientTests } : {}),
+  });
   // Surface the verify's captured failure output so greenOpenCycle can record it into
   // green-failure.json – the ASSESS turn then starts from the real failure, not a re-scan.
   return { passed: r.passed, summary: r.summary, ...(r.failureOutput ? { failureOutput: r.failureOutput } : {}) };
@@ -612,7 +660,24 @@ export async function greenOpenCycle(
   // non-migration behavior/client cycle skips the slow isolated-branch migration pass (the full pass
   // still runs at the story-close REFACTOR + feature-deploy gates, which pass no flag).
   const touchedMigrations = detectCycleTouchedMigrations(dirname(consortDir));
-  let result = await verify({ projectDir: dirname(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer, cycleTouchedMigrations: touchedMigrations });
+  // Per-cycle SCOPE: run only THIS story's tests in the per-cycle verify (the full cross-story suite
+  // runs at the unscoped REFACTOR + feature-deploy gates, which do not pass storyTestIds).
+  const scopedIds = storyTestIdsFor(consortDir, featureId, story);
+  // Per-cycle server SCOPE: a pure backend/migration story (no client/component/e2e test) runs its
+  // backend pytest in-process, so the per-cycle verify skips the serving app + the client pass. The
+  // unscoped REFACTOR + feature-deploy gates pass no flag => full behavior.
+  const storyHasClientTests = storyHasClientTestsFor(consortDir, featureId, story);
+  let result = await verify({
+    projectDir: dirname(consortDir),
+    consortDir,
+    featureId,
+    story,
+    branchId: open.branch_id,
+    cycleLayer: open.layer,
+    cycleTouchedMigrations: touchedMigrations,
+    ...(scopedIds.length > 0 ? { storyTestIds: scopedIds } : {}),
+    storyHasClientTests,
+  });
   // A deterministic test-authoring smell converts a green verify to a fail (below);
   // captured here so the green-failure enrichment records it as a surgical driver
   // fixDirective (path (b)), never a spec-defect reopen (the churn-killer).
@@ -747,21 +812,36 @@ export async function greenOpenCycle(
       });
       return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, escalated: true, escalation, summary: result.summary };
     }
-    // AUTHOR-LAYER test-smell short-circuit: a migration-reversibility smell
-    // (reversible-invariant-round-trip / relative-migration-revision / migration-marker-presence)
-    // is NOT closable by a surgical Driver repair – it needs the test RE-AUTHORED (explicit
-    // down_revision round-trip). Routing it through assess->repair just burns bounded rounds on
-    // a test the Driver cannot green, then escalates anyway (the observed churn). The verify
-    // already deterministically diagnosed it ("the test's AUTHOR fixes these, not a code repair"),
-    // so escalate on the FIRST failure with the exact remediation – same posture as auth-expired.
+    // DETERMINISTIC test-smell scan on a FAILING verify: the scan above runs ONLY when the verify
+    // GREENED (the "a smell-laden test still passed" path), so a test that genuinely FAILS the verify
+    // never had its smells consulted and fell straight through to the Navigator assess. Scan now (only
+    // if not already scanned on the passed path) so an AUTHOR-LAYER smell escalates deterministically
+    // here, and a Driver-fixable smell ENRICHES the assess (as testSmellRefs below) with its exact fix.
+    if (testSmellRemediation === undefined) {
+      try {
+        const failSmells = checkTestSmells({ projectDir: dirname(consortDir) });
+        if (!failSmells.clean && failSmells.remediation) {
+          testSmellRemediation = failSmells.remediation;
+          authorLayerTestSmell = failSmells.violations.some((v) => AUTHOR_LAYER_TEST_SMELLS.has(v.smell));
+        }
+      } catch {
+        /* advisory scan: a gate error must never fail the cycle */
+      }
+    }
+    // AUTHOR-LAYER test-smell short-circuit: a smell a surgical Driver repair CANNOT close – a
+    // migration-reversibility shape (reversible-invariant-round-trip / relative-migration-revision) or
+    // a topology-dependent schema-diff assertion (unpinned-schema-diff-baseline). It needs the test
+    // RE-AUTHORED, not a code repair. Routing it through assess->repair just burns bounded rounds on a
+    // test the Driver cannot green, then escalates anyway (the observed churn). The scan already
+    // deterministically diagnosed it with the exact per-occurrence fix, so escalate on the FIRST
+    // failure with that remediation – same posture as auth-expired.
     if (authorLayerTestSmell && testSmellRemediation) {
       const escalation = writeEscalation(consortDir, {
         source: "test-authoring-smell",
         reason:
-          `A migration-reversibility test-authoring smell for ${open.test_id} (${open.ac_id}) in ` +
-          `${featureId}/${story} is not Driver-fixable – the test's AUTHOR must re-author it (an explicit ` +
-          `down_revision round-trip), not a code repair. Escalating with the remediation instead of burning ` +
-          `assess->repair rounds that cannot green it.\n${testSmellRemediation}`,
+          `A test-authoring smell for ${open.test_id} (${open.ac_id}) in ${featureId}/${story} is not ` +
+          `Driver-fixable – the test's AUTHOR must RE-AUTHOR it, not a code repair. Escalating with the ` +
+          `exact remediation instead of burning assess->repair rounds that cannot green it.\n${testSmellRemediation}`,
         feature_id: featureId,
         story_id: story,
         ac_id: open.ac_id,

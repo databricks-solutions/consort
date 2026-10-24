@@ -108,6 +108,30 @@ describe("cycle-record: orchestration stamps RED/GREEN the probe can read", asyn
     expect(seenLayer).toBe("API");
   });
 
+  it("greenOpenCycle threads storyHasClientTests=false for a pure backend story (no client/component/e2e item)", async () => {
+    // The per-cycle GREEN skips the serving app + the client pass when the story has no client-kind
+    // test. The beforeEach test-list items carry no `kind` => no client test => false.
+    beginNextPendingCycle({ consortDir: tdd, featureId: F, story: S });
+    let seen: boolean | undefined = undefined;
+    const spy: GreenVerifier = async (a) => { seen = a.storyHasClientTests; return { passed: true, summary: "ok" }; };
+    await greenOpenCycle({ consortDir: tdd, featureId: F, story: S, verify: spy });
+    expect(seen).toBe(false);
+  });
+
+  it("greenOpenCycle threads storyHasClientTests=true when the story HAS a client-kind test", async () => {
+    // Add a client-kind item: the story now needs the serving app + the client pass.
+    const items = [
+      { id: "T1", description: "first thing fails", ac_id: "AC1", status: "pending" },
+      { id: "T2", description: "a client test", ac_id: "AC1", status: "pending", kind: "client" },
+    ];
+    writeJson(join(tdd, "features", F, "stories", S, "test-list-per-story.json"), { feature_id: F, story_id: S, items });
+    beginNextPendingCycle({ consortDir: tdd, featureId: F, story: S });
+    let seen: boolean | undefined = undefined;
+    const spy: GreenVerifier = async (a) => { seen = a.storyHasClientTests; return { passed: true, summary: "ok" }; };
+    await greenOpenCycle({ consortDir: tdd, featureId: F, story: S, verify: spy });
+    expect(seen).toBe(true);
+  });
+
   it("greenOpenCycle records the run + stamps green_at on the open RED cycle", async () => {
     beginNextPendingCycle({ consortDir: tdd, featureId: F, story: S });
     const g = await greenOpenCycle({ consortDir: tdd, featureId: F, story: S, verify: pass });

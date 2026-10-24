@@ -587,17 +587,86 @@ describe("greenOpenCycle: a smell-laden test is caught proactively at GREEN", ()
     expect(r.escalation?.source).toBe("test-authoring-smell");
     expect(r.summary).toMatch(/TEST-AUTHORING-SMELL/);
   });
+
+  // A FAILING verify on an AUTHOR-LAYER smell (unpinned-schema-diff-baseline, the F6/S3 T44 class): the
+  // test is unsatisfiable (the parent-aware diff is empty on the verify's already-migrated child branch),
+  // so it never greens -> the passed-path smell scan never ran, and it used to fall through to a Navigator
+  // assess. It must now ESCALATE deterministically on the FIRST failure with the exact re-author remedy.
+  const fail: GreenVerifier = async () => ({ passed: false, summary: "GREEN verify FAILED against the running app" });
+  it("a FAILING verify + an author-layer unpinned-schema-diff-baseline smell ESCALATES deterministically (no Navigator assess)", async () => {
+    const project = mkProject();
+    const tdd = path.join(project, ".consort");
+    const acsDir = path.join(tdd, "features", F, "stories", S, "acs");
+    fs.mkdirSync(acsDir, { recursive: true });
+    writeJson(path.join(acsDir, "AC1.json"), { id: "AC1", layer: "Infra", text: "contract drops tracking_code" });
+    const items = [{ id: "T44", description: "parent-aware schema diff lists tracking_code removed", ac_id: "AC1", status: "pending" }];
+    writeJson(path.join(tdd, "features", F, "stories", S, "test-list-per-story.json"), { feature_id: F, story_id: S, items });
+    writeJson(path.join(tdd, "features", F, "test-list.json"), { feature_id: F, items });
+    const expDir = path.join(tdd, "experiments", F, S, "exp1");
+    fs.mkdirSync(expDir, { recursive: true });
+    fs.writeFileSync(path.join(expDir, "branch.txt"), "experiment-s1-exp1");
+    writeJson(path.join(expDir, "outcomes.json"), { status: "running" });
+    // The T44-shape test: runs lakebase-schema-diff with NO --against baseline.
+    write(project, "tests/test_s3_contract_drop.py",
+      `import subprocess, os\n` +
+      `out = subprocess.run([root/"scripts"/"lk", "lakebase-schema-diff",\n` +
+      `  "--instance", inst, "--branch", os.environ["LAKEBASE_BRANCH_ID"], "--format", "markdown"],\n` +
+      `  capture_output=True, text=True, check=True).stdout\n` +
+      `assert any("tracking_code" in l for l in out.splitlines())\n`);
+
+    beginNextPendingCycle({ consortDir: tdd, featureId: F, story: S });
+    const r = await greenOpenCycle({ consortDir: tdd, featureId: F, story: S, verify: fail });
+
+    expect(r.recorded).toBe(false);
+    expect(r.escalated).toBe(true);
+    expect(r.needsAssess).toBeFalsy(); // deterministic — NOT routed to the Navigator assess
+    expect(r.escalation?.source).toBe("test-authoring-smell");
+    expect(r.escalation?.reason).toMatch(/--against|RE-AUTHOR/);
+  });
 });
 
-describe("AUTHOR_LAYER_TEST_SMELLS: the migration-reversibility classes that need a re-author, not a driver repair", () => {
-  it("holds exactly the three migration-reversibility smells", () => {
+describe("AUTHOR_LAYER_TEST_SMELLS: the re-author classes (migration-reversibility + topology-dependent schema-diff)", () => {
+  it("holds exactly the RE-AUTHOR smells (pin down_revision / restructure to a round-trip / pin the schema-diff --against baseline)", () => {
     expect([...AUTHOR_LAYER_TEST_SMELLS].sort()).toEqual(
-      ["migration-marker-presence", "relative-migration-revision", "reversible-invariant-round-trip"],
+      ["relative-migration-revision", "reversible-invariant-round-trip", "unpinned-schema-diff-baseline"],
     );
   });
-  it("excludes the surgically Driver-fixable smells (they stay on the assess->repair path)", () => {
-    for (const surgical of ["loose-locator", "delete-teardown", "broad-integrity-except", "vi-mock-tdz", "fixed-key-e2e", "whole-table-aggregate"] as const) {
+  it("excludes the surgically Driver-fixable smells, INCLUDING migration-marker-presence (adding @pytest.mark.migration is a mechanical marker edit that greens the verify, so it must not HIL-stop the drive)", () => {
+    for (const surgical of ["loose-locator", "delete-teardown", "broad-integrity-except", "vi-mock-tdz", "fixed-key-e2e", "whole-table-aggregate", "migration-marker-presence"] as const) {
       expect(AUTHOR_LAYER_TEST_SMELLS.has(surgical)).toBe(false);
     }
+  });
+});
+
+describe("checkTestSmells: unpinned-schema-diff-baseline (topology-dependent parent-aware diff)", () => {
+  it("flags a verify test that runs lakebase-schema-diff with no --against baseline (the F6/S3 T44 class)", () => {
+    const dir = mkProject();
+    write(dir, "tests/test_s3_contract_drop.py",
+      `import subprocess, os\n` +
+      `out = subprocess.run([root/"scripts"/"lk", "lakebase-schema-diff",\n` +
+      `  "--instance", inst, "--branch", os.environ["LAKEBASE_BRANCH_ID"], "--format", "markdown"],\n` +
+      `  capture_output=True, text=True, check=True).stdout\n` +
+      `assert any("tracking_code" in l for l in out.splitlines())\n`);
+    const r = checkTestSmells({ projectDir: dir });
+    expect(r.violations.some((v) => v.smell === "unpinned-schema-diff-baseline")).toBe(true);
+    expect(r.violations.find((v) => v.smell === "unpinned-schema-diff-baseline")!.detail).toMatch(/--against/);
+    expect(AUTHOR_LAYER_TEST_SMELLS.has("unpinned-schema-diff-baseline")).toBe(true); // re-author, not a driver repair
+  });
+
+  it("does NOT flag a schema-diff invocation that pins a fixed --against baseline", () => {
+    const dir = mkProject();
+    write(dir, "tests/test_s3_contract_drop.py",
+      `import subprocess\n` +
+      `out = subprocess.run([root/"scripts"/"lk", "lakebase-schema-diff",\n` +
+      `  "--instance", inst, "--branch", branch, "--against", "main", "--format", "markdown"],\n` +
+      `  capture_output=True, text=True, check=True).stdout\n` +
+      `assert any("tracking_code" in l for l in out.splitlines())\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "unpinned-schema-diff-baseline")).toBe(false);
+  });
+
+  it("does NOT flag a test that never invokes the schema-diff tool", () => {
+    const dir = mkProject();
+    write(dir, "tests/test_schema.py", `cols = inspect(engine).get_columns("stock_records")\nassert "tracking_code" not in [c["name"] for c in cols]\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "unpinned-schema-diff-baseline")).toBe(false);
   });
 });

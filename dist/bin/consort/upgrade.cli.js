@@ -420,6 +420,29 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
       removedRootFiles.push("playwright.config.ts");
     }
   }
+  const reporterFiles = [];
+  try {
+    const scmProj = [
+      path5.join(kitDir, "node_modules", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
+      path5.join(kitDir, "..", "lakebase-scm-utils", "templates", "project"),
+      path5.join(kitDir, "..", "..", "@databricks-solutions", "lakebase-scm-utils", "templates", "project")
+    ].find((c2) => fs5.existsSync(c2));
+    if (!scmProj) throw new Error("scm-utils templates not found");
+    const refreshReporter = (srcRel, destRel) => {
+      const src = path5.join(scmProj, srcRel);
+      const dest = path5.join(projectDir, destRel);
+      if (!fs5.existsSync(src) || !fs5.existsSync(path5.dirname(dest))) return;
+      try {
+        fs5.copyFileSync(src, dest);
+        reporterFiles.push(destRel);
+      } catch {
+      }
+    };
+    refreshReporter(path5.join("common", "tests", "e2e", "conftest.py"), path5.join("tests", "e2e", "conftest.py"));
+    const isPython = fs5.existsSync(path5.join(projectDir, "pyproject.toml")) || fs5.existsSync(path5.join(projectDir, "requirements.txt"));
+    if (isPython) refreshReporter(path5.join("python", "tests", "conftest.py"), path5.join("tests", "conftest.py"));
+  } catch {
+  }
   const substrate = resolveSubstrateVersion(kitDir);
   if (substrate) {
     substituteWorkflowVersion(workflowsDir, substrate);
@@ -448,7 +471,7 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
   } catch {
   }
   const count = (files) => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
-  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e };
+  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e, reporterFiles };
 }
 var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
 function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], removedPaths = [], git = (a) => {
@@ -565,7 +588,7 @@ async function main() {
   }
   const pin = pinBoth(args.projectDir, ref);
   const surf = refreshSurface(args.projectDir, kitRoot(), target);
-  const committed = commitRefreshedSurface(args.projectDir, ref, surf.rootFiles, surf.removedRootFiles);
+  const committed = commitRefreshedSurface(args.projectDir, ref, [...surf.rootFiles, ...surf.reporterFiles], surf.removedRootFiles);
   process.stdout.write(
     `consort-upgrade: UPGRADED to ${ref}.
   pins: .local ${pin.previousLocal ?? "(unset)"} -> ${ref}; committed ${pin.previousCommitted ?? "(unset)"} -> ${ref} (in lockstep, no drift).
