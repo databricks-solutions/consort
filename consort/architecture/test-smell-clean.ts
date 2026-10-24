@@ -56,22 +56,33 @@ export type TestSmellName =
   | "pytest-bdd-parse-conversion"
   | "dropped-column-dangling-reference"
   | "component-test-mock"
-  | "dsn-inline-credentials";
+  | "dsn-inline-credentials"
+  | "unpinned-schema-diff-baseline";
 
-/** The migration-reversibility test-smell classes that CANNOT be closed by a surgical
- *  Driver repair (narrow a catch, drop a teardown): they require RE-AUTHORING the
- *  migration test's downgrade/upgrade mechanics (explicit `down_revision`, a round-trip,
- *  `@pytest.mark.migration`), which a Driver code-repair cannot do. A green-failure
- *  carrying one of these escalates to the test's AUTHOR (HIL) on the first failure
- *  instead of burning bounded assess->repair rounds that can never green it (the churn
- *  observed when a reversible-invariant-round-trip smell looped driver-repair). The rest
- *  of the issue #199 catalog (loose-locator, delete-teardown, broad-integrity-except,
- *  vi-mock-tdz, fixed-key-e2e, whole-table-aggregate) IS surgically Driver-fixable and
- *  stays on the assess->repair path. */
+/** Test-smell classes that CANNOT be closed by a surgical Driver repair (narrow a catch,
+ *  drop a teardown): they require RE-AUTHORING the test's mechanics, which a Driver
+ *  code-repair cannot do. Two are migration-reversibility shapes (explicit `down_revision`,
+ *  a round-trip); one is a topology-dependent schema-diff assertion (pin a fixed baseline).
+ *  A green-failure carrying one of these escalates to the test's AUTHOR (HIL) on the first
+ *  failure instead of burning bounded assess->repair rounds that can never green it (the churn
+ *  observed when a reversible-invariant-round-trip smell looped driver-repair). They
+ *  need the test RE-AUTHORED (pin the migration's own down_revision; restructure into a
+ *  round-trip; pin the schema-diff `--against` baseline) — a mechanical edit cannot do it.
+ *  The rest of the issue #199 catalog
+ *  (loose-locator, delete-teardown, broad-integrity-except, vi-mock-tdz, fixed-key-e2e,
+ *  whole-table-aggregate, AND migration-marker-presence) IS surgically Driver-fixable and
+ *  stays on the assess->repair path: adding `@pytest.mark.migration` to the schema-mutating
+ *  scenarios is a mechanical marker edit that greens the verify (it routes the test to its
+ *  own ephemeral branch), so it must NOT HIL-stop the drive. */
 export const AUTHOR_LAYER_TEST_SMELLS: ReadonlySet<TestSmellName> = new Set<TestSmellName>([
-  "migration-marker-presence",
   "relative-migration-revision",
   "reversible-invariant-round-trip",
+  // A schema-diff assertion that depends on branch topology (no pinned --against baseline) can never
+  // be greened by a code repair — the verify branch's parent is already migrated, so the diff is
+  // empty regardless of the product. It needs the test RE-AUTHORED (pin a fixed baseline, or assert
+  // the migration's own before/after on an isolated branch), so it escalates to the AUTHOR on the
+  // first failure instead of burning assess->repair rounds (the F6/S3 T44 class).
+  "unpinned-schema-diff-baseline",
 ]);
 
 export interface TestSmellViolation {
@@ -180,6 +191,8 @@ const SMELL_FIX: Record<TestSmellName, string> = {
     "a client COMPONENT test (client/**/*.test.tsx) MOCKS the data path (a stubbed/spied/assigned global `fetch`, MSW, or a `vi.mock` of the app's api/service/http module). Kit principle: NEVER mock when a real counterpart exists — a component that talks to the backend in production must talk to the REAL backend in test. The vitest harness boots a real backend (vitest.globalSetup.ts) and the fetch shim (tests/setup.ts) routes `/api` to it, so render the component and let its real `/api` calls hit the live service against the paired-branch DB; assert on what comes back. Remove the mock. (A clock — vi.useFakeTimers — or a genuinely third-party module with no real counterpart stays allowed.)",
   "dsn-inline-credentials":
     "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example — a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) — matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine — not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
+  "unpinned-schema-diff-baseline":
+    "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head — the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged.",
 };
 
 /** The upgrade()-path body of an alembic migration (forward operations only) –
@@ -654,6 +667,26 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
           1,
           "(file)",
           `asserts ${col ? `'${col[1]}'` : "a named column"} absent after a relative 'downgrade -N' – pin the migration's own revision (down_revision + revision), not -N/head`,
+        );
+      }
+
+      // unpinned-schema-diff-baseline (file level): a verify/build test that shells out to the
+      // parent-aware `lakebase-schema-diff` (CLI or MCP) WITHOUT a pinned --against/--comparison-branch.
+      // With no baseline the CLI resolves the comparison branch from metadata = the branch's OWN parent
+      // (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the
+      // experiment branch, whose parent is ALREADY migrated to head, so the parent-aware diff is EMPTY
+      // and an assertion that it lists a column added/removed can never pass by any product change — the
+      // outcome depends on branch topology, not code (the F6/S3 T44 class). Requires the diff invocation
+      // WITHOUT a pinned baseline so a correctly-pinned (`--against <ref>`) diff is never flagged.
+      const invokesSchemaDiff = /lakebase-schema-diff|lakebase_schema_diff/.test(body);
+      const pinsSchemaDiffBaseline = /--against\b|--comparison-branch\b|comparisonBranch\b/.test(body);
+      if (invokesSchemaDiff && !pinsSchemaDiffBaseline) {
+        push(
+          "unpinned-schema-diff-baseline",
+          rel,
+          1,
+          "(file)",
+          "runs lakebase-schema-diff with no --against baseline (the verify branch's parent is already migrated → empty diff)",
         );
       }
 

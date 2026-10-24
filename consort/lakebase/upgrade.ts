@@ -154,6 +154,7 @@ export interface RefreshSurfaceResult {
   scripts: number; // kit-owned scripts copied
   workflows: number; // CI workflow files copied
   e2e: boolean; // whether the Playwright E2E block was (re)wired into run-tests.sh (UI projects)
+  reporterFiles: string[]; // kit-owned per-test REPORTER files refreshed from the pinned scm-utils (tests/conftest.py, tests/e2e/conftest.py)
 }
 
 /** Count the files (recursively) under `dir`, or 0 if it does not exist. */
@@ -299,6 +300,46 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
       removedRootFiles.push("playwright.config.ts");
     }
   }
+  // Kit-owned per-test REPORTER conftests (tests/conftest.py + tests/e2e/conftest.py) live in the
+  // scm-utils LANGUAGE/common templates, NOT consort's common/ bundle — so refreshSurface never
+  // touched them and a reporter fix (the cross-feature owner-resolution; the _is_up narrow-except)
+  // reached FRESH scaffolds but never an UPGRADED project. Refresh them FROM the installed scm-utils
+  // templates (this kit's pinned version), treating them as kit-owned surface like consort-capture.ts
+  // (force-overwrite). Resolve the scm-utils templates by node module resolution from kitDir (never a
+  // guessed node_modules layout). GUARDED: only refresh a conftest whose target dir already exists, so
+  // a project without tests/ or tests/e2e/ never gets a stray file. Best-effort; a failure here must
+  // never abort the surface refresh.
+  const reporterFiles: string[] = [];
+  try {
+    // Locate the installed scm-utils templates by existsSync candidate paths (portable across the
+    // CJS + ESM bundles tsup emits — no require.resolve / import.meta): nested under the kit, hoisted
+    // as a sibling in @databricks-solutions/, or one level up.
+    const scmProj = [
+      path.join(kitDir, "node_modules", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
+      path.join(kitDir, "..", "lakebase-scm-utils", "templates", "project"),
+      path.join(kitDir, "..", "..", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
+    ].find((c) => fs.existsSync(c));
+    if (!scmProj) throw new Error("scm-utils templates not found");
+    const refreshReporter = (srcRel: string, destRel: string): void => {
+      const src = path.join(scmProj, srcRel);
+      const dest = path.join(projectDir, destRel);
+      if (!fs.existsSync(src) || !fs.existsSync(path.dirname(dest))) return;
+      try {
+        fs.copyFileSync(src, dest);
+        reporterFiles.push(destRel);
+      } catch {
+        /* best-effort: one unreadable reporter file must not abort the refresh */
+      }
+    };
+    // e2e readiness conftest (common across languages) — only when the project has tests/e2e/.
+    refreshReporter(path.join("common", "tests", "e2e", "conftest.py"), path.join("tests", "e2e", "conftest.py"));
+    // Main per-test reporter conftest (language-specific) — Python projects.
+    const isPython =
+      fs.existsSync(path.join(projectDir, "pyproject.toml")) || fs.existsSync(path.join(projectDir, "requirements.txt"));
+    if (isPython) refreshReporter(path.join("python", "tests", "conftest.py"), path.join("tests", "conftest.py"));
+  } catch {
+    /* scm-utils templates not resolvable from this kit (dev checkout) — skip; fresh scaffolds still carry the fix */
+  }
   // Substitute the scaffold-time {{LAKEBASE_SCM_UTILS_VERSION}} placeholder the raw copies above
   // just shipped verbatim – leaving the literal breaks the CI ref's bash expansion (workflows)
   // AND the post-checkout/setup-federation scripts' `scm-utils/<version>` connection label. The
@@ -350,7 +391,7 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
     /* best-effort: the drive's resyncAgentsOnKitDrift will refresh again if the marker is stale */
   }
   const count = (files: Array<{ outcome: string }>): number => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
-  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e };
+  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e, reporterFiles };
 }
 
 /** The kit-owned tracked paths refreshSurface + pinBoth rewrite. Committed by EXACT path so the

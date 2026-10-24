@@ -941,6 +941,46 @@ describe("ensureDeployedAndVerify: migration-isolation two-pass (Python)", () =>
     expect(markers).toEqual(["not migration", "migration"]); // full pass, same as undefined (refactor/deploy)
   });
 
+  it("SCOPE: threads storyTestIds to the verify as SFTDD_TEST_IDS (per-cycle scope); omits it when not given (full)", async () => {
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname = 'x'\n");
+    // per-cycle GREEN: storyTestIds supplied -> the verify env carries SFTDD_TEST_IDS (conftest scopes to them)
+    const scopedEnvs: (string | undefined)[] = [];
+    await ensureDeployedAndVerify({
+      projectDir: dir,
+      targetName: "localv",
+      storyTestIds: ["T43", "T44", "T45"],
+      cycleTouchedMigrations: false, // keep it to one pass for the assertion
+      startProcess: () => 4242,
+      reachable: async () => true,
+      runVerify: (_cmd, _cwd, env) => {
+        scopedEnvs.push(env?.SFTDD_TEST_IDS);
+        return true;
+      },
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(scopedEnvs.every((v) => v === "T43 T44 T45")).toBe(true); // scoped to the story's ids
+
+    // refactor/deploy: no storyTestIds -> SFTDD_TEST_IDS unset -> the full cross-story suite runs
+    const fullEnvs: (string | undefined)[] = [];
+    await ensureDeployedAndVerify({
+      projectDir: dir,
+      targetName: "localv",
+      cycleTouchedMigrations: false,
+      startProcess: () => 4242,
+      reachable: async () => true,
+      runVerify: (_cmd, _cwd, env) => {
+        fullEnvs.push(env?.SFTDD_TEST_IDS);
+        return true;
+      },
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(fullEnvs.every((v) => v === undefined)).toBe(true); // unscoped => full suite
+  });
+
   it("a non-Python project keeps ONE full pass (no marker split, no double run)", async () => {
     const markers: string[] = [];
     const res = await ensureDeployedAndVerify({
@@ -1039,6 +1079,104 @@ describe("ensureDeployedAndVerify: client Vitest pass on Python + client (Findin
     });
     expect(res.passed).toBe(true);
     expect(clientOnlySeen).toEqual([]);
+  });
+});
+
+// Per-cycle server SCOPE (waste elimination): the uvicorn serving app is needed ONLY for the client
+// Vitest (real backend) + Playwright E2E — backend pytest is in-process. A per-cycle GREEN whose story
+// has NO client/component/e2e test (storyHasClientTests=false) skips the server start/poll/stop AND the
+// client pass, running the backend passes alone. Only for Python; only an explicit false skips.
+describe("ensureDeployedAndVerify: backend-only server skip (storyHasClientTests=false)", () => {
+  function fastClock() {
+    let t = 0;
+    return () => new Date((t += 200));
+  }
+  function stagePythonClient(d: string): void {
+    writeFileSync(join(d, "pyproject.toml"), "[project]\nname = 'x'\n");
+    mkdirSync(join(d, "client"), { recursive: true });
+    writeFileSync(join(d, "client", "package.json"), "{}\n");
+  }
+
+  it("SKIPS the server start + the client pass for a pure backend story (no client/E2E tests)", async () => {
+    stagePythonClient(dir); // a client/ workspace EXISTS, yet the story has no client test
+    let started = 0;
+    const clientOnlySeen: string[] = [];
+    const markers: string[] = [];
+    const res = await ensureDeployedAndVerify({
+      projectDir: dir,
+      targetName: "localv",
+      storyHasClientTests: false, // pure backend/migration story
+      cycleTouchedMigrations: false, // keep backend to one pass for the assertion
+      startProcess: () => {
+        started += 1;
+        return 4242;
+      },
+      reachable: async () => true,
+      runVerify: (_cmd, _cwd, env) => {
+        markers.push(env?.SFTDD_PYTEST_MARKER ?? "<unset>");
+        if (env?.SFTDD_CLIENT_ONLY) clientOnlySeen.push(env.SFTDD_CLIENT_ONLY);
+        return true;
+      },
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(res.passed).toBe(true);
+    expect(started).toBe(0); // server never started — backend is in-process
+    expect(res.reachable).toBe(false); // no server to be reachable
+    expect(res.summary).toMatch(/backend-only/i);
+    expect(clientOnlySeen).toEqual([]); // the client pass was skipped
+    expect(markers).toEqual(["not migration"]); // only the backend pass ran
+  });
+
+  it("STARTS the server + runs the client pass when the story HAS client tests (storyHasClientTests=true)", async () => {
+    stagePythonClient(dir);
+    let started = 0;
+    const clientOnlySeen: string[] = [];
+    const res = await ensureDeployedAndVerify({
+      projectDir: dir,
+      targetName: "localv",
+      storyHasClientTests: true,
+      cycleTouchedMigrations: false,
+      startProcess: () => {
+        started += 1;
+        return 4242;
+      },
+      reachable: async () => true,
+      runVerify: (_cmd, _cwd, env) => {
+        if (env?.SFTDD_CLIENT_ONLY) clientOnlySeen.push(env.SFTDD_CLIENT_ONLY);
+        return true;
+      },
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(res.passed).toBe(true);
+    expect(started).toBe(1); // server started
+    expect(res.reachable).toBe(true);
+    expect(clientOnlySeen).toEqual(["1"]); // the client pass ran
+  });
+
+  it("IGNORES storyHasClientTests=false for a non-Python project (always starts the server)", async () => {
+    // no pyproject.toml / requirements.txt — the backend-is-in-process assumption does not hold
+    let started = 0;
+    const res = await ensureDeployedAndVerify({
+      projectDir: dir,
+      targetName: "localv",
+      storyHasClientTests: false,
+      startProcess: () => {
+        started += 1;
+        return 4242;
+      },
+      reachable: async () => true,
+      runVerify: () => true,
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(res.passed).toBe(true);
+    expect(started).toBe(1); // non-Python keeps the full serve + single pass
+    expect(res.reachable).toBe(true);
   });
 });
 

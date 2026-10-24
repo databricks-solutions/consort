@@ -900,6 +900,19 @@ export interface CycleVerifyArgs {
    *  run at the story-close REFACTOR + feature-deploy gates (which leave this `undefined`). FAIL-SAFE:
    *  only an explicit `false` skips it — `undefined` (refactor/deploy, or detection failed) runs it. */
   cycleTouchedMigrations?: boolean;
+  /** Per-cycle SCOPE: the CURRENT story's test ids. When set (a per-cycle GREEN verify), the pytest
+   *  conftest hook runs ONLY these ids (the story's own tests) instead of every feature's suite, so a
+   *  cycle re-verifies its own story (intra-story regressions caught) and the full cross-story suite
+   *  runs at the unscoped REFACTOR + feature-deploy gates. Undefined there => full run. */
+  storyTestIds?: string[];
+  /** Per-cycle server SCOPE (waste elimination): whether the CURRENT story has any client/component/e2e
+   *  test. The uvicorn serving app is needed ONLY for the client Vitest (real backend over /api) + the
+   *  Playwright E2E; the backend pytest passes run in-process (TestClient + direct DB). So when this is
+   *  explicitly `false` (a pure backend/migration story, Python only) the per-cycle GREEN runs the
+   *  backend passes alone and SKIPS the server start/poll/stop AND the client pass. FAIL-SAFE: only an
+   *  explicit `false` skips — `undefined` (REFACTOR + feature-deploy gates, a client story, or a
+   *  non-Python project) starts the server and runs the client pass as before. */
+  storyHasClientTests?: boolean;
   startProcess?: (cmd: string, cwd: string, env?: NodeJS.ProcessEnv) => number;
   reachable?: (url: string) => Promise<boolean>;
   runVerify?: (cmd: string, cwd: string, env?: NodeJS.ProcessEnv) => boolean | { passed: boolean; output?: string };
@@ -948,47 +961,6 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
   const start = args.startProcess ?? defaultStart;
   const runVerify = args.runVerify ?? defaultRunVerify;
   const stop = args.stop ?? ((pd, tn) => void stopLocal(pd, tn));
-  // Deploy-during-build serves a FRESH app on THIS turn's code. Every build turn
-  // overlays new code, so we do NOT reuse a running app (it would serve stale
-  // code). Stop any prior instance first – that also frees the port, so a
-  // `uvicorn --reload` caught mid-reload can't cause a double-bind race – then
-  // start fresh, poll until reachable, run verify, and ALWAYS stop after, so
-  // nothing lingers on the port between turns or after the run.
-  stop(args.projectDir, targetName);
-  // Then pick a FREE port: bump off any FOREIGN listener still holding the configured one
-  // (a stale uvicorn/vite, another project) so a busy :8000 RELOCATES the build's verify
-  // instead of halting it — the run-dev.sh / CI (E2E_BACKEND_PORT) rule, move-not-kill. One
-  // port flows to the served app (PORT/E2E_BACKEND_PORT), the health poll, and the verify's
-  // Playwright — the E2E AND the UX-adherence check both read BASE_URL.
-  const { baseUrl: serveUrl, port: servePort } = await resolveServeBaseUrl(cfg.baseUrl, reachable);
-  const url = serveUrl + cfg.healthPath;
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    BASE_URL: serveUrl,
-    PORT: String(servePort),
-    E2E_BACKEND_PORT: String(servePort),
-    ...(args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {}),
-    ...(args.cycleLayer ? { CONSORT_CYCLE_LAYER: args.cycleLayer } : {}),
-  };
-  const pid = start(cfg.run, args.projectDir, env);
-  const pf = pidFile(args.projectDir, targetName);
-  mkdirSync(dirname(pf), { recursive: true });
-  writeFileSync(pf, String(pid));
-  const poll = await pollUntil<boolean>({
-    probe: async () => ((await reachable(url)) ? { done: true, value: true } : { done: false }),
-    timeoutMs: cfg.readyTimeoutSeconds * 1000,
-    intervalMs: 1000,
-    sleep: args.sleep,
-    now: args.now,
-  });
-  if (poll.outcome !== "done") {
-    stop(args.projectDir, targetName);
-    return {
-      passed: false,
-      reachable: false,
-      summary: `app not reachable at ${url} after ${cfg.readyTimeoutSeconds}s; cannot run GREEN verify`,
-    };
-  }
   const nowFn = args.now ?? (() => new Date());
   // Python projects split the verify across TWO isolated ephemeral branches: the
   // main pass runs `not migration`, then the `migration`-marked reversibility
@@ -998,6 +970,64 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
   // they keep the single full pass (no double run).
   const isPython =
     existsSync(join(args.projectDir, "pyproject.toml")) || existsSync(join(args.projectDir, "requirements.txt"));
+  // Per-cycle server SCOPE (waste elimination): the uvicorn serving app is needed ONLY for the client
+  // Vitest (real backend over /api) + the Playwright E2E — the backend pytest passes run in-process
+  // (TestClient + direct DB, DATABASE_URL-pinned). So a per-cycle GREEN whose current story has NO
+  // client/component/e2e test (storyHasClientTests === false) runs the backend passes alone and skips
+  // the server start/poll/stop AND the client pass. ONLY for Python (where the backend is known
+  // in-process); every other project, and an undefined flag (REFACTOR + feature-deploy gates, a client
+  // story), starts the server and runs the full pass as before.
+  const serveNeeded = !isPython || args.storyHasClientTests !== false;
+  // One env flows to the served app AND the verify. BASE_URL/PORT are added only when a server is
+  // started (the backend passes read DATABASE_URL, never BASE_URL); the per-cycle scope + branch vars
+  // always flow. Per-cycle SCOPE (waste elimination): SFTDD_TEST_IDS makes run-tests.sh's conftest hook
+  // run only THIS story's tests per cycle instead of every feature's suite; the story-close REFACTOR +
+  // feature-deploy verify leave it unset => the FULL cross-story suite runs there.
+  const baseEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...(args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {}),
+    ...(args.cycleLayer ? { CONSORT_CYCLE_LAYER: args.cycleLayer } : {}),
+    ...(args.storyTestIds && args.storyTestIds.length > 0 ? { SFTDD_TEST_IDS: args.storyTestIds.join(" ") } : {}),
+  };
+  let env: NodeJS.ProcessEnv = baseEnv;
+  let serverReachable = false;
+  if (serveNeeded) {
+    // Deploy-during-build serves a FRESH app on THIS turn's code. Every build turn
+    // overlays new code, so we do NOT reuse a running app (it would serve stale
+    // code). Stop any prior instance first – that also frees the port, so a
+    // `uvicorn --reload` caught mid-reload can't cause a double-bind race – then
+    // start fresh, poll until reachable, run verify, and ALWAYS stop after, so
+    // nothing lingers on the port between turns or after the run.
+    stop(args.projectDir, targetName);
+    // Then pick a FREE port: bump off any FOREIGN listener still holding the configured one
+    // (a stale uvicorn/vite, another project) so a busy :8000 RELOCATES the build's verify
+    // instead of halting it — the run-dev.sh / CI (E2E_BACKEND_PORT) rule, move-not-kill. One
+    // port flows to the served app (PORT/E2E_BACKEND_PORT), the health poll, and the verify's
+    // Playwright — the E2E AND the UX-adherence check both read BASE_URL.
+    const { baseUrl: serveUrl, port: servePort } = await resolveServeBaseUrl(cfg.baseUrl, reachable);
+    const url = serveUrl + cfg.healthPath;
+    env = { ...baseEnv, BASE_URL: serveUrl, PORT: String(servePort), E2E_BACKEND_PORT: String(servePort) };
+    const pid = start(cfg.run, args.projectDir, env);
+    const pf = pidFile(args.projectDir, targetName);
+    mkdirSync(dirname(pf), { recursive: true });
+    writeFileSync(pf, String(pid));
+    const poll = await pollUntil<boolean>({
+      probe: async () => ((await reachable(url)) ? { done: true, value: true } : { done: false }),
+      timeoutMs: cfg.readyTimeoutSeconds * 1000,
+      intervalMs: 1000,
+      sleep: args.sleep,
+      now: args.now,
+    });
+    if (poll.outcome !== "done") {
+      stop(args.projectDir, targetName);
+      return {
+        passed: false,
+        reachable: false,
+        summary: `app not reachable at ${url} after ${cfg.readyTimeoutSeconds}s; cannot run GREEN verify`,
+      };
+    }
+    serverReachable = true;
+  }
   let passed: boolean;
   let migrationFailed = false;
   let clientFailed = false;
@@ -1063,7 +1093,7 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
       // branch / instance to fork from (opt-out stays LAKEBASE_CONSORT_EPHEMERAL_VERIFY=0).
       // A failing client/E2E test refuses GREEN. Only when a client/ workspace exists.
       const clientRun =
-        backendPassed && hasClientWorkspace(args.projectDir)
+        backendPassed && serveNeeded && hasClientWorkspace(args.projectDir)
           ? await runVerifyMaybeEphemeral(
               runVerify,
               cfg.verify,
@@ -1095,7 +1125,13 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
     stop(args.projectDir, targetName); // never leave the app on the port
   }
   if (passed) {
-    return { passed, reachable: true, summary: "GREEN verify passed against the running app" };
+    return {
+      passed,
+      reachable: serverReachable,
+      summary: serveNeeded
+        ? "GREEN verify passed against the running app"
+        : "GREEN verify passed (backend-only story: no client/E2E tests, server not started)",
+    };
   }
   // The verify failed. Run the cheap, model-independent E2E regex lint so the
   // failure (and the HIL escalation it raises) names a known structural cause
@@ -1114,7 +1150,7 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
   // Carry the failing pass's captured output (bounded) so the ASSESS turn starts from the real
   // failure lines. Tail-bounded: the last ~4000 chars hold the failing node-ids + top error.
   const failureOutput = failOut ? failOut.slice(-4000) : undefined;
-  return { passed, reachable: true, summary, ...(failureOutput ? { failureOutput } : {}) };
+  return { passed, reachable: serverReachable, summary, ...(failureOutput ? { failureOutput } : {}) };
 }
 
 /** Tear down a previously-deployed local target (kills its process group). */

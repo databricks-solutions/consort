@@ -10098,38 +10098,43 @@ async function ensureDeployedAndVerify(args) {
   const start = args.startProcess ?? defaultStart;
   const runVerify = args.runVerify ?? defaultRunVerify;
   const stop = args.stop ?? ((pd, tn) => void stopLocal(pd, tn));
-  stop(args.projectDir, targetName);
-  const { baseUrl: serveUrl, port: servePort } = await resolveServeBaseUrl(cfg.baseUrl, reachable);
-  const url = serveUrl + cfg.healthPath;
-  const env = {
-    ...process.env,
-    BASE_URL: serveUrl,
-    PORT: String(servePort),
-    E2E_BACKEND_PORT: String(servePort),
-    ...args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {},
-    ...args.cycleLayer ? { CONSORT_CYCLE_LAYER: args.cycleLayer } : {}
-  };
-  const pid = start(cfg.run, args.projectDir, env);
-  const pf = pidFile(args.projectDir, targetName);
-  mkdirSync10(dirname8(pf), { recursive: true });
-  writeFileSync11(pf, String(pid));
-  const poll = await pollUntil({
-    probe: async () => await reachable(url) ? { done: true, value: true } : { done: false },
-    timeoutMs: cfg.readyTimeoutSeconds * 1e3,
-    intervalMs: 1e3,
-    sleep: args.sleep,
-    now: args.now
-  });
-  if (poll.outcome !== "done") {
-    stop(args.projectDir, targetName);
-    return {
-      passed: false,
-      reachable: false,
-      summary: `app not reachable at ${url} after ${cfg.readyTimeoutSeconds}s; cannot run GREEN verify`
-    };
-  }
   const nowFn = args.now ?? (() => /* @__PURE__ */ new Date());
   const isPython = existsSync16(join16(args.projectDir, "pyproject.toml")) || existsSync16(join16(args.projectDir, "requirements.txt"));
+  const serveNeeded = !isPython || args.storyHasClientTests !== false;
+  const baseEnv = {
+    ...process.env,
+    ...args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {},
+    ...args.cycleLayer ? { CONSORT_CYCLE_LAYER: args.cycleLayer } : {},
+    ...args.storyTestIds && args.storyTestIds.length > 0 ? { SFTDD_TEST_IDS: args.storyTestIds.join(" ") } : {}
+  };
+  let env = baseEnv;
+  let serverReachable = false;
+  if (serveNeeded) {
+    stop(args.projectDir, targetName);
+    const { baseUrl: serveUrl, port: servePort } = await resolveServeBaseUrl(cfg.baseUrl, reachable);
+    const url = serveUrl + cfg.healthPath;
+    env = { ...baseEnv, BASE_URL: serveUrl, PORT: String(servePort), E2E_BACKEND_PORT: String(servePort) };
+    const pid = start(cfg.run, args.projectDir, env);
+    const pf = pidFile(args.projectDir, targetName);
+    mkdirSync10(dirname8(pf), { recursive: true });
+    writeFileSync11(pf, String(pid));
+    const poll = await pollUntil({
+      probe: async () => await reachable(url) ? { done: true, value: true } : { done: false },
+      timeoutMs: cfg.readyTimeoutSeconds * 1e3,
+      intervalMs: 1e3,
+      sleep: args.sleep,
+      now: args.now
+    });
+    if (poll.outcome !== "done") {
+      stop(args.projectDir, targetName);
+      return {
+        passed: false,
+        reachable: false,
+        summary: `app not reachable at ${url} after ${cfg.readyTimeoutSeconds}s; cannot run GREEN verify`
+      };
+    }
+    serverReachable = true;
+  }
   let passed;
   let migrationFailed = false;
   let clientFailed = false;
@@ -10161,7 +10166,7 @@ async function ensureDeployedAndVerify(args) {
       if (mainPassed && !migPassed) failOut = migRun.output;
       migrationFailed = mainPassed && !migPassed;
       const backendPassed = mainPassed && migPassed;
-      const clientRun = backendPassed && hasClientWorkspace(args.projectDir) ? await runVerifyMaybeEphemeral(
+      const clientRun = backendPassed && serveNeeded && hasClientWorkspace(args.projectDir) ? await runVerifyMaybeEphemeral(
         runVerify,
         cfg.verify,
         args.projectDir,
@@ -10191,13 +10196,17 @@ async function ensureDeployedAndVerify(args) {
     stop(args.projectDir, targetName);
   }
   if (passed) {
-    return { passed, reachable: true, summary: "GREEN verify passed against the running app" };
+    return {
+      passed,
+      reachable: serverReachable,
+      summary: serveNeeded ? "GREEN verify passed against the running app" : "GREEN verify passed (backend-only story: no client/E2E tests, server not started)"
+    };
   }
   const regexLint = checkE2eRegexClean({ projectDir: args.projectDir });
   const base = migrationFailed ? "GREEN verify FAILED on the migration pass (the migration-marked reversibility test failed on its own isolated branch)" : clientFailed ? "GREEN verify FAILED on the client pass (the client Vitest suite failed; the backend suite passed)" : "GREEN verify FAILED against the running app";
   const summary = regexLint.clean ? base : `${base}: e2e-inline-regex-flag \u2013 ${summarizeE2eRegexViolations(regexLint.violations)}. ${E2E_REGEX_REMEDIATION}`;
   const failureOutput = failOut ? failOut.slice(-4e3) : void 0;
-  return { passed, reachable: true, summary, ...failureOutput ? { failureOutput } : {} };
+  return { passed, reachable: serverReachable, summary, ...failureOutput ? { failureOutput } : {} };
 }
 function stopLocal(projectDir, targetName) {
   const pf = pidFile(projectDir, targetName);
@@ -11134,9 +11143,14 @@ import { existsSync as existsSync24, readFileSync as readFileSync24, readdirSync
 import { join as join24, relative as relative3, extname as extname3 } from "path";
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 var AUTHOR_LAYER_TEST_SMELLS = /* @__PURE__ */ new Set([
-  "migration-marker-presence",
   "relative-migration-revision",
-  "reversible-invariant-round-trip"
+  "reversible-invariant-round-trip",
+  // A schema-diff assertion that depends on branch topology (no pinned --against baseline) can never
+  // be greened by a code repair — the verify branch's parent is already migrated, so the diff is
+  // empty regardless of the product. It needs the test RE-AUTHORED (pin a fixed baseline, or assert
+  // the migration's own before/after on an isolated branch), so it escalates to the AUTHOR on the
+  // first failure instead of burning assess->repair rounds (the F6/S3 T44 class).
+  "unpinned-schema-diff-baseline"
 ]);
 var DEFAULT_TEST_DIRS2 = ["tests", "client/tests"];
 var DEFAULT_MIGRATION_DIRS4 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
@@ -11209,7 +11223,8 @@ var SMELL_FIX = {
   "pytest-bdd-parse-conversion": "a parse()/parsers.parse() step pattern uses a Python str.format conversion flag (!r / !s / !a); the `parse` library backing pytest-bdd supports the format SPEC ({name:type}) but NOT conversions, so the step text never matches the feature and the step raises StepDefinitionNotFoundError \u2013 the app can never green it. Drop the conversion and quote the value in the pattern instead (e.g. parse('\u2026 \"{name}\"') to match a quoted feature value, or parse('\u2026 {name}') for a bare token), matching how the .feature file writes it",
   "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it",
   "component-test-mock": "a client COMPONENT test (client/**/*.test.tsx) MOCKS the data path (a stubbed/spied/assigned global `fetch`, MSW, or a `vi.mock` of the app's api/service/http module). Kit principle: NEVER mock when a real counterpart exists \u2014 a component that talks to the backend in production must talk to the REAL backend in test. The vitest harness boots a real backend (vitest.globalSetup.ts) and the fetch shim (tests/setup.ts) routes `/api` to it, so render the component and let its real `/api` calls hit the live service against the paired-branch DB; assert on what comes back. Remove the mock. (A clock \u2014 vi.useFakeTimers \u2014 or a genuinely third-party module with no real counterpart stays allowed.)",
-  "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example \u2014 a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) \u2014 matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal."
+  "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example \u2014 a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) \u2014 matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
+  "unpinned-schema-diff-baseline": "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head \u2014 the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged."
 };
 function forwardMigrationRegion(body) {
   const m = body.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
@@ -11511,6 +11526,17 @@ function checkTestSmells(args) {
           `asserts ${col ? `'${col[1]}'` : "a named column"} absent after a relative 'downgrade -N' \u2013 pin the migration's own revision (down_revision + revision), not -N/head`
         );
       }
+      const invokesSchemaDiff = /lakebase-schema-diff|lakebase_schema_diff/.test(body);
+      const pinsSchemaDiffBaseline = /--against\b|--comparison-branch\b|comparisonBranch\b/.test(body);
+      if (invokesSchemaDiff && !pinsSchemaDiffBaseline) {
+        push(
+          "unpinned-schema-diff-baseline",
+          rel,
+          1,
+          "(file)",
+          "runs lakebase-schema-diff with no --against baseline (the verify branch's parent is already migrated \u2192 empty diff)"
+        );
+      }
       const isE2eSpec = isJs && /(^|\/)e2e\/[^/]*\.spec\.(ts|tsx|js|jsx|mjs)$/.test(file.replace(/\\/g, "/"));
       if (isE2eSpec) {
         const hasFill = /\.fill\s*\(/.test(body);
@@ -11701,8 +11727,32 @@ function detectCycleTouchedMigrations(projectDir) {
     return true;
   }
 }
-var defaultGreenVerifier = async ({ projectDir, branchId, cycleLayer, cycleTouchedMigrations }) => {
-  const r = await ensureDeployedAndVerify({ projectDir, lakebaseBranch: branchId, cycleLayer, ...cycleTouchedMigrations !== void 0 ? { cycleTouchedMigrations } : {} });
+function storyTestIdsFor(consortDir, featureId, story) {
+  try {
+    const tl = JSON.parse(readFileSync25(storyTestListJson(consortDir, featureId, story), "utf8"));
+    return (tl.items ?? []).map((it) => it.id).filter((id) => typeof id === "string");
+  } catch {
+    return [];
+  }
+}
+var CLIENT_TEST_KINDS = /* @__PURE__ */ new Set(["client", "component", "e2e"]);
+function storyHasClientTestsFor(consortDir, featureId, story) {
+  try {
+    const tl = JSON.parse(readFileSync25(storyTestListJson(consortDir, featureId, story), "utf8"));
+    return (tl.items ?? []).some((it) => typeof it.kind === "string" && CLIENT_TEST_KINDS.has(it.kind));
+  } catch {
+    return true;
+  }
+}
+var defaultGreenVerifier = async ({ projectDir, branchId, cycleLayer, cycleTouchedMigrations, storyTestIds, storyHasClientTests }) => {
+  const r = await ensureDeployedAndVerify({
+    projectDir,
+    lakebaseBranch: branchId,
+    cycleLayer,
+    ...cycleTouchedMigrations !== void 0 ? { cycleTouchedMigrations } : {},
+    ...storyTestIds && storyTestIds.length > 0 ? { storyTestIds } : {},
+    ...storyHasClientTests !== void 0 ? { storyHasClientTests } : {}
+  });
   return { passed: r.passed, summary: r.summary, ...r.failureOutput ? { failureOutput: r.failureOutput } : {} };
 };
 function greenVerifierForEnv(_env = process.env) {
@@ -11727,7 +11777,19 @@ async function greenOpenCycle(args) {
   };
   const verify = args.verify ?? defaultGreenVerifier;
   const touchedMigrations = detectCycleTouchedMigrations(dirname12(consortDir));
-  let result = await verify({ projectDir: dirname12(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer, cycleTouchedMigrations: touchedMigrations });
+  const scopedIds = storyTestIdsFor(consortDir, featureId, story);
+  const storyHasClientTests = storyHasClientTestsFor(consortDir, featureId, story);
+  let result = await verify({
+    projectDir: dirname12(consortDir),
+    consortDir,
+    featureId,
+    story,
+    branchId: open.branch_id,
+    cycleLayer: open.layer,
+    cycleTouchedMigrations: touchedMigrations,
+    ...scopedIds.length > 0 ? { storyTestIds: scopedIds } : {},
+    storyHasClientTests
+  });
   let testSmellRemediation;
   let authorLayerTestSmell = false;
   if (!result.passed && !consortEnv("REPLAY_BUILD_DIR") && isProvisioningFaultSummary(result.summary)) {
@@ -11799,10 +11861,20 @@ async function greenOpenCycle(args) {
       });
       return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, escalated: true, escalation: escalation2, summary: result.summary };
     }
+    if (testSmellRemediation === void 0) {
+      try {
+        const failSmells = checkTestSmells({ projectDir: dirname12(consortDir) });
+        if (!failSmells.clean && failSmells.remediation) {
+          testSmellRemediation = failSmells.remediation;
+          authorLayerTestSmell = failSmells.violations.some((v) => AUTHOR_LAYER_TEST_SMELLS.has(v.smell));
+        }
+      } catch {
+      }
+    }
     if (authorLayerTestSmell && testSmellRemediation) {
       const escalation2 = writeEscalation(consortDir, {
         source: "test-authoring-smell",
-        reason: `A migration-reversibility test-authoring smell for ${open.test_id} (${open.ac_id}) in ${featureId}/${story} is not Driver-fixable \u2013 the test's AUTHOR must re-author it (an explicit down_revision round-trip), not a code repair. Escalating with the remediation instead of burning assess->repair rounds that cannot green it.
+        reason: `A test-authoring smell for ${open.test_id} (${open.ac_id}) in ${featureId}/${story} is not Driver-fixable \u2013 the test's AUTHOR must RE-AUTHOR it, not a code repair. Escalating with the exact remediation instead of burning assess->repair rounds that cannot green it.
 ${testSmellRemediation}`,
         feature_id: featureId,
         story_id: story,

@@ -170,6 +170,33 @@ describe("refreshSurface – brings agents + commands to the target + stamps the
     expect(existsSync(join(proj, "scripts", "run-tests.sh"))).toBe(true); // kit helper still refreshed
   });
 
+  // Regression: the kit-owned per-test REPORTER conftests (tests/conftest.py + tests/e2e/conftest.py)
+  // live in the scm-utils LANGUAGE/common templates, not consort's common/ bundle, so refreshSurface
+  // never refreshed them — a reporter fix (cross-feature owner-resolution; the _is_up narrow-except)
+  // reached FRESH scaffolds but NEVER an UPGRADED project. refreshSurface must now refresh them FROM
+  // the pinned scm-utils templates, so an upgraded project's dashboard attribution is correct.
+  it("refreshes the per-test reporter conftests from the pinned scm-utils (so a reporter fix reaches an UPGRADED project)", () => {
+    writeFileSync(join(proj, "pyproject.toml"), "[project]\nname = 'x'\n"); // python project
+    mkdirSync(join(proj, "tests", "e2e"), { recursive: true });
+    writeFileSync(join(proj, "tests", "conftest.py"), "# STALE reporter conftest — no owner resolution\n");
+    writeFileSync(join(proj, "tests", "e2e", "conftest.py"), "# STALE e2e readiness conftest\n");
+    const r = refreshSurface(proj, repoRoot, "9.9.9-test");
+    expect(r.reporterFiles).toEqual(
+      expect.arrayContaining([join("tests", "conftest.py"), join("tests", "e2e", "conftest.py")]),
+    );
+    const mainConftest = readFileSync(join(proj, "tests", "conftest.py"), "utf8");
+    expect(mainConftest).not.toContain("STALE reporter conftest"); // overwritten FROM the kit
+    expect(mainConftest).toContain("_consort_test_owner"); // the kit's per-test reporter is now present
+    expect(readFileSync(join(proj, "tests", "e2e", "conftest.py"), "utf8")).not.toContain("STALE e2e readiness");
+  });
+
+  it("does NOT create a stray reporter conftest when the project has no tests/ dir (dest-dir guard)", () => {
+    writeFileSync(join(proj, "pyproject.toml"), "[project]\nname = 'x'\n");
+    const r = refreshSurface(proj, repoRoot, "9.9.9-test"); // no tests/ dir exists
+    expect(r.reporterFiles).not.toContain(join("tests", "conftest.py"));
+    expect(existsSync(join(proj, "tests", "conftest.py"))).toBe(false); // never created a stray tree
+  });
+
   it("moves the SUBSTRATE pin in lockstep: writes .lakebase/scm-utils-ref{,.local} to the version this kit ships", () => {
     // The split-version defect: consort-upgrade bumped only the kit, leaving the local scm-utils
     // pin at the scaffolded/seeded version, so ./scripts/lk kept resolving the OLD substrate (its
