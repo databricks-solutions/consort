@@ -6662,8 +6662,8 @@ var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
 init_cjs_shims();
 var import_node_child_process5 = require("child_process");
 var import_node_crypto2 = require("crypto");
-var import_node_fs9 = require("fs");
-var import_node_path11 = require("path");
+var import_node_fs10 = require("fs");
+var import_node_path12 = require("path");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -6698,7 +6698,7 @@ function findFeatureDir(tdd, featureId) {
 
 // consort/gates/escalation.ts
 init_cjs_shims();
-var fs4 = __toESM(require("fs"), 1);
+var fs5 = __toESM(require("fs"), 1);
 
 // consort/smells/smells.ts
 init_cjs_shims();
@@ -6841,6 +6841,15 @@ var EVENT_TEMPLATES = {
   "deploy.failed": { template: "DEPLOY failed {{scope}}: {{reason}}" },
   "verify.passed": { template: "VERIFY passed {{scope}} ({{command}})" },
   "verify.failed": { template: "VERIFY failed {{scope}} ({{command}}): {{summary}}" },
+  // Deterministic per-pass verify wall-clock (code-emitted at each per-cycle GREEN).
+  // reversibility_ran is the tiered-verify signal: did the slow isolated-branch
+  // migration pass run this cycle, or did a non-migration cycle skip it. migration_ms
+  // / client_ms ride in metadata (present only when that pass ran).
+  "verify.timing": { template: "VERIFY timing {{total_ms}}ms (main {{main_ms}}ms, reversibility {{reversibility_ran}})" },
+  // Per-turn wall-clock attributed by TURN-KIND (+ story/ac in metadata) — the signal
+  // the timing report rolls up to find WHERE a story's wall-clock goes (e.g. supersession
+  // assess/green-superseded churn vs productive red/green). Code-emitted at dispatch.
+  "turn.timing": { template: "{{role}} {{turn_kind}} turn {{duration_ms}}ms ({{model}})" },
   // UX adherence
   "adherence.passed": { template: "ADHERENCE passed {{scope}}" },
   "adherence.failed": { template: "ADHERENCE failed {{scope}}: {{diffs}}" },
@@ -7037,8 +7046,121 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
+var import_node_fs5 = require("fs");
+var import_node_path7 = require("path");
+
+// consort/experiment/py-source.ts
+init_cjs_shims();
+
+// consort/architecture/migration-columns.ts
+init_cjs_shims();
 var import_node_fs4 = require("fs");
 var import_node_path6 = require("path");
+var DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+var MIGRATION_EXTS = /* @__PURE__ */ new Set([".py", ".sql", ".js", ".ts"]);
+var SKIP_DIR = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist|build)(\/|$)/;
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var MODULE_CONST = /(?:^|\n)[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*['"]([^'"]+)['"]/g;
+var DROP_COLUMN_SQL = /drop\s+column\s+(?:if\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
+var ADD_COLUMN_SQL = /add\s+column\s+(?:if\s+not\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
+function walk(dir, out = []) {
+  let entries;
+  try {
+    entries = (0, import_node_fs4.readdirSync)(dir);
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const abs = (0, import_node_path6.join)(dir, e);
+    let st;
+    try {
+      st = (0, import_node_fs4.statSync)(abs);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (!SKIP_DIR.test(abs)) walk(abs, out);
+    } else if (st.isFile() && MIGRATION_EXTS.has((0, import_node_path6.extname)(abs))) {
+      out.push(abs);
+    }
+  }
+  return out;
+}
+function forwardMigrationBody(src, ext) {
+  if (ext === ".py") {
+    const m = src.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
+    return m ? m[1] : src;
+  }
+  if (ext === ".js" || ext === ".ts") {
+    const up = /(exports\.up\b|async\s+function\s+up\b|\bup\s*[:=])/.exec(src);
+    if (!up) return src;
+    const after = src.slice(up.index + up[0].length);
+    const rel = after.search(/(exports\.down\b|async\s+function\s+down\b|\bdown\s*[:=])/);
+    return rel === -1 ? after : after.slice(0, rel);
+  }
+  return src;
+}
+function moduleConsts(src) {
+  const consts = /* @__PURE__ */ new Map();
+  MODULE_CONST.lastIndex = 0;
+  let m;
+  while ((m = MODULE_CONST.exec(src)) !== null) consts.set(m[1], m[2]);
+  return consts;
+}
+function eventsForFile(region, ext, consts) {
+  const evs = [];
+  const pushPy = (re, act) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(region)) !== null) {
+      const col = m[1] ?? (m[2] ? consts.get(m[2]) : void 0);
+      if (col) evs.push({ pos: m.index, col, act });
+    }
+  };
+  const pushSql = (re, act) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(region)) !== null) evs.push({ pos: m.index, col: m[1], act });
+  };
+  if (ext === ".py") {
+    pushPy(ADD_COLUMN_PY, "add");
+    pushPy(SA_COLUMN_PY, "add");
+    pushPy(DROP_COLUMN_PY, "drop");
+    pushSql(DROP_COLUMN_SQL, "drop");
+  } else {
+    pushSql(ADD_COLUMN_SQL, "add");
+    pushSql(DROP_COLUMN_SQL, "drop");
+  }
+  return evs.sort((a, b) => a.pos - b.pos);
+}
+function netColumnActions(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
+  const files = [];
+  for (const md of migrationDirs) {
+    const abs = (0, import_node_path6.join)(projectDir, md);
+    if ((0, import_node_fs4.existsSync)(abs)) walk(abs, files);
+  }
+  files.sort();
+  const last = /* @__PURE__ */ new Map();
+  for (const f of files) {
+    let src;
+    try {
+      src = (0, import_node_fs4.readFileSync)(f, "utf8");
+    } catch {
+      continue;
+    }
+    const ext = (0, import_node_path6.extname)(f);
+    const consts = moduleConsts(src);
+    for (const ev of eventsForFile(forwardMigrationBody(src, ext), ext, consts)) last.set(ev.col, ev.act);
+  }
+  return last;
+}
+
+// consort/architecture/contract-clean.ts
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 var EXCLUDE_DIR = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
@@ -7054,60 +7176,40 @@ var path = __toESM(require("path"), 1);
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs5 = require("fs");
-var import_node_path7 = require("path");
+var import_node_fs6 = require("fs");
+var import_node_path8 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process3 = require("child_process");
-var import_node_fs6 = require("fs");
-var import_node_path8 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path9 = require("path");
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path9 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path10 = require("path");
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+var DEFAULT_MIGRATION_DIRS2 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+function collectDroppedColumns(projectDir, migrationDirs) {
+  const GENERIC = /* @__PURE__ */ new Set(["id", "name", "type", "value", "data", "status", "key", "code", "text"]);
+  const dropped = /* @__PURE__ */ new Set();
+  for (const [col, ev] of netColumnActions(projectDir, migrationDirs)) {
+    if (ev === "drop" && col.length >= 4 && !GENERIC.has(col.toLowerCase())) dropped.add(col);
+  }
+  return dropped;
+}
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase3 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
-// consort/gates/escalation.ts
-function escalationId(parts) {
-  return [parts.source, parts.feature_id, parts.story_id, parts.ac_id].filter(Boolean).join("__").replace(/[^A-Za-z0-9_.-]/g, "-");
-}
-function writeEscalation(consortDir, esc) {
-  const id = esc.id ?? escalationId(esc);
-  const file = escalationFile(consortDir, id);
-  const existing = readEscalationFile(file);
-  if (existing && !existing.resolved_at) return existing;
-  const full = {
-    id,
-    source: esc.source,
-    reason: esc.reason,
-    ...esc.feature_id ? { feature_id: esc.feature_id } : {},
-    ...esc.story_id ? { story_id: esc.story_id } : {},
-    ...esc.ac_id ? { ac_id: esc.ac_id } : {},
-    raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
-    how_to_resolve: `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
-  };
-  fs4.mkdirSync(escalationsDir(consortDir), { recursive: true });
-  fs4.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
-  return full;
-}
-function readEscalationFile(file) {
-  if (!fs4.existsSync(file)) return void 0;
-  try {
-    return JSON.parse(fs4.readFileSync(file, "utf8"));
-  } catch {
-    return void 0;
-  }
-}
+// consort/pipeline/batch-decompose.ts
+init_cjs_shims();
 
 // consort/smells/deploy-verify-assess.ts
 init_cjs_shims();
-var fs5 = __toESM(require("fs"), 1);
+var fs4 = __toESM(require("fs"), 1);
 var path2 = __toESM(require("path"), 1);
 function parseFailedNodeIds(output) {
   const ids = [];
@@ -7128,31 +7230,36 @@ function markerPath(consortDir, featureId, storyId) {
 }
 function readDeployVerifyAssessMarker(consortDir, featureId, storyId) {
   const file = markerPath(consortDir, featureId, storyId);
-  if (!file || !fs5.existsSync(file)) return void 0;
+  if (!file || !fs4.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs5.readFileSync(file, "utf8"));
+    return JSON.parse(fs4.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
 }
-function writeDeployVerifyAssessMarker(consortDir, featureId, storyId, failingNodeIds) {
+function writeDeployVerifyAssessMarker(consortDir, featureId, storyId, failingNodeIds, opts) {
   const file = markerPath(consortDir, featureId, storyId);
   if (!file) return void 0;
   const prior = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
+  const supersession = opts?.kind === "supersession";
+  const failureTail = opts?.failureOutput ? opts.failureOutput.slice(-6e3) : void 0;
   const marker = {
     version: 1,
     ...storyId ? { story_id: storyId } : {},
+    ...supersession ? { kind: "supersession" } : {},
+    ...supersession && opts?.droppedColumns?.length ? { dropped_columns: opts.droppedColumns } : {},
     failing_node_ids: failingNodeIds,
+    ...failureTail ? { failure_output: failureTail } : {},
     assessed: false,
     attempts: prior?.attempts ?? 0
   };
-  fs5.mkdirSync(path2.dirname(file), { recursive: true });
-  fs5.writeFileSync(file, JSON.stringify(marker, null, 2) + "\n", "utf8");
+  fs4.mkdirSync(path2.dirname(file), { recursive: true });
+  fs4.writeFileSync(file, JSON.stringify(marker, null, 2) + "\n", "utf8");
   return file;
 }
 function clearDeployVerifyAssessMarker(consortDir, featureId, storyId) {
   const file = markerPath(consortDir, featureId, storyId);
-  if (file && fs5.existsSync(file)) fs5.rmSync(file);
+  if (file && fs4.existsSync(file)) fs4.rmSync(file);
 }
 async function classifyDeployVerifyFailure(failingNodeIds, runIsolated) {
   if (failingNodeIds.length === 0) return "genuine";
@@ -7160,10 +7267,42 @@ async function classifyDeployVerifyFailure(failingNodeIds, runIsolated) {
   return passedAlone ? "contamination" : "genuine";
 }
 
+// consort/gates/escalation.ts
+function escalationId(parts) {
+  return [parts.source, parts.feature_id, parts.story_id, parts.ac_id].filter(Boolean).join("__").replace(/[^A-Za-z0-9_.-]/g, "-");
+}
+function writeEscalation(consortDir, esc) {
+  const id = esc.id ?? escalationId(esc);
+  const file = escalationFile(consortDir, id);
+  const existing = readEscalationFile(file);
+  if (existing && !existing.resolved_at) return existing;
+  const full = {
+    id,
+    source: esc.source,
+    reason: esc.reason,
+    ...esc.feature_id ? { feature_id: esc.feature_id } : {},
+    ...esc.story_id ? { story_id: esc.story_id } : {},
+    ...esc.ac_id ? { ac_id: esc.ac_id } : {},
+    raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
+    how_to_resolve: `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
+  };
+  fs5.mkdirSync(escalationsDir(consortDir), { recursive: true });
+  fs5.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
+  return full;
+}
+function readEscalationFile(file) {
+  if (!fs5.existsSync(file)) return void 0;
+  try {
+    return JSON.parse(fs5.readFileSync(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs8 = require("fs");
-var import_node_path10 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path11 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
@@ -7207,7 +7346,7 @@ function ephemeralVerifyBranchName(experimentBranch, nonce) {
 // consort/deploy/deploy.ts
 function readProjectInstance(projectDir) {
   try {
-    const m = (0, import_node_fs9.readFileSync)((0, import_node_path11.join)(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
+    const m = (0, import_node_fs10.readFileSync)((0, import_node_path12.join)(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
     return m ? m[1].replace(/^["']|["']$/g, "").trim() : void 0;
   } catch {
     return void 0;
@@ -7216,7 +7355,7 @@ function readProjectInstance(projectDir) {
 function readAppDatabaseName(projectDir) {
   let env;
   try {
-    env = (0, import_node_fs9.readFileSync)((0, import_node_path11.join)(projectDir, ".env"), "utf8");
+    env = (0, import_node_fs10.readFileSync)((0, import_node_path12.join)(projectDir, ".env"), "utf8");
   } catch {
     return void 0;
   }
@@ -7359,7 +7498,7 @@ function logReleaseEngineerDeployOutcome(ctx, result) {
   }
 }
 function pidFile(projectDir, target) {
-  return (0, import_node_path11.join)(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
+  return (0, import_node_path12.join)(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
 }
 function normalizeVerifyRun(raw) {
   return typeof raw === "boolean" ? { passed: raw, output: "" } : { passed: raw.passed, output: raw.output ?? "" };
@@ -7388,10 +7527,10 @@ ${tail}
 function writeDeployEvidence(consortDir, evidence) {
   const fdir = findFeatureDir(consortDir, evidence.feature_id);
   if (!fdir) return void 0;
-  const dir = evidence.story_id ? (0, import_node_path11.join)(fdir, "stories", evidence.story_id) : fdir;
-  (0, import_node_fs9.mkdirSync)(dir, { recursive: true });
-  const file = (0, import_node_path11.join)(dir, "deploy-evidence.json");
-  (0, import_node_fs9.writeFileSync)(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
+  const dir = evidence.story_id ? (0, import_node_path12.join)(fdir, "stories", evidence.story_id) : fdir;
+  (0, import_node_fs10.mkdirSync)(dir, { recursive: true });
+  const file = (0, import_node_path12.join)(dir, "deploy-evidence.json");
+  (0, import_node_fs10.writeFileSync)(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
   return file;
 }
 function defaultStart(cmd, cwd, env) {
@@ -7522,8 +7661,8 @@ async function deployToTarget(args) {
   }
   const pid = start(cfg.run, args.projectDir, env);
   const pf = pidFile(args.projectDir, args.targetName);
-  (0, import_node_fs9.mkdirSync)((0, import_node_path11.dirname)(pf), { recursive: true });
-  (0, import_node_fs9.writeFileSync)(pf, String(pid));
+  (0, import_node_fs10.mkdirSync)((0, import_node_path12.dirname)(pf), { recursive: true });
+  (0, import_node_fs10.writeFileSync)(pf, String(pid));
   const servingOk = args.servingOk ?? args.reachable ?? probeServingOk;
   const readyProbe = args.rejectForeignPort ? servingOk : reachable;
   const poll = await (0, import_util2.pollUntil)({
@@ -7591,6 +7730,7 @@ async function deployToTarget(args) {
     }
     if (!(reachableNow && verify.passed)) {
       let contamination = false;
+      let superseded = false;
       if (reachableNow && cfg.verify && args.featureId && args.lakebaseBranch) {
         const failing = parseFailedNodeIds(verifyOutput);
         if (failing.length > 0) {
@@ -7609,13 +7749,29 @@ async function deployToTarget(args) {
           if (verdict === "contamination") {
             const prior = readDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId);
             if (!prior?.assessed) {
-              writeDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId, failing);
+              writeDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId, failing, {
+                failureOutput: verifyOutput
+              });
               contamination = true;
+            }
+          } else {
+            const featureDropsSchema = collectDroppedColumns(args.projectDir, DEFAULT_MIGRATION_DIRS2).size > 0;
+            if (featureDropsSchema) {
+              const prior = readDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId);
+              if (!prior?.assessed) {
+                const droppedColumns = [...collectDroppedColumns(args.projectDir, DEFAULT_MIGRATION_DIRS2)];
+                writeDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId, failing, {
+                  kind: "supersession",
+                  droppedColumns,
+                  failureOutput: verifyOutput
+                });
+                superseded = true;
+              }
             }
           }
         }
       }
-      if (!contamination) {
+      if (!contamination && !superseded) {
         writeEscalation(consortDir, {
           source: "deploy-verify",
           reason: `deploy of ${args.featureId}${args.storyId ? `/${args.storyId}` : ""} did not prove working software: ${reachableNow ? verify.summary ?? "verify failed" : `app not reachable at ${url}`}`,
@@ -7640,8 +7796,8 @@ async function deployToTarget(args) {
 }
 function stopLocal(projectDir, targetName) {
   const pf = pidFile(projectDir, targetName);
-  if (!(0, import_node_fs9.existsSync)(pf)) return { stopped: false };
-  const pid = Number((0, import_node_fs9.readFileSync)(pf, "utf8").trim());
+  if (!(0, import_node_fs10.existsSync)(pf)) return { stopped: false };
+  const pid = Number((0, import_node_fs10.readFileSync)(pf, "utf8").trim());
   if (Number.isFinite(pid) && pid > 0) {
     try {
       process.kill(-pid);
@@ -7652,7 +7808,7 @@ function stopLocal(projectDir, targetName) {
       }
     }
   }
-  (0, import_node_fs9.rmSync)(pf, { force: true });
+  (0, import_node_fs10.rmSync)(pf, { force: true });
   return { stopped: true };
 }
 

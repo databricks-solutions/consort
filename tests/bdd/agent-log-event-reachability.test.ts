@@ -85,7 +85,7 @@ const CODE_EMITTED = new Set<string>([
   // Deterministic deploy-step events emitted by deployToTarget (it computes
   // reachability + the verify outcome). Promoted from agent-only.
   "deploy.reachable", "deploy.unreachable",
-  "verify.passed", "verify.failed",
+  "verify.passed", "verify.failed", "verify.timing", "turn.timing",
   "escalation.raised",
   "experiment.cut", "experiment.accepted",
   // Emitted by the experiment-lifecycle CLI's discard/revise path (the substrate

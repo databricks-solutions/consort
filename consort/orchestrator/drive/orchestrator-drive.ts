@@ -199,14 +199,21 @@ function nextBuildAction(story: string, b: StoryBuild): WorkflowAction {
   // refactor-verify break may be a PRIOR test this story legitimately supersedes;
   // the Navigator assesses (flag superseded -> Driver permissively refactors ONLY
   // those, OR veto -> genuine regression escalates), then ONE honest re-verify.
-  if (b.refactorVerifyAssessEligible) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess-refactor" };
-  if (b.refactorVerifyRefactorPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor-superseded" };
-  if ((b.loop ?? "story") === "story") {
-    if (b.reviewStoryPending) return { kind: "invoke-role", role: "navigator", story, buildMode: "review" };
-    if (b.refactorStoryPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor" };
-  } else {
-    if (b.reviewAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "review", ac: b.reviewAc };
-    if (b.refactorAc) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor", ac: b.refactorAc };
+  // A per-AC LANE skips REVIEW + REFACTOR entirely (the whole block below). Per the fan-out
+  // design these run ONCE at story-close on the MERGED result, not per lane — a lane's unscoped
+  // refactor verify runs the full story suite and fails on sibling ACs built in OTHER lanes
+  // (the serial-first AC can then never close, so the fan-out never happens). The lane does
+  // RED/GREEN (below) and then `complete`s; the top-level drive reviews/refactors the merged story.
+  if (!b.isAcLane) {
+    if (b.refactorVerifyAssessEligible) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess-refactor" };
+    if (b.refactorVerifyRefactorPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor-superseded" };
+    if ((b.loop ?? "story") === "story") {
+      if (b.reviewStoryPending) return { kind: "invoke-role", role: "navigator", story, buildMode: "review" };
+      if (b.refactorStoryPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor" };
+    } else {
+      if (b.reviewAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "review", ac: b.reviewAc };
+      if (b.refactorAc) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor", ac: b.refactorAc };
+    }
   }
   // Reactive supersession trigger: an open AC whose GREEN verify failed + has not
   // been assessed routes the Navigator to ASSESS the failure (flag prior tests
@@ -271,6 +278,12 @@ function nextBuildAction(story: string, b: StoryBuild): WorkflowAction {
   // always in the current AC until it is green (then the checks above pre-empt).
   if (!b.testsWritten) return { kind: "invoke-role", role: "navigator", story };
   if (!b.codeWritten) return { kind: "invoke-role", role: "driver", story };
+  // A per-AC LANE is DONE once its scoped AC(s) are RED/GREEN complete (reached here): it
+  // exits so the coordinator folds its branch into the merge and fans out / resumes. It does
+  // NOT run story-close deploy-verify / accept — those run ONCE on the MERGED result in the
+  // top-level drive. (Without this a lane would run the full-suite deploy-verify and fail on
+  // sibling ACs built in other lanes — the fan-out deadlock.)
+  if (b.isAcLane) return { kind: "complete", story, laneExit: true };
   if (!b.awaitingAcceptance) return { kind: "await-acceptance", story };
   // Deploy-verify self-heal: the deploy ran but verify FAILED as shared-state
   // CONTAMINATION (fails the full feature suite, passes in isolation – a prior

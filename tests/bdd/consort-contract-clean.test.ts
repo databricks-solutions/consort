@@ -16,6 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { checkContractClean, netDroppedSymbols, supersededTestCandidates } from "../../consort/architecture/contract-clean.js";
+import { collectDroppedColumns } from "../../consort/architecture/test-smell-clean.js";
 import {
   beginNextPendingCycle,
   greenOpenCycle,
@@ -116,6 +117,79 @@ exports.down = async (knex) => { await knex.raw('ALTER TABLE stock ADD COLUMN in
 `);
     // down re-adds batch_number; it must NOT appear as dropped, and the up drop counts.
     expect(netDroppedSymbols(dir, ["migrations"])).toEqual(["inventory_code"]);
+  });
+
+  it("detects a drop whose TABLE arg is a module constant (op.drop_column(TABLE, 'col'))", () => {
+    // The live F6/S3 HALT: the scaffolded contract migration bound the table to a
+    // module constant (TABLE = "stock_records") and called op.drop_column(TABLE, "col").
+    // The old regex required a STRING-LITERAL table arg, so the drop was invisible ->
+    // netDroppedSymbols returned [] -> no supersession -> cross-story tests went to HIL.
+    const dir = mkProject();
+    write(dir, "alembic/versions/0005_drop_const_table.py", `
+TABLE = "stock_records"
+
+def upgrade() -> None:
+    op.drop_column(TABLE, "tracking_code")
+
+def downgrade() -> None:
+    op.add_column(TABLE, sa.Column("tracking_code", sa.String(255), nullable=True))
+`);
+    expect(netDroppedSymbols(dir)).toEqual(["tracking_code"]);
+  });
+
+  it("detects a drop whose TABLE and COLUMN are BOTH module constants (op.drop_column(TABLE, COLUMN))", () => {
+    // The live F6/S3 iteration: the driver authored the migration with BOTH args as module
+    // constants — `TABLE = "stock_records"; COLUMN = "tracking_code"; op.drop_column(TABLE, COLUMN)`.
+    // The column must be resolved from the constant, not just matched as a quoted literal, or the
+    // whole supersession/defer chain goes inert (netDropped=[]).
+    const dir = mkProject();
+    write(dir, "alembic/versions/0006_drop_const_col.py", `
+TABLE = "stock_records"
+COLUMN = "tracking_code"
+
+def upgrade() -> None:
+    op.drop_column(TABLE, COLUMN)
+
+def downgrade() -> None:
+    op.add_column(TABLE, sa.Column(COLUMN, sa.String(255), nullable=True))
+`);
+    expect(netDroppedSymbols(dir)).toEqual(["tracking_code"]);
+  });
+});
+
+describe("one source of truth: contract-clean + test-smell read migrations identically", () => {
+  // Both detectors (the in-cycle supersession pre-flag AND the deploy-verify dropped-column
+  // self-heal classifier) now delegate to the shared migration-columns parser. They had
+  // DIVERGED on the constant-table idiom (contract-clean missed it, test-smell saw it),
+  // which silently no-op'd supersession. They must agree on every migration shape.
+  it("agree on a constant-table contract drop", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0005_drop.py", `
+TABLE = "stock_records"
+
+def upgrade() -> None:
+    op.drop_column(TABLE, "tracking_code")
+
+def downgrade() -> None:
+    op.add_column(TABLE, sa.Column("tracking_code", sa.String(255)))
+`);
+    const fromContract = netDroppedSymbols(dir, ["alembic/versions"]).sort();
+    const fromSmell = [...collectDroppedColumns(dir, ["alembic/versions"])].sort();
+    expect(fromContract).toEqual(["tracking_code"]);
+    expect(fromSmell).toEqual(fromContract);
+  });
+
+  it("agree that a reversible add/drop round-trip nets clean", () => {
+    const dir = mkProject();
+    write(dir, "alembic/versions/0001_add.py", `
+def upgrade() -> None:
+    op.add_column("stock", sa.Column("batch_number", sa.String(255)))
+
+def downgrade() -> None:
+    op.drop_column("stock", "batch_number")
+`);
+    expect(netDroppedSymbols(dir, ["alembic/versions"])).toEqual([]);
+    expect([...collectDroppedColumns(dir, ["alembic/versions"])]).toEqual([]);
   });
 });
 

@@ -6896,7 +6896,11 @@ function resolveProjectSettings(projectDir) {
   const build = {
     loopGranularity: file?.build?.loopGranularity ?? "story",
     batchCap: file?.build?.batchCap,
-    sessionScope: file?.build?.sessionScope ?? "story"
+    sessionScope: file?.build?.sessionScope ?? "story",
+    batchContractStories: file?.build?.batchContractStories ?? false,
+    parallelAcLanes: file?.build?.parallelAcLanes ?? false,
+    parallelAcLaneCap: file?.build?.parallelAcLaneCap ?? 8,
+    splitAcsByKind: file?.build?.splitAcsByKind ?? false
   };
   const project = {
     uiTrack: file?.project?.uiTrack ?? true,
@@ -7843,7 +7847,7 @@ function resolveConsortSettings(inputs) {
 }
 
 // bin/consort/next.cli.ts
-var import_lakebase11 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+var import_lakebase12 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
 // consort/intake/orchestrator-sprint.ts
 init_cjs_shims();
@@ -8618,6 +8622,15 @@ var EVENT_TEMPLATES = {
   "deploy.failed": { template: "DEPLOY failed {{scope}}: {{reason}}" },
   "verify.passed": { template: "VERIFY passed {{scope}} ({{command}})" },
   "verify.failed": { template: "VERIFY failed {{scope}} ({{command}}): {{summary}}" },
+  // Deterministic per-pass verify wall-clock (code-emitted at each per-cycle GREEN).
+  // reversibility_ran is the tiered-verify signal: did the slow isolated-branch
+  // migration pass run this cycle, or did a non-migration cycle skip it. migration_ms
+  // / client_ms ride in metadata (present only when that pass ran).
+  "verify.timing": { template: "VERIFY timing {{total_ms}}ms (main {{main_ms}}ms, reversibility {{reversibility_ran}})" },
+  // Per-turn wall-clock attributed by TURN-KIND (+ story/ac in metadata) — the signal
+  // the timing report rolls up to find WHERE a story's wall-clock goes (e.g. supersession
+  // assess/green-superseded churn vs productive red/green). Code-emitted at dispatch.
+  "turn.timing": { template: "{{role}} {{turn_kind}} turn {{duration_ms}}ms ({{model}})" },
   // UX adherence
   "adherence.passed": { template: "ADHERENCE passed {{scope}}" },
   "adherence.failed": { template: "ADHERENCE failed {{scope}}: {{diffs}}" },
@@ -8781,8 +8794,9 @@ function actionLane(action) {
     case "cut-experiment":
     case "await-acceptance":
     case "accept":
-    case "complete":
       return "build";
+    case "complete":
+      return action.laneExit ? "done" : "build";
     case "feature-complete":
       return "coarse";
     case "deploy":
@@ -8861,14 +8875,16 @@ function nextBuildAction(story, b) {
   if (!b.experimentCut || b.experimentStale) {
     return b.experimentDiscarded || b.experimentStale ? { kind: "cut-experiment", story, resetStaleBranch: true } : { kind: "cut-experiment", story };
   }
-  if (b.refactorVerifyAssessEligible) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess-refactor" };
-  if (b.refactorVerifyRefactorPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor-superseded" };
-  if ((b.loop ?? "story") === "story") {
-    if (b.reviewStoryPending) return { kind: "invoke-role", role: "navigator", story, buildMode: "review" };
-    if (b.refactorStoryPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor" };
-  } else {
-    if (b.reviewAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "review", ac: b.reviewAc };
-    if (b.refactorAc) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor", ac: b.refactorAc };
+  if (!b.isAcLane) {
+    if (b.refactorVerifyAssessEligible) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess-refactor" };
+    if (b.refactorVerifyRefactorPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor-superseded" };
+    if ((b.loop ?? "story") === "story") {
+      if (b.reviewStoryPending) return { kind: "invoke-role", role: "navigator", story, buildMode: "review" };
+      if (b.refactorStoryPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor" };
+    } else {
+      if (b.reviewAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "review", ac: b.reviewAc };
+      if (b.refactorAc) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor", ac: b.refactorAc };
+    }
   }
   if (b.assessGreenAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess", ac: b.assessGreenAc };
   if (b.repairRegressionAc) return { kind: "invoke-role", role: "driver", story, buildMode: "repair", ac: b.repairRegressionAc };
@@ -8892,6 +8908,7 @@ function nextBuildAction(story, b) {
   }
   if (!b.testsWritten) return { kind: "invoke-role", role: "navigator", story };
   if (!b.codeWritten) return { kind: "invoke-role", role: "driver", story };
+  if (b.isAcLane) return { kind: "complete", story, laneExit: true };
   if (!b.awaitingAcceptance) return { kind: "await-acceptance", story };
   if (b.deployVerifyAssessEligible) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess-deploy" };
   if (b.deployVerifyRefactorPending) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor-deploy" };
@@ -9337,8 +9354,8 @@ init_cjs_shims();
 init_cjs_shims();
 var import_node_child_process3 = require("child_process");
 var import_node_crypto = require("crypto");
-var import_node_fs5 = require("fs");
-var import_node_path5 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path8 = require("path");
 var import_lakebase6 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -9704,6 +9721,27 @@ function firstPendingEscalation(consortDir, featureId) {
 init_cjs_shims();
 var fs5 = __toESM(require("fs"), 1);
 var path2 = __toESM(require("path"), 1);
+
+// consort/architecture/test-smell-clean.ts
+init_cjs_shims();
+var import_node_fs5 = require("fs");
+var import_node_path5 = require("path");
+
+// consort/architecture/migration-columns.ts
+init_cjs_shims();
+var import_node_fs4 = require("fs");
+var import_node_path4 = require("path");
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+
+// consort/architecture/test-smell-clean.ts
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+
+// consort/smells/deploy-verify-assess.ts
 function markerPath(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
@@ -9727,10 +9765,27 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
   return !!m && !m.assessed && m.attempts < 1;
 }
 
+// consort/architecture/contract-clean.ts
+init_cjs_shims();
+var import_node_fs6 = require("fs");
+var import_node_path6 = require("path");
+
+// consort/experiment/py-source.ts
+init_cjs_shims();
+
+// consort/architecture/contract-clean.ts
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+var EXCLUDE_DIR = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE2}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
+);
+var EXCLUDE_DIR_JUNK = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE2}|\\.lakebase|dist|build)(/|$)`
+);
+
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs4 = require("fs");
-var import_node_path4 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path7 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
@@ -9744,9 +9799,9 @@ function deployEvidencePasses(e) {
   return e !== void 0 && e.reachable === true && e.verify?.passed === true;
 }
 function readDeployEvidence(file) {
-  if (!(0, import_node_fs5.existsSync)(file)) return void 0;
+  if (!(0, import_node_fs8.existsSync)(file)) return void 0;
   try {
-    return JSON.parse((0, import_node_fs5.readFileSync)(file, "utf8"));
+    return JSON.parse((0, import_node_fs8.readFileSync)(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9754,18 +9809,18 @@ function readDeployEvidence(file) {
 function storyDeployVerified(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return false;
-  return deployEvidencePasses(readDeployEvidence((0, import_node_path5.join)(fdir, "stories", storyId, "deploy-evidence.json")));
+  return deployEvidencePasses(readDeployEvidence((0, import_node_path8.join)(fdir, "stories", storyId, "deploy-evidence.json")));
 }
 
 // consort/architecture/design-adherence.ts
 init_cjs_shims();
-var import_node_fs6 = require("fs");
-var import_node_path6 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path9 = require("path");
 
 // consort/architecture/layering-clean.ts
 init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path7 = require("path");
+var import_node_fs10 = require("fs");
+var import_node_path10 = require("path");
 var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   "node_modules",
   "__pycache__",
@@ -9790,9 +9845,9 @@ init_cjs_shims();
 var fs6 = __toESM(require("fs"), 1);
 var import_node_child_process4 = require("child_process");
 var import_node_crypto2 = require("crypto");
-var import_node_path8 = require("path");
+var import_node_path11 = require("path");
 function supersededTestsJson(tdd, feature, story, ac) {
-  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return (0, import_node_path11.join)(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -9828,7 +9883,7 @@ function hasPendingSupersession(tdd, feature, story, ac) {
   return s !== void 0 && s.refactored !== true;
 }
 function greenFailureJson(tdd, feature, story, ac) {
-  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return (0, import_node_path11.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -9856,7 +9911,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs6.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState((0, import_node_path8.dirname)(tdd));
+      const cur = computeTreeState((0, import_node_path11.dirname)(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs6.rmSync(file, { force: true });
         return void 0;
@@ -9888,20 +9943,8 @@ function specDefectFromRole(tdd, feature, story, ac) {
   return gf?.specDefect?.fromRole ?? "test-strategist";
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return (0, import_node_path8.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return (0, import_node_path11.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
-
-// consort/architecture/contract-clean.ts
-init_cjs_shims();
-var import_node_fs8 = require("fs");
-var import_node_path9 = require("path");
-var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
-var EXCLUDE_DIR = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
-);
-var EXCLUDE_DIR_JUNK = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
-);
 
 // consort/smells/refactor-verify-assess.ts
 init_cjs_shims();
@@ -9932,24 +9975,23 @@ function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs9 = require("fs");
-var import_node_path10 = require("path");
+var import_node_fs11 = require("fs");
+var import_node_path12 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process5 = require("child_process");
-var import_node_fs10 = require("fs");
-var import_node_path11 = require("path");
-
-// consort/architecture/test-smell-clean.ts
-init_cjs_shims();
-var import_node_fs11 = require("fs");
-var import_node_path12 = require("path");
-var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+var import_node_fs12 = require("fs");
+var import_node_path13 = require("path");
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+
+// consort/pipeline/batch-decompose.ts
+init_cjs_shims();
+
+// consort/pipeline/cycle-record.ts
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
   if (!(0, import_fs6.existsSync)(file)) {
@@ -9979,6 +10021,11 @@ function storyCycles(consortDir, featureId, story) {
   }
   return out;
 }
+function scopeKindsSet() {
+  const raw = (process.env.CONSORT_SCOPE_KINDS ?? "").trim();
+  if (!raw) return null;
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
 function storyTestProgress(consortDir, featureId, story) {
   let items = [];
   try {
@@ -9986,7 +10033,12 @@ function storyTestProgress(consortDir, featureId, story) {
   } catch {
     items = [];
   }
-  const cycles = storyCycles(consortDir, featureId, story);
+  const scopeAc = (process.env.CONSORT_SCOPE_AC ?? "").trim();
+  if (scopeAc) items = items.filter((i) => i.ac_id === scopeAc);
+  const scopeKinds = scopeKindsSet();
+  if (scopeKinds) items = items.filter((i) => typeof i.kind === "string" && scopeKinds.has(i.kind));
+  const allCycles = storyCycles(consortDir, featureId, story);
+  const cycles = scopeAc ? allCycles.filter((c) => c.ac_id === scopeAc) : allCycles;
   const cycledTestIds = new Set(cycles.flatMap((c) => coveredTestIds(c)));
   const greenTestIds = new Set(cycles.filter((c) => c.green_at).flatMap((c) => coveredTestIds(c)));
   const pending = items.filter((i) => !cycledTestIds.has(i.id));
@@ -10093,8 +10145,8 @@ function isContractStory(storyId) {
     storyId
   );
 }
-function effectiveLoopForStory(runLoop, storyId) {
-  return isContractStory(storyId) ? "ac" : runLoop;
+function effectiveLoopForStory(runLoop, storyId, batchContractStories = false) {
+  return isContractStory(storyId) && !batchContractStories ? "ac" : runLoop;
 }
 function storyView(id, e, probe, loop) {
   const gateApproved = e.gate?.status === "approved";
@@ -10150,6 +10202,13 @@ function storyView(id, e, probe, loop) {
       specDefectFromRole: probe.specDefectFromRole(id),
       greenUnfixableAc: probe.greenUnfixableAc(id),
       greenUnfixableDiagnosis: probe.greenUnfixableDiagnosis(id),
+      // This drive IS a coordinator-spawned per-AC lane (CONSORT_AC_LANE). A lane does
+      // RED/GREEN for its scoped AC(s) and then EXITS — per the fan-out design, REVIEW /
+      // REFACTOR / deploy-verify / accept are NOT done per lane; they run ONCE at story-close
+      // on the MERGED result (the top-level drive, no CONSORT_AC_LANE). Running them per lane
+      // DEADLOCKS: the lane's unscoped refactor/deploy verify fails on sibling ACs that only
+      // build in OTHER lanes (the serial-first AC can never close -> never fans out).
+      isAcLane: !!(process.env.CONSORT_AC_LANE ?? "").trim(),
       awaitingAcceptance: e.status === "awaiting-acceptance",
       deployVerified: probe.storyDeployVerified(id),
       deployVerifyAssessEligible: probe.deployVerifyAssessEligible(id),
@@ -10164,7 +10223,7 @@ function deriveDriveState(pipeline, probe, ctx) {
   const loop = ctx.loop ?? "story";
   const stories = {};
   for (const [id, entry] of Object.entries(pipeline.stories)) {
-    stories[id] = storyView(id, entry, probe, effectiveLoopForStory(loop, id));
+    stories[id] = storyView(id, entry, probe, effectiveLoopForStory(loop, id, ctx.batchContractStories));
   }
   const storyOrder = ctx.storyOrder ?? Object.keys(pipeline.stories);
   const breakdownDone = ctx.breakdownDone || storyOrder.length > 0;
@@ -10200,7 +10259,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto3 = require("crypto");
-var import_node_fs12 = require("fs");
+var import_node_fs13 = require("fs");
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -10219,7 +10278,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = (0, import_node_fs12.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = (0, import_node_fs13.readFileSync)(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
@@ -10484,7 +10543,7 @@ function architectNovelty(canon, storyAcs, storyArchitectureJsonContent) {
 
 // consort/test-list/fan-out-plan.ts
 init_cjs_shims();
-var import_node_path13 = require("path");
+var import_node_path14 = require("path");
 
 // consort/test-list/test-analyst-catalogue.ts
 init_cjs_shims();
@@ -10535,7 +10594,7 @@ var TEST_ANALYST_CATALOGUE = {
 };
 
 // consort/test-list/fan-out-plan.ts
-var analystOrderedJson = (consortDir, f, s) => (0, import_node_path13.join)(storyDir(consortDir, f, s), "analyst-ordered.json");
+var analystOrderedJson = (consortDir, f, s) => (0, import_node_path14.join)(storyDir(consortDir, f, s), "analyst-ordered.json");
 
 // consort/orchestrator/state/orchestrator-probe.ts
 function storyRequiresE2e(consortDir, featureId, story) {
@@ -10614,10 +10673,12 @@ function readDriveContext(consortDir, featureId, projectDir) {
     merged: scmState === "merged"
   };
   const loop = resolveProjectSettings(proj).build.loopGranularity;
+  const batchContractStories = resolveProjectSettings(proj).build.batchContractStories ?? false;
   return {
     phase: driverPhaseForTdd(tddPhase),
     breakdownDone,
     loop,
+    batchContractStories,
     planning: { intakeReady, intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated: hasEstimates(consortDir), backlogCommitted, requestsAuthored },
     deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending, verifyPassed, reverifyAttempted },
     promote
@@ -10966,35 +11027,35 @@ function deriveFeaturePhase(stories) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
 var fs19 = __toESM(require("fs"), 1);
-var import_node_path29 = require("path");
+var import_node_path33 = require("path");
 
 // consort/orchestrator/drive/executor-dispatch.ts
 init_cjs_shims();
 var fs16 = __toESM(require("fs"), 1);
-var import_node_path23 = require("path");
+var import_node_path24 = require("path");
 
 // consort/orchestrator/turns/step-executor.ts
 init_cjs_shims();
-var import_node_fs13 = require("fs");
-var import_node_path14 = require("path");
+var import_node_fs14 = require("fs");
+var import_node_path15 = require("path");
 
 // consort/orchestrator/provisioning/channels.ts
 init_cjs_shims();
 
 // consort/orchestrator/steps/step.ts
 init_cjs_shims();
-var import_node_path16 = require("path");
-var import_node_fs15 = require("fs");
+var import_node_path17 = require("path");
+var import_node_fs16 = require("fs");
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
 init_cjs_shims();
-var import_node_fs14 = require("fs");
-var import_node_path15 = require("path");
+var import_node_fs15 = require("fs");
+var import_node_path16 = require("path");
 function conformsTo(artifactName) {
   return (producedPath) => {
     let content;
     try {
-      content = (0, import_node_fs14.readFileSync)(producedPath, "utf8");
+      content = (0, import_node_fs15.readFileSync)(producedPath, "utf8");
     } catch {
       return { ok: false, violations: [`${artifactName} not readable at ${producedPath}`] };
     }
@@ -11016,8 +11077,8 @@ init_cjs_shims();
 
 // consort/orchestrator/agents/agent-catalogue.ts
 init_cjs_shims();
-var import_node_path21 = require("path");
-var import_node_fs20 = require("fs");
+var import_node_path22 = require("path");
+var import_node_fs21 = require("fs");
 
 // consort/orchestrator/agents/claude-step-agent.ts
 init_cjs_shims();
@@ -11052,8 +11113,8 @@ var import_node_child_process7 = require("child_process");
 
 // consort/config/kit-ref.ts
 init_cjs_shims();
-var import_node_fs16 = require("fs");
-var import_node_path17 = require("path");
+var import_node_fs17 = require("fs");
+var import_node_path18 = require("path");
 
 // consort/lakebase/update-commands.ts
 init_cjs_shims();
@@ -11063,8 +11124,8 @@ var path7 = __toESM(require("path"), 1);
 // consort/lakebase/kit-ref-pin.ts
 init_cjs_shims();
 var import_node_url2 = require("url");
-var import_node_path18 = require("path");
-var import_node_fs17 = require("fs");
+var import_node_path19 = require("path");
+var import_node_fs18 = require("fs");
 
 // consort/lakebase/upgrade.ts
 var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
@@ -11106,8 +11167,8 @@ var import_lakebase10 = require("@databricks-solutions/lakebase-scm-utils/lakeba
 
 // consort/setup/stray-artifact-recovery.ts
 init_cjs_shims();
-var import_node_fs18 = require("fs");
-var import_node_path19 = require("path");
+var import_node_fs19 = require("fs");
+var import_node_path20 = require("path");
 
 // consort/orchestrator/turns/turn-monitor.ts
 init_cjs_shims();
@@ -11120,8 +11181,8 @@ var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e
 
 // consort/orchestrator/agents/mock-replay-agent.ts
 init_cjs_shims();
-var import_node_fs19 = require("fs");
-var import_node_path20 = require("path");
+var import_node_fs20 = require("fs");
+var import_node_path21 = require("path");
 
 // consort/orchestrator/agents/replay-recorder-wrapper.ts
 init_cjs_shims();
@@ -11129,38 +11190,64 @@ init_cjs_shims();
 // consort/logging/turn-recorder.ts
 init_cjs_shims();
 var import_node_crypto6 = require("crypto");
-var import_node_fs21 = require("fs");
-var import_node_path22 = require("path");
+var import_node_fs22 = require("fs");
+var import_node_path23 = require("path");
 
 // consort/pipeline/record-build.ts
 init_cjs_shims();
 
 // consort/orchestrator/steps/assert-route-satisfiable.ts
 init_cjs_shims();
-var import_node_fs22 = require("fs");
-var import_node_path24 = require("path");
+var import_node_fs23 = require("fs");
+var import_node_path25 = require("path");
+
+// consort/experiment/ac-lane-live.ts
+init_cjs_shims();
+var import_node_child_process11 = require("child_process");
+var import_node_path28 = require("path");
+var import_node_fs26 = require("fs");
+
+// consort/experiment/ac-lane-coordinator.ts
+init_cjs_shims();
+
+// consort/experiment/parallel-runner.ts
+init_cjs_shims();
+
+// consort/experiment/ac-lane.ts
+init_cjs_shims();
+var import_node_child_process9 = require("child_process");
+var import_node_fs24 = require("fs");
+var import_node_os = require("os");
+var import_node_path26 = require("path");
+var import_lakebase11 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+
+// consort/experiment/ac-lane-merge.ts
+init_cjs_shims();
+var import_node_child_process10 = require("child_process");
+var import_node_fs25 = require("fs");
+var import_node_path27 = require("path");
 
 // consort/session/response-formatter.ts
 init_cjs_shims();
-var import_node_fs24 = require("fs");
-var import_node_path26 = require("path");
+var import_node_fs28 = require("fs");
+var import_node_path30 = require("path");
 
 // consort/architecture/e2e-route-adherence.ts
 init_cjs_shims();
-var import_node_fs23 = require("fs");
-var import_node_path25 = require("path");
-var CLIENT_SRC = (0, import_node_path25.join)("client", "src");
-var E2E_DIR = (0, import_node_path25.join)("client", "tests", "e2e");
+var import_node_fs27 = require("fs");
+var import_node_path29 = require("path");
+var CLIENT_SRC = (0, import_node_path29.join)("client", "src");
+var E2E_DIR = (0, import_node_path29.join)("client", "tests", "e2e");
 
 // consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!(0, import_node_fs24.existsSync)(file)) {
+  if (!(0, import_node_fs28.existsSync)(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = (0, import_node_fs24.readFileSync)(file, "utf8");
+    content = (0, import_node_fs28.readFileSync)(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -11170,9 +11257,9 @@ function designGuideConformance(consortDir) {
 
 // consort/orchestrator/build/build-context.ts
 init_cjs_shims();
-var import_node_child_process9 = require("child_process");
+var import_node_child_process12 = require("child_process");
 var fs17 = __toESM(require("fs"), 1);
-var import_node_path27 = require("path");
+var import_node_path31 = require("path");
 
 // consort/orchestrator/build/preconditions.ts
 init_cjs_shims();
@@ -11183,7 +11270,7 @@ init_cjs_shims();
 // consort/orchestrator/steps/cross-story-context.ts
 init_cjs_shims();
 var fs18 = __toESM(require("fs"), 1);
-var import_node_path28 = require("path");
+var import_node_path32 = require("path");
 
 // consort/orchestrator/drive/orchestrator-effects.ts
 var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
@@ -11660,7 +11747,7 @@ ${HELP}`);
     uiTrack: resolveConsortSettings({ projectDir }).project.uiTrack,
     // The promote gate's required --promote-ref is the feature's canonical
     // branch, recorded in the SCM workflow state at claim (FEIP-8019).
-    ...(0, import_lakebase11.readWorkflowState)(projectDir)?.branch ? { featureBranch: (0, import_lakebase11.readWorkflowState)(projectDir).branch } : {}
+    ...(0, import_lakebase12.readWorkflowState)(projectDir)?.branch ? { featureBranch: (0, import_lakebase12.readWorkflowState)(projectDir).branch } : {}
   });
   if (args.json) process.stdout.write(JSON.stringify(snapshot, null, 2) + "\n");
   else process.stdout.write(renderNextSnapshot(snapshot) + "\n");

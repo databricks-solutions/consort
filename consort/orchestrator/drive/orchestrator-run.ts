@@ -39,6 +39,14 @@ export interface DriveEffects {
    */
   perform(action: WorkflowAction): Promise<void>;
   /**
+   * OPTIONAL pre-dispatch hook (#5 parallel per-AC lanes). Runs BEFORE the stall check +
+   * dispatch. Returns true to signal the loop to CONTINUE (skip dispatching this action) —
+   * the hook already advanced state (e.g. fanned a contract story's ACs out in parallel +
+   * merged them back), so the next iteration re-reads state and routes onward. Default
+   * absent / returning false => the loop is byte-identical (dispatches the action normally).
+   */
+  beforeAction?(action: WorkflowAction, state: DriveState): Promise<boolean>;
+  /**
    * OPTIONAL executor-dispatch seam (Stage 2, #578): dispatch an AGENT turn THROUGH the
    * StepExecutor's 7-phase Template Method instead of `perform` + the separate routing seam.
    * Returns the BoundedRoute the executor's phase-7 validateAndBound produced (the loop consumes
@@ -365,6 +373,15 @@ export async function runDriver(
     if (!pausedAlready && options.pauseBefore?.(action) && options.confirmContinue) {
       pausedAlready = true;
       await options.confirmContinue(action);
+    }
+
+    // #5 parallel per-AC lanes: a pre-dispatch hook may handle this action itself
+    // (fan a contract story's ACs out in parallel + merge them back) and advance
+    // state. When it does, CONTINUE so the next iteration re-reads the now-advanced
+    // state and routes onward (to story-close), never dispatching the original turn.
+    // Default absent / false => byte-identical (falls through to the normal dispatch).
+    if (await effects.beforeAction?.(action, state)) {
+      continue;
     }
 
     const signature = JSON.stringify(action);

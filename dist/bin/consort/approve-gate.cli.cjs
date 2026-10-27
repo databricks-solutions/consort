@@ -7822,6 +7822,15 @@ var EVENT_TEMPLATES = {
   "deploy.failed": { template: "DEPLOY failed {{scope}}: {{reason}}" },
   "verify.passed": { template: "VERIFY passed {{scope}} ({{command}})" },
   "verify.failed": { template: "VERIFY failed {{scope}} ({{command}}): {{summary}}" },
+  // Deterministic per-pass verify wall-clock (code-emitted at each per-cycle GREEN).
+  // reversibility_ran is the tiered-verify signal: did the slow isolated-branch
+  // migration pass run this cycle, or did a non-migration cycle skip it. migration_ms
+  // / client_ms ride in metadata (present only when that pass ran).
+  "verify.timing": { template: "VERIFY timing {{total_ms}}ms (main {{main_ms}}ms, reversibility {{reversibility_ran}})" },
+  // Per-turn wall-clock attributed by TURN-KIND (+ story/ac in metadata) — the signal
+  // the timing report rolls up to find WHERE a story's wall-clock goes (e.g. supersession
+  // assess/green-superseded churn vs productive red/green). Code-emitted at dispatch.
+  "turn.timing": { template: "{{role}} {{turn_kind}} turn {{duration_ms}}ms ({{model}})" },
   // UX adherence
   "adherence.passed": { template: "ADHERENCE passed {{scope}}" },
   "adherence.failed": { template: "ADHERENCE failed {{scope}}: {{diffs}}" },
@@ -8419,7 +8428,11 @@ function resolveProjectSettings(projectDir) {
   const build = {
     loopGranularity: file?.build?.loopGranularity ?? "story",
     batchCap: file?.build?.batchCap,
-    sessionScope: file?.build?.sessionScope ?? "story"
+    sessionScope: file?.build?.sessionScope ?? "story",
+    batchContractStories: file?.build?.batchContractStories ?? false,
+    parallelAcLanes: file?.build?.parallelAcLanes ?? false,
+    parallelAcLaneCap: file?.build?.parallelAcLaneCap ?? 8,
+    splitAcsByKind: file?.build?.splitAcsByKind ?? false
   };
   const project = {
     uiTrack: file?.project?.uiTrack ?? true,

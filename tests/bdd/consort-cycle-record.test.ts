@@ -132,6 +132,65 @@ describe("cycle-record: orchestration stamps RED/GREEN the probe can read", asyn
     expect(seen).toBe(true);
   });
 
+  it("greenOpenCycle scopes the per-cycle verify to the CURRENT AC's tests (#2 impacted-test selection)", async () => {
+    // Story spans AC1 (T1,T2) + AC2 (T3). The open cycle greens T1 (AC1), so the per-cycle verify runs
+    // AC1's tests ONLY — the sibling AC2's T3 is excluded per cycle and runs at the unscoped story-close
+    // REFACTOR + feature-deploy gates (where a cross-AC break is caught before accept).
+    writeJson(join(tdd, "features", F, "stories", S, "acs", "AC2.json"), { id: "AC2", layer: "API", text: "also" });
+    const items = [
+      { id: "T1", description: "a", ac_id: "AC1", status: "pending" },
+      { id: "T2", description: "b", ac_id: "AC1", status: "pending" },
+      { id: "T3", description: "c", ac_id: "AC2", status: "pending" },
+    ];
+    writeJson(join(tdd, "features", F, "test-list.json"), { feature_id: F, items });
+    writeJson(join(tdd, "features", F, "stories", S, "test-list-per-story.json"), { feature_id: F, story_id: S, items });
+    beginNextPendingCycle({ consortDir: tdd, featureId: F, story: S }); // T1 (AC1)
+    let seen: string[] | undefined;
+    const spy: GreenVerifier = async (a) => { seen = a.storyTestIds; return { passed: true, summary: "ok" }; };
+    await greenOpenCycle({ consortDir: tdd, featureId: F, story: S, verify: spy });
+    expect(seen).toEqual(["T1", "T2"]); // AC1 only; T3 (AC2) excluded per cycle
+  });
+
+  it("greenOpenCycle FALLS BACK to the full story scope when the open AC has no matching items (mis-tag safety)", async () => {
+    beginNextPendingCycle({ consortDir: tdd, featureId: F, story: S }); // T1 -> open cycle stamped ac_id AC1
+    // Re-tag every item to AC2 (a mis-tag): acTestIdsFor(AC1) = [] must NOT shrink the verify to
+    // nothing — it falls back to every story id. Rewrite both master + per-story so a re-derive can't
+    // restore the AC1 tags.
+    const items = [
+      { id: "T1", description: "a", ac_id: "AC2", status: "pending" },
+      { id: "T2", description: "b", ac_id: "AC2", status: "pending" },
+    ];
+    writeJson(join(tdd, "features", F, "test-list.json"), { feature_id: F, items });
+    writeJson(join(tdd, "features", F, "stories", S, "test-list-per-story.json"), { feature_id: F, story_id: S, items });
+    let seen: string[] | undefined;
+    const spy: GreenVerifier = async (a) => { seen = a.storyTestIds; return { passed: true, summary: "ok" }; };
+    await greenOpenCycle({ consortDir: tdd, featureId: F, story: S, verify: spy });
+    expect(seen).toEqual(["T1", "T2"]); // fell back to full story scope (not empty)
+  });
+
+  it("LAKEBASE_CONSORT_CYCLE_VERIFY_SCOPE=story opts back to the whole-story scope (the A/B lever)", async () => {
+    writeJson(join(tdd, "features", F, "stories", S, "acs", "AC2.json"), { id: "AC2", layer: "API", text: "also" });
+    const items = [
+      { id: "T1", description: "a", ac_id: "AC1", status: "pending" },
+      { id: "T2", description: "b", ac_id: "AC1", status: "pending" },
+      { id: "T3", description: "c", ac_id: "AC2", status: "pending" },
+    ];
+    writeJson(join(tdd, "features", F, "test-list.json"), { feature_id: F, items });
+    writeJson(join(tdd, "features", F, "stories", S, "test-list-per-story.json"), { feature_id: F, story_id: S, items });
+    beginNextPendingCycle({ consortDir: tdd, featureId: F, story: S }); // T1 (AC1)
+    const prev = process.env.LAKEBASE_CONSORT_CYCLE_VERIFY_SCOPE;
+    process.env.LAKEBASE_CONSORT_CYCLE_VERIFY_SCOPE = "story";
+    let seen: string[] | undefined;
+    const spy: GreenVerifier = async (a) => { seen = a.storyTestIds; return { passed: true, summary: "ok" }; };
+    try {
+      await greenOpenCycle({ consortDir: tdd, featureId: F, story: S, verify: spy });
+    } finally {
+      if (prev === undefined) delete process.env.LAKEBASE_CONSORT_CYCLE_VERIFY_SCOPE;
+      else process.env.LAKEBASE_CONSORT_CYCLE_VERIFY_SCOPE = prev;
+    }
+    expect(seen).toEqual(["T1", "T2", "T3"]); // whole story (all ACs), not just AC1
+  });
+
   it("greenOpenCycle records the run + stamps green_at on the open RED cycle", async () => {
     beginNextPendingCycle({ consortDir: tdd, featureId: F, story: S });
     const g = await greenOpenCycle({ consortDir: tdd, featureId: F, story: S, verify: pass });

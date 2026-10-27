@@ -6692,7 +6692,11 @@ function resolveProjectSettings(projectDir) {
   const build = {
     loopGranularity: file?.build?.loopGranularity ?? "story",
     batchCap: file?.build?.batchCap,
-    sessionScope: file?.build?.sessionScope ?? "story"
+    sessionScope: file?.build?.sessionScope ?? "story",
+    batchContractStories: file?.build?.batchContractStories ?? false,
+    parallelAcLanes: file?.build?.parallelAcLanes ?? false,
+    parallelAcLaneCap: file?.build?.parallelAcLaneCap ?? 8,
+    splitAcsByKind: file?.build?.splitAcsByKind ?? false
   };
   const project = {
     uiTrack: file?.project?.uiTrack ?? true,

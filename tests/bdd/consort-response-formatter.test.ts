@@ -420,6 +420,34 @@ describe("response-formatter: roles with no deterministic contract pass", () => 
   });
 });
 
+describe("response-formatter: navigator rejects an UNPINNED schema-diff test at RED (#5 shift-left)", () => {
+  const UNPINNED =
+    "import subprocess, os\n" +
+    'out = subprocess.run([root/"scripts"/"lk","lakebase-schema-diff","--instance",inst,"--branch",os.environ["LAKEBASE_BRANCH_ID"],"--format","markdown"],capture_output=True,text=True,check=True).stdout\n' +
+    'assert any("tracking_code" in l for l in out.splitlines())\n';
+  const PINNED =
+    "import subprocess\n" +
+    'out = subprocess.run([root/"scripts"/"lk","lakebase-schema-diff","--instance",inst,"--branch",b,"--against","main","--format","markdown"],capture_output=True,text=True,check=True).stdout\n' +
+    'assert any("tracking_code" in l for l in out.splitlines())\n';
+
+  it("flags unpinned-schema-diff-baseline in the authored test BEFORE the driver greens it", () => {
+    const td = join(tdd, "..", "tests");
+    mkdirSync(td, { recursive: true });
+    writeFileSync(join(td, "test_s3_contract.py"), UNPINNED);
+    const r = formatRoleResponse({ role: "navigator", consortDir: tdd, featureId: F, story: S });
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(r)).toMatch(/--against/);
+  });
+
+  it("does NOT flag a schema-diff test that pins --against", () => {
+    const td = join(tdd, "..", "tests");
+    mkdirSync(td, { recursive: true });
+    writeFileSync(join(td, "test_s3_contract.py"), PINNED);
+    const r = formatRoleResponse({ role: "navigator", consortDir: tdd, featureId: F, story: S });
+    expect(JSON.stringify(r)).not.toMatch(/unpinned-schema-diff-baseline|no --against baseline/);
+  });
+});
+
 describe("response-formatter: spec-author enforces the registered breakdown (the design seed)", () => {
   const RF = "F1-stock-visibility";
   function reg(): void {

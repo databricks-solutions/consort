@@ -34,6 +34,24 @@ interface ConsortConfigFile {
         loopGranularity?: "story" | "ac" | "hybrid-a";
         batchCap?: number;
         sessionScope?: "story" | "cycle";
+        /** #3 batch-RED lever. A CONTRACT story is forced to the fine-grained `ac` loop by default
+         *  (localization safety on the risky drop-column migration). Set true to let contract stories
+         *  use the normal loopGranularity/batchCap batching too — fewer cycles, but bigger GREEN steps
+         *  (A/B before adopting; the churn-vs-cycles trade is real). Default false = current safe behavior. */
+        batchContractStories?: boolean;
+        /** #5 parallel per-AC lanes lever. Off (default) = a contract story's ACs build serially
+         *  (current behavior, byte-identical). On = the first AC runs serial (authors the contract
+         *  migration), then the rest fan out CONCURRENTLY in isolated lanes (git worktree + COW Lakebase
+         *  child off the experiment branch), merged back + sequential fallback on conflict. Attacks the
+         *  serialized wall-clock the verify-trimming levers can't. A/B before adopting. */
+        parallelAcLanes?: boolean;
+        /** CEILING on in-flight AC lanes when parallelAcLanes is on (host-contention safety). The KIT sizes
+         *  the worker pool to the number of planned lanes and only caps DOWN to this ceiling — the operator
+         *  does not hand-crank it to match the lane count. Default 8. */
+        parallelAcLaneCap?: number;
+        /** Split a multi-kind AC into ONE LANE PER KIND (component / client / behavior / fitness) so each
+         *  kind's authoring parallelizes. Default off => one lane per AC. */
+        splitAcsByKind?: boolean;
     };
     plan?: {
         sizing?: boolean;

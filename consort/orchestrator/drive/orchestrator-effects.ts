@@ -24,13 +24,17 @@ import { performTurnViaExecutor, assertNotStrandedAgentTurn, isPlanningMode } fr
 import { assertRouteSatisfiable } from "../steps/assert-route-satisfiable.js";
 import { formatAgentReport } from "../turns/agent-report-formatter.js";
 import type { DriveEffects } from "./orchestrator-run.js";
-import { deriveDriveState, effectiveLoopForStory } from "../state/orchestrator-derive.js";
+import { deriveDriveState, effectiveLoopForStory, isContractStory } from "../state/orchestrator-derive.js";
+import { runParallelAcLanesLive } from "../../experiment/ac-lane-live.js";
+import { shouldFanOutAcLanes } from "../../experiment/ac-lane-coordinator.js";
+import { parseFailedNodeDetails } from "../../pipeline/batch-decompose.js";
+import { supersededTestCandidates } from "../../architecture/contract-clean.js";
 import { diskArtifactProbe, readDriveContext } from "../state/orchestrator-probe.js";
 import { readPipeline } from "../../pipeline/story-pipeline.js";
 import {
   storyJson, designGuideJson, iaMd, handbackFile, storyAcIds, architectureJson, readAcLayer,
   featureProposalsMd, featureSpecJson, featureTestListJson, acsDir, planningEstimatesJson, cycleDir,
-  featureDeployReverifyMarkerJson, testListPatchJson,
+  featureDeployReverifyMarkerJson, testListPatchJson, storyResolved, cyclesRootDir,
 } from "../../config/consort-paths.js";
 import { kitRoot } from "../../config/kit-bin.js";
 import type { TurnKey } from "./turn-key.js";
@@ -40,7 +44,7 @@ import type { TurnKey } from "./turn-key.js";
 export { turnKeyForAction } from "./turn-key.js";
 import { turnKeyForAction } from "./turn-key.js";
 import { designGuideConformance } from "../../session/response-formatter.js";
-import { storyTestProgress, nextPendingBatch, DEFAULT_BATCH_CAP } from "../../pipeline/cycle-record.js";
+import { storyTestProgress, nextPendingBatch, DEFAULT_BATCH_CAP, storyAcOrder, acKindsForStory } from "../../pipeline/cycle-record.js";
 import { readSupersededTests, readGreenFailure } from "../../smells/supersession.js";
 import { writeEscalation } from "../../gates/escalation.js";
 import { readDeployVerifyAssessMarker, readDeployVerifyScope } from "../../smells/deploy-verify-assess.js";
@@ -138,6 +142,13 @@ export interface DriveEffectsConfig {
   /** Lakebase instance id (the Lakebase project id), threaded to the experiment
    *  branch ops. The experiment CLI requires it; resolved from SCM state. */
   instance?: string;
+  /** #5 parallel per-AC lanes lever + cap (build.parallelAcLanes / parallelAcLaneCap).
+   *  When on, a CONTRACT story's ACs fan out concurrently (first AC serial, then the
+   *  rest in isolated lanes). Default off = serial (byte-identical). */
+  parallelAcLanes?: boolean;
+  parallelAcLaneCap?: number;
+  /** Split a multi-kind AC into one lane per kind (build.splitAcsByKind). Default off. */
+  splitAcsByKind?: boolean;
   /** The feature's git + Lakebase branch (the PARENT a per-story experiment is
    *  cut off, and merged back into). Resolved from SCM state at drive start. */
   featureBranch?: string;
@@ -184,6 +195,8 @@ export interface DriveEffectsConfig {
   loopGranularity?: "ac" | "hybrid-a" | "story";
   /** P8b: max test-list items per layer-batch (hybrid-a). Default 3. */
   batchCap?: number;
+  /** #3 batch-RED lever: let CONTRACT stories use the batched loop too (default false = forced `ac`). */
+  batchContractStories?: boolean;
   /** Optimize harness (Family-2 content/scope levers), all DEFAULT-OFF: a normal
    *  drive sets none, so every turn's prompt + spawn args are byte-identical to
    *  before. The per-handoff optimize harness sets them for ONE forked candidate
@@ -460,6 +473,11 @@ function nextPendingTestDirectiveBody(
  * no allowlist exists for the open AC, so a normal GREEN turn is unaffected.
  */
 function supersededTestsDirective(consortDir: string, featureId: string, story: string): string {
+  // DEFER (serial-first AC of a fan-out): the coordinator clears the cross-story
+  // supersession ONCE via clearSupersession right after this AC, so do NOT direct the
+  // driver to retarget it reactively here — that is exactly the per-cycle grind the
+  // deferral removes. The deterministic verifier already lets the AC green past these.
+  if ((process.env.CONSORT_DEFER_SUPERSESSION ?? "").trim()) return "";
   let acId: string | undefined;
   try {
     const prog = storyTestProgress(consortDir, featureId, story);
@@ -470,11 +488,25 @@ function supersededTestsDirective(consortDir: string, featureId: string, story: 
   if (!acId) return "";
   const sup = readSupersededTests(consortDir, featureId, story, acId);
   if (!sup) return "";
-  const list = sup.tests.map((t) => `  - ${t}`).join("\n");
+  // BATCH the supersession: UNION the Navigator's flagged set with the DETERMINISTIC
+  // dropped-symbol sweep — the SAME `supersededTestCandidates` source that already
+  // pre-localizes the assess advisory (one source of truth; backend + client refs). The
+  // one green-superseded turn then retargets the WHOLE superseded file set at once,
+  // collapsing the wave-by-wave driver refactors that otherwise dominate a contract
+  // story's serial-first AC. Deterministic + complete, so no round re-discovers.
+  let deterministic: string[] = [];
+  try {
+    deterministic = [...new Set(supersededTestCandidates({ projectDir: dirname(consortDir) }).candidates.map((c) => c.file))];
+  } catch {
+    /* advisory only: a gate error must never break the directive */
+  }
+  const union = Array.from(new Set([...sup.tests, ...deterministic])).sort();
+  const list = union.map((t) => `  - ${t}`).join("\n");
   return (
-    `\n\nSUPERSEDED TESTS: this AC (${acId}) supersedes behavior encoded in PRIOR tests the Navigator flagged` +
-    ` (${sup.reason}). The latest AC wins. You MAY refactor ONLY these flagged tests to the new behavior` +
-    ` (alongside the production code) so the honest-GREEN verify holds:\n${list}\n` +
+    `\n\nSUPERSEDED TESTS: this AC (${acId}) supersedes behavior encoded in PRIOR tests — the Navigator's flagged` +
+    ` set UNIONED with the deterministic dropped-column sweep (${sup.reason}). The latest AC wins. Refactor ALL of` +
+    ` these (and ONLY these) to the new behavior in ONE pass, alongside the production code, so the honest-GREEN` +
+    ` verify holds — do them together, do NOT leave any for a later round:\n${list}\n` +
     `Do NOT touch any other test; an UNflagged failing test is a genuine regression that must stay red and escalate.`
   );
 }
@@ -509,6 +541,36 @@ function refactorSupersededDirective(consortDir: string, featureId: string, stor
  * rather than re-running the same failing verify blind. Empty when the open AC
  * has no such marker.
  */
+/**
+ * Batch-then-decompose-on-failure directive. When the green-failure captured MORE
+ * THAN ONE failing node-id (a batched RED+GREEN whose verify failed on several
+ * tests at once), tell the Driver to repair them ONE AT A TIME — each fix targeted
+ * to its single failing test (per-node-id reason/detail listed), leaving the batch's
+ * passing tests untouched — with the honest-GREEN re-verify of the whole batch as
+ * the regression guard. Empty for a single-failure (nothing to decompose) so the
+ * ≤1-failure path is byte-identical. Uses the parseFailedNodeDetails instrumentation.
+ */
+function batchDecomposeDirective(consortDir: string, featureId: string, story: string): string {
+  let acId: string | undefined;
+  try {
+    acId = storyTestProgress(consortDir, featureId, story).openRed[0]?.ac_id;
+  } catch {
+    acId = undefined;
+  }
+  if (!acId) return "";
+  const gf = readGreenFailure(consortDir, featureId, story, acId);
+  if (!gf?.failureOutput) return "";
+  const details = parseFailedNodeDetails(gf.failureOutput);
+  if (details.length < 2) return ""; // only a MULTI-failure batch decomposes
+  const list = details.map((d, i) => `  ${i + 1}. ${d.nodeId}${d.reason ? ` — ${d.reason}` : ""}`).join("\n");
+  return (
+    `\nDECOMPOSED REPAIR — ${details.length} tests failed this batched verify. Repair them ONE AT A TIME, each` +
+    ` fix TARGETED to its single failing test (the smallest change that greens it); the batch's PASSING tests are` +
+    ` already correct, do NOT rewrite them. The honest-GREEN re-verify of the WHOLE batch after your turn is the` +
+    ` regression guard — a fix that breaks a sibling re-fails. Failing tests (each with its own reason):\n${list}\n`
+  );
+}
+
 function regressionRepairDirective(consortDir: string, featureId: string, story: string): string {
   let acId: string | undefined;
   try {
@@ -1185,6 +1247,36 @@ function roleTaskBody(
         // scope set the Driver refactors is read from what you write here.
         const marker = readDeployVerifyAssessMarker(consortDir, featureId, s);
         const failing = marker?.failing_node_ids ?? [];
+        if (marker?.kind === "supersession") {
+          // Story-level deploy-verify self-heal ASSESS (SUPERSESSION variant): the
+          // full-feature deploy-verify FAILED on tests that reference a column this
+          // feature's CONTRACT migration DROPPED. They fail at HEAD (the column is
+          // gone – they do NOT pass in isolation), so they are STALE tests the
+          // contract deliberately superseded, not broken software. Confirm each is
+          // genuinely superseded + prescribe how to retarget/remove the stale ref.
+          const dropped = marker.dropped_columns ?? [];
+          return (
+            `ASSESS a failed full-feature DEPLOY-VERIFY for story ${s}. The story's own tests are green, but the` +
+            ` full-feature verify FAILED on the tests below, which reference a column this feature's CONTRACT` +
+            ` migration DROPPED${dropped.length ? ` (${dropped.join(", ")})` : ""}. Because the column no longer` +
+            ` exists at HEAD, these tests fail EVERYWHERE (they do NOT pass in isolation) – they are STALE tests the` +
+            ` contract deliberately SUPERSEDED, not broken software.\n` +
+            `Failing tests:\n${failing.map((n) => `  ${n}`).join("\n")}\n\n` +
+            (marker.failure_output
+              ? `OBSERVED failure output (the deploy-verify run) — adjudicate from THIS, not a guess; a` +
+                ` "column/relation does not exist" / UndefinedColumn error is proof of supersession, an assertion` +
+                ` mismatch on live data is a genuine regression:\n\`\`\`\n${marker.failure_output}\n\`\`\`\n\n`
+              : "") +
+            `For EACH test, decide: does it assert on the dropped column (or behavior the contract retired) = genuinely` +
+            ` SUPERSEDED, or is it a GENUINE regression unrelated to the drop? For each SUPERSEDED test prescribe HOW to` +
+            ` retarget or remove the stale reference (drop the dropped-column assertion / retarget to the surviving` +
+            ` column) WITHOUT weakening any still-valid assertion in it.\n` +
+            `Write your directives to ${root}/features/${featureId}/stories/${s}/deploy-verify-scope.json as` +
+            ` {"version":1,"story_id":"${s}","directives":[{"node_id":"<path::test>","directive":"<how to retarget it>"}]}` +
+            ` – one entry per test you confirm is superseded. If (rarely) a failure is a GENUINE regression, OMIT it` +
+            ` (write no file, or an empty directives array); the orchestration then raises it to a human. Write ONLY that file.`
+          );
+        }
         return (
           `ASSESS a failed full-feature DEPLOY-VERIFY for story ${s}. The story's own tests are green, but the` +
           ` full-feature verify against the running app FAILED on the tests below. A deterministic classifier` +
@@ -1193,6 +1285,10 @@ function roleTaskBody(
           ` AGGREGATE – a COUNT/SUM integrity probe – asserting an ABSOLUTE total that holds on the isolated` +
           ` per-cycle branch but breaks once other stories' rows share the table).\n` +
           `Failing tests:\n${failing.map((n) => `  ${n}`).join("\n")}\n\n` +
+          (marker?.failure_output
+            ? `OBSERVED failure output (the deploy-verify run) — confirm the contamination shape against THIS (an` +
+              ` assertion on an absolute whole-table total that drifted, not a crash):\n\`\`\`\n${marker.failure_output}\n\`\`\`\n\n`
+            : "") +
           `For EACH test, prescribe HOW to make it own its state: scope BOTH the seed AND the assertion to the` +
           ` test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA, NEVER an absolute` +
           ` whole-table total. Do NOT weaken the assertion's intent – keep the invariant, just scope it.\n` +
@@ -1272,6 +1368,20 @@ function roleTaskBody(
         // the test's own rows (or a delta). The re-deploy re-runs the full verify.
         const scope = readDeployVerifyScope(consortDir, featureId, s);
         const directives = scope?.directives ?? [];
+        const deployMarker = readDeployVerifyAssessMarker(consortDir, featureId, s);
+        if (deployMarker?.kind === "supersession") {
+          const dropped = deployMarker.dropped_columns ?? [];
+          return (
+            `REFACTOR the SUPERSEDED tests the Navigator flagged for story ${s}. Each FAILED the full-feature` +
+            ` deploy-verify because it references a column this feature's CONTRACT migration DROPPED` +
+            `${dropped.length ? ` (${dropped.join(", ")})` : ""} – the column no longer exists at HEAD, so the test is` +
+            ` stale. Refactor EACH per its directive: remove or retarget the stale reference to the dropped column` +
+            ` (drop the assertion on it, or point it at the surviving column). Do NOT weaken any still-valid assertion` +
+            ` and do NOT change product code.\n` +
+            directives.map((d) => `  ${d.node_id}\n    -> ${d.directive}`).join("\n") +
+            `\nEdit ONLY those test files. The orchestrator re-deploys + re-verifies after your turn.`
+          );
+        }
         return (
           `SCOPE the contamination-fragile tests the Navigator flagged for story ${s}. Each FAILED the` +
           ` full-feature deploy-verify but PASSES in isolation – it asserts an ABSOLUTE whole-table aggregate` +
@@ -1306,13 +1416,26 @@ function roleTaskBody(
         // superseded tests keep erroring (and, on a shared session, cascade the
         // others into failure), so the honest-GREEN verify never holds and it
         // escalates. Append the supersede allowlist (empty when none was flagged).
-        return regressionRepairDirective(consortDir, featureId, s) + supersededTestsDirective(consortDir, featureId, s);
+        return regressionRepairDirective(consortDir, featureId, s) + batchDecomposeDirective(consortDir, featureId, s) + supersededTestsDirective(consortDir, featureId, s);
       }
       if (action.buildMode === "refactor") {
         // The context pack APPENDS at the end of the refactor directive (a clean suffix), so on the
         // executor path it is a DECLARED append precondition (re-injected by phase 2.5); omit it
         // inline here when context-pack is omitted. Legacy path (omit absent) keeps it inline.
         const pack = (ac: string): string => (omit?.has("context-pack") ? "" : buildContextPack(consortDir, featureId, s, ac));
+        // BOUNDED VERIFY (appended to every refactor directive): the orchestrator runs the ONE authoritative
+        // honest post-refactor verify (refactorAc/refactorStory -> defaultGreenVerifier) the instant this turn
+        // stops. The Driver re-running the whole story suite + e2e to re-confirm green is pure duplication —
+        // live, a story-close refactor turn re-ran the full 28-test + 6-e2e suite ~33x to confirm a no-op
+        // refactor, and three such turns serially were 95min (51%) of a 185min run. So: make the MINIMAL change
+        // the review/smell requires and stop; if nothing concrete is warranted (the review requested none), make
+        // NO change and stop. Do NOT re-run the full suite or e2e to re-confirm — at most ONE scoped check of the
+        // exact thing you changed. The authoritative verify is the orchestrator's, not yours.
+        const boundedVerify =
+          ` Do NOT re-run the full test suite or e2e to re-confirm green: the orchestrator runs the ONE authoritative` +
+          ` post-refactor verify the moment you stop, so re-running it yourself is wasted latency. Make the MINIMAL` +
+          ` change the review/smell requires and stop; if nothing concrete is warranted, make NO change and stop` +
+          ` (at most one scoped check of the exact thing you changed).`;
         // story granularity (default): REFACTOR the WHOLE story in one turn per
         // the story-level review (.tdd/cycles/<F>/<S>/review.json -> refactor_notes).
         if ((build?.loop ?? "story") === "story") {
@@ -1325,6 +1448,7 @@ function roleTaskBody(
             ` (e.g. \`consort-layering-clean --project-dir . --architecture ${root}/features/${featureId}/architecture.json\`) and fix exactly what it flags – typically extract the` +
             ` duplicated/misplaced code into one shared helper in its correct layer.` +
             ` Keep ALL the story's tests green and do not change what the outer-boundary tests check, refactor only.` +
+            boundedVerify +
             pack("")
           );
         }
@@ -1337,6 +1461,7 @@ function roleTaskBody(
           ` (e.g. \`consort-layering-clean --project-dir . --architecture ${root}/features/${featureId}/architecture.json\`) and fix exactly what it flags – typically extract the` +
           ` duplicated/misplaced code into one shared helper in its correct layer.` +
           ` Keep ALL tests green and do not change what the outer-boundary tests check, refactor only.` +
+          boundedVerify +
           pack(action.ac ?? "")
         );
       }
@@ -1471,7 +1596,7 @@ export function buildTaskBody(
   const override = cfg.instructionsOverride?.(action);
   if (override !== undefined) return override;
   const storyLoop: "ac" | "hybrid-a" | "story" | undefined =
-    "story" in action ? effectiveLoopForStory(cfg.loopGranularity ?? "story", action.story) : cfg.loopGranularity;
+    "story" in action ? effectiveLoopForStory(cfg.loopGranularity ?? "story", action.story, cfg.batchContractStories) : cfg.loopGranularity;
   return roleTaskBody(action, cfg.featureId, cfg.uiTrack ?? true, cfg.consortDir, { loop: storyLoop, cap: cfg.batchCap }, omit);
 }
 
@@ -1594,7 +1719,7 @@ function buildCycleCommand(
   const f = cfg.featureId;
   // Same storyLoop derivation commandsForAction computes for the cycle loop flags.
   const storyLoop: "ac" | "hybrid-a" | "story" | undefined =
-    "story" in action ? effectiveLoopForStory(cfg.loopGranularity ?? "story", action.story) : cfg.loopGranularity;
+    "story" in action ? effectiveLoopForStory(cfg.loopGranularity ?? "story", action.story, cfg.batchContractStories) : cfg.loopGranularity;
 
   // Navigator build turns.
   if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "reconcile") {
@@ -2459,6 +2584,89 @@ export function buildDriveEffects(cfg: DriveEffectsConfig): DriveEffects {
   return {
     async readState() {
       return readDriveStateFromDisk(cfg.consortDir, cfg.featureId, cfg.projectDir, { uiTrack: cfg.uiTrack });
+    },
+    // #5 PARALLEL PER-AC LANES (loop hook): when the build reaches a CONTRACT
+    // story's first per-AC RED/GREEN turn and the lever is on, delegate the WHOLE
+    // story's AC-building to the parallel-lane coordinator (AC1 serial -> fan out
+    // AC2..n in isolated worktree+COW lanes -> merge -> sequential fallback). Returns
+    // true to tell the run loop to CONTINUE (re-read state: all ACs now green, so it
+    // routes to story-close REVIEW/deploy/accept). GUARDS keep it surgical + safe:
+    // the lever (default off => untouched serial path), a CONTRACT story only, a
+    // plain build turn (no buildMode => RED/GREEN, never review/deploy),
+    // CONSORT_AC_LANE UNSET (the re-entrancy sentinel the coordinator stamps on its
+    // spawned sub-drives, so they do NOT re-delegate — keyed off this sentinel, NOT the
+    // human-facing CONSORT_SCOPE_AC scope var, so a stale/ambient scope inherited by a
+    // top-level drive can't silently disable the fan-out), a once-per-story marker (a
+    // post-fan-out partial never re-triggers it), and >=3 ACs (serial-first + >=2 lanes).
+    async beforeAction(action) {
+      // Fast structural exits first (keeps every non-build turn cheap); the fan-out only
+      // ever applies to a contract story's build turn.
+      if (action.kind !== "invoke-role" || !("story" in action) || !action.story) return false;
+      const story = action.story;
+      if (!isContractStory(story)) return false;
+
+      let acOrder: string[] = [];
+      try { acOrder = storyAcOrder(cfg.consortDir, cfg.featureId, story); } catch { /* story not yet resolvable */ }
+      // Once-per-story fan-out marker. It MUST live under the gitignored, per-run runtime
+      // tree (cycles/), NOT the tracked story corpus — written into tracked territory it
+      // gets committed, and a `git reset --hard <anchor>` restores it, so a later restart
+      // sees it and silently REFUSES to fan out (the story builds serially). cyclesRootDir
+      // is wiped at the start of every run.
+      const marker = join(cyclesRootDir(cfg.consortDir), cfg.featureId, story, ".ac-lanes-done");
+      const markerExists = fs.existsSync(marker);
+      const hasBuildMode = "buildMode" in action && !!action.buildMode;
+      // RESUME/REPLAY entry: a run resumed from the fan-out-begin anchor re-enters with the
+      // serial-first AC already built, so the pending turn is that AC's per-AC REVIEW
+      // (buildMode "review", ac === acOrder[0]) rather than the story-zero RED turn a FRESH run
+      // fans out on. Recognize exactly that review as a legitimate fan-out trigger so the recorded
+      // anchor is replayable without re-authoring the serial-first AC. Narrowly scoped (review
+      // mode + serial-first AC only); the once-per-story marker still blocks any re-trigger.
+      const serialFirstReview =
+        hasBuildMode &&
+        action.buildMode === "review" &&
+        "ac" in action &&
+        !!action.ac &&
+        acOrder.length > 0 &&
+        action.ac === acOrder[0];
+
+      // TEMP DEBUG (ac-lanes): trace the trigger inputs on every contract-story build turn.
+      process.stderr.write(
+        `[ac-lanes-dbg] story=${story} role=${action.role} lever=${cfg.parallelAcLanes} ` +
+        `laneSentinel=${process.env.CONSORT_AC_LANE ?? ""} scope=${process.env.CONSORT_SCOPE_AC ?? ""} ` +
+        `buildMode=${hasBuildMode ? action.buildMode : "none"} acOrder=${acOrder.length} marker=${markerExists}\n`,
+      );
+
+      if (!shouldFanOutAcLanes({
+        leverOn: !!cfg.parallelAcLanes,
+        isContractStory: true,
+        role: action.role,
+        hasBuildMode,
+        isSubLane: !!process.env.CONSORT_AC_LANE,
+        acCount: acOrder.length,
+        markerExists,
+        serialFirstReview,
+      })) {
+        return false;
+      }
+      // Split lever (KIT config build.splitAcsByKind): fan a multi-kind AC out into ONE LANE PER KIND so
+      // each kind's authoring parallelizes (no guessing which kind is heavy, no combining kinds). acKinds
+      // is read from the story test-list so the split is derived from each AC's REAL composition. Off => one lane per AC.
+      const splitAcsByKind = cfg.splitAcsByKind ?? false;
+      const res = await runParallelAcLanesLive({
+        projectDir: cfg.projectDir,
+        instance: cfg.instance ?? "",
+        featureId: cfg.featureId,
+        story,
+        experimentBranch: experimentBranchName(story),
+        acOrder,
+        enabled: true,
+        concurrency: cfg.parallelAcLaneCap ?? 4,
+        splitAcsByKind,
+        acKinds: splitAcsByKind ? acKindsForStory(cfg.consortDir, cfg.featureId, story) : undefined,
+      });
+      fs.mkdirSync(dirname(marker), { recursive: true });
+      fs.writeFileSync(marker, JSON.stringify({ at: new Date().toISOString(), ...res }, null, 2), "utf8");
+      return true; // loop re-reads state: ACs green -> story-close
     },
     async perform(action) {
       // HARD-STOP GUARD (#732): reaching perform for an invoke-role action means the executor

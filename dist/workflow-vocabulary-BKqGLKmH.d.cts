@@ -133,6 +133,12 @@ interface StoryBuild {
     testsWritten: boolean;
     /** The Driver made the tests pass. */
     codeWritten: boolean;
+    /** This drive is a coordinator-spawned per-AC LANE (CONSORT_AC_LANE). A lane does only
+     *  RED/GREEN for its scoped AC(s), then completes — REVIEW / REFACTOR / deploy-verify /
+     *  accept run ONCE at story-close on the MERGED result (the top-level drive), never per
+     *  lane (a lane's unscoped refactor/deploy verify would fail on sibling ACs built in
+     *  OTHER lanes, deadlocking the fan-out). */
+    isAcLane?: boolean;
     /** Build-loop granularity for this story. "story" (default) drives one
      *  story-scoped REVIEW + REFACTOR turn (reviewStoryPending / refactorStoryPending);
      *  "ac" / "hybrid-a" drive the per-AC reviewAc / refactorAc cadence. */
@@ -404,6 +410,7 @@ type WorkflowAction = DriveAction | {
 } | {
     kind: "complete";
     story: string;
+    laneExit?: boolean;
 } | {
     kind: "feature-complete";
 } | {

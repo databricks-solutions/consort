@@ -433,6 +433,57 @@ describe("driverPhaseForTdd", () => {
   });
 });
 
+describe("batchContractStories threads into the per-story loop (derive<->effects agreement)", () => {
+  // Regression: a batched CONTRACT story deadlocked at story-close REVIEW. deriveDriveState
+  // called effectiveLoopForStory WITHOUT ctx.batchContractStories, so a contract story was
+  // forced to the "ac" loop and ROUTED the review per-AC (reviewAc), while the effects layer
+  // (buildCycleCommand) DID pass the flag -> recorded the review story-level (reviewStory).
+  // build.reviewAc never advanced and the review protocol hard-halted. ctx must carry the flag
+  // so derive routing matches the effects loop. Same AC-review pending on disk in BOTH cases;
+  // ONLY the lever changes whether the drive reviews the story in one turn or per AC.
+  const contractBuilding = (): StoryPipeline =>
+    pipeline(
+      {
+        "S3-drop-tracking-code": {
+          status: "building",
+          gate: { status: "approved", history: [] },
+          experiment: { slug: "e", branch: "exp/s3", parent: "feat", n: 1, status: "active" },
+        },
+      },
+      { build_active: "S3-drop-tracking-code" },
+    );
+  // A story whose tests are all green with BOTH a story-level and a per-AC review pending on disk.
+  const reviewPendingProbe = (): StoryArtifactProbe => ({
+    ...fakeProbe({ "S3-drop-tracking-code": { codeWritten: true, reviewPending: true } }),
+    reviewPendingAc: (s) => (s === "S3-drop-tracking-code" ? "AC1-schema-diff-shows-tracking-code-removed" : null),
+  });
+
+  it("lever OFF (default): a contract story routes the story-close review PER-AC (ac loop)", () => {
+    const state = deriveDriveState(contractBuilding(), reviewPendingProbe(), { phase: "feature", breakdownDone: true });
+    expect(nextTransition(state)).toEqual({
+      kind: "invoke-role",
+      role: "navigator",
+      story: "S3-drop-tracking-code",
+      buildMode: "review",
+      ac: "AC1-schema-diff-shows-tracking-code-removed",
+    });
+  });
+
+  it("lever ON: the SAME on-disk state routes the review STORY-LEVEL (no ac) — matching the effects recorder", () => {
+    const state = deriveDriveState(contractBuilding(), reviewPendingProbe(), {
+      phase: "feature",
+      breakdownDone: true,
+      batchContractStories: true,
+    });
+    expect(nextTransition(state)).toEqual({
+      kind: "invoke-role",
+      role: "navigator",
+      story: "S3-drop-tracking-code",
+      buildMode: "review",
+    });
+  });
+});
+
 describe("assertStoryOrderCoversPipeline", () => {
   it("passes when the order matches the pipeline stories", () => {
     const p = pipeline({ S1: { status: "designing" }, S2: { status: "designing" } });

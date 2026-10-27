@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { S as SweepSpec } from '../../optimize-candidates-CCaMNrEX.js';
+import { S as SweepSpec } from '../../optimize-candidates-CyjvNAGw.js';
 import '../../step-key-D8bNukll.js';
 
 interface OptimizeArgs {

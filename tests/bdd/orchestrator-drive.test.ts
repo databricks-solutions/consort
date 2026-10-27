@@ -449,6 +449,31 @@ describe("nextTransition: build lane (after a story is gated)", () => {
     expect(nextTransition(st)).toEqual({ kind: "await-acceptance", story: "S1" });
   });
 
+  it("a per-AC LANE (isAcLane) does RED/GREEN then COMPLETEs — no per-lane review/refactor/deploy/accept", () => {
+    // Fan-out lane: a coordinator-spawned sub-drive (CONSORT_AC_LANE) builds its scoped AC(s)
+    // RED->GREEN and then EXITS so the coordinator can merge + fan out. Per-AC REVIEW/REFACTOR
+    // and story-close deploy-verify/accept are deferred to the top-level drive on the MERGED
+    // result — running them per lane deadlocks (the unscoped verify fails on sibling ACs built
+    // in OTHER lanes, so the serial-first AC never closes and the fan-out never happens).
+    const v = gatedUnbuilt();
+    v.build.experimentCut = true;
+    v.build.testsWritten = true;
+    v.build.codeWritten = true;
+    v.build.isAcLane = true;
+    // A refactor the NON-lane path would run — the lane must NOT.
+    v.build.reviewStoryPending = true;
+    v.build.refactorStoryPending = true;
+    const st = ws({ stories: { S1: v }, buildActive: "S1" });
+    const act = nextTransition(st);
+    expect(act).toEqual({ kind: "complete", story: "S1", laneExit: true });
+    // laneExit marks the action "done" lane, so a `--only build` lane STOPS (no pipeline-complete)
+    // instead of marking the whole STORY done (the hollow-fan-out bug).
+    expect(actionLane(act)).toBe("done");
+    // Same state WITHOUT the lane flag: the normal review/refactor/accept cadence runs.
+    v.build.isAcLane = false;
+    expect(nextTransition(st)).toEqual({ kind: "invoke-role", role: "navigator", story: "S1", buildMode: "review" });
+  });
+
   it("labels the post-assess re-GREEN as green-superseded (a filtered replay detour, not a bare green)", () => {
     // Reactive-green supersession: the honest-GREEN verify failed, the Navigator
     // ASSESSED it and flagged prior tests this AC supersedes (superseded-tests.json,

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 // consort/architecture/contract-clean.ts
-import { existsSync as existsSync2, readFileSync as readFileSync2, readdirSync as readdirSync2, statSync as statSync2 } from "fs";
-import { join as join2, relative, extname } from "path";
+import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
+import { join as join3, relative, extname as extname2 } from "path";
 
 // consort/config/consort-paths.ts
 import * as fs from "fs";
@@ -12,22 +12,22 @@ var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
 var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
 var artifactRootsRegexAlternation = () => ALL_ARTIFACT_ROOTS.map((r2) => r2.replace(/[.]/g, "\\.")).join("|");
 
-// consort/architecture/contract-clean.ts
-var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+// consort/architecture/migration-columns.ts
+import { existsSync as existsSync2, readFileSync as readFileSync2, readdirSync as readdirSync2, statSync as statSync2 } from "fs";
+import { join as join2, extname } from "path";
 var DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
-var DEFAULT_CODE_DIRS = ["app", "src", "lib", "templates"];
-var CODE_EXTS = /* @__PURE__ */ new Set([".py", ".ts", ".tsx", ".js", ".jsx", ".html", ".jinja", ".jinja2", ".sql"]);
-var EXCLUDE_DIR = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
-);
-var EXCLUDE_DIR_JUNK = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
-);
-var DROP_COLUMN_PY = /op\.drop_column\(\s*['"][^'"]+['"]\s*,\s*['"]([a-zA-Z_][a-zA-Z0-9_]*)['"]/g;
-var ADD_COLUMN_PY = /op\.add_column\(\s*['"][^'"]+['"]\s*,\s*sa\.Column\(\s*['"]([a-zA-Z_][a-zA-Z0-9_]*)['"]/g;
+var MIGRATION_EXTS = /* @__PURE__ */ new Set([".py", ".sql", ".js", ".ts"]);
+var SKIP_DIR = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist|build)(\/|$)/;
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var MODULE_CONST = /(?:^|\n)[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*['"]([^'"]+)['"]/g;
 var DROP_COLUMN_SQL = /drop\s+column\s+(?:if\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
 var ADD_COLUMN_SQL = /add\s+column\s+(?:if\s+not\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
-function walk(dir, keep, out = [], excludeDir = EXCLUDE_DIR) {
+function walk(dir, out = []) {
   let entries;
   try {
     entries = readdirSync2(dir);
@@ -43,27 +43,17 @@ function walk(dir, keep, out = [], excludeDir = EXCLUDE_DIR) {
       continue;
     }
     if (st.isDirectory()) {
-      if (!excludeDir.test(abs)) walk(abs, keep, out, excludeDir);
-    } else if (st.isFile() && keep(abs)) {
+      if (!SKIP_DIR.test(abs)) walk(abs, out);
+    } else if (st.isFile() && MIGRATION_EXTS.has(extname(abs))) {
       out.push(abs);
     }
   }
   return out;
 }
-function collectAll(re, text) {
-  const out = [];
-  let m;
-  re.lastIndex = 0;
-  while ((m = re.exec(text)) !== null) out.push(m[1]);
-  return out;
-}
 function forwardMigrationBody(src, ext) {
   if (ext === ".py") {
-    const m = /def\s+upgrade\s*\(/.exec(src);
-    if (!m) return src;
-    const bodyStart = m.index + m[0].length;
-    const rel = src.slice(bodyStart).search(/\ndef\s+downgrade\s*\(/);
-    return rel === -1 ? src.slice(bodyStart) : src.slice(bodyStart, bodyStart + rel);
+    const m = src.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
+    return m ? m[1] : src;
   }
   if (ext === ".js" || ext === ".ts") {
     const up = /(exports\.up\b|async\s+function\s+up\b|\bup\s*[:=])/.exec(src);
@@ -74,16 +64,47 @@ function forwardMigrationBody(src, ext) {
   }
   return src;
 }
-function netDroppedSymbols(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
+function moduleConsts(src) {
+  const consts = /* @__PURE__ */ new Map();
+  MODULE_CONST.lastIndex = 0;
+  let m;
+  while ((m = MODULE_CONST.exec(src)) !== null) consts.set(m[1], m[2]);
+  return consts;
+}
+function eventsForFile(region, ext, consts) {
+  const evs = [];
+  const pushPy = (re, act) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(region)) !== null) {
+      const col = m[1] ?? (m[2] ? consts.get(m[2]) : void 0);
+      if (col) evs.push({ pos: m.index, col, act });
+    }
+  };
+  const pushSql = (re, act) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(region)) !== null) evs.push({ pos: m.index, col: m[1], act });
+  };
+  if (ext === ".py") {
+    pushPy(ADD_COLUMN_PY, "add");
+    pushPy(SA_COLUMN_PY, "add");
+    pushPy(DROP_COLUMN_PY, "drop");
+    pushSql(DROP_COLUMN_SQL, "drop");
+  } else {
+    pushSql(ADD_COLUMN_SQL, "add");
+    pushSql(DROP_COLUMN_SQL, "drop");
+  }
+  return evs.sort((a, b) => a.pos - b.pos);
+}
+function netColumnActions(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
   const files = [];
   for (const md of migrationDirs) {
     const abs = join2(projectDir, md);
-    if (existsSync2(abs)) {
-      for (const f of walk(abs, (p2) => /\.(py|sql|js|ts)$/.test(p2))) files.push(f);
-    }
+    if (existsSync2(abs)) walk(abs, files);
   }
   files.sort();
-  const lastAction = /* @__PURE__ */ new Map();
+  const last = /* @__PURE__ */ new Map();
   for (const f of files) {
     let src;
     try {
@@ -92,14 +113,51 @@ function netDroppedSymbols(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
       continue;
     }
     const ext = extname(f);
-    const isPy = ext === ".py";
-    const body = forwardMigrationBody(src, ext);
-    const drops = isPy ? collectAll(DROP_COLUMN_PY, body) : collectAll(DROP_COLUMN_SQL, body);
-    const adds = isPy ? collectAll(ADD_COLUMN_PY, body) : collectAll(ADD_COLUMN_SQL, body);
-    for (const a of adds) lastAction.set(a, "add");
-    for (const d of drops) lastAction.set(d, "drop");
+    const consts = moduleConsts(src);
+    for (const ev of eventsForFile(forwardMigrationBody(src, ext), ext, consts)) last.set(ev.col, ev.act);
   }
-  return [...lastAction.entries()].filter(([, act]) => act === "drop").map(([sym]) => sym);
+  return last;
+}
+function netDroppedColumns(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
+  return [...netColumnActions(projectDir, migrationDirs).entries()].filter(([, act]) => act === "drop").map(([col]) => col);
+}
+
+// consort/architecture/contract-clean.ts
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+var DEFAULT_MIGRATION_DIRS2 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+var DEFAULT_CODE_DIRS = ["app", "src", "lib", "templates"];
+var CODE_EXTS = /* @__PURE__ */ new Set([".py", ".ts", ".tsx", ".js", ".jsx", ".html", ".jinja", ".jinja2", ".sql"]);
+var EXCLUDE_DIR = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
+);
+var EXCLUDE_DIR_JUNK = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
+);
+function walk2(dir, keep, out = [], excludeDir = EXCLUDE_DIR) {
+  let entries;
+  try {
+    entries = readdirSync3(dir);
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const abs = join3(dir, e);
+    let st;
+    try {
+      st = statSync3(abs);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (!excludeDir.test(abs)) walk2(abs, keep, out, excludeDir);
+    } else if (st.isFile() && keep(abs)) {
+      out.push(abs);
+    }
+  }
+  return out;
+}
+function netDroppedSymbols(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS2) {
+  return netDroppedColumns(projectDir, migrationDirs);
 }
 function symbolRefRegex(symbol) {
   return new RegExp(`\\b${symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
@@ -108,12 +166,12 @@ function scanSymbolRefs(projectDir, dirs, dropped, excludeDir = EXCLUDE_DIR) {
   const matchers = dropped.map((s) => ({ symbol: s, re: symbolRefRegex(s) }));
   const hits = [];
   for (const cd of dirs) {
-    const abs = join2(projectDir, cd);
-    if (!existsSync2(abs)) continue;
-    for (const file of walk(abs, (p2) => CODE_EXTS.has(extname(p2)), [], excludeDir)) {
+    const abs = join3(projectDir, cd);
+    if (!existsSync3(abs)) continue;
+    for (const file of walk2(abs, (p2) => CODE_EXTS.has(extname2(p2)), [], excludeDir)) {
       let lines;
       try {
-        lines = readFileSync2(file, "utf8").split("\n");
+        lines = readFileSync3(file, "utf8").split("\n");
       } catch {
         continue;
       }

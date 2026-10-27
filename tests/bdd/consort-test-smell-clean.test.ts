@@ -44,6 +44,31 @@ describe("checkTestSmells", () => {
     expect(r.violations[0].detail).toMatch(/UNIQUE KEY/);
   });
 
+  it("flags .pgcode (psycopg2 SQLSTATE attr) in a psycopg3 project (psycopg2-pgcode-attr)", () => {
+    const dir = mkProject();
+    write(dir, "tests/test_constraints.py", "def test_unique():\n    with pytest.raises(IntegrityError) as ei:\n        insert_dup()\n    assert ei.value.orig.pgcode == '23505'\n");
+    const r = checkTestSmells({ projectDir: dir });
+    const v = r.violations.find((x) => x.smell === "psycopg2-pgcode-attr");
+    expect(v).toBeTruthy();
+    expect(v!.detail).toMatch(/sqlstate/i);
+    expect(AUTHOR_LAYER_TEST_SMELLS.has("psycopg2-pgcode-attr")).toBe(false); // Driver-fixable (surgical swap)
+  });
+
+  it("does NOT flag .pgcode when the project declares psycopg2 (then it is correct)", () => {
+    const dir = mkProject();
+    write(dir, "pyproject.toml", "[project]\ndependencies = [\"psycopg2-binary>=2.9\"]\n");
+    write(dir, "tests/test_constraints.py", "def test_unique():\n    assert ei.value.orig.pgcode == '23505'\n");
+    const r = checkTestSmells({ projectDir: dir });
+    expect(r.violations.some((v) => v.smell === "psycopg2-pgcode-attr")).toBe(false);
+  });
+
+  it("does NOT flag the psycopg3 .sqlstate attribute", () => {
+    const dir = mkProject();
+    write(dir, "tests/test_constraints.py", "def test_unique():\n    assert ei.value.sqlstate == '23505'\n");
+    const r = checkTestSmells({ projectDir: dir });
+    expect(r.violations.some((v) => v.smell === "psycopg2-pgcode-attr")).toBe(false);
+  });
+
   it("does NOT flag a word-label locator or an exact-scoped one", () => {
     const dir = mkProject();
     write(dir, "client/tests/e2e/form.spec.ts",
@@ -218,6 +243,22 @@ describe("checkTestSmells", () => {
     expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(true);
   });
 
+  it("resolves a CONSTANT create_table name (TABLE='...'; op.create_table(TABLE)) — the F2 stock_adjustments false positive", () => {
+    // Real run (my-stockflow-f2): the migration creates the table via a module CONSTANT, which the
+    // literal-only scanner missed, so every test referencing it falsely tripped schema-unsatisfiable-ref
+    // (5 flags, dismissed by hand in a Navigator assess turn). The table IS created, so NOT a smell.
+    const dir = mkProject();
+    write(dir, "alembic/versions/0001_create.py", `TABLE = "stock_adjustments"\n\ndef upgrade():\n    op.create_table(TABLE, sa.Column("id", sa.Integer()))\n`);
+    write(dir, "tests/test_adj.py", `n = conn.execute("SELECT count(*) FROM stock_adjustments").scalar()\n`);
+    expect(checkTestSmells({ projectDir: dir }).violations.some((v) => v.smell === "schema-unsatisfiable-ref")).toBe(false);
+
+    // SAFETY: resolving the constant does NOT neuter the detector — a genuinely-uncreated table still trips.
+    const dir2 = mkProject();
+    write(dir2, "alembic/versions/0001_create.py", `TABLE = "stock_adjustments"\n\ndef upgrade():\n    op.create_table(TABLE)\n`);
+    write(dir2, "tests/test_adj.py", `n = conn.execute("SELECT count(*) FROM stock_nonexistent").scalar()\n`);
+    expect(checkTestSmells({ projectDir: dir2 }).violations.some((v) => v.smell === "schema-unsatisfiable-ref")).toBe(true);
+  });
+
   it("does NOT flag the word TABLE inside a docstring/comment (the per-test-capture conftest false positive)", () => {
     const dir = mkProject();
     write(dir, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
@@ -331,6 +372,28 @@ describe("checkTestSmells: dropped-column-dangling-reference", () => {
     const files = r.violations.filter((v) => v.smell === "dropped-column-dangling-reference").map((v) => v.file);
     expect(files).toContain("app/services/stock.py");
     expect(files).toContain("app/repo.py");
+  });
+
+  it("flags a TEST that references the dropped column at HEAD with NO downgrade (dropped-column-test-reference)", () => {
+    const dir = mkProject();
+    seedContractMigrations(dir);
+    // A prior-story test still SELECTs the dropped column, and the file does no downgrade — it runs
+    // at HEAD where the column is gone → ProgrammingError (the F6/S3 cross-story supersession class).
+    write(dir, "tests/test_stock_listing.py", `def test_index():\n    cur.execute("SELECT inventory_code FROM stock_records")\n`);
+    const r = checkTestSmells({ projectDir: dir });
+    const v = r.violations.find((x) => x.smell === "dropped-column-test-reference");
+    expect(v).toBeTruthy();
+    expect(v!.file).toBe("tests/test_stock_listing.py");
+    expect(v!.detail).toMatch(/dropped|contract/i);
+    expect(AUTHOR_LAYER_TEST_SMELLS.has("dropped-column-test-reference")).toBe(false); // Driver-fixable
+  });
+
+  it("does NOT flag a migration round-trip test that re-adds the column via its own downgrade", () => {
+    const dir = mkProject();
+    seedContractMigrations(dir);
+    write(dir, "tests/test_roundtrip.py", `def test_rt():\n    command.downgrade(cfg, "-1")\n    cur.execute("SELECT inventory_code FROM stock_records")\n    command.upgrade(cfg, "head")\n`);
+    const r = checkTestSmells({ projectDir: dir });
+    expect(r.violations.some((x) => x.smell === "dropped-column-test-reference")).toBe(false);
   });
 
   it("does NOT flag a write-only request field, a param annotation, or a positional arg (the F6/S3 false positives)", () => {

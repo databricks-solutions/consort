@@ -388,6 +388,18 @@ export function spawnClaudeStreaming(
       }
     };
     let lastText = "";
+    // ATTRIBUTION instrumentation: stamp each sidecar tool/text line with wall-clock + seconds since
+    // the PREVIOUS sidecar emission. A long-running tool (a 500s e2e pytest, a `sleep`, a stalled
+    // playwright) otherwise looks identical to an instant one — the turn total is logged but nothing
+    // says WHICH call ate it. The delta on the line AFTER a `· Bash {...}` is that call's duration, so
+    // a turn's time is attributable to the exact operation from the log alone (no transcript spelunking).
+    let lastEmitMs = Date.now();
+    const stamp = (): string => {
+      const now = Date.now();
+      const dSec = Math.round((now - lastEmitMs) / 1000);
+      lastEmitMs = now;
+      return `${new Date(now).toISOString().slice(11, 19)} +${dSec}s`;
+    };
     // Accumulate ALL assistant text this turn. The ```agent-report block may precede a closing message
     // and/or stream across events, so the LAST message alone can miss it; the full text always contains
     // the complete block. Used (below) as finalText WHEN a report block is present, so the record/log
@@ -437,16 +449,22 @@ export function spawnClaudeStreaming(
         // still collect tools for the transcript even in verbose mode
         for (const t of assistantEventSummary(line).tools) {
           allTools.push(t);
-          liveWrite(`  · ${t}\n`);
+          liveWrite(`  · ${stamp()} ${t}\n`);
           monitorCtl.progress({ kind: "tool", tool: t });
         }
         return;
       }
       const { text, tools } = assistantEventSummary(line);
       for (const t of tools) {
-        process.stderr.write(`  · ${t}\n`);
+        // One stamp per tool, used for BOTH the stderr line and the sidecar line: stderr is what the
+        // parallel-lane adapter funnels (prefixed) into the MAIN agent-live.log, so the timing must ride
+        // the stderr line too — else per-tool durations only exist in each lane's isolated worktree
+        // sidecar, invisible to a monitor tailing the main log. Compute once so the delta is not
+        // double-advanced by two stamp() calls.
+        const st = stamp();
+        process.stderr.write(`  · ${st} ${t}\n`);
         allTools.push(t);
-        liveWrite(`  · ${t}\n`);
+        liveWrite(`  · ${st} ${t}\n`);
         monitorCtl.progress({ kind: "tool", tool: t }); // a tool marker = real liveness; re-arm
       }
       // Intermediate reasoning goes to the sidecar as it streams (liveness), even though the compact
@@ -1116,6 +1134,10 @@ export function buildCfg(args: ParsedArgs, featureId: string): DriveEffectsConfi
     // P8b: build loop granularity + batch cap (config / env).
     loopGranularity: settings.build.loopGranularity,
     batchCap: settings.build.batchCap,
+    batchContractStories: settings.build.batchContractStories,
+    parallelAcLanes: settings.build.parallelAcLanes,
+    parallelAcLaneCap: settings.build.parallelAcLaneCap,
+    splitAcsByKind: settings.build.splitAcsByKind,
     // Unified per-role/turn model-side resolvers ("" => omit --effort).
     effortForTurn: (role, turn) => {
       const e = settings.effortFor(role, turn);

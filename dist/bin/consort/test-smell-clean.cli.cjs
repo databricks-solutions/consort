@@ -24,8 +24,8 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // consort/architecture/test-smell-clean.ts
-var import_node_fs = require("fs");
-var import_node_path2 = require("path");
+var import_node_fs2 = require("fs");
+var import_node_path3 = require("path");
 
 // consort/config/consort-paths.ts
 var fs = __toESM(require("fs"), 1);
@@ -68,13 +68,22 @@ function findFeatureDir(tdd, featureId) {
   return matches.length === 1 ? (0, import_node_path.join)(root, matches[0]) : void 0;
 }
 
-// consort/architecture/test-smell-clean.ts
-var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
-var DEFAULT_TEST_DIRS = ["tests", "client/tests"];
+// consort/architecture/migration-columns.ts
+var import_node_fs = require("fs");
+var import_node_path2 = require("path");
 var DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
-var EXCLUDE_DIR = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist)(\/|$)/;
-var TEST_FILE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs)$|\.py$/;
-function walk(dir, keep, out = []) {
+var MIGRATION_EXTS = /* @__PURE__ */ new Set([".py", ".sql", ".js", ".ts"]);
+var SKIP_DIR = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist|build)(\/|$)/;
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var MODULE_CONST = /(?:^|\n)[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*['"]([^'"]+)['"]/g;
+var DROP_COLUMN_SQL = /drop\s+column\s+(?:if\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
+var ADD_COLUMN_SQL = /add\s+column\s+(?:if\s+not\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
+function walk(dir, out = []) {
   let entries;
   try {
     entries = (0, import_node_fs.readdirSync)(dir);
@@ -90,7 +99,105 @@ function walk(dir, keep, out = []) {
       continue;
     }
     if (st.isDirectory()) {
-      if (!EXCLUDE_DIR.test(abs)) walk(abs, keep, out);
+      if (!SKIP_DIR.test(abs)) walk(abs, out);
+    } else if (st.isFile() && MIGRATION_EXTS.has((0, import_node_path2.extname)(abs))) {
+      out.push(abs);
+    }
+  }
+  return out;
+}
+function forwardMigrationBody(src, ext) {
+  if (ext === ".py") {
+    const m = src.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
+    return m ? m[1] : src;
+  }
+  if (ext === ".js" || ext === ".ts") {
+    const up = /(exports\.up\b|async\s+function\s+up\b|\bup\s*[:=])/.exec(src);
+    if (!up) return src;
+    const after = src.slice(up.index + up[0].length);
+    const rel = after.search(/(exports\.down\b|async\s+function\s+down\b|\bdown\s*[:=])/);
+    return rel === -1 ? after : after.slice(0, rel);
+  }
+  return src;
+}
+function moduleConsts(src) {
+  const consts = /* @__PURE__ */ new Map();
+  MODULE_CONST.lastIndex = 0;
+  let m;
+  while ((m = MODULE_CONST.exec(src)) !== null) consts.set(m[1], m[2]);
+  return consts;
+}
+function eventsForFile(region, ext, consts) {
+  const evs = [];
+  const pushPy = (re, act) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(region)) !== null) {
+      const col = m[1] ?? (m[2] ? consts.get(m[2]) : void 0);
+      if (col) evs.push({ pos: m.index, col, act });
+    }
+  };
+  const pushSql = (re, act) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(region)) !== null) evs.push({ pos: m.index, col: m[1], act });
+  };
+  if (ext === ".py") {
+    pushPy(ADD_COLUMN_PY, "add");
+    pushPy(SA_COLUMN_PY, "add");
+    pushPy(DROP_COLUMN_PY, "drop");
+    pushSql(DROP_COLUMN_SQL, "drop");
+  } else {
+    pushSql(ADD_COLUMN_SQL, "add");
+    pushSql(DROP_COLUMN_SQL, "drop");
+  }
+  return evs.sort((a, b) => a.pos - b.pos);
+}
+function netColumnActions(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
+  const files = [];
+  for (const md of migrationDirs) {
+    const abs = (0, import_node_path2.join)(projectDir, md);
+    if ((0, import_node_fs.existsSync)(abs)) walk(abs, files);
+  }
+  files.sort();
+  const last = /* @__PURE__ */ new Map();
+  for (const f of files) {
+    let src;
+    try {
+      src = (0, import_node_fs.readFileSync)(f, "utf8");
+    } catch {
+      continue;
+    }
+    const ext = (0, import_node_path2.extname)(f);
+    const consts = moduleConsts(src);
+    for (const ev of eventsForFile(forwardMigrationBody(src, ext), ext, consts)) last.set(ev.col, ev.act);
+  }
+  return last;
+}
+
+// consort/architecture/test-smell-clean.ts
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+var DEFAULT_TEST_DIRS = ["tests", "client/tests"];
+var DEFAULT_MIGRATION_DIRS2 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+var EXCLUDE_DIR = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist)(\/|$)/;
+var TEST_FILE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs)$|\.py$/;
+function walk2(dir, keep, out = []) {
+  let entries;
+  try {
+    entries = (0, import_node_fs2.readdirSync)(dir);
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const abs = (0, import_node_path3.join)(dir, e);
+    let st;
+    try {
+      st = (0, import_node_fs2.statSync)(abs);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (!EXCLUDE_DIR.test(abs)) walk2(abs, keep, out);
     } else if (st.isFile() && keep(abs)) {
       out.push(abs);
     }
@@ -99,28 +206,41 @@ function walk(dir, keep, out = []) {
 }
 function collectKnownTables(projectDir, migrationDirs) {
   const tables = /* @__PURE__ */ new Set();
-  const patterns = [
+  const literalPatterns = [
     /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?(\w+)/gi,
     // SQL
     /ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/gi,
     // SQL
     /op\.create_table\(\s*["'](\w+)["']/gi,
-    // Alembic
+    // Alembic literal
     /createTable\(\s*["'](\w+)["']/gi
-    // Knex
+    // Knex literal
+  ];
+  const constPatterns = [
+    /op\.create_table\(\s*([A-Za-z_]\w*)\s*[,)]/g,
+    // Alembic constant
+    /createTable\(\s*([A-Za-z_]\w*)\s*[,)]/g
+    // Knex constant
   ];
   for (const md of migrationDirs) {
-    const abs = (0, import_node_path2.join)(projectDir, md);
-    if (!(0, import_node_fs.existsSync)(abs)) continue;
-    for (const file of walk(abs, (p2) => [".py", ".sql", ".js", ".ts"].includes((0, import_node_path2.extname)(p2)))) {
+    const abs = (0, import_node_path3.join)(projectDir, md);
+    if (!(0, import_node_fs2.existsSync)(abs)) continue;
+    for (const file of walk2(abs, (p2) => [".py", ".sql", ".js", ".ts"].includes((0, import_node_path3.extname)(p2)))) {
       let body;
       try {
-        body = (0, import_node_fs.readFileSync)(file, "utf8");
+        body = (0, import_node_fs2.readFileSync)(file, "utf8");
       } catch {
         continue;
       }
-      for (const re of patterns) {
+      for (const re of literalPatterns) {
         for (const m of body.matchAll(re)) tables.add(m[1].toLowerCase());
+      }
+      const consts = moduleConsts(body);
+      for (const re of constPatterns) {
+        for (const m of body.matchAll(re)) {
+          const resolved = consts.get(m[1]);
+          if (resolved) tables.add(resolved.toLowerCase());
+        }
       }
     }
   }
@@ -142,40 +262,14 @@ var SMELL_FIX = {
   "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it",
   "component-test-mock": "a client COMPONENT test (client/**/*.test.tsx) MOCKS the data path (a stubbed/spied/assigned global `fetch`, MSW, or a `vi.mock` of the app's api/service/http module). Kit principle: NEVER mock when a real counterpart exists \u2014 a component that talks to the backend in production must talk to the REAL backend in test. The vitest harness boots a real backend (vitest.globalSetup.ts) and the fetch shim (tests/setup.ts) routes `/api` to it, so render the component and let its real `/api` calls hit the live service against the paired-branch DB; assert on what comes back. Remove the mock. (A clock \u2014 vi.useFakeTimers \u2014 or a genuinely third-party module with no real counterpart stays allowed.)",
   "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example \u2014 a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) \u2014 matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
-  "unpinned-schema-diff-baseline": "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head \u2014 the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged."
+  "unpinned-schema-diff-baseline": "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head \u2014 the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged.",
+  "dropped-column-test-reference": "this TEST inserts into / selects / asserts a column that a CONTRACT migration in this feature DROPPED, and the file performs no downgrade \u2014 so it runs against HEAD where the column no longer exists and dies with a ProgrammingError ('column does not exist'), even though the app is correct (the F6/S3 cross-story supersession class: a prior story's test still references tracking_code after S3 drops it). `opt2` scopes the per-cycle backend suite to the current story, so a prior-story test like this is NOT run per-cycle and only fails LATER at the full deploy-verify as a HALT. Refactor the superseded reference: drop the dropped column from the INSERT/SELECT/assertion, or retarget it to the surviving columns (e.g. batch_number/serial_number). Do NOT re-add the column to the model or edit the migration to hide it. (A migration round-trip test that re-adds the column via its own downgrade is legitimate and is not flagged \u2014 this only flags pure-HEAD references.)",
+  "psycopg2-pgcode-attr": "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) \u2014 a psycopg2 attribute \u2014 but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap \u2014 no production/driver shim."
 };
-function forwardMigrationRegion(body) {
-  const m = body.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
-  return m ? m[1] : body;
-}
 function collectDroppedColumns(projectDir, migrationDirs) {
-  const files = [];
-  for (const md of migrationDirs) {
-    const abs = (0, import_node_path2.join)(projectDir, md);
-    if (!(0, import_node_fs.existsSync)(abs)) continue;
-    for (const f of walk(abs, (p2) => [".py", ".sql"].includes((0, import_node_path2.extname)(p2)))) files.push(f);
-  }
-  files.sort();
   const GENERIC = /* @__PURE__ */ new Set(["id", "name", "type", "value", "data", "status", "key", "code", "text"]);
-  const last = /* @__PURE__ */ new Map();
-  for (const f of files) {
-    let body;
-    try {
-      body = (0, import_node_fs.readFileSync)(f, "utf8");
-    } catch {
-      continue;
-    }
-    const region = f.endsWith(".py") ? forwardMigrationRegion(body) : body;
-    for (const line of region.split("\n")) {
-      for (const m of line.matchAll(/sa\.Column\(\s*["'](\w+)["']/g)) last.set(m[1], "add");
-      for (const m of line.matchAll(/add_column\([^,]*,\s*sa\.Column\(\s*["'](\w+)["']/g)) last.set(m[1], "add");
-      for (const m of line.matchAll(/ADD\s+COLUMN\s+["'`]?(\w+)/gi)) last.set(m[1].toLowerCase(), "add");
-      for (const m of line.matchAll(/drop_column\([^,]*,\s*["'](\w+)["']/g)) last.set(m[1], "drop");
-      for (const m of line.matchAll(/DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/gi)) last.set(m[1].toLowerCase(), "drop");
-    }
-  }
   const dropped = /* @__PURE__ */ new Set();
-  for (const [col, ev] of last) {
+  for (const [col, ev] of netColumnActions(projectDir, migrationDirs)) {
     if (ev === "drop" && col.length >= 4 && !GENERIC.has(col.toLowerCase())) dropped.add(col);
   }
   return dropped;
@@ -253,18 +347,18 @@ function checkDroppedColumnDanglingRef(projectDir, migrationDirs) {
   const dropped = collectDroppedColumns(projectDir, migrationDirs);
   if (dropped.size === 0) return [];
   const out = [];
-  const migAbs = migrationDirs.map((d) => (0, import_node_path2.join)(projectDir, d));
+  const migAbs = migrationDirs.map((d) => (0, import_node_path3.join)(projectDir, d));
   const SRC_EXCLUDE = new RegExp(`(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|dist|build|${ARTIFACT_ROOTS_RE}|client|tests?|__tests__|e2e)(/|$)`);
   const isSrc = (p2) => /\.(py|sql)$/.test(p2) && !migAbs.some((m) => p2.startsWith(m));
-  const srcFiles = walk(projectDir, (p2) => isSrc(p2) && !SRC_EXCLUDE.test(p2));
+  const srcFiles = walk2(projectDir, (p2) => isSrc(p2) && !SRC_EXCLUDE.test(p2));
   for (const f of srcFiles) {
     let body;
     try {
-      body = (0, import_node_fs.readFileSync)(f, "utf8");
+      body = (0, import_node_fs2.readFileSync)(f, "utf8");
     } catch {
       continue;
     }
-    const rel = (0, import_node_path2.relative)(projectDir, f);
+    const rel = (0, import_node_path3.relative)(projectDir, f);
     for (const col of dropped) {
       if (!body.includes(col)) continue;
       for (const line of liveReferenceLines(body, col)) {
@@ -284,13 +378,13 @@ function checkReversibleInvariantRoundTrip(projectDir) {
   const tdd = resolveConsortDir(projectDir);
   const featsDir = featuresDir(tdd);
   const out = [];
-  if (!(0, import_node_fs.existsSync)(featsDir)) return out;
-  for (const feature of (0, import_node_fs.readdirSync)(featsDir)) {
+  if (!(0, import_node_fs2.existsSync)(featsDir)) return out;
+  for (const feature of (0, import_node_fs2.readdirSync)(featsDir)) {
     const archPath = architectureJson(tdd, feature);
-    if (!(0, import_node_fs.existsSync)(archPath)) continue;
+    if (!(0, import_node_fs2.existsSync)(archPath)) continue;
     let arch;
     try {
-      arch = JSON.parse((0, import_node_fs.readFileSync)(archPath, "utf8"));
+      arch = JSON.parse((0, import_node_fs2.readFileSync)(archPath, "utf8"));
     } catch {
       continue;
     }
@@ -298,18 +392,18 @@ function checkReversibleInvariantRoundTrip(projectDir) {
       (pi) => typeof pi?.id === "string" && typeof pi?.type === "string" && /reversib/i.test(pi.type)
     );
     if (reversible.length === 0) continue;
-    const itemSources = [(0, import_node_path2.join)(featureDir(tdd, feature), "test-list.json")];
+    const itemSources = [(0, import_node_path3.join)(featureDir(tdd, feature), "test-list.json")];
     const stDir = storiesDir(tdd, feature);
-    if ((0, import_node_fs.existsSync)(stDir)) {
-      for (const s of (0, import_node_fs.readdirSync)(stDir)) {
+    if ((0, import_node_fs2.existsSync)(stDir)) {
+      for (const s of (0, import_node_fs2.readdirSync)(stDir)) {
         const p2 = storyTestListJson(tdd, feature, s);
-        if ((0, import_node_fs.existsSync)(p2)) itemSources.push(p2);
+        if ((0, import_node_fs2.existsSync)(p2)) itemSources.push(p2);
       }
     }
     const items = [];
     for (const src of itemSources) {
       try {
-        const tl = JSON.parse((0, import_node_fs.readFileSync)(src, "utf8"));
+        const tl = JSON.parse((0, import_node_fs2.readFileSync)(src, "utf8"));
         items.push(...tl.items ?? []);
       } catch {
       }
@@ -323,7 +417,7 @@ function checkReversibleInvariantRoundTrip(projectDir) {
       if (covering.length > 0 && !hasRoundTrip) {
         out.push({
           smell: "reversible-invariant-round-trip",
-          file: (0, import_node_path2.relative)(projectDir, featureDir(tdd, feature)),
+          file: (0, import_node_path3.relative)(projectDir, featureDir(tdd, feature)),
           line: 1,
           text: `invariant ${pi.id} (migration_reversible) covered only by forward-only test(s)`,
           detail: SMELL_FIX["reversible-invariant-round-trip"]
@@ -333,26 +427,44 @@ function checkReversibleInvariantRoundTrip(projectDir) {
   }
   return out;
 }
+function projectDeclaresPsycopg2(projectDir) {
+  for (const f of ["pyproject.toml", "requirements.txt", "uv.lock", "setup.cfg", "Pipfile"]) {
+    try {
+      if (/\bpsycopg2\b/.test((0, import_node_fs2.readFileSync)((0, import_node_path3.join)(projectDir, f), "utf8"))) return true;
+    } catch {
+    }
+  }
+  return false;
+}
 function checkTestSmells(args) {
   const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
-  const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS);
+  const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
+  const usesPsycopg2 = projectDeclaresPsycopg2(args.projectDir);
+  const droppedCols = collectDroppedColumns(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
   const violations = [];
   const push = (smell, file, line, text, extra) => violations.push({ smell, file, line, text: text.trim().slice(0, 200), detail: SMELL_FIX[smell] + (extra ? ` (${extra})` : "") });
   for (const td of testDirs) {
-    const abs = (0, import_node_path2.join)(args.projectDir, td);
-    if (!(0, import_node_fs.existsSync)(abs)) continue;
-    for (const file of walk(abs, (p2) => TEST_FILE.test(p2))) {
+    const abs = (0, import_node_path3.join)(args.projectDir, td);
+    if (!(0, import_node_fs2.existsSync)(abs)) continue;
+    for (const file of walk2(abs, (p2) => TEST_FILE.test(p2))) {
       let lines;
       try {
-        lines = (0, import_node_fs.readFileSync)(file, "utf8").split("\n");
+        lines = (0, import_node_fs2.readFileSync)(file, "utf8").split("\n");
       } catch {
         continue;
       }
-      const rel = (0, import_node_path2.relative)(args.projectDir, file);
+      const rel = (0, import_node_path3.relative)(args.projectDir, file);
       const body = lines.join("\n");
       const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
       const isPy = file.endsWith(".py");
       const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
+      if (isPy && droppedCols.size > 0 && !/\bdowngrade\b/.test(body)) {
+        for (const col of droppedCols) {
+          for (const ln of liveReferenceLines(body, col)) {
+            push("dropped-column-test-reference", rel, ln, lines[ln - 1] ?? `references dropped column '${col}'`, `dropped column '${col}' referenced at HEAD`);
+          }
+        }
+      }
       if (isJs && body.includes("vi.mock(") && !body.includes("vi.hoisted")) {
         const constBefore = body.match(/^const\s+(\w+)\s*=[\s\S]{0,400}?vi\.mock\(/m);
         if (constBefore && new RegExp(`\\b${constBefore[1]}\\b`).test(body.slice(body.indexOf("vi.mock(")))) {
@@ -395,6 +507,9 @@ function checkTestSmells(args) {
           push("dsn-inline-credentials", rel, line, text, "inline user:pass@ in a DSN literal");
         }
         if (isPy) {
+          if (!usesPsycopg2 && /\.pgcode\b/.test(codeLines[i] ?? "")) {
+            push("psycopg2-pgcode-attr", rel, line, text, "psycopg3 uses .sqlstate, not .pgcode");
+          }
           const m = text.match(/^\s*except\s*(IntegrityError|Exception)\b(?:\s+as\s+(\w+))?/);
           if (m) {
             const varName = m[2];
@@ -467,13 +582,14 @@ function checkTestSmells(args) {
     }
   }
   violations.push(...checkReversibleInvariantRoundTrip(args.projectDir));
-  violations.push(...checkDroppedColumnDanglingRef(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS));
-  if (violations.length === 0) return { clean: true, violations: [] };
-  const list = violations.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}
+  violations.push(...checkDroppedColumnDanglingRef(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2));
+  const effective = args.excludeSmells && args.excludeSmells.size > 0 ? violations.filter((v) => !args.excludeSmells.has(v.smell)) : violations;
+  if (effective.length === 0) return { clean: true, violations: [] };
+  const list = effective.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}
       fix: ${v.detail}`).join("\n");
   const remediation = `TEST-AUTHORING-SMELL: the test file(s) below carry authoring defects from the issue #199 catalog. The APP code is not the defect \u2013 do NOT route a Driver code repair; the test's AUTHOR fixes these in the test (a flaky strict-mode collision / TDZ / unsatisfiable table ref cannot be greened by changing the app):
 ${list}`;
-  return { clean: false, violations, remediation };
+  return { clean: false, violations: effective, remediation };
 }
 
 // bin/consort/test-smell-clean.cli.ts

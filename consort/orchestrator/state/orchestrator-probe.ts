@@ -214,11 +214,22 @@ export function readDriveContext(consortDir: string, featureId: string, projectD
   // "repeated without advancing state" guard hard-halted the capture. Reading
   // loop from the one config file here makes derive and effects agree.
   const loop = resolveProjectSettings(proj).build.loopGranularity;
+  // Thread the #3 batch lever from the SAME config read. effectiveLoopForStory
+  // reads it to decide whether a CONTRACT story stays on the fine `ac` loop or
+  // (lever on) runs the normal batched loop. Without it here, deriveDriveState
+  // ran effectiveLoopForStory WITHOUT the flag -> "ac" for a contract story,
+  // while the effects layer (buildTaskBody / buildCycleCommand) passed the flag
+  // -> "story". Derive routed the story-close review per-AC (reviewAc) while the
+  // post-turn cycle CLI recorded it story-level (reviewStory) — so build.reviewAc
+  // never advanced and the review protocol hard-halted (the SAME derive-vs-effects
+  // disagreement the loop thread above fixed, reopened under the batch lever).
+  const batchContractStories = resolveProjectSettings(proj).build.batchContractStories ?? false;
 
   return {
     phase: driverPhaseForTdd(tddPhase),
     breakdownDone,
     loop,
+    batchContractStories,
     planning: { intakeReady, intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated: hasEstimates(consortDir), backlogCommitted, requestsAuthored },
     deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending, verifyPassed, reverifyAttempted },
     promote,
