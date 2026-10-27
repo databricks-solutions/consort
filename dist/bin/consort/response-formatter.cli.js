@@ -3680,49 +3680,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative2, options, skipNormalization) {
+    function resolveComponent(base, relative3, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse2(serialize(base, options), options);
-        relative2 = parse2(serialize(relative2, options), options);
+        relative3 = parse2(serialize(relative3, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative2.scheme) {
-        target.scheme = relative2.scheme;
-        target.userinfo = relative2.userinfo;
-        target.host = relative2.host;
-        target.port = relative2.port;
-        target.path = removeDotSegments(relative2.path || "");
-        target.query = relative2.query;
+      if (!options.tolerant && relative3.scheme) {
+        target.scheme = relative3.scheme;
+        target.userinfo = relative3.userinfo;
+        target.host = relative3.host;
+        target.port = relative3.port;
+        target.path = removeDotSegments(relative3.path || "");
+        target.query = relative3.query;
       } else {
-        if (relative2.userinfo !== void 0 || relative2.host !== void 0 || relative2.port !== void 0) {
-          target.userinfo = relative2.userinfo;
-          target.host = relative2.host;
-          target.port = relative2.port;
-          target.path = removeDotSegments(relative2.path || "");
-          target.query = relative2.query;
+        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
+          target.userinfo = relative3.userinfo;
+          target.host = relative3.host;
+          target.port = relative3.port;
+          target.path = removeDotSegments(relative3.path || "");
+          target.query = relative3.query;
         } else {
-          if (!relative2.path) {
+          if (!relative3.path) {
             target.path = base.path;
-            if (relative2.query !== void 0) {
-              target.query = relative2.query;
+            if (relative3.query !== void 0) {
+              target.query = relative3.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative2.path[0] === "/") {
-              target.path = removeDotSegments(relative2.path);
+            if (relative3.path[0] === "/") {
+              target.path = removeDotSegments(relative3.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative2.path;
+                target.path = "/" + relative3.path;
               } else if (!base.path) {
-                target.path = relative2.path;
+                target.path = relative3.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative2.query;
+            target.query = relative3.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3730,7 +3730,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative2.fragment;
+      target.fragment = relative3.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -6656,6 +6656,7 @@ import { join } from "path";
 var ARTIFACT_ROOT = ".consort";
 var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
 var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
+var artifactRootsRegexAlternation = () => ALL_ARTIFACT_ROOTS.map((r) => r.replace(/[.]/g, "\\.")).join("|");
 function resolveConsortDir(projectDir = process.cwd()) {
   const next = join(projectDir, ARTIFACT_ROOT);
   if (fs.existsSync(next)) return next;
@@ -6689,6 +6690,7 @@ var storyResolved = (tdd, f, s) => findStoryDir(tdd, f, s) ?? storyDir(tdd, f, s
 var storyJson = (tdd, f, s) => join(storyResolved(tdd, f, s), "story.json");
 var acsDir = (tdd, f, s) => join(storyResolved(tdd, f, s), "acs");
 var acJson = (tdd, f, s, ac) => join(acsDir(tdd, f, s), `${ac}.json`);
+var storyTestListJson = (tdd, f, s) => join(storyResolved(tdd, f, s), "test-list-per-story.json");
 function findFeatureDir(tdd, featureId) {
   const root = featuresDir(tdd);
   if (!fs.existsSync(root)) return void 0;
@@ -6763,7 +6765,7 @@ function readAcArchitecturalNotes(tdd, f, acId) {
 
 // consort/session/response-formatter.ts
 init_esm_shims();
-import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync7 } from "fs";
+import { existsSync as existsSync10, readFileSync as readFileSync10, readdirSync as readdirSync9 } from "fs";
 import { dirname as dirname3 } from "path";
 
 // consort/orchestrator/validators/conformance/artifact-conformance.ts
@@ -8120,9 +8122,539 @@ function checkUxClean(args) {
   return clean ? { clean, reachability, tokens, appIcon, vocabulary } : { clean, reachability, tokens, appIcon, vocabulary, remediation: UX_CLEAN_REMEDIATION };
 }
 
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync7, readFileSync as readFileSync7, readdirSync as readdirSync6, statSync as statSync5 } from "fs";
+import { join as join8, relative as relative2, extname as extname2 } from "path";
+
+// consort/architecture/migration-columns.ts
+init_esm_shims();
+import { existsSync as existsSync6, readFileSync as readFileSync6, readdirSync as readdirSync5, statSync as statSync4 } from "fs";
+import { join as join7, extname } from "path";
+var DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+var MIGRATION_EXTS = /* @__PURE__ */ new Set([".py", ".sql", ".js", ".ts"]);
+var SKIP_DIR = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist|build)(\/|$)/;
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var MODULE_CONST = /(?:^|\n)[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*['"]([^'"]+)['"]/g;
+var DROP_COLUMN_SQL = /drop\s+column\s+(?:if\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
+var ADD_COLUMN_SQL = /add\s+column\s+(?:if\s+not\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
+function walk2(dir, out = []) {
+  let entries;
+  try {
+    entries = readdirSync5(dir);
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const abs = join7(dir, e);
+    let st;
+    try {
+      st = statSync4(abs);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (!SKIP_DIR.test(abs)) walk2(abs, out);
+    } else if (st.isFile() && MIGRATION_EXTS.has(extname(abs))) {
+      out.push(abs);
+    }
+  }
+  return out;
+}
+function forwardMigrationBody(src, ext) {
+  if (ext === ".py") {
+    const m = src.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
+    return m ? m[1] : src;
+  }
+  if (ext === ".js" || ext === ".ts") {
+    const up = /(exports\.up\b|async\s+function\s+up\b|\bup\s*[:=])/.exec(src);
+    if (!up) return src;
+    const after = src.slice(up.index + up[0].length);
+    const rel = after.search(/(exports\.down\b|async\s+function\s+down\b|\bdown\s*[:=])/);
+    return rel === -1 ? after : after.slice(0, rel);
+  }
+  return src;
+}
+function moduleConsts(src) {
+  const consts = /* @__PURE__ */ new Map();
+  MODULE_CONST.lastIndex = 0;
+  let m;
+  while ((m = MODULE_CONST.exec(src)) !== null) consts.set(m[1], m[2]);
+  return consts;
+}
+function eventsForFile(region, ext, consts) {
+  const evs = [];
+  const pushPy = (re, act) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(region)) !== null) {
+      const col = m[1] ?? (m[2] ? consts.get(m[2]) : void 0);
+      if (col) evs.push({ pos: m.index, col, act });
+    }
+  };
+  const pushSql = (re, act) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(region)) !== null) evs.push({ pos: m.index, col: m[1], act });
+  };
+  if (ext === ".py") {
+    pushPy(ADD_COLUMN_PY, "add");
+    pushPy(SA_COLUMN_PY, "add");
+    pushPy(DROP_COLUMN_PY, "drop");
+    pushSql(DROP_COLUMN_SQL, "drop");
+  } else {
+    pushSql(ADD_COLUMN_SQL, "add");
+    pushSql(DROP_COLUMN_SQL, "drop");
+  }
+  return evs.sort((a, b) => a.pos - b.pos);
+}
+function netColumnActions(projectDir, migrationDirs = DEFAULT_MIGRATION_DIRS) {
+  const files = [];
+  for (const md of migrationDirs) {
+    const abs = join7(projectDir, md);
+    if (existsSync6(abs)) walk2(abs, files);
+  }
+  files.sort();
+  const last = /* @__PURE__ */ new Map();
+  for (const f of files) {
+    let src;
+    try {
+      src = readFileSync6(f, "utf8");
+    } catch {
+      continue;
+    }
+    const ext = extname(f);
+    const consts = moduleConsts(src);
+    for (const ev of eventsForFile(forwardMigrationBody(src, ext), ext, consts)) last.set(ev.col, ev.act);
+  }
+  return last;
+}
+
+// consort/architecture/test-smell-clean.ts
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+var DEFAULT_TEST_DIRS = ["tests", "client/tests"];
+var DEFAULT_MIGRATION_DIRS2 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+var EXCLUDE_DIR = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist)(\/|$)/;
+var TEST_FILE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs)$|\.py$/;
+function walk3(dir, keep, out = []) {
+  let entries;
+  try {
+    entries = readdirSync6(dir);
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const abs = join8(dir, e);
+    let st;
+    try {
+      st = statSync5(abs);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (!EXCLUDE_DIR.test(abs)) walk3(abs, keep, out);
+    } else if (st.isFile() && keep(abs)) {
+      out.push(abs);
+    }
+  }
+  return out;
+}
+function collectKnownTables(projectDir, migrationDirs) {
+  const tables = /* @__PURE__ */ new Set();
+  const literalPatterns = [
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?(\w+)/gi,
+    // SQL
+    /ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/gi,
+    // SQL
+    /op\.create_table\(\s*["'](\w+)["']/gi,
+    // Alembic literal
+    /createTable\(\s*["'](\w+)["']/gi
+    // Knex literal
+  ];
+  const constPatterns = [
+    /op\.create_table\(\s*([A-Za-z_]\w*)\s*[,)]/g,
+    // Alembic constant
+    /createTable\(\s*([A-Za-z_]\w*)\s*[,)]/g
+    // Knex constant
+  ];
+  for (const md of migrationDirs) {
+    const abs = join8(projectDir, md);
+    if (!existsSync7(abs)) continue;
+    for (const file of walk3(abs, (p) => [".py", ".sql", ".js", ".ts"].includes(extname2(p)))) {
+      let body;
+      try {
+        body = readFileSync7(file, "utf8");
+      } catch {
+        continue;
+      }
+      for (const re of literalPatterns) {
+        for (const m of body.matchAll(re)) tables.add(m[1].toLowerCase());
+      }
+      const consts = moduleConsts(body);
+      for (const re of constPatterns) {
+        for (const m of body.matchAll(re)) {
+          const resolved = consts.get(m[1]);
+          if (resolved) tables.add(resolved.toLowerCase());
+        }
+      }
+    }
+  }
+  return tables;
+}
+var SMELL_FIX = {
+  "loose-locator": "scope the locator to a UNIQUE KEY (a row by its sku/id, e.g. getByRole('row', { name: sku })) and match exactly ({ exact: true } or a word-boundary/anchored regex) \u2013 a bare short literal or broad alternation substring-matches other cells and random-UUID digits, a flaky strict-mode collision that only shows at full-suite verify",
+  "vi-mock-tdz": "vi.mock factories hoist ABOVE top-level consts (TDZ ReferenceError, the suite then reports 0 tests) \u2013 build shared fixture data INSIDE the factory, or wrap it in vi.hoisted(() => {...})",
+  "framenavigated-reload-detector": "framenavigated fires for History-API (React Router) navigation too \u2013 assert the navigation STATE (page.url() / rendered content), never the event",
+  "delete-teardown": "a DELETE-based teardown breaks on append-only triggers and ON DELETE RESTRICT FKs, and can wipe a sibling story's seed \u2013 rely on per-run uuid keys for isolation (no cleanup); only delete rows the test itself created, scoped by those keys",
+  "broad-integrity-except": "a bare `except IntegrityError`/`except Exception` swallow catches the UMBRELLA (unique + check + FK violations) with no discrimination and masks the real failure \u2013 a wrong table/column name then reads as the expected conflict. Catch the specific subclass (UniqueViolation / CheckViolation / NotNullViolation), or discriminate explicitly: assert on the exception's message or isinstance against the subclass (a broad catch WITH a discriminating assert is fine and is not flagged)",
+  "schema-unsatisfiable-ref": "the test references a table NO migration creates, so it is unsatisfiable (UndefinedTable on every run) \u2013 fix the table name (see the known tables below) or add the migration; never paper it over with a broad except",
+  "whole-table-aggregate": "an ABSOLUTE whole-table COUNT/SUM with no seed-scope and no delta passes on the isolated branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total",
+  "fixed-key-e2e": "this Playwright e2e spec CREATES a record (fills a form + submits) but seeds no per-run-unique key, so it uses a HARDCODED business key (SKU/code/name). The e2e verify runs against the SHARED feature branch, which already holds the row a prior run/sibling story created with that same key \u2014 so the second run hits a unique-violation (or asserts a stale duplicate) and the row goes perma-red, costing a reflect/assess lap on a correct app. Derive a per-run-unique key (e.g. `const sku = 'SKU-' + crypto.randomUUID().slice(0, 8)`) and use that SAME value in both the create fill and the assertion locator, so each run owns its own row",
+  "migration-marker-presence": "a downgrade/upgrade test without @pytest.mark.migration runs on the SHARED verify DB and drops/alters its live schema for every other test. Add @pytest.mark.migration so the verify harness routes it to its OWN ephemeral branch (single-step downgrade -1 + upgrade head, never downgrade base)",
+  "relative-migration-revision": "a reversibility test asserts a NAMED column is absent after a RELATIVE `downgrade -1` (and/or restores with `upgrade head`) \u2013 this assumes THAT column's migration is the current head, so the moment a later feature stacks a migration on top, `-1` reverses the WRONG migration and the column-absence assertion can never pass again (the F6/S1-broke-F1/S3 par_level class). Pin the migration's OWN revision instead: downgrade to its down_revision and upgrade to its revision, so the round-trip validates THIS migration independent of any later head",
+  "reversible-invariant-round-trip": "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility \u2013 and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade \u2192 seed/migrate \u2192 upgrade \u2192 assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
+  "pytest-bdd-parse-conversion": "a parse()/parsers.parse() step pattern uses a Python str.format conversion flag (!r / !s / !a); the `parse` library backing pytest-bdd supports the format SPEC ({name:type}) but NOT conversions, so the step text never matches the feature and the step raises StepDefinitionNotFoundError \u2013 the app can never green it. Drop the conversion and quote the value in the pattern instead (e.g. parse('\u2026 \"{name}\"') to match a quoted feature value, or parse('\u2026 {name}') for a bare token), matching how the .feature file writes it",
+  "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it",
+  "component-test-mock": "a client COMPONENT test (client/**/*.test.tsx) MOCKS the data path (a stubbed/spied/assigned global `fetch`, MSW, or a `vi.mock` of the app's api/service/http module). Kit principle: NEVER mock when a real counterpart exists \u2014 a component that talks to the backend in production must talk to the REAL backend in test. The vitest harness boots a real backend (vitest.globalSetup.ts) and the fetch shim (tests/setup.ts) routes `/api` to it, so render the component and let its real `/api` calls hit the live service against the paired-branch DB; assert on what comes back. Remove the mock. (A clock \u2014 vi.useFakeTimers \u2014 or a genuinely third-party module with no real counterpart stays allowed.)",
+  "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example \u2014 a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) \u2014 matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
+  "unpinned-schema-diff-baseline": "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head \u2014 the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged.",
+  "dropped-column-test-reference": "this TEST inserts into / selects / asserts a column that a CONTRACT migration in this feature DROPPED, and the file performs no downgrade \u2014 so it runs against HEAD where the column no longer exists and dies with a ProgrammingError ('column does not exist'), even though the app is correct (the F6/S3 cross-story supersession class: a prior story's test still references tracking_code after S3 drops it). `opt2` scopes the per-cycle backend suite to the current story, so a prior-story test like this is NOT run per-cycle and only fails LATER at the full deploy-verify as a HALT. Refactor the superseded reference: drop the dropped column from the INSERT/SELECT/assertion, or retarget it to the surviving columns (e.g. batch_number/serial_number). Do NOT re-add the column to the model or edit the migration to hide it. (A migration round-trip test that re-adds the column via its own downgrade is legitimate and is not flagged \u2014 this only flags pure-HEAD references.)",
+  "psycopg2-pgcode-attr": "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) \u2014 a psycopg2 attribute \u2014 but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap \u2014 no production/driver shim."
+};
+function collectDroppedColumns(projectDir, migrationDirs) {
+  const GENERIC = /* @__PURE__ */ new Set(["id", "name", "type", "value", "data", "status", "key", "code", "text"]);
+  const dropped = /* @__PURE__ */ new Set();
+  for (const [col, ev] of netColumnActions(projectDir, migrationDirs)) {
+    if (ev === "drop" && col.length >= 4 && !GENERIC.has(col.toLowerCase())) dropped.add(col);
+  }
+  return dropped;
+}
+function isDbColumnRef(codeLine, col) {
+  if (!new RegExp(`\\b${col}\\b`).test(codeLine)) return false;
+  if (new RegExp(`\\.\\s*${col}\\b`).test(codeLine)) return true;
+  if (/\b(?:Column|mapped_column)\s*\(|\bMapped\s*\[/.test(codeLine)) return true;
+  if (/["'`]/.test(codeLine) && /\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i.test(codeLine)) return true;
+  return false;
+}
+function liveReferenceLines(body, col) {
+  const lines = body.split("\n");
+  const out = [];
+  let inDoc = false;
+  let docQuote = "";
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (inDoc) {
+      if (line.includes(docQuote)) inDoc = false;
+      continue;
+    }
+    const tq = line.match(/"""|'''/);
+    if (tq) {
+      const q = tq[0];
+      const after = line.slice(line.indexOf(q) + 3);
+      if (!after.includes(q)) {
+        line = line.slice(0, line.indexOf(q));
+        inDoc = true;
+        docQuote = q;
+      }
+    }
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const slash = line.indexOf("//");
+    if (slash >= 0) line = line.slice(0, slash);
+    if (isDbColumnRef(line, col)) out.push(i + 1);
+  }
+  return out;
+}
+function blankCommentsAndDocstrings(lines) {
+  const out = [];
+  let inDoc = false;
+  let docQuote = "";
+  for (let line of lines) {
+    if (inDoc) {
+      if (line.includes(docQuote)) {
+        inDoc = false;
+        line = line.slice(line.indexOf(docQuote) + 3);
+      } else {
+        out.push("");
+        continue;
+      }
+    }
+    line = line.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, " ");
+    const tq = line.match(/"""|'''/);
+    if (tq) {
+      const q = tq[0];
+      const after = line.slice(line.indexOf(q) + 3);
+      if (!after.includes(q)) {
+        line = line.slice(0, line.indexOf(q));
+        inDoc = true;
+        docQuote = q;
+      }
+    }
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const slash = line.indexOf("//");
+    if (slash >= 0) line = line.slice(0, slash);
+    out.push(line);
+  }
+  return out;
+}
+function checkDroppedColumnDanglingRef(projectDir, migrationDirs) {
+  const dropped = collectDroppedColumns(projectDir, migrationDirs);
+  if (dropped.size === 0) return [];
+  const out = [];
+  const migAbs = migrationDirs.map((d) => join8(projectDir, d));
+  const SRC_EXCLUDE = new RegExp(`(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|dist|build|${ARTIFACT_ROOTS_RE}|client|tests?|__tests__|e2e)(/|$)`);
+  const isSrc = (p) => /\.(py|sql)$/.test(p) && !migAbs.some((m) => p.startsWith(m));
+  const srcFiles = walk3(projectDir, (p) => isSrc(p) && !SRC_EXCLUDE.test(p));
+  for (const f of srcFiles) {
+    let body;
+    try {
+      body = readFileSync7(f, "utf8");
+    } catch {
+      continue;
+    }
+    const rel = relative2(projectDir, f);
+    for (const col of dropped) {
+      if (!body.includes(col)) continue;
+      for (const line of liveReferenceLines(body, col)) {
+        out.push({
+          smell: "dropped-column-dangling-reference",
+          file: rel,
+          line,
+          text: `live reference to dropped column '${col}'`,
+          detail: SMELL_FIX["dropped-column-dangling-reference"]
+        });
+      }
+    }
+  }
+  return out;
+}
+function checkReversibleInvariantRoundTrip(projectDir) {
+  const tdd = resolveConsortDir(projectDir);
+  const featsDir = featuresDir(tdd);
+  const out = [];
+  if (!existsSync7(featsDir)) return out;
+  for (const feature of readdirSync6(featsDir)) {
+    const archPath = architectureJson(tdd, feature);
+    if (!existsSync7(archPath)) continue;
+    let arch;
+    try {
+      arch = JSON.parse(readFileSync7(archPath, "utf8"));
+    } catch {
+      continue;
+    }
+    const reversible = (arch.persistence_invariants ?? []).filter(
+      (pi) => typeof pi?.id === "string" && typeof pi?.type === "string" && /reversib/i.test(pi.type)
+    );
+    if (reversible.length === 0) continue;
+    const itemSources = [join8(featureDir(tdd, feature), "test-list.json")];
+    const stDir = storiesDir(tdd, feature);
+    if (existsSync7(stDir)) {
+      for (const s of readdirSync6(stDir)) {
+        const p = storyTestListJson(tdd, feature, s);
+        if (existsSync7(p)) itemSources.push(p);
+      }
+    }
+    const items = [];
+    for (const src of itemSources) {
+      try {
+        const tl = JSON.parse(readFileSync7(src, "utf8"));
+        items.push(...tl.items ?? []);
+      } catch {
+      }
+    }
+    for (const pi of reversible) {
+      const covering = items.filter((it) => it.invariant_id === pi.id);
+      const hasRoundTrip = covering.some((it) => {
+        const d = it.description ?? "";
+        return /\bround.?trip\b/i.test(d) || /\bdowngrad\w*/i.test(d) && /\bupgrad\w*/i.test(d);
+      });
+      if (covering.length > 0 && !hasRoundTrip) {
+        out.push({
+          smell: "reversible-invariant-round-trip",
+          file: relative2(projectDir, featureDir(tdd, feature)),
+          line: 1,
+          text: `invariant ${pi.id} (migration_reversible) covered only by forward-only test(s)`,
+          detail: SMELL_FIX["reversible-invariant-round-trip"]
+        });
+      }
+    }
+  }
+  return out;
+}
+function projectDeclaresPsycopg2(projectDir) {
+  for (const f of ["pyproject.toml", "requirements.txt", "uv.lock", "setup.cfg", "Pipfile"]) {
+    try {
+      if (/\bpsycopg2\b/.test(readFileSync7(join8(projectDir, f), "utf8"))) return true;
+    } catch {
+    }
+  }
+  return false;
+}
+function checkTestSmells(args) {
+  const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
+  const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
+  const usesPsycopg2 = projectDeclaresPsycopg2(args.projectDir);
+  const droppedCols = collectDroppedColumns(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
+  const violations = [];
+  const push = (smell, file, line, text, extra) => violations.push({ smell, file, line, text: text.trim().slice(0, 200), detail: SMELL_FIX[smell] + (extra ? ` (${extra})` : "") });
+  for (const td of testDirs) {
+    const abs = join8(args.projectDir, td);
+    if (!existsSync7(abs)) continue;
+    for (const file of walk3(abs, (p) => TEST_FILE.test(p))) {
+      let lines;
+      try {
+        lines = readFileSync7(file, "utf8").split("\n");
+      } catch {
+        continue;
+      }
+      const rel = relative2(args.projectDir, file);
+      const body = lines.join("\n");
+      const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
+      const isPy = file.endsWith(".py");
+      const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
+      if (isPy && droppedCols.size > 0 && !/\bdowngrade\b/.test(body)) {
+        for (const col of droppedCols) {
+          for (const ln of liveReferenceLines(body, col)) {
+            push("dropped-column-test-reference", rel, ln, lines[ln - 1] ?? `references dropped column '${col}'`, `dropped column '${col}' referenced at HEAD`);
+          }
+        }
+      }
+      if (isJs && body.includes("vi.mock(") && !body.includes("vi.hoisted")) {
+        const constBefore = body.match(/^const\s+(\w+)\s*=[\s\S]{0,400}?vi\.mock\(/m);
+        if (constBefore && new RegExp(`\\b${constBefore[1]}\\b`).test(body.slice(body.indexOf("vi.mock(")))) {
+          const idx = lines.findIndex((l) => l.includes("vi.mock("));
+          push("vi-mock-tdz", rel, idx + 1, lines[idx] ?? "vi.mock(", `const '${constBefore[1]}' is referenced by the factory`);
+        }
+      }
+      let teardownDepth = 0;
+      const codeLines = blankCommentsAndDocstrings(lines);
+      lines.forEach((text, i) => {
+        const line = i + 1;
+        if (/^\s*(afterEach|afterAll|teardown|tearDown|def\s+tear\w*|def\s+cleanup)\b/.test(text)) teardownDepth = 1;
+        else if (/^\s*(it|test|describe|beforeEach|beforeAll|def\s+\w+)\b/.test(text)) teardownDepth = 0;
+        if (isJs) {
+          const bare = text.match(/getBy(Text|Role)\(\s*["'`]([^"'`]{1,12})["'`]\s*\)/);
+          if (bare && (/^\d[\d.,%$]*$/.test(bare[2]) || bare[2].length <= 3)) {
+            push("loose-locator", rel, line, text, `bare ${bare[1]}("${bare[2]}") with no exact/scoping`);
+          }
+          const broadRe = text.match(/getBy(Text|Role)\(\s*\/([^/]*\|[^/]*)\/[a-z]*\s*\)/);
+          if (broadRe && /not found|error|404|invalid|success|delete|update/i.test(broadRe[2]) && !/\^|\$|\\b/.test(broadRe[2])) {
+            push("loose-locator", rel, line, text, `unanchored alternation /${broadRe[2]}/ substring-matches UUID digits + unrelated cells`);
+          }
+          if (/\.on\(\s*["']framenavigated["']/.test(text)) {
+            push("framenavigated-reload-detector", rel, line, text);
+          }
+        }
+        if (isComponentTest) {
+          if (/vi\.stubGlobal\(\s*["']fetch["']/.test(text) || /vi\.spyOn\([^)]*,\s*["']fetch["']\s*\)/.test(text) || /(?:globalThis|global|window)\.fetch\s*=/.test(text)) {
+            push("component-test-mock", rel, line, text, "stubs the global fetch");
+          } else if (/from\s+["']msw["']/.test(text) || /\bsetupServer\(/.test(text)) {
+            push("component-test-mock", rel, line, text, "MSW network mock");
+          } else if (/vi\.mock\(\s*["'][^"']*(?:\/api\b|\bapi\/|service|\/http\b|repository|fetch)[^"']*["']/i.test(text)) {
+            push("component-test-mock", rel, line, text, "vi.mock of the app's data/API module");
+          }
+        }
+        if (teardownDepth > 0 && /DELETE\s+FROM|deleteMany\(|\.delete\(\s*\{|TRUNCATE/i.test(text)) {
+          push("delete-teardown", rel, line, text);
+        }
+        if (/\b(?:postgres(?:ql)?|mysql|mongodb|redis|amqp)(?:\+\w+)?:\/\/[^\s/@"'`]*:[^\s/@"'`]*@/.test(text)) {
+          push("dsn-inline-credentials", rel, line, text, "inline user:pass@ in a DSN literal");
+        }
+        if (isPy) {
+          if (!usesPsycopg2 && /\.pgcode\b/.test(codeLines[i] ?? "")) {
+            push("psycopg2-pgcode-attr", rel, line, text, "psycopg3 uses .sqlstate, not .pgcode");
+          }
+          const m = text.match(/^\s*except\s*(IntegrityError|Exception)\b(?:\s+as\s+(\w+))?/);
+          if (m) {
+            const varName = m[2];
+            const discriminated = varName !== void 0 && lines.slice(i + 1, i + 8).some((l) => new RegExp(`\\b${varName}\\b`).test(l) && /assert|isinstance|str\(|print|log|raise/.test(l));
+            if (!discriminated) {
+              push("broad-integrity-except", rel, line, text);
+            }
+          }
+        }
+        if (isPy && /\bparse(?:rs)?\.(?:parse|re)\s*\(/.test(text) && /\{[^{}]*![rsa][^{}]*\}/.test(text)) {
+          const conv = text.match(/\{[^{}]*(![rsa])[^{}]*\}/);
+          push("pytest-bdd-parse-conversion", rel, line, text, `${conv ? conv[1] : "!r"} conversion in a parse() step pattern`);
+        }
+        if (/COUNT\s*\(\s*\*\)|SELECT\s+COUNT/i.test(text)) {
+          const region = lines.slice(Math.max(0, i - 40), i + 14).join("\n");
+          const absoluteCount = /==\s*\d+|assert(?:Equals|Equal|That)?\s*\(?\s*\d+\s*\)|toBe\(\s*\d+|equals the (seeded|expected|recorded) count/i.test(region);
+          const scopedOrDelta = /uuid|randomUUID|unique|WHERE|where|filter|delta|count_before|probe_before|before_seed|subtract|minus/i.test(region);
+          if (absoluteCount && !scopedOrDelta) {
+            push("whole-table-aggregate", rel, line, text, "absolute whole-table count with no seed-scope and no delta");
+          }
+        }
+        if (knownTables.size > 0) {
+          for (const m of codeLines[i].matchAll(
+            /\b(?:FROM|JOIN|INTO|UPDATE)\s+["'`]?(\w+)["'`]?|\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?["'`]?(\w+)/g
+          )) {
+            const ref = (m[1] ?? m[2]).toLowerCase();
+            const systemCatalog = ref === "information_schema" || ref.startsWith("pg_");
+            const migrationBookkeeping = ref === "alembic_version";
+            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual|on|of)$/.test(ref) && !systemCatalog && !migrationBookkeeping && !knownTables.has(ref)) {
+              push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
+            }
+          }
+        }
+      });
+      if (isPy && /command\.downgrade|alembic\s+downgrade|\.downgrade\(|downgrade\s+-1|run_downgrade/i.test(body) && !/pytest\.mark\.migration|mark\.migration/.test(body)) {
+        push("migration-marker-presence", rel, 1, "(file)", "a downgrade test without @pytest.mark.migration (drops schema on the shared verify DB)");
+      }
+      const relativeDowngrade = /(?:["']downgrade["']\s*,\s*|alembic\s+downgrade\s+|downgrade\s+)["']?-\d+["']?/i.test(body);
+      const namedColumnAbsent = /["'`]\w+["'`]\s+not\s+in\s+\w*col/i.test(body);
+      if (isPy && relativeDowngrade && namedColumnAbsent) {
+        const col = body.match(/["'`](\w+)["'`]\s+not\s+in\s+\w*col/i);
+        push(
+          "relative-migration-revision",
+          rel,
+          1,
+          "(file)",
+          `asserts ${col ? `'${col[1]}'` : "a named column"} absent after a relative 'downgrade -N' \u2013 pin the migration's own revision (down_revision + revision), not -N/head`
+        );
+      }
+      const invokesSchemaDiff = /lakebase-schema-diff|lakebase_schema_diff/.test(body);
+      const pinsSchemaDiffBaseline = /--against\b|--comparison-branch\b|comparisonBranch\b/.test(body);
+      if (invokesSchemaDiff && !pinsSchemaDiffBaseline) {
+        push(
+          "unpinned-schema-diff-baseline",
+          rel,
+          1,
+          "(file)",
+          "runs lakebase-schema-diff with no --against baseline (the verify branch's parent is already migrated \u2192 empty diff)"
+        );
+      }
+      const isE2eSpec = isJs && /(^|\/)e2e\/[^/]*\.spec\.(ts|tsx|js|jsx|mjs)$/.test(file.replace(/\\/g, "/"));
+      if (isE2eSpec) {
+        const hasFill = /\.fill\s*\(/.test(body);
+        const hasSubmit = /getByRole\(\s*["']button["'][\s\S]{0,80}?\b(create|add|new|file|save|submit|register|record)\b/i.test(body) || /getByText\(\s*["'`\/][^)]{0,40}\b(create|add|new|file|save|submit|register)\b/i.test(body);
+        const uniquenessSource = /randomUUID|crypto\b|Date\.now|\buuid\b|performance\.now|Math\.random|nanoid|new Date\(|getTime\(/i.test(body);
+        if (hasFill && hasSubmit && !uniquenessSource) {
+          push("fixed-key-e2e", rel, 1, "(file)", "a create-flow e2e spec with no per-run-unique key seed (crypto.randomUUID)");
+        }
+      }
+    }
+  }
+  violations.push(...checkReversibleInvariantRoundTrip(args.projectDir));
+  violations.push(...checkDroppedColumnDanglingRef(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2));
+  const effective = args.excludeSmells && args.excludeSmells.size > 0 ? violations.filter((v) => !args.excludeSmells.has(v.smell)) : violations;
+  if (effective.length === 0) return { clean: true, violations: [] };
+  const list = effective.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}
+      fix: ${v.detail}`).join("\n");
+  const remediation = `TEST-AUTHORING-SMELL: the test file(s) below carry authoring defects from the issue #199 catalog. The APP code is not the defect \u2013 do NOT route a Driver code repair; the test's AUTHOR fixes these in the test (a flaky strict-mode collision / TDZ / unsatisfiable table ref cannot be greened by changing the app):
+${list}`;
+  return { clean: false, violations: effective, remediation };
+}
+
 // consort/smells/testlist-conformance.ts
 init_esm_shims();
-import { existsSync as existsSync6, readFileSync as readFileSync6, readdirSync as readdirSync5 } from "fs";
+import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync7 } from "fs";
 
 // consort/smells/smells.ts
 init_esm_shims();
@@ -8196,6 +8728,15 @@ var EVENT_TEMPLATES = {
   "deploy.failed": { template: "DEPLOY failed {{scope}}: {{reason}}" },
   "verify.passed": { template: "VERIFY passed {{scope}} ({{command}})" },
   "verify.failed": { template: "VERIFY failed {{scope}} ({{command}}): {{summary}}" },
+  // Deterministic per-pass verify wall-clock (code-emitted at each per-cycle GREEN).
+  // reversibility_ran is the tiered-verify signal: did the slow isolated-branch
+  // migration pass run this cycle, or did a non-migration cycle skip it. migration_ms
+  // / client_ms ride in metadata (present only when that pass ran).
+  "verify.timing": { template: "VERIFY timing {{total_ms}}ms (main {{main_ms}}ms, reversibility {{reversibility_ran}})" },
+  // Per-turn wall-clock attributed by TURN-KIND (+ story/ac in metadata) — the signal
+  // the timing report rolls up to find WHERE a story's wall-clock goes (e.g. supersession
+  // assess/green-superseded churn vs productive red/green). Code-emitted at dispatch.
+  "turn.timing": { template: "{{role}} {{turn_kind}} turn {{duration_ms}}ms ({{model}})" },
   // UX adherence
   "adherence.passed": { template: "ADHERENCE passed {{scope}}" },
   "adherence.failed": { template: "ADHERENCE failed {{scope}}: {{diffs}}" },
@@ -8213,11 +8754,11 @@ var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
 function storyAcLayers(consortDir, featureId, story) {
   const acLayerById = {};
   const dir = acsDir(consortDir, featureId, story);
-  if (existsSync6(dir)) {
-    for (const f of readdirSync5(dir)) {
+  if (existsSync8(dir)) {
+    for (const f of readdirSync7(dir)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse(readFileSync6(`${dir}/${f}`, "utf8")).layer;
+        const layer = JSON.parse(readFileSync8(`${dir}/${f}`, "utf8")).layer;
         if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
       } catch {
       }
@@ -8229,14 +8770,14 @@ function declaredApiEndpoints(consortDir, featureId, story) {
   const texts = [];
   for (const p of [architectureJson(consortDir, featureId), featureSpecJson(consortDir, featureId)]) {
     try {
-      if (existsSync6(p)) texts.push(readFileSync6(p, "utf8"));
+      if (existsSync8(p)) texts.push(readFileSync8(p, "utf8"));
     } catch {
     }
   }
   const dir = acsDir(consortDir, featureId, story);
   try {
-    if (existsSync6(dir)) {
-      for (const f of readdirSync5(dir)) if (f.endsWith(".json")) texts.push(readFileSync6(`${dir}/${f}`, "utf8"));
+    if (existsSync8(dir)) {
+      for (const f of readdirSync7(dir)) if (f.endsWith(".json")) texts.push(readFileSync8(`${dir}/${f}`, "utf8"));
     }
   } catch {
   }
@@ -8249,13 +8790,13 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
   let dbDesign;
   try {
     const p = dbDesignJson(consortDir, featureId);
-    if (existsSync6(p)) dbDesign = readFileSync6(p, "utf8");
+    if (existsSync8(p)) dbDesign = readFileSync8(p, "utf8");
   } catch {
   }
   let archJson;
   try {
     const p = architectureJson(consortDir, featureId);
-    if (existsSync6(p)) archJson = readFileSync6(p, "utf8");
+    if (existsSync8(p)) archJson = readFileSync8(p, "utf8");
   } catch {
   }
   const violations = [];
@@ -8300,9 +8841,9 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
 
 // consort/gates/registered-breakdown.ts
 init_esm_shims();
-import { existsSync as existsSync7, readFileSync as readFileSync7, readdirSync as readdirSync6 } from "fs";
-import { join as join7 } from "path";
-var registrationPath = (consortDir) => join7(consortDir, "registration.json");
+import { existsSync as existsSync9, readFileSync as readFileSync9, readdirSync as readdirSync8 } from "fs";
+import { join as join9 } from "path";
+var registrationPath = (consortDir) => join9(consortDir, "registration.json");
 function storySlug(id) {
   return id.replace(/^S\d+-/, "");
 }
@@ -8340,9 +8881,9 @@ function checkRegisteredBreakdown(registration, derived) {
 }
 function readRegistration(consortDir, featureId) {
   const p = registrationPath(consortDir);
-  if (!existsSync7(p)) return null;
+  if (!existsSync9(p)) return null;
   try {
-    const reg = JSON.parse(readFileSync7(p, "utf8"));
+    const reg = JSON.parse(readFileSync9(p, "utf8"));
     if (!reg || reg.feature_id !== featureId || !Array.isArray(reg.stories)) return null;
     return reg;
   } catch {
@@ -8351,10 +8892,10 @@ function readRegistration(consortDir, featureId) {
 }
 function readDerivedBreakdown(consortDir, featureId) {
   const sdir = storiesDir(consortDir, featureId);
-  if (!existsSync7(sdir)) return [];
-  return readdirSync6(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
+  if (!existsSync9(sdir)) return [];
+  return readdirSync8(sdir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => {
     const adir = acsDir(consortDir, featureId, e.name);
-    const acs = existsSync7(adir) ? readdirSync6(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+    const acs = existsSync9(adir) ? readdirSync8(adir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
     return { id: e.name, acs };
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -8378,12 +8919,12 @@ function needStory(role, story, violations) {
 }
 function checkSpecAuthorBreakdown(consortDir, featureId, v) {
   const specPath = featureSpecJson(consortDir, featureId);
-  if (!existsSync8(specPath)) {
+  if (!existsSync10(specPath)) {
     v.push({ artifact: "feature-spec.json", problem: "breakdown deliverable missing (write feature-spec.json with a non-empty stories[] array of the story ids)" });
     return;
   }
   try {
-    const spec = JSON.parse(readFileSync8(specPath, "utf8"));
+    const spec = JSON.parse(readFileSync10(specPath, "utf8"));
     if (!Array.isArray(spec.stories) || spec.stories.length === 0) {
       v.push({ artifact: "feature-spec.json", problem: "stories[] is missing or empty (the breakdown must enumerate >=1 story id)" });
     }
@@ -8392,13 +8933,13 @@ function checkSpecAuthorBreakdown(consortDir, featureId, v) {
     return;
   }
   const sdir = storiesDir(consortDir, featureId);
-  if (!existsSync8(sdir)) return;
+  if (!existsSync10(sdir)) return;
   const storyJsons = [];
-  for (const s of readdirSync7(sdir)) {
+  for (const s of readdirSync9(sdir)) {
     const p = `${sdir}/${s}/story.json`;
-    if (!existsSync8(p)) continue;
+    if (!existsSync10(p)) continue;
     try {
-      storyJsons.push({ name: s, content: readFileSync8(p, "utf8") });
+      storyJsons.push({ name: s, content: readFileSync10(p, "utf8") });
     } catch {
       continue;
     }
@@ -8429,14 +8970,14 @@ function checkSpecAuthor(args, v) {
     v.push({ artifact: `stories/${story}/acs`, problem: "no acceptance criteria written (expected >=1 AC<n>.json)" });
     return;
   }
-  if (!existsSync8(dir)) return;
+  if (!existsSync10(dir)) return;
   const thenById = /* @__PURE__ */ new Map();
   const acs = [];
-  for (const f of readdirSync7(dir)) {
+  for (const f of readdirSync9(dir)) {
     if (!f.endsWith(".json")) continue;
     let content;
     try {
-      content = readFileSync8(`${dir}/${f}`, "utf8");
+      content = readFileSync10(`${dir}/${f}`, "utf8");
     } catch {
       continue;
     }
@@ -8455,7 +8996,7 @@ function checkSpecAuthor(args, v) {
   let dbDesign;
   try {
     const p = dbDesignJson(consortDir, featureId);
-    if (existsSync8(p)) dbDesign = readFileSync8(p, "utf8");
+    if (existsSync10(p)) dbDesign = readFileSync10(p, "utf8");
   } catch {
   }
   const xStory = checkSchemaDiffCrossStoryColumnsInAcs(acs, dbDesign, story);
@@ -8491,9 +9032,9 @@ function checkArchitect(args, v) {
     }
   }
   const archForSchema = architectureJson(consortDir, featureId);
-  if (existsSync8(archForSchema)) {
+  if (existsSync10(archForSchema)) {
     try {
-      const r = checkArtifactConformance(canonicalArtifactName(archForSchema), readFileSync8(archForSchema, "utf8"));
+      const r = checkArtifactConformance(canonicalArtifactName(archForSchema), readFileSync10(archForSchema, "utf8"));
       if (!r.ok) for (const problem of r.violations) v.push({ artifact: "architecture.json", problem });
     } catch (e) {
       v.push({ artifact: "architecture.json", problem: `is not valid JSON (${e.message})` });
@@ -8503,10 +9044,10 @@ function checkArchitect(args, v) {
 }
 function checkNfrFitnessFunctions(consortDir, featureId, v) {
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync8(archFile)) return;
+  if (!existsSync10(archFile)) return;
   let nfrs;
   try {
-    nfrs = JSON.parse(readFileSync8(archFile, "utf8")).nfrs ?? [];
+    nfrs = JSON.parse(readFileSync10(archFile, "utf8")).nfrs ?? [];
   } catch {
     return;
   }
@@ -8524,13 +9065,13 @@ function checkNfrFitnessFunctions(consortDir, featureId, v) {
 function checkDba(args, v) {
   const { consortDir, featureId } = args;
   const archFile = architectureJson(consortDir, featureId);
-  if (!existsSync8(archFile)) {
+  if (!existsSync10(archFile)) {
     v.push({ artifact: "architecture.json", problem: "architecture.json missing (the architect owns the contract the DBA realizes)" });
     return;
   }
-  const archContent = readFileSync8(archFile, "utf8");
+  const archContent = readFileSync10(archFile, "utf8");
   const dbFile = dbDesignJson(consortDir, featureId);
-  const dbContent = existsSync8(dbFile) ? readFileSync8(dbFile, "utf8") : void 0;
+  const dbContent = existsSync10(dbFile) ? readFileSync10(dbFile, "utf8") : void 0;
   if (dbContent !== void 0) {
     const conf = checkArtifactConformance("db-design.json", dbContent);
     if (!conf.ok) v.push({ artifact: "db-design.json", problem: conf.violations.join("; ") });
@@ -8542,13 +9083,13 @@ function checkTestStrategist(args, v) {
   const { consortDir, featureId, story } = args;
   if (!needStory("test-strategist", story, v)) return;
   const file = featureTestListJson(consortDir, featureId);
-  if (!existsSync8(file)) {
+  if (!existsSync10(file)) {
     v.push({ artifact: "test-list.json", problem: "test list not written" });
     return;
   }
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync8(file, "utf8"));
+    parsed = JSON.parse(readFileSync10(file, "utf8"));
   } catch (e) {
     v.push({ artifact: "test-list.json", problem: `invalid JSON: ${e instanceof Error ? e.message : String(e)}` });
     return;
@@ -8585,12 +9126,12 @@ function checkTestStrategist(args, v) {
 }
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync8(file)) {
+  if (!existsSync10(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = readFileSync8(file, "utf8");
+    content = readFileSync10(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -8599,9 +9140,9 @@ function designGuideConformance(consortDir) {
 }
 function designGuideHasComponents(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync8(file)) return { ok: true };
+  if (!existsSync10(file)) return { ok: true };
   try {
-    const parsed = JSON.parse(readFileSync8(file, "utf8"));
+    const parsed = JSON.parse(readFileSync10(file, "utf8"));
     const comps = parsed.components;
     if (!comps || typeof comps !== "object" || Object.keys(comps).length === 0) {
       return {
@@ -8616,18 +9157,18 @@ function designGuideHasComponents(consortDir) {
 }
 function brandAssetDeclared(consortDir) {
   const assetsDir = designAssetsDir(consortDir);
-  if (!existsSync8(assetsDir)) return { ok: true };
+  if (!existsSync10(assetsDir)) return { ok: true };
   let staged;
   try {
-    staged = readdirSync7(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
+    staged = readdirSync9(assetsDir).filter((f) => /\.(png|jpe?g|svg|webp|ico|gif|avif)$/i.test(f));
   } catch {
     return { ok: true };
   }
   if (staged.length === 0) return { ok: true };
   const file = designGuideJson(consortDir);
-  if (existsSync8(file)) {
+  if (existsSync10(file)) {
     try {
-      const guide = JSON.parse(readFileSync8(file, "utf8"));
+      const guide = JSON.parse(readFileSync10(file, "utf8"));
       if (guide.app_icon?.source && guide.app_icon?.install_to) return { ok: true };
     } catch {
       return { ok: true };
@@ -8657,11 +9198,14 @@ function checkNavigator(args, v) {
   for (const x of checkE2eHelperExports(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
   for (const x of checkE2eRouteAround(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
   for (const x of checkE2eFixedKeyEmptyState(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  for (const x of checkTestSmells({ projectDir }).violations.filter((s) => s.smell === "unpinned-schema-diff-baseline")) {
+    v.push({ artifact: `${x.file}:${x.line}`, problem: x.detail });
+  }
 }
 function checkDriver(args, v) {
   const archFile = architectureJson(args.consortDir, args.featureId);
-  if (existsSync8(archFile)) {
-    for (const x of collectLayeringViolations(dirname3(args.consortDir), readFileSync8(archFile, "utf8"))) {
+  if (existsSync10(archFile)) {
+    for (const x of collectLayeringViolations(dirname3(args.consortDir), readFileSync10(archFile, "utf8"))) {
       v.push({ artifact: "layering", problem: x });
     }
   }

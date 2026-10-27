@@ -6793,6 +6793,15 @@ var EVENT_TEMPLATES = {
   "deploy.failed": { template: "DEPLOY failed {{scope}}: {{reason}}" },
   "verify.passed": { template: "VERIFY passed {{scope}} ({{command}})" },
   "verify.failed": { template: "VERIFY failed {{scope}} ({{command}}): {{summary}}" },
+  // Deterministic per-pass verify wall-clock (code-emitted at each per-cycle GREEN).
+  // reversibility_ran is the tiered-verify signal: did the slow isolated-branch
+  // migration pass run this cycle, or did a non-migration cycle skip it. migration_ms
+  // / client_ms ride in metadata (present only when that pass ran).
+  "verify.timing": { template: "VERIFY timing {{total_ms}}ms (main {{main_ms}}ms, reversibility {{reversibility_ran}})" },
+  // Per-turn wall-clock attributed by TURN-KIND (+ story/ac in metadata) — the signal
+  // the timing report rolls up to find WHERE a story's wall-clock goes (e.g. supersession
+  // assess/green-superseded churn vs productive red/green). Code-emitted at dispatch.
+  "turn.timing": { template: "{{role}} {{turn_kind}} turn {{duration_ms}}ms ({{model}})" },
   // UX adherence
   "adherence.passed": { template: "ADHERENCE passed {{scope}}" },
   "adherence.failed": { template: "ADHERENCE failed {{scope}}: {{diffs}}" },
@@ -6841,9 +6850,9 @@ function resolveOpenSmells(consortDir, smell, opts) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync15, readFileSync as readFileSync15, readdirSync as readdirSync10, statSync as statSync8, writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, rmSync as rmSync5 } from "fs";
-import { execFileSync as execFileSync4 } from "child_process";
-import { join as join18, dirname as dirname9, basename as basename2 } from "path";
+import { existsSync as existsSync16, readFileSync as readFileSync16, readdirSync as readdirSync11, statSync as statSync9, writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, rmSync as rmSync5 } from "fs";
+import { execFileSync as execFileSync5 } from "child_process";
+import { join as join19, dirname as dirname9, basename as basename2 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -6901,10 +6910,10 @@ init_esm_shims();
 
 // consort/deploy/deploy.ts
 init_esm_shims();
-import { execSync, spawn } from "child_process";
+import { execSync, execFileSync as execFileSync2, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync6, mkdirSync as mkdirSync3, readFileSync as readFileSync7, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "fs";
-import { dirname as dirname5, join as join9 } from "path";
+import { existsSync as existsSync9, mkdirSync as mkdirSync3, readFileSync as readFileSync10, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "fs";
+import { dirname as dirname5, join as join12 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -6913,10 +6922,46 @@ init_esm_shims();
 import * as fs2 from "fs";
 import * as path2 from "path";
 
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync6, readFileSync as readFileSync6, readdirSync as readdirSync4, statSync as statSync4 } from "fs";
+import { join as join8, relative, extname as extname2 } from "path";
+
+// consort/architecture/migration-columns.ts
+init_esm_shims();
+import { existsSync as existsSync5, readFileSync as readFileSync5, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
+import { join as join7, extname } from "path";
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+
+// consort/architecture/test-smell-clean.ts
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+
+// consort/architecture/contract-clean.ts
+init_esm_shims();
+import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync5, statSync as statSync5 } from "fs";
+import { join as join10, relative as relative2, extname as extname3 } from "path";
+
+// consort/experiment/py-source.ts
+init_esm_shims();
+
+// consort/architecture/contract-clean.ts
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+var EXCLUDE_DIR = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE2}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
+);
+var EXCLUDE_DIR_JUNK = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE2}|\\.lakebase|dist|build)(/|$)`
+);
+
 // consort/architecture/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync3, readFileSync as readFileSync6, statSync as statSync3 } from "fs";
-import { join as join8 } from "path";
+import { readdirSync as readdirSync6, readFileSync as readFileSync9, statSync as statSync6 } from "fs";
+import { join as join11 } from "path";
 
 // consort/smells/ephemeral-verify.ts
 init_esm_shims();
@@ -6927,13 +6972,13 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync7, readFileSync as readFileSync8, readdirSync as readdirSync5, writeFileSync as writeFileSync5, mkdirSync as mkdirSync4, copyFileSync } from "fs";
-import { join as join10, dirname as dirname6, basename } from "path";
+import { existsSync as existsSync10, readFileSync as readFileSync11, readdirSync as readdirSync8, writeFileSync as writeFileSync5, mkdirSync as mkdirSync4, copyFileSync } from "fs";
+import { join as join13, dirname as dirname6, basename } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
-import { existsSync as existsSync8, readFileSync as readFileSync9, readdirSync as readdirSync6, statSync as statSync4 } from "fs";
-import { join as join11 } from "path";
+import { existsSync as existsSync11, readFileSync as readFileSync12, readdirSync as readdirSync9, statSync as statSync7 } from "fs";
+import { join as join14 } from "path";
 var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   "node_modules",
   "__pycache__",
@@ -6956,9 +7001,9 @@ var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs3 from "fs";
-import { execFileSync as execFileSync2 } from "child_process";
+import { execFileSync as execFileSync3 } from "child_process";
 import { createHash } from "crypto";
-import { dirname as dirname7, join as join12 } from "path";
+import { dirname as dirname7, join as join15 } from "path";
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -6969,18 +7014,6 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
   "coverage/"
 ];
 
-// consort/architecture/contract-clean.ts
-init_esm_shims();
-import { existsSync as existsSync10, readFileSync as readFileSync11, readdirSync as readdirSync7, statSync as statSync5 } from "fs";
-import { join as join13, relative, extname } from "path";
-var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
-var EXCLUDE_DIR = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
-);
-var EXCLUDE_DIR_JUNK = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
-);
-
 // consort/smells/refactor-verify-assess.ts
 init_esm_shims();
 import * as fs4 from "fs";
@@ -6988,52 +7021,56 @@ import * as path3 from "path";
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync12, readFileSync as readFileSync13, readdirSync as readdirSync8, statSync as statSync6 } from "fs";
-import { join as join15, relative as relative2, extname as extname2 } from "path";
+import { existsSync as existsSync14, readFileSync as readFileSync15, readdirSync as readdirSync10, statSync as statSync8 } from "fs";
+import { join as join17, relative as relative3, extname as extname4 } from "path";
 
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
-import { execFileSync as execFileSync3 } from "child_process";
-import { existsSync as existsSync13 } from "fs";
-import { join as join16 } from "path";
-
-// consort/architecture/test-smell-clean.ts
-init_esm_shims();
-import { existsSync as existsSync14, readFileSync as readFileSync14, readdirSync as readdirSync9, statSync as statSync7 } from "fs";
-import { join as join17, relative as relative3, extname as extname3 } from "path";
-var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+import { execFileSync as execFileSync4 } from "child_process";
+import { existsSync as existsSync15 } from "fs";
+import { join as join18 } from "path";
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/pipeline/batch-decompose.ts
+init_esm_shims();
+
+// consort/pipeline/cycle-record.ts
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync15(file)) {
+  if (!existsSync16(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse(readFileSync15(file, "utf8"));
+  const data = JSON.parse(readFileSync16(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyCycles(consortDir, featureId, story) {
-  const base = join18(cyclesRootDir(consortDir), featureId, story);
-  if (!existsSync15(base)) return [];
+  const base = join19(cyclesRootDir(consortDir), featureId, story);
+  if (!existsSync16(base)) return [];
   const out = [];
-  for (const acDir of readdirSync10(base)) {
-    const dir = join18(base, acDir);
+  for (const acDir of readdirSync11(base)) {
+    const dir = join19(base, acDir);
     try {
-      if (!statSync8(dir).isDirectory()) continue;
+      if (!statSync9(dir).isDirectory()) continue;
     } catch {
       continue;
     }
-    for (const f of readdirSync10(dir)) {
+    for (const f of readdirSync11(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(readFileSync15(join18(dir, f), "utf8")));
+        out.push(JSON.parse(readFileSync16(join19(dir, f), "utf8")));
       } catch {
       }
     }
   }
   return out;
+}
+function scopeKindsSet() {
+  const raw = (process.env.CONSORT_SCOPE_KINDS ?? "").trim();
+  if (!raw) return null;
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
 }
 function storyTestProgress(consortDir, featureId, story) {
   let items = [];
@@ -7042,7 +7079,12 @@ function storyTestProgress(consortDir, featureId, story) {
   } catch {
     items = [];
   }
-  const cycles = storyCycles(consortDir, featureId, story);
+  const scopeAc = (process.env.CONSORT_SCOPE_AC ?? "").trim();
+  if (scopeAc) items = items.filter((i) => i.ac_id === scopeAc);
+  const scopeKinds = scopeKindsSet();
+  if (scopeKinds) items = items.filter((i) => typeof i.kind === "string" && scopeKinds.has(i.kind));
+  const allCycles = storyCycles(consortDir, featureId, story);
+  const cycles = scopeAc ? allCycles.filter((c) => c.ac_id === scopeAc) : allCycles;
   const cycledTestIds = new Set(cycles.flatMap((c) => coveredTestIds(c)));
   const greenTestIds = new Set(cycles.filter((c) => c.green_at).flatMap((c) => coveredTestIds(c)));
   const pending = items.filter((i) => !cycledTestIds.has(i.id));

@@ -35,4 +35,14 @@ describe("effectiveLoopForStory", () => {
     expect(effectiveLoopForStory("hybrid-a", "S2-split-validate")).toBe("hybrid-a");
     expect(effectiveLoopForStory("ac", "S1-record-stock")).toBe("ac");
   });
+  it("#3 batch-RED lever: batchContractStories=true lets a contract story use the run default (opt-in)", () => {
+    // Default (false / omitted) keeps the safe fine-grained ac loop...
+    expect(effectiveLoopForStory("story", "S3-split-drop-old")).toBe("ac");
+    expect(effectiveLoopForStory("story", "S3-split-drop-old", false)).toBe("ac");
+    // ...true opts the contract story into the batched loop (fewer cycles; A/B before adopting).
+    expect(effectiveLoopForStory("story", "S3-split-drop-old", true)).toBe("story");
+    expect(effectiveLoopForStory("hybrid-a", "S3-split-drop-old", true)).toBe("hybrid-a");
+    // An additive story is unaffected by the flag.
+    expect(effectiveLoopForStory("story", "S1-record-stock", true)).toBe("story");
+  });
 });

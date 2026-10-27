@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   parseFailedNodeIds,
   classifyDeployVerifyFailure,
+  classifyDeployVerifySupersession,
   writeDeployVerifyAssessMarker,
   readDeployVerifyAssessMarker,
   markDeployVerifyAssessed,
@@ -13,6 +14,7 @@ import {
   clearDeployVerifyAssessMarker,
   deployVerifyNeedsAssess,
 } from "../../consort/smells/deploy-verify-assess";
+import { DEFAULT_MIGRATION_DIRS } from "../../consort/architecture/test-smell-clean";
 
 const FEATURE = "F6-split-tracking-code";
 const STORY = "S3-view-batch-and-serial";
@@ -65,6 +67,84 @@ describe("classifyDeployVerifyFailure", () => {
     });
     expect(verdict).toBe("genuine");
     expect(called).toBe(false);
+  });
+});
+
+describe("classifyDeployVerifySupersession (dropped-column references)", () => {
+  // A contract migration DROPs tracking_code; a prior-story test still reads it.
+  function seedDroppedColumnProject(dir: string): void {
+    mkdirSync(join(dir, "alembic", "versions"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    writeFileSync(
+      join(dir, "alembic", "versions", "0002_contract.py"),
+      [
+        "def upgrade():",
+        "    op.drop_column('stock_records', 'tracking_code')",
+        "",
+        "def downgrade():",
+        "    op.add_column('stock_records', sa.Column('tracking_code', sa.String()))",
+        "",
+      ].join("\n"),
+    );
+    // Superseded: reads the dropped column as an ORM attribute (fails at HEAD).
+    writeFileSync(
+      join(dir, "tests", "test_listing.py"),
+      ["def test_sc5(row):", "    assert row.tracking_code is None", ""].join("\n"),
+    );
+    // NOT superseded: references only a surviving column.
+    writeFileSync(
+      join(dir, "tests", "test_other.py"),
+      ["def test_ok(row):", "    assert row.sku == 'A1'", ""].join("\n"),
+    );
+  }
+
+  it("flags node-ids whose test file references a contract-dropped column", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dv-superseded-"));
+    try {
+      seedDroppedColumnProject(dir);
+      const superseded = classifyDeployVerifySupersession(
+        ["tests/test_listing.py::test_sc5", "tests/test_other.py::test_ok"],
+        dir,
+        DEFAULT_MIGRATION_DIRS,
+      );
+      expect(superseded).toEqual(["tests/test_listing.py::test_sc5"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns [] when no columns were dropped (nothing superseded)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dv-nodrop-"));
+    try {
+      mkdirSync(join(dir, "tests"), { recursive: true });
+      writeFileSync(join(dir, "tests", "test_listing.py"), "def test(row):\n    assert row.tracking_code is None\n");
+      expect(
+        classifyDeployVerifySupersession(["tests/test_listing.py::test"], dir, DEFAULT_MIGRATION_DIRS),
+      ).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes a supersession marker carrying the dropped columns", () => {
+    const ids = ["tests/test_listing.py::test_sc5"];
+    writeDeployVerifyAssessMarker(consortDir, FEATURE, STORY, ids, {
+      kind: "supersession",
+      droppedColumns: ["tracking_code"],
+    });
+    const m = readDeployVerifyAssessMarker(consortDir, FEATURE, STORY);
+    expect(m?.kind).toBe("supersession");
+    expect(m?.dropped_columns).toEqual(["tracking_code"]);
+    expect(m?.failing_node_ids).toEqual(ids);
+    // Same one-shot route as contamination: assess-eligible on first detection.
+    expect(deployVerifyNeedsAssess(consortDir, FEATURE, STORY)).toBe(true);
+  });
+
+  it("a contamination marker omits the supersession fields (byte-identical default)", () => {
+    writeDeployVerifyAssessMarker(consortDir, FEATURE, STORY, ["a.py::t"]);
+    const m = readDeployVerifyAssessMarker(consortDir, FEATURE, STORY);
+    expect(m?.kind).toBeUndefined();
+    expect(m?.dropped_columns).toBeUndefined();
   });
 });
 

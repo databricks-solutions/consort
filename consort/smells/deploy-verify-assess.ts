@@ -14,6 +14,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { findFeatureDir } from "../../consort/config/consort-paths.js";
+import { collectDroppedColumns, liveReferenceLines } from "../architecture/test-smell-clean.js";
 
 /**
  * Parse pytest "FAILED <nodeid>" / "ERROR <nodeid>" lines from the combined
@@ -34,15 +35,78 @@ export function parseFailedNodeIds(output: string): string[] {
   return ids;
 }
 
+/**
+ * Classify which of the deploy-verify FAILING node-ids are SUPERSEDED: their test
+ * file references a column a CONTRACT migration in this feature DROPPED. At the
+ * deploy-verify stage the test factually failed at HEAD, so a dropped-column
+ * reference IS the cause — unlike the authoring-time `dropped-column-test-reference`
+ * smell (which must stay conservative and skip downgrade/round-trip files to avoid
+ * false positives), here the failure already happened, so a reference to a
+ * now-dropped column is proof the test is stale and needs refactoring, NOT a
+ * terminal regression HIL. Returns the superseded node-ids (subset of the input).
+ * Pure: file reads keyed by the test file, deduped so each file is read once.
+ */
+export function classifyDeployVerifySupersession(
+  failingNodeIds: string[],
+  projectDir: string,
+  migrationDirs: string[],
+): string[] {
+  const dropped = collectDroppedColumns(projectDir, migrationDirs);
+  if (dropped.size === 0) return [];
+  const out: string[] = [];
+  const fileSuperseded = new Map<string, boolean>();
+  for (const nodeId of failingNodeIds) {
+    const file = nodeId.split("::")[0];
+    if (!file) continue;
+    let superseded = fileSuperseded.get(file);
+    if (superseded === undefined) {
+      superseded = false;
+      try {
+        const body = fs.readFileSync(path.join(projectDir, file), "utf8");
+        for (const col of dropped) {
+          if (liveReferenceLines(body, col).length > 0) {
+            superseded = true;
+            break;
+          }
+        }
+      } catch {
+        /* file gone / unreadable — not classifiable as superseded */
+      }
+      fileSuperseded.set(file, superseded);
+    }
+    if (superseded) out.push(nodeId);
+  }
+  return out;
+}
+
 export interface DeployVerifyAssessMarker {
   version: 1;
   /** The story this contamination marker belongs to, or absent for a
    *  FEATURE-ship deploy (no story – the merged-increment verify). The marker
    *  then lives at features/<F>/deploy-verify-assess.json instead of the story dir. */
   story_id?: string;
-  /** The pytest node-ids that failed in the full suite but the classifier found
-   *  pass in isolation – the contamination-fragile tests to scope. */
+  /** What kind of self-healable deploy-verify failure this is. Absent =
+   *  `"contamination"` (shared-state: the failing tests PASS in isolation; scope
+   *  them to own their DB state). `"supersession"` = the failing tests reference a
+   *  column this feature's CONTRACT migration DROPPED, so they fail at HEAD (they
+   *  do NOT pass in isolation) and are stale – refactor the stale reference. Both
+   *  route the same assess -> scope -> refactor machinery; only the directive
+   *  framing + the Driver's edit differ. Absent preserves the pre-supersession
+   *  byte-identical contamination behavior. */
+  kind?: "contamination" | "supersession";
+  /** For a `supersession` marker: the contract-dropped columns the failing tests
+   *  reference (the ground the Navigator's assess turn confirms against). */
+  dropped_columns?: string[];
+  /** The pytest node-ids that failed in the full suite – for a contamination
+   *  marker the ones the classifier found PASS in isolation; for a supersession
+   *  marker the ones referencing a dropped column. The tests to scope/refactor. */
   failing_node_ids: string[];
+  /** The OBSERVED failure output (bounded tail of the deploy-verify run) that
+   *  produced `failing_node_ids`. Carried so the Navigator's ASSESS turn
+   *  adjudicates superseded-vs-genuine from the ACTUAL runtime error (`column X
+   *  does not exist` ⇒ superseded; an assertion mismatch ⇒ a real regression),
+   *  not a static re-read of the tests. Absent on an older/empty-output marker. */
+  failure_output?: string;
   /** True once the Navigator has assessed this failure (flagged the tests to
    *  scope or declared a genuine regression). Set by the assess-finalize step. */
   assessed: boolean;
@@ -129,14 +193,23 @@ export function writeDeployVerifyAssessMarker(
   featureId: string,
   storyId: string | undefined,
   failingNodeIds: string[],
+  opts?: { kind?: "contamination" | "supersession"; droppedColumns?: string[]; failureOutput?: string },
 ): string | undefined {
   const file = markerPath(consortDir, featureId, storyId);
   if (!file) return undefined;
   const prior = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
+  const supersession = opts?.kind === "supersession";
+  // Carry a BOUNDED tail of the observed failure so the marker (and the assess
+  // directive built from it) stays readable; the tail holds the pytest short
+  // summary + the last FAILURES blocks, which is what names the real cause.
+  const failureTail = opts?.failureOutput ? opts.failureOutput.slice(-6000) : undefined;
   const marker: DeployVerifyAssessMarker = {
     version: 1,
     ...(storyId ? { story_id: storyId } : {}),
+    ...(supersession ? { kind: "supersession" as const } : {}),
+    ...(supersession && opts?.droppedColumns?.length ? { dropped_columns: opts.droppedColumns } : {}),
     failing_node_ids: failingNodeIds,
+    ...(failureTail ? { failure_output: failureTail } : {}),
     assessed: false,
     attempts: prior?.attempts ?? 0,
   };

@@ -1292,3 +1292,86 @@ describe("ensureDeployedAndVerify: client E2E pass isolates on an ephemeral bran
     expect(clientVerifyUrl).toBe("<unset>"); // client pass ran in place
   });
 });
+
+describe("deployToTarget: deploy-verify supersession self-heal ROUTER (hardened: observe -> carry -> adjudicate)", () => {
+  const FEATURE = "F6-split";
+  const STORY = "S3-contract-drop";
+  // A failing verify that FAILS both in the full run AND in isolation (genuine-at-HEAD, the
+  // supersession branch's precondition), carrying a REALISTIC observed error per test: a
+  // dropped-column crash (superseded) + a live-data assertion mismatch (a would-be regression).
+  const FAIL_OUTPUT = [
+    "=== short test summary info ===",
+    'FAILED tests/test_listing.py::test_index_shape - psycopg.errors.UndefinedColumn: column "tracking_code" does not exist',
+    "FAILED tests/test_summary.py::test_rollup - assert 2 == 3",
+    "=== 2 failed in 3.1s ===",
+  ].join("\n");
+
+  function setup(withDroppedColumn: boolean): string {
+    const consortDir = join(dir, ".tdd");
+    mkdirSync(join(consortDir, "features", FEATURE, "stories", STORY), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    // test_listing REFERENCES the dropped column (stale); test_summary does NOT — under the OLD
+    // all-or-nothing gate the non-column-ref failure forced the WHOLE set to a terminal HIL.
+    writeFileSync(join(dir, "tests", "test_listing.py"), "def test_index_shape(row):\n    assert row.tracking_code is None\n");
+    writeFileSync(join(dir, "tests", "test_summary.py"), "def test_rollup(client):\n    assert client.get('/api/summary').json()['n'] == 3\n");
+    if (withDroppedColumn) {
+      mkdirSync(join(dir, "alembic", "versions"), { recursive: true });
+      writeFileSync(
+        join(dir, "alembic", "versions", "0003_drop.py"),
+        ["def upgrade():", "    op.drop_column('stock_records', 'tracking_code')", "", "def downgrade():", "    pass", ""].join("\n"),
+      );
+    }
+    return consortDir;
+  }
+
+  it("routes the FULL failing set to the supersession assess AND carries the observed failure output", async () => {
+    const consortDir = setup(true);
+    const res = await deployToTarget({
+      projectDir: dir,
+      targetName: "localv",
+      featureId: FEATURE,
+      storyId: STORY,
+      lakebaseBranch: "projects/p/branches/exp-s3",
+      consortDir,
+      reachable: async () => true, // readyProbe passes -> verify runs -> fails -> self-heal classifies
+      startProcess: () => 7,
+      runVerify: () => ({ passed: false, output: FAIL_OUTPUT }), // fails full AND in isolation => genuine-at-HEAD
+      sleep: async () => {},
+      now: () => new Date(),
+    });
+    expect(res.verify?.passed).toBe(false); // the full-feature verify failed (app deployed+reachable, so ok:true)
+    const m = readDeployVerifyAssessMarker(consortDir, FEATURE, STORY);
+    expect(m?.kind).toBe("supersession");
+    // The WHOLE set is handed to the Navigator (the old gate dropped test_summary -> terminal HIL).
+    expect(m?.failing_node_ids).toEqual([
+      "tests/test_listing.py::test_index_shape",
+      "tests/test_summary.py::test_rollup",
+    ]);
+    expect(m?.dropped_columns).toContain("tracking_code");
+    // OBSERVE -> CARRY: the real runtime error travels to the assess so the Navigator adjudicates
+    // superseded (column does not exist) vs genuine (assertion mismatch) from evidence, not a guess.
+    expect(m?.failure_output).toContain('column "tracking_code" does not exist');
+    expect(m?.failure_output).toContain("assert 2 == 3");
+    expect(readEscalations(consortDir).some((e) => e.source === "deploy-verify")).toBe(false);
+  });
+
+  it("CONSERVATIVE: a genuine failure on a feature that drops NOTHING still takes the terminal escalation (no marker)", async () => {
+    const consortDir = setup(false);
+    const res = await deployToTarget({
+      projectDir: dir,
+      targetName: "localv",
+      featureId: FEATURE,
+      storyId: STORY,
+      lakebaseBranch: "projects/p/branches/exp-s3",
+      consortDir,
+      reachable: async () => true,
+      startProcess: () => 7,
+      runVerify: () => ({ passed: false, output: FAIL_OUTPUT }),
+      sleep: async () => {},
+      now: () => new Date(),
+    });
+    expect(res.verify?.passed).toBe(false);
+    expect(readDeployVerifyAssessMarker(consortDir, FEATURE, STORY)).toBeUndefined();
+    expect(readEscalations(consortDir).some((e) => e.source === "deploy-verify")).toBe(true);
+  });
+});

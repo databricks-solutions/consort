@@ -413,6 +413,9 @@ function beginTelemetryRunUnsafe(deps: BeginRunDeps): TelemetryRun {
             }
           }
         : undefined,
+      // #5 parallel per-AC lanes: forward the pre-dispatch hook unchanged so the telemetry wrapper
+      // never DROPS it (runDriver needs it to fan a contract story's ACs out). No span of its own.
+      beforeAction: inner.beforeAction ? (action, state) => inner.beforeAction!(action, state) : undefined,
       async perform(action) {
         const start = now();
         try {

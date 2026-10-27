@@ -6787,7 +6787,11 @@ function resolveProjectSettings(projectDir) {
   const build = {
     loopGranularity: file?.build?.loopGranularity ?? "story",
     batchCap: file?.build?.batchCap,
-    sessionScope: file?.build?.sessionScope ?? "story"
+    sessionScope: file?.build?.sessionScope ?? "story",
+    batchContractStories: file?.build?.batchContractStories ?? false,
+    parallelAcLanes: file?.build?.parallelAcLanes ?? false,
+    parallelAcLaneCap: file?.build?.parallelAcLaneCap ?? 8,
+    splitAcsByKind: file?.build?.splitAcsByKind ?? false
   };
   const project = {
     uiTrack: file?.project?.uiTrack ?? true,
@@ -6812,7 +6816,7 @@ function defaultConsortConfig() {
   return {
     version: 1,
     roles,
-    build: { loopGranularity: "story", batchCap: 3, sessionScope: "story" },
+    build: { loopGranularity: "story", batchCap: 3, sessionScope: "story", batchContractStories: false, parallelAcLanes: false, parallelAcLaneCap: 8, splitAcsByKind: false },
     plan: { sizing: true },
     project: { uiTrack: true, gates: "interactive", deployTarget: "local", clientFramework: "none", language: "java" }
   };
@@ -7136,6 +7140,15 @@ var EVENT_TEMPLATES = {
   "deploy.failed": { template: "DEPLOY failed {{scope}}: {{reason}}" },
   "verify.passed": { template: "VERIFY passed {{scope}} ({{command}})" },
   "verify.failed": { template: "VERIFY failed {{scope}} ({{command}}): {{summary}}" },
+  // Deterministic per-pass verify wall-clock (code-emitted at each per-cycle GREEN).
+  // reversibility_ran is the tiered-verify signal: did the slow isolated-branch
+  // migration pass run this cycle, or did a non-migration cycle skip it. migration_ms
+  // / client_ms ride in metadata (present only when that pass ran).
+  "verify.timing": { template: "VERIFY timing {{total_ms}}ms (main {{main_ms}}ms, reversibility {{reversibility_ran}})" },
+  // Per-turn wall-clock attributed by TURN-KIND (+ story/ac in metadata) — the signal
+  // the timing report rolls up to find WHERE a story's wall-clock goes (e.g. supersession
+  // assess/green-superseded churn vs productive red/green). Code-emitted at dispatch.
+  "turn.timing": { template: "{{role}} {{turn_kind}} turn {{duration_ms}}ms ({{model}})" },
   // UX adherence
   "adherence.passed": { template: "ADHERENCE passed {{scope}}" },
   "adherence.failed": { template: "ADHERENCE failed {{scope}}: {{diffs}}" },
@@ -7285,8 +7298,8 @@ init_cjs_shims();
 init_cjs_shims();
 var import_node_child_process3 = require("child_process");
 var import_node_crypto = require("crypto");
-var import_node_fs5 = require("fs");
-var import_node_path6 = require("path");
+var import_node_fs8 = require("fs");
+var import_node_path9 = require("path");
 var import_lakebase8 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
@@ -7308,6 +7321,27 @@ function readSmellsLog(consortDir) {
 init_cjs_shims();
 var fs8 = __toESM(require("fs"), 1);
 var path6 = __toESM(require("path"), 1);
+
+// consort/architecture/test-smell-clean.ts
+init_cjs_shims();
+var import_node_fs5 = require("fs");
+var import_node_path6 = require("path");
+
+// consort/architecture/migration-columns.ts
+init_cjs_shims();
+var import_node_fs4 = require("fs");
+var import_node_path5 = require("path");
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+
+// consort/architecture/test-smell-clean.ts
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+
+// consort/smells/deploy-verify-assess.ts
 function markerPath(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
@@ -7331,10 +7365,27 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
   return !!m && !m.assessed && m.attempts < 1;
 }
 
+// consort/architecture/contract-clean.ts
+init_cjs_shims();
+var import_node_fs6 = require("fs");
+var import_node_path7 = require("path");
+
+// consort/experiment/py-source.ts
+init_cjs_shims();
+
+// consort/architecture/contract-clean.ts
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+var EXCLUDE_DIR = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE2}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
+);
+var EXCLUDE_DIR_JUNK = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE2}|\\.lakebase|dist|build)(/|$)`
+);
+
 // consort/architecture/e2e-regex-clean.ts
 init_cjs_shims();
-var import_node_fs4 = require("fs");
-var import_node_path5 = require("path");
+var import_node_fs7 = require("fs");
+var import_node_path8 = require("path");
 
 // consort/smells/ephemeral-verify.ts
 init_cjs_shims();
@@ -7345,13 +7396,13 @@ var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 
 // consort/architecture/design-adherence.ts
 init_cjs_shims();
-var import_node_fs6 = require("fs");
-var import_node_path7 = require("path");
+var import_node_fs9 = require("fs");
+var import_node_path10 = require("path");
 
 // consort/architecture/layering-clean.ts
 init_cjs_shims();
-var import_node_fs7 = require("fs");
-var import_node_path8 = require("path");
+var import_node_fs10 = require("fs");
+var import_node_path11 = require("path");
 var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   "node_modules",
   "__pycache__",
@@ -7376,7 +7427,7 @@ init_cjs_shims();
 var fs9 = __toESM(require("fs"), 1);
 var import_node_child_process4 = require("child_process");
 var import_node_crypto2 = require("crypto");
-var import_node_path9 = require("path");
+var import_node_path12 = require("path");
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7387,18 +7438,6 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
   "coverage/"
 ];
 
-// consort/architecture/contract-clean.ts
-init_cjs_shims();
-var import_node_fs8 = require("fs");
-var import_node_path10 = require("path");
-var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
-var EXCLUDE_DIR = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
-);
-var EXCLUDE_DIR_JUNK = new RegExp(
-  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
-);
-
 // consort/smells/refactor-verify-assess.ts
 init_cjs_shims();
 var fs10 = __toESM(require("fs"), 1);
@@ -7406,24 +7445,21 @@ var path7 = __toESM(require("path"), 1);
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
-var import_node_fs9 = require("fs");
-var import_node_path11 = require("path");
+var import_node_fs11 = require("fs");
+var import_node_path13 = require("path");
 
 // consort/architecture/migration-history-clean.ts
 init_cjs_shims();
 var import_node_child_process5 = require("child_process");
-var import_node_fs10 = require("fs");
-var import_node_path12 = require("path");
-
-// consort/architecture/test-smell-clean.ts
-init_cjs_shims();
-var import_node_fs11 = require("fs");
-var import_node_path13 = require("path");
-var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+var import_node_fs12 = require("fs");
+var import_node_path14 = require("path");
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase9 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
+
+// consort/pipeline/batch-decompose.ts
+init_cjs_shims();
 
 // consort/orchestrator/state/orchestrator-derive.ts
 init_cjs_shims();
@@ -7446,7 +7482,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_cjs_shims();
 var import_node_crypto3 = require("crypto");
-var import_node_fs12 = require("fs");
+var import_node_fs13 = require("fs");
 
 // consort/gates/workflow-phase.ts
 init_cjs_shims();
@@ -7480,7 +7516,7 @@ init_cjs_shims();
 
 // consort/test-list/fan-out-plan.ts
 init_cjs_shims();
-var import_node_path14 = require("path");
+var import_node_path15 = require("path");
 
 // consort/test-list/test-analyst-catalogue.ts
 init_cjs_shims();
@@ -7577,10 +7613,12 @@ function readDriveContext(consortDir, featureId, projectDir) {
     merged: scmState === "merged"
   };
   const loop = resolveProjectSettings(proj).build.loopGranularity;
+  const batchContractStories = resolveProjectSettings(proj).build.batchContractStories ?? false;
   return {
     phase: driverPhaseForTdd(tddPhase),
     breakdownDone,
     loop,
+    batchContractStories,
     planning: { intakeReady, intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated: hasEstimates(consortDir), backlogCommitted, requestsAuthored },
     deploy: { deployed, gateApproved, verifyAssessEligible, verifyRefactorPending, verifyPassed, reverifyAttempted },
     promote

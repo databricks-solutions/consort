@@ -156,6 +156,13 @@ export interface DriveContext {
    *  REFACTOR per story. "ac" (strict per-test TDD) and "hybrid-a" (per-layer
    *  batch, per-AC review) keep the per-AC review/refactor cadence. */
   loop?: "ac" | "hybrid-a" | "story";
+  /** The #3 batch lever (consort-config build.batchContractStories). Threaded so
+   *  deriveDriveState's per-story effectiveLoopForStory agrees with the effects
+   *  layer: with the lever ON a CONTRACT story runs the normal batched loop
+   *  instead of being forced to the fine `ac` loop. Must match the flag the
+   *  effects layer (buildTaskBody / buildCycleCommand) passes, or the story-close
+   *  review derives per-AC while recording story-level and the protocol halts. */
+  batchContractStories?: boolean;
 }
 
 const DESIGN_DONE_STATUSES = new Set([
@@ -188,8 +195,11 @@ export function isContractStory(storyId: string): boolean {
 export function effectiveLoopForStory(
   runLoop: "ac" | "hybrid-a" | "story",
   storyId: string,
+  batchContractStories = false,
 ): "ac" | "hybrid-a" | "story" {
-  return isContractStory(storyId) ? "ac" : runLoop;
+  // A CONTRACT story is forced to the fine-grained `ac` loop (localization safety on the risky
+  // drop-column migration) UNLESS the #3 batch-RED lever opts it into the normal batched loop.
+  return isContractStory(storyId) && !batchContractStories ? "ac" : runLoop;
 }
 
 function storyView(
@@ -264,6 +274,13 @@ function storyView(
       specDefectFromRole: probe.specDefectFromRole(id),
       greenUnfixableAc: probe.greenUnfixableAc(id),
       greenUnfixableDiagnosis: probe.greenUnfixableDiagnosis(id),
+      // This drive IS a coordinator-spawned per-AC lane (CONSORT_AC_LANE). A lane does
+      // RED/GREEN for its scoped AC(s) and then EXITS — per the fan-out design, REVIEW /
+      // REFACTOR / deploy-verify / accept are NOT done per lane; they run ONCE at story-close
+      // on the MERGED result (the top-level drive, no CONSORT_AC_LANE). Running them per lane
+      // DEADLOCKS: the lane's unscoped refactor/deploy verify fails on sibling ACs that only
+      // build in OTHER lanes (the serial-first AC can never close -> never fans out).
+      isAcLane: !!(process.env.CONSORT_AC_LANE ?? "").trim(),
       awaitingAcceptance: e.status === "awaiting-acceptance",
       deployVerified: probe.storyDeployVerified(id),
       deployVerifyAssessEligible: probe.deployVerifyAssessEligible(id),
@@ -292,7 +309,7 @@ export function deriveDriveState(
     // Per-story granularity: a contract/cleanup story (drop column / remove
     // endpoint / rename) auto-drops to the finest `ac` loop, since its lockstep
     // DB+code change is too heavy for one story-level GREEN turn.
-    stories[id] = storyView(id, entry, probe, effectiveLoopForStory(loop, id));
+    stories[id] = storyView(id, entry, probe, effectiveLoopForStory(loop, id, ctx.batchContractStories));
   }
   const storyOrder = ctx.storyOrder ?? Object.keys(pipeline.stories);
   // The breakdown is done once stories are tracked in the pipeline (the signal

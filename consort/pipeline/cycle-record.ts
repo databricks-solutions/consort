@@ -37,7 +37,7 @@ import { verifyGateIntegrity } from "../../consort/gates/verify-gate-integrity.j
 import { resolveArtifactInputs } from "../../consort/gates/gate-conformance-guard.js";
 import { markTestItemGreen } from "../test-list/test-list.js";
 import { listExperiments } from "../../consort/experiment/experiment.js";
-import { ensureDeployedAndVerify } from "../deploy/deploy.js";
+import { ensureDeployedAndVerify, type VerifyTiming } from "../deploy/deploy.js";
 import { writeEscalation, type Escalation } from "../../consort/gates/escalation.js";
 import { readSmellsLog, markSmellResolved, isBuildRefactorRoutableSmell, hasOpenBuildRefactorRoutableSmell, writeSmellsLog, hasOpenSmell } from "../smells/smells.js";
 import { checkUxClean, summarizeUxViolations, readAppIconFromGuide, readDesignContract, installBrandAsset, applyBrandIconReference } from "../architecture/design-adherence.js";
@@ -64,11 +64,13 @@ import {
   beginCycle,
   recordRunnerOutcome,
   markGreen,
+  recordBatchSplitGreen,
   coveredTestIds,
   readAcLayer,
   type CycleArtifact,
   type CycleScope,
 } from "./run-cycle.js";
+import { splitBatchByResult, testidToTestName } from "./batch-decompose.js";
 import type { AcLayer } from "../../consort/experiment/experiment.js";
 
 /**
@@ -216,7 +218,7 @@ export interface StoryTestItem {
    *  test-list JSON (the test-strategist writes it). "client" (a Vitest/RTL or
    *  Playwright test under client/tests/) is RED-first like "behavior", never a
    *  born-green guard. */
-  kind?: "behavior" | "fitness" | "client";
+  kind?: "behavior" | "fitness" | "client" | "component";
 }
 
 function readStoryItems(consortDir: string, featureId: string, story: string): StoryTestItem[] {
@@ -226,6 +228,27 @@ function readStoryItems(consortDir: string, featureId: string, story: string): S
   }
   const data = JSON.parse(readFileSync(file, "utf8")) as { items?: StoryTestItem[] };
   return Array.isArray(data.items) ? data.items : [];
+}
+
+/** The story's ACs in test-list order (distinct ac_id, first-seen order). The #5
+ *  parallel-lanes coordinator fans these out: index 0 is the migration-authoring
+ *  serial-first AC, the rest become concurrent lanes. Empty when no test-list. */
+export function storyAcOrder(consortDir: string, featureId: string, story: string): string[] {
+  let items: StoryTestItem[] = [];
+  try {
+    items = readStoryItems(consortDir, featureId, story);
+  } catch {
+    return [];
+  }
+  const seen = new Set<string>();
+  const order: string[] = [];
+  for (const it of items) {
+    if (it.ac_id && !seen.has(it.ac_id)) {
+      seen.add(it.ac_id);
+      order.push(it.ac_id);
+    }
+  }
+  return order;
 }
 
 /** The story's recorded experiment (slug + branch), so cycles tie to its DB. */
@@ -282,6 +305,16 @@ export interface StoryTestProgress {
  * "navigator vs driver vs done" decision and the cycle CLI's "which test next"
  * can never drift. Tolerant of a missing test-list (returns total:0).
  */
+/** The CONSORT_SCOPE_KINDS lane filter (S4-split). A split-AC lane sets it to the kind(s) it owns
+ *  ("client" for the e2e lane, "component"[+behavior/fitness] for the unit lane); only those kinds
+ *  count for the build STATE (storyTestProgress) AND the verify SELECTION (acTestIdsFor), so the two
+ *  lanes build + verify disjoint slices. Unset => null => all kinds (byte-identical to pre-split). */
+function scopeKindsSet(): Set<string> | null {
+  const raw = (process.env.CONSORT_SCOPE_KINDS ?? "").trim();
+  if (!raw) return null;
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
+
 export function storyTestProgress(consortDir: string, featureId: string, story: string): StoryTestProgress {
   let items: StoryTestItem[] = [];
   try {
@@ -289,7 +322,22 @@ export function storyTestProgress(consortDir: string, featureId: string, story: 
   } catch {
     items = [];
   }
-  const cycles = storyCycles(consortDir, featureId, story);
+  // Parallel per-AC lane scope (#5): when a lane drives ONE AC in its own worktree
+  // (CONSORT_SCOPE_AC=<ac>), the whole build state derives from only that AC's
+  // test-list items — so testsWritten / codeWritten / allGreen + every per-AC probe
+  // (all keyed off this) bound the serial loop to that AC's RED -> GREEN, and the
+  // lane reaches "all (scoped) green" (await-acceptance) when its AC is done. Unset
+  // (the normal drive / the serial-first AC) => the full story, byte-identical.
+  const scopeAc = (process.env.CONSORT_SCOPE_AC ?? "").trim();
+  if (scopeAc) items = items.filter((i) => i.ac_id === scopeAc);
+  // Split-AC lane scope (S4-split): when a heavy AC is split into per-kind lanes (e.g. AC4.e2e scoped
+  // to "client", AC4.unit to "component"), CONSORT_SCOPE_KINDS bounds the build STATE to that lane's
+  // kinds — so each lane's RED->GREEN + allGreen cover only its own test slice and the two lanes author
+  // disjoint slices concurrently. Unset (the common case) => all kinds, byte-identical to pre-split.
+  const scopeKinds = scopeKindsSet();
+  if (scopeKinds) items = items.filter((i) => typeof i.kind === "string" && scopeKinds.has(i.kind));
+  const allCycles = storyCycles(consortDir, featureId, story);
+  const cycles = scopeAc ? allCycles.filter((c) => c.ac_id === scopeAc) : allCycles;
   // A cycle covers one (per-test) or several (P8b batch) test ids; coveredTestIds
   // reads either shape, so progress is correct in both loop-granularity modes.
   const cycledTestIds = new Set(cycles.flatMap((c) => coveredTestIds(c)));
@@ -311,7 +359,7 @@ export function pendingItemKind(
   consortDir: string,
   featureId: string,
   story: string,
-): "behavior" | "fitness" | "client" | undefined {
+): "behavior" | "fitness" | "client" | "component" | undefined {
   return storyTestProgress(consortDir, featureId, story).pending[0]?.kind;
 }
 
@@ -525,7 +573,7 @@ export type GreenVerifier = (args: {
    *  backend/migration story), the per-cycle verify skips the serving app + the client pass (backend
    *  pytest is in-process). Undefined on refactor/deploy => full behavior. */
   storyHasClientTests?: boolean;
-}) => Promise<{ passed: boolean; summary: string; failureOutput?: string }>;
+}) => Promise<{ passed: boolean; summary: string; failureOutput?: string; timing?: VerifyTiming }>;
 
 /** Tiered verify: did THIS cycle's working-tree changes touch a migration — an `alembic/versions/**`
  *  (or other known migration-dir) file, OR a changed/new TEST file that declares `@pytest.mark.migration`
@@ -565,6 +613,66 @@ function storyTestIdsFor(consortDir: string, featureId: string, story: string): 
   }
 }
 
+/** The current AC's test ids — a TIGHTER per-cycle verify scope than the whole story (#2 impacted-test
+ *  selection). A RED→GREEN cycle greens ONE AC's test, so the fast regression check it needs per cycle
+ *  is that AC's own tests; the sibling ACs' tests (and all cross-story tests) still run at the UNSCOPED
+ *  story-close REFACTOR + feature-deploy gates, which is where a cross-AC break is caught before accept.
+ *  Returns [] (=> caller falls back to the full story scope) on any read error OR when the AC has no
+ *  matching items, so a mis-tagged ac_id can never silently shrink the verify to nothing. */
+function acTestIdsFor(consortDir: string, featureId: string, story: string, acId: string): string[] {
+  try {
+    const tl = JSON.parse(readFileSync(storyTestListJson(consortDir, featureId, story), "utf8")) as {
+      items?: Array<{ id?: unknown; ac_id?: unknown; kind?: unknown }>;
+    };
+    // S4-split: a split-AC lane verifies only its own kind slice (CONSORT_SCOPE_KINDS) — e.g. AC4.e2e
+    // runs only the client tests, AC4.unit only the component ones — so a lane never fails on sibling-
+    // slice tests it doesn't own. Unset => all of the AC's kinds (byte-identical to pre-split).
+    const scopeKinds = scopeKindsSet();
+    return (tl.items ?? [])
+      .filter((it) => it.ac_id === acId && (!scopeKinds || (typeof it.kind === "string" && scopeKinds.has(it.kind))))
+      .map((it) => it.id)
+      .filter((id): id is string => typeof id === "string");
+  } catch {
+    return [];
+  }
+}
+
+/** Per-AC test-kind composition for the whole story (ac_id -> the distinct kinds present among its
+ *  tests). The structural input planAcLanes' split decision reads: an AC with both a heavy (client/e2e)
+ *  and a light (component/behavior/fitness) kind is a split candidate. Reads the story test-list
+ *  directly (same source as acTestIdsFor); {} on any read error (=> planner sees no kinds, never splits). */
+export function acKindsForStory(consortDir: string, featureId: string, story: string): Record<string, string[]> {
+  try {
+    const tl = JSON.parse(readFileSync(storyTestListJson(consortDir, featureId, story), "utf8")) as {
+      items?: Array<{ ac_id?: unknown; kind?: unknown }>;
+    };
+    const out: Record<string, Set<string>> = {};
+    for (const it of tl.items ?? []) {
+      if (typeof it.ac_id === "string" && typeof it.kind === "string") (out[it.ac_id] ??= new Set()).add(it.kind);
+    }
+    return Object.fromEntries(Object.entries(out).map(([ac, ks]) => [ac, [...ks]]));
+  } catch {
+    return {};
+  }
+}
+
+/** Read the project's Python test sources (tests/ + tests/step_defs, *.py) for the testid->test-fn map
+ *  that batch split-on-failure uses to map a failing pytest node-id back to its test-list id. Bounded,
+ *  best-effort ([] on any error — split then re-queues everything, the safe degrade). */
+function readProjectTestSources(projectDir: string): string[] {
+  const out: string[] = [];
+  for (const rel of ["tests", join("tests", "step_defs")]) {
+    const dir = join(projectDir, rel);
+    if (!existsSync(dir)) continue;
+    try {
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith(".py")) { try { out.push(readFileSync(join(dir, f), "utf8")); } catch { /* skip unreadable */ } }
+      }
+    } catch { /* skip */ }
+  }
+  return out;
+}
+
 /** The kinds a test-list item carries that the CLIENT pass (Vitest real-backend + Playwright E2E)
  *  covers — everything else (behavior/fitness) is a BACKEND pytest, which runs in-process (TestClient
  *  + direct DB) and needs no serving app. */
@@ -576,15 +684,32 @@ const CLIENT_TEST_KINDS = new Set(["client", "component", "e2e"]);
  *  backend pytest passes are in-process. FAIL-SAFE: any read error returns true (start the server + run
  *  the client pass, the full behavior), and the story-close REFACTOR + feature-deploy gates run the
  *  full client pass regardless. */
-function storyHasClientTestsFor(consortDir: string, featureId: string, story: string): boolean {
+function storyHasClientTestsFor(consortDir: string, featureId: string, story: string, acId?: string): boolean {
   try {
     const tl = JSON.parse(readFileSync(storyTestListJson(consortDir, featureId, story), "utf8")) as {
-      items?: Array<{ kind?: unknown }>;
+      items?: Array<{ kind?: unknown; ac_id?: unknown }>;
     };
-    return (tl.items ?? []).some((it) => typeof it.kind === "string" && CLIENT_TEST_KINDS.has(it.kind));
+    // AC-scope (parallel-lane waste cut): in a scoped-lane drive the caller passes the current AC, so
+    // a backend-only AC (no client/component/e2e test of its OWN) SKIPS the per-cycle client pass + serve
+    // entirely — safe because the deterministic supersession hoist owns the cross-story client tests there.
+    // Unscoped (acId undefined) stays STORY-level (the full client suite still detects supersession fleet-wide).
+    const items = (tl.items ?? []).filter((it) => !acId || it.ac_id === acId);
+    return items.some((it) => typeof it.kind === "string" && CLIENT_TEST_KINDS.has(it.kind));
   } catch {
     return true;
   }
+}
+
+/** Test files named on FAILED/FAIL/ERROR lines of a verify's captured output (pytest
+ *  `FAILED tests/x.py::...`, vitest `FAIL client/tests/x.test.tsx > ...`). Used only to
+ *  decide whether a verify failure is CONFINED to the deferred superseded-candidate set. */
+function failedTestFiles(output: string): string[] {
+  const files = new Set<string>();
+  for (const line of output.split("\n")) {
+    if (!/\b(FAILED|FAIL|ERROR)\b/.test(line)) continue;
+    for (const m of line.matchAll(/([\w./-]+\.(?:py|tsx|ts))\b/g)) files.add(m[1].replace(/^\.\//, ""));
+  }
+  return [...files];
 }
 
 const defaultGreenVerifier: GreenVerifier = async ({ projectDir, branchId, cycleLayer, cycleTouchedMigrations, storyTestIds, storyHasClientTests }) => {
@@ -596,9 +721,27 @@ const defaultGreenVerifier: GreenVerifier = async ({ projectDir, branchId, cycle
     ...(storyTestIds && storyTestIds.length > 0 ? { storyTestIds } : {}),
     ...(storyHasClientTests !== undefined ? { storyHasClientTests } : {}),
   });
+  // DEFER cross-story supersession (serial-first AC of a fan-out, CONSORT_DEFER_SUPERSESSION):
+  // the drop migration THIS AC authored is what makes the prior-story tests fail. Those tests
+  // are retargeted ONCE by the coordinator's clearSupersession right after this AC, so they must
+  // NOT block this AC's green — otherwise the serial-first AC grinds the whole superseded set
+  // reactively (the serial head that starves fan-out). Conservative: only flip fail->pass when
+  // EVERY failing file is in the deterministic superseded-candidate set (any other failure is a
+  // real regression and stays red).
+  if (!r.passed && (process.env.CONSORT_DEFER_SUPERSESSION ?? "").trim() && r.failureOutput) {
+    const superseded = new Set(supersededTestCandidates({ projectDir }).candidates.map((c) => c.file));
+    const failed = failedTestFiles(r.failureOutput);
+    if (superseded.size > 0 && failed.length > 0 && failed.every((f) => superseded.has(f))) {
+      return {
+        passed: true,
+        summary: `${r.summary} — deferred ${failed.length} superseded cross-story file(s) to the supersession sweep`,
+        ...(r.timing ? { timing: r.timing } : {}),
+      };
+    }
+  }
   // Surface the verify's captured failure output so greenOpenCycle can record it into
   // green-failure.json – the ASSESS turn then starts from the real failure, not a re-scan.
-  return { passed: r.passed, summary: r.summary, ...(r.failureOutput ? { failureOutput: r.failureOutput } : {}) };
+  return { passed: r.passed, summary: r.summary, ...(r.failureOutput ? { failureOutput: r.failureOutput } : {}), ...(r.timing ? { timing: r.timing } : {}) };
 };
 
 /**
@@ -660,13 +803,24 @@ export async function greenOpenCycle(
   // non-migration behavior/client cycle skips the slow isolated-branch migration pass (the full pass
   // still runs at the story-close REFACTOR + feature-deploy gates, which pass no flag).
   const touchedMigrations = detectCycleTouchedMigrations(dirname(consortDir));
-  // Per-cycle SCOPE: run only THIS story's tests in the per-cycle verify (the full cross-story suite
-  // runs at the unscoped REFACTOR + feature-deploy gates, which do not pass storyTestIds).
-  const scopedIds = storyTestIdsFor(consortDir, featureId, story);
+  // Per-cycle SCOPE (#2 impacted-test selection): run only the CURRENT AC's tests in the per-cycle
+  // verify — the cycle greens one AC's test, so that AC's tests are the impacted set. Fall back to the
+  // whole STORY's tests when the AC has none (a mis-tagged ac_id must never shrink the verify to
+  // nothing). The full cross-story suite still runs at the unscoped REFACTOR + feature-deploy gates
+  // (they pass no storyTestIds), which is where a cross-AC / cross-story break is caught before accept.
+  // ONE door, default on: LAKEBASE_CONSORT_CYCLE_VERIFY_SCOPE=story opts back to whole-story scope (opt
+  // 2) — the A/B lever + a safety valve if a story ever needs sibling-AC regressions caught per cycle.
+  const acScope = (process.env.LAKEBASE_CONSORT_CYCLE_VERIFY_SCOPE ?? "ac").trim() !== "story";
+  const acIds = acScope ? acTestIdsFor(consortDir, featureId, story, open.ac_id) : [];
+  const scopedIds = acIds.length > 0 ? acIds : storyTestIdsFor(consortDir, featureId, story);
   // Per-cycle server SCOPE: a pure backend/migration story (no client/component/e2e test) runs its
   // backend pytest in-process, so the per-cycle verify skips the serving app + the client pass. The
-  // unscoped REFACTOR + feature-deploy gates pass no flag => full behavior.
-  const storyHasClientTests = storyHasClientTestsFor(consortDir, featureId, story);
+  // unscoped REFACTOR + feature-deploy gates pass no flag => full behavior. In a SCOPED-LANE drive
+  // (CONSORT_SCOPE_AC set) this is AC-level: a backend-only AC (e.g. a contract story's schema-diff AC)
+  // skips the client pass + serve EVERY cycle instead of re-running the story's full client suite (~25s
+  // each) for client tests it doesn't own — the hoist owns the cross-story client supersession there.
+  const scopeAcForClient = (process.env.CONSORT_SCOPE_AC ?? "").trim();
+  const storyHasClientTests = storyHasClientTestsFor(consortDir, featureId, story, scopeAcForClient ? open.ac_id : undefined);
   let result = await verify({
     projectDir: dirname(consortDir),
     consortDir,
@@ -757,7 +911,14 @@ export async function greenOpenCycle(
     // here with per-smell fixes routed to the test's AUTHOR, never a code repair.
     if (result.passed) {
       try {
-        const smells = checkTestSmells({ projectDir: dirname(consortDir) });
+        // Deferred serial-first AC: do NOT fail on dropped-column-test-reference (the cross-story
+        // superseded set) — the coordinator's supersession sweep clears it once right after this AC.
+        const smells = checkTestSmells({
+          projectDir: dirname(consortDir),
+          ...((process.env.CONSORT_DEFER_SUPERSESSION ?? "").trim()
+            ? { excludeSmells: new Set<string>(["dropped-column-test-reference"]) }
+            : {}),
+        });
         if (!smells.clean && smells.remediation) {
           result = { passed: false, summary: smells.remediation };
           // Carry the per-occurrence fixes into the green-failure enrichment below
@@ -790,6 +951,28 @@ export async function greenOpenCycle(
       summary: (result.summary ?? (result.passed ? "all tests passed" : "verify failed")).slice(0, 500),
     },
   });
+  // verify.timing (telemetry): the deterministic per-pass verify wall-clock — the signal
+  // the tiered-verify optimization moves, isolated from the LLM turn-time it is folded
+  // into at the cycle layer. reversibility_ran records whether the slow isolated-branch
+  // migration pass ran this cycle or a non-migration cycle skipped it.
+  if (result.timing) {
+    const t = result.timing;
+    logCycleEvent(consortDir, {
+      role: "driver",
+      level: "info",
+      event: "verify.timing",
+      feature_id: featureId,
+      cycle_id: open.cycle_id,
+      slots: {
+        total_ms: t.totalMs,
+        main_ms: t.mainMs,
+        reversibility_ran: t.reversibilityRan,
+        ...(t.migrationMs !== undefined ? { migration_ms: t.migrationMs } : {}),
+        ...(t.clientMs !== undefined ? { client_ms: t.clientMs } : {}),
+      },
+      metadata: { story_id: story, ac_id: open.ac_id },
+    });
+  }
   if (open.layer && open.experiment_slug) {
     recordRunnerOutcome({ scope, cycleId: open.cycle_id, experimentSlug: open.experiment_slug, passed: result.passed });
   }
@@ -847,6 +1030,30 @@ export async function greenOpenCycle(
         ac_id: open.ac_id,
       });
       return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, escalated: true, escalation, summary: result.summary };
+    }
+    // BATCH SPLIT-ON-FAILURE (adaptive batching / fitness-lane compression): a BATCH cycle (>=2 covered)
+    // whose GREEN verify PARTIALLY passed -> BANK the passers (re-scope the cycle green) and RE-QUEUE the
+    // failers to `pending` (they drop out of coverage) so nextPendingBatch / the fan-out re-forms them to
+    // resolve on their own — instead of failing the whole batch into one coarse repair (the localization
+    // objection that kept batchContractStories off). Only on a genuine partial pass; a full-batch failure
+    // or a single-test cycle falls through to the normal green-failure / assess path below.
+    const coveredBatch = coveredTestIds(open);
+    if (coveredBatch.length >= 2 && result.failureOutput) {
+      const testidMap = testidToTestName(readProjectTestSources(dirname(consortDir)));
+      const { banked, requeue } = splitBatchByResult({ batchIds: coveredBatch, output: result.failureOutput, testidToName: testidMap });
+      if (banked.length > 0 && requeue.length > 0) {
+        recordBatchSplitGreen(scope, open.cycle_id, banked);
+        for (const tid of banked) {
+          try { markTestItemGreen(consortDir, featureId, story, tid); } catch { /* status propagation is observability, not a gate */ }
+        }
+        clearGreenFailure(consortDir, featureId, story, open.ac_id);
+        return {
+          recorded: true,
+          cycleId: open.cycle_id,
+          testId: banked[0],
+          summary: `batch split: banked ${banked.length} passed, re-queued ${requeue.length} failed to pending (${requeue.map((u) => u.id).join(", ")})`,
+        };
+      }
     }
     const gf = readGreenFailure(consortDir, featureId, story, open.ac_id);
     if (!gf?.assessed) {

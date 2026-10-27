@@ -12,7 +12,7 @@
 // recorded under .tdd/deploy/<target>.pid) so feature verification can hit it;
 // `stopLocal` tears it down.
 
-import { execSync, spawn } from "node:child_process";
+import { execSync, execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -27,6 +27,8 @@ import {
   readDeployVerifyAssessMarker,
   clearDeployVerifyAssessMarker,
 } from "../../consort/smells/deploy-verify-assess.js";
+import { collectDroppedColumns, DEFAULT_MIGRATION_DIRS } from "../../consort/architecture/test-smell-clean.js";
+import { supersededTestCandidates } from "../../consort/architecture/contract-clean.js";
 import { checkE2eRegexClean, summarizeE2eRegexViolations, E2E_REGEX_REMEDIATION } from "../../consort/architecture/e2e-regex-clean.js";
 import { emitAgentLogEvent, type AgentLogIoOpts } from "../../consort/logging/agent-log.js";
 import type { AgentLogEventName } from "../../consort/logging/agent-log-events.js";
@@ -376,6 +378,160 @@ export function logReleaseEngineerDeployOutcome(ctx: ReleaseEngineerLogCtx, resu
 
 function pidFile(projectDir: string, target: string): string {
   return join(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
+}
+
+// ── Verify-server lifecycle registry (issue: leaked app servers) ───────────────
+// Each per-cycle GREEN verify starts an app server on a (possibly bumped) free port.
+// The pidfile only remembers the LAST server, so if a cycle's teardown is skipped (a
+// mid-verify kill, a crash), the next cycle's free-port bump overwrites the pidfile and
+// the prior server is ORPHANED — never reaped — and they accumulate across cycles (the
+// 10+-uvicorn-on-random-ports leak). The registry records EVERY server so orphans can be
+// reaped, and distinguishes two lifecycle states so warm-server reuse (a later opt) is
+// explicit, not a leak:
+//   - "ephemeral": the default — closed in the cycle's finally, and REAPED at the next
+//     cycle's start if its finally was skipped.
+//   - "retained":  KEEP-OPEN for the next cycle's reuse (set only by the reuse-guard) —
+//     EXCLUDED from the reaper; closed only by a FINAL-CLOSE sweep (story-close /
+//     feature-deploy / drive-stop) or when its fingerprint goes stale.
+type ServeState = "ephemeral" | "retained";
+interface ServeEntry {
+  port: number;
+  pid: number;
+  state: ServeState;
+  startedAt: string;
+}
+function serveRegistryFile(projectDir: string): string {
+  return join(resolveConsortDir(projectDir), "deploy", "serve-registry.json");
+}
+export function readServeRegistry(projectDir: string): ServeEntry[] {
+  try {
+    const v = JSON.parse(readFileSync(serveRegistryFile(projectDir), "utf8")) as unknown;
+    return Array.isArray(v) ? (v as ServeEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+export function writeServeRegistry(projectDir: string, entries: ServeEntry[]): void {
+  const f = serveRegistryFile(projectDir);
+  mkdirSync(dirname(f), { recursive: true });
+  writeFileSync(f, JSON.stringify(entries, null, 2) + "\n");
+}
+function pidAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function killGroup(pid: number): void {
+  try {
+    process.kill(-pid); // process group
+  } catch {
+    try {
+      process.kill(pid);
+    } catch {
+      /* already gone */
+    }
+  }
+}
+/** Record a freshly-started verify server (default EPHEMERAL). The PORT is the
+ *  load-bearing field: reaping matches keep-open servers by port, not pid (the
+ *  recorded pid is the spawn wrapper, whose detached uvicorn child has a
+ *  different pid — see scanProjectServers). */
+export function recordServe(projectDir: string, port: number, pid: number, state: ServeState = "ephemeral"): void {
+  const reg = readServeRegistry(projectDir).filter((e) => e.pid !== pid && pidAlive(e.pid));
+  reg.push({ port, pid, state, startedAt: new Date().toISOString() });
+  writeServeRegistry(projectDir, reg);
+}
+/** Live project-owned app servers found by SCANNING the process table — the robust
+ *  signal the registry alone can't give. Two facts defeat a registry-only reaper:
+ *  (1) the dominant leak is the Playwright `webServer` uvicorn (a random, self-
+ *  allocated port) orphaned when a client-E2E pass is killed mid-run — it is
+ *  started by run-tests.sh, NEVER by recordServe, so it is never in the registry;
+ *  (2) recordServe captures the spawn-wrapper pid, whose detached uvicorn child
+ *  outlives it on a different pid, so even the recorded server can't be killed by
+ *  its registered pid. Scanning `uvicorn app.main:app` under THIS project's dir
+ *  catches every orphan regardless of who spawned it, and parses the real listen
+ *  port from each command line so keep-open servers are excluded by port. pgrep
+ *  exits non-zero when nothing matches → []. */
+function scanProjectServers(projectDir: string): Array<{ pid: number; port: number }> {
+  let pids: number[];
+  try {
+    const out = execFileSync("pgrep", ["-f", `${projectDir}.*uvicorn app.main:app`], { encoding: "utf8" });
+    pids = out
+      .split("\n")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  } catch {
+    return []; // no match (or no pgrep) → nothing to reap
+  }
+  const servers: Array<{ pid: number; port: number }> = [];
+  for (const pid of pids) {
+    let port = 0;
+    try {
+      const cmd = execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" });
+      const m = cmd.match(/--port\s+(\d+)/);
+      if (m) port = Number(m[1]);
+    } catch {
+      /* process vanished between pgrep and ps */
+    }
+    servers.push({ pid, port });
+  }
+  return servers;
+}
+/** Reap orphaned verify servers a prior cycle leaked (its teardown was skipped by a
+ *  mid-verify kill/crash). SCAN-based: kills every live project-owned app server
+ *  EXCEPT keep-open (RETAINED) ones, matched by port. Catches the Playwright
+ *  webServer orphans a registry-only reaper structurally can't see. */
+export function reapOrphanServers(
+  projectDir: string,
+  deps?: {
+    alive?: (pid: number) => boolean;
+    kill?: (pid: number) => void;
+    scan?: (projectDir: string) => Array<{ pid: number; port: number }>;
+  },
+): { reaped: number } {
+  const alive = deps?.alive ?? pidAlive;
+  const kill = deps?.kill ?? killGroup;
+  const scan = deps?.scan ?? scanProjectServers;
+  const reg = readServeRegistry(projectDir);
+  const retained = reg.filter((e) => e.state === "retained");
+  const retainedPorts = new Set(retained.map((e) => e.port));
+  let reaped = 0;
+  for (const s of scan(projectDir)) {
+    if (s.port !== 0 && retainedPorts.has(s.port)) continue; // keep-open: not an orphan
+    kill(s.pid);
+    reaped++;
+  }
+  // Prune the registry to the still-alive keep-open servers; every ephemeral entry
+  // is dropped (its server was scan-reaped or already dead).
+  writeServeRegistry(
+    projectDir,
+    retained.filter((e) => alive(e.pid)),
+  );
+  return { reaped };
+}
+/** FINAL-CLOSE: stop EVERY project-owned app server (retained included) + clear the
+ *  registry. Call at a story-close / feature-deploy / drive-stop boundary, where no
+ *  further cycle will reuse a kept-open server. */
+export function finalCloseServers(
+  projectDir: string,
+  deps?: {
+    kill?: (pid: number) => void;
+    scan?: (projectDir: string) => Array<{ pid: number; port: number }>;
+  },
+): { closed: number } {
+  const kill = deps?.kill ?? killGroup;
+  const scan = deps?.scan ?? scanProjectServers;
+  let closed = 0;
+  for (const s of scan(projectDir)) {
+    kill(s.pid);
+    closed++;
+  }
+  writeServeRegistry(projectDir, []);
+  return { closed };
 }
 
 /** Resolve the feature dir under consortDir/features by id prefix (mirrors gates.ts). */
@@ -814,6 +970,7 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
       // Anything else (unreachable, no isolatable branch, or still-fails-alone)
       // keeps the terminal deploy-verify HIL, byte-identical to before.
       let contamination = false;
+      let superseded = false;
       // The self-heal fires whenever we can fork a clean child to isolate on: a
       // bound lakebaseBranch + a feature context. This covers BOTH the per-story
       // deploy (branch = the story's experiment branch, storyId set) AND the
@@ -845,13 +1002,49 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
           if (verdict === "contamination") {
             const prior = readDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId);
             if (!prior?.assessed) {
-              writeDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId, failing);
+              writeDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId, failing, {
+                failureOutput: verifyOutput,
+              });
               contamination = true;
+            }
+          } else {
+            // GENUINE at HEAD, but on a feature that performs a CONTRACT DROP this is PLAUSIBLY
+            // SUPERSESSION, not broken software: a prior/sibling test still asserting schema the
+            // contract retired fails at HEAD (it does NOT pass in isolation) – a stale test, not a
+            // regression. The Navigator ASSESS turn is the per-test ADJUDICATOR: its directive flags
+            // ONLY the genuinely-stale tests (one scope entry each) and OMITS a real regression, which
+            // then stays red so the ONE-SHOT bound (prior?.assessed) escalates it on the re-deploy. So
+            // route the FULL failing set to that assess whenever the feature drops schema, and let the
+            // Navigator decide per-test, rather than HALTing here.
+            //
+            // This REPLACES a brittle all-or-nothing gate (route only when a deterministic column
+            // classifier pre-confirmed EVERY failing id was a dropped-column reference). That gate
+            // HALTed a MIXED set (one stale + one genuine both terminal), a stale reference the
+            // per-file classifier could not see, and anything other than a dropped COLUMN – so a
+            // legitimately-superseded failure fell through to a terminal HIL (the repeated S3
+            // deploy-verify halts). Adjudicating the ambiguous case is the Navigator's job, not a
+            // regex's; the deterministic signal's only role is deciding whether supersession is
+            // PLAUSIBLE enough to spend one bounded assess turn, and a contract drop in the feature's
+            // OWN migration is that signal (one source of truth: the migration content, not a
+            // story-name heuristic). NOTE: a feature that ONLY drops a TABLE (no column) is not yet
+            // caught here — a net-dropped-table detector mirroring netColumnActions would extend it.
+            const featureDropsSchema = collectDroppedColumns(args.projectDir, DEFAULT_MIGRATION_DIRS).size > 0;
+            if (featureDropsSchema) {
+              const prior = readDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId);
+              if (!prior?.assessed) {
+                const droppedColumns = [...collectDroppedColumns(args.projectDir, DEFAULT_MIGRATION_DIRS)];
+                writeDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId, failing, {
+                  kind: "supersession",
+                  droppedColumns,
+                  failureOutput: verifyOutput,
+                });
+                superseded = true;
+              }
             }
           }
         }
       }
-      if (!contamination) {
+      if (!contamination && !superseded) {
         writeEscalation(consortDir, {
           source: "deploy-verify",
           reason: `deploy of ${args.featureId}${args.storyId ? `/${args.storyId}` : ""} did not prove working software: ${
@@ -925,6 +1118,26 @@ export interface CycleVerifyArgs {
   verifyBranchOps?: EphemeralVerifyOps;
 }
 
+/** Deterministic verify wall-clock, split by pass — the signal the tiered-verify
+ *  optimization actually moves (LLM turn-time, which swamps the cycle-span total,
+ *  is excluded here: these are pure test-run milliseconds). `reversibilityRan` is
+ *  the direct tiered-verify observation: did the slow isolated-branch migration
+ *  pass run this cycle, or did `cycleTouchedMigrations === false` skip it. */
+export interface VerifyTiming {
+  /** Sum of the verify passes that ran (main + migration-if-ran + client-if-ran).
+   *  Excludes server start/poll/stop — just the test execution. */
+  totalMs: number;
+  /** The main (`not migration`, or the single non-Python) pass. */
+  mainMs: number;
+  /** The isolated-branch `@pytest.mark.migration` reversibility pass — present
+   *  iff it RAN (reversibilityRan true); absent when tiered-verify skipped it. */
+  migrationMs?: number;
+  /** The client (`SFTDD_CLIENT_ONLY`) Vitest+E2E pass — present iff it ran. */
+  clientMs?: number;
+  /** Did the reversibility pass run this cycle (the tiered-verify decision)? */
+  reversibilityRan: boolean;
+}
+
 export interface CycleVerifyResult {
   passed: boolean;
   reachable: boolean;
@@ -933,6 +1146,8 @@ export interface CycleVerifyResult {
    *  node-ids + top error). Empty/absent when passed. Recorded into green-failure.json so the
    *  ASSESS turn starts from the real failure instead of re-scanning. Bounded in length. */
   failureOutput?: string;
+  /** Deterministic per-pass verify wall-clock (verify.timing telemetry). */
+  timing?: VerifyTiming;
 }
 
 /**
@@ -983,11 +1198,23 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
   // always flow. Per-cycle SCOPE (waste elimination): SFTDD_TEST_IDS makes run-tests.sh's conftest hook
   // run only THIS story's tests per cycle instead of every feature's suite; the story-close REFACTOR +
   // feature-deploy verify leave it unset => the FULL cross-story suite runs there.
+  // DEFER cross-story supersession off the serial-first AC's verify. When the coordinator
+  // marks this a deferred serial-first AC (CONSORT_DEFER_SUPERSESSION), the drop migration it
+  // authored breaks the prior-story tests — and the migration pass runs them regardless of the
+  // per-AC SFTDD_TEST_IDS scope (conftest always KEEPS untagged/cross-story items). Pass the
+  // deterministic superseded-candidate FILES so conftest deselects them from BOTH passes: the AC
+  // greens on its OWN tests, the coordinator's clearSupersession retargets them ONCE, and the
+  // final feature-deploy verify (no defer) re-runs them retargeted. Only the serial-first AC sets
+  // the env, so nothing else is affected.
+  const deferFiles = (process.env.CONSORT_DEFER_SUPERSESSION ?? "").trim()
+    ? [...new Set(supersededTestCandidates({ projectDir: args.projectDir }).candidates.map((c) => c.file))]
+    : [];
   const baseEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ...(args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {}),
     ...(args.cycleLayer ? { CONSORT_CYCLE_LAYER: args.cycleLayer } : {}),
     ...(args.storyTestIds && args.storyTestIds.length > 0 ? { SFTDD_TEST_IDS: args.storyTestIds.join(" ") } : {}),
+    ...(deferFiles.length > 0 ? { SFTDD_DEFER_FILES: deferFiles.join(" ") } : {}),
   };
   let env: NodeJS.ProcessEnv = baseEnv;
   let serverReachable = false;
@@ -999,6 +1226,11 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
     // start fresh, poll until reachable, run verify, and ALWAYS stop after, so
     // nothing lingers on the port between turns or after the run.
     stop(args.projectDir, targetName);
+    // Reap any ORPHANED verify server a prior cycle leaked (its finally was skipped by a
+    // mid-verify kill/crash, so the pidfile no longer points at it). This frees the ports
+    // the free-port bump below would otherwise step over, and stops the 10+-server pile-up.
+    // RETAINED (keep-open) servers are left running for reuse — only a final-close sweep stops those.
+    reapOrphanServers(args.projectDir);
     // Then pick a FREE port: bump off any FOREIGN listener still holding the configured one
     // (a stale uvicorn/vite, another project) so a busy :8000 RELOCATES the build's verify
     // instead of halting it — the run-dev.sh / CI (E2E_BACKEND_PORT) rule, move-not-kill. One
@@ -1011,6 +1243,9 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
     const pf = pidFile(args.projectDir, targetName);
     mkdirSync(dirname(pf), { recursive: true });
     writeFileSync(pf, String(pid));
+    // Register the server (EPHEMERAL) so a later cycle can reap it if this cycle's finally
+    // is skipped. The reuse-guard (a later opt) promotes it to RETAINED to keep it open.
+    recordServe(args.projectDir, servePort, pid);
     const poll = await pollUntil<boolean>({
       probe: async () => ((await reachable(url)) ? { done: true, value: true } : { done: false }),
       timeoutMs: cfg.readyTimeoutSeconds * 1000,
@@ -1035,8 +1270,17 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
   // (failing node-ids + top error). Captured so the assess turn can start from the real
   // failure; empty when everything passed. Best-effort – only the failing pass's output.
   let failOut = "";
+  // verify.timing telemetry: per-pass deterministic wall-clock. Bracket each
+  // awaited pass with nowFn() (injectable clock) so the test-run time is captured
+  // independently of the LLM turn-time it is folded into at the cycle layer.
+  const elapsed = (from: Date): number => Math.max(0, nowFn().getTime() - from.getTime());
+  let mainMs = 0;
+  let migrationMs: number | undefined;
+  let clientMs: number | undefined;
+  let reversibilityRan = false;
   try {
     if (isPython) {
+      const tMain = nowFn();
       const mainRun = await runVerifyMaybeEphemeral(
         runVerify,
         cfg.verify,
@@ -1046,6 +1290,7 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
         nowFn,
         args.verifyBranchOps,
       );
+      mainMs = elapsed(tMain);
       const mainPassed = mainRun.passed;
       if (!mainPassed) failOut = mainRun.output;
       // TIERED VERIFY: run the slow isolated-branch `migration` pass only when the main suite is green
@@ -1055,17 +1300,23 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
       // REFACTOR + feature-deploy gates (which leave cycleTouchedMigrations undefined). Fail-safe: only
       // an explicit false skips; undefined runs it.
       const runMigrationPass = mainPassed && args.cycleTouchedMigrations !== false;
-      const migRun = runMigrationPass
-        ? await runVerifyMaybeEphemeral(
-            runVerify,
-            cfg.verify,
-            args.projectDir,
-            { ...env, SFTDD_PYTEST_MARKER: "migration" },
-            args.lakebaseBranch,
-            nowFn,
-            args.verifyBranchOps,
-          )
-        : { passed: true, output: "" };
+      reversibilityRan = runMigrationPass;
+      let migRun: { passed: boolean; output: string };
+      if (runMigrationPass) {
+        const tMig = nowFn();
+        migRun = await runVerifyMaybeEphemeral(
+          runVerify,
+          cfg.verify,
+          args.projectDir,
+          { ...env, SFTDD_PYTEST_MARKER: "migration" },
+          args.lakebaseBranch,
+          nowFn,
+          args.verifyBranchOps,
+        );
+        migrationMs = elapsed(tMig);
+      } else {
+        migRun = { passed: true, output: "" };
+      }
       const migPassed = migRun.passed;
       if (mainPassed && !migPassed) failOut = migRun.output;
       migrationFailed = mainPassed && !migPassed;
@@ -1092,23 +1343,29 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
       // own concern, not this fork's.) Falls back in-place when there is no experiment
       // branch / instance to fork from (opt-out stays LAKEBASE_CONSORT_EPHEMERAL_VERIFY=0).
       // A failing client/E2E test refuses GREEN. Only when a client/ workspace exists.
-      const clientRun =
-        backendPassed && serveNeeded && hasClientWorkspace(args.projectDir)
-          ? await runVerifyMaybeEphemeral(
-              runVerify,
-              cfg.verify,
-              args.projectDir,
-              { ...(env ?? process.env), SFTDD_CLIENT_ONLY: "1" },
-              args.lakebaseBranch,
-              nowFn,
-              args.verifyBranchOps,
-            )
-          : { passed: true, output: "" };
+      let clientRun: { passed: boolean; output: string };
+      if (backendPassed && serveNeeded && hasClientWorkspace(args.projectDir)) {
+        const tClient = nowFn();
+        clientRun = await runVerifyMaybeEphemeral(
+          runVerify,
+          cfg.verify,
+          args.projectDir,
+          { ...(env ?? process.env), SFTDD_CLIENT_ONLY: "1" },
+          args.lakebaseBranch,
+          nowFn,
+          args.verifyBranchOps,
+        );
+        clientMs = elapsed(tClient);
+      } else {
+        clientRun = { passed: true, output: "" };
+      }
       const clientPassed = clientRun.passed;
       if (backendPassed && !clientPassed) failOut = clientRun.output;
       clientFailed = backendPassed && !clientPassed;
       passed = backendPassed && clientPassed;
     } else {
+      // Non-Python projects have no `migration`/client marker split: one full pass.
+      const tMain = nowFn();
       const run = await runVerifyMaybeEphemeral(
         runVerify,
         cfg.verify,
@@ -1118,12 +1375,20 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
         nowFn,
         args.verifyBranchOps,
       );
+      mainMs = elapsed(tMain);
       passed = run.passed;
       if (!passed) failOut = run.output;
     }
   } finally {
     stop(args.projectDir, targetName); // never leave the app on the port
   }
+  const timing: VerifyTiming = {
+    totalMs: mainMs + (migrationMs ?? 0) + (clientMs ?? 0),
+    mainMs,
+    ...(migrationMs !== undefined ? { migrationMs } : {}),
+    ...(clientMs !== undefined ? { clientMs } : {}),
+    reversibilityRan,
+  };
   if (passed) {
     return {
       passed,
@@ -1131,6 +1396,7 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
       summary: serveNeeded
         ? "GREEN verify passed against the running app"
         : "GREEN verify passed (backend-only story: no client/E2E tests, server not started)",
+      timing,
     };
   }
   // The verify failed. Run the cheap, model-independent E2E regex lint so the
@@ -1150,7 +1416,7 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
   // Carry the failing pass's captured output (bounded) so the ASSESS turn starts from the real
   // failure lines. Tail-bounded: the last ~4000 chars hold the failing node-ids + top error.
   const failureOutput = failOut ? failOut.slice(-4000) : undefined;
-  return { passed, reachable: serverReachable, summary, ...(failureOutput ? { failureOutput } : {}) };
+  return { passed, reachable: serverReachable, summary, ...(failureOutput ? { failureOutput } : {}), timing };
 }
 
 /** Tear down a previously-deployed local target (kills its process group). */

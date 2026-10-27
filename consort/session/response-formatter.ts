@@ -22,6 +22,7 @@ import { checkArtifactConformance, canonicalArtifactName, checkDbDesign, checkSt
 import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, checkE2eHelperExports, checkE2eRouteAround, checkE2eFixedKeyEmptyState } from "../../consort/architecture/e2e-route-adherence.js";
 import { collectLayeringViolations } from "../../consort/architecture/layering-clean.js";
 import { collectUxViolations } from "../../consort/architecture/design-adherence.js";
+import { checkTestSmells } from "../../consort/architecture/test-smell-clean.js";
 import { testlistConformanceForContent } from "../../consort/smells/testlist-conformance.js";
 import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "../../consort/gates/registered-breakdown.js";
 
@@ -508,6 +509,15 @@ function checkNavigator(args: FormatArgs, v: FormatViolation[]): void {
   // feature-branch DB may already hold that key (stockflow S3: a fixed 'C-03' a sibling test seeded
   // was non-empty → a double assess->repair). Fixed-key empty assertions are caught here, in-turn.
   for (const x of checkE2eFixedKeyEmptyState(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  // #5 shift-left: reject an UNPINNED parent-aware schema-diff test AT RED AUTHORING, not later at a
+  // green-failure. The unpinned-schema-diff-baseline smell is topology-unsatisfiable (the verify
+  // branch's parent is already migrated, so `lakebase-schema-diff` with no --against yields an empty
+  // diff and the assertion can never pass by any product change). Caught here, the navigator
+  // re-authors it (pin --against, or assert the migration's own before/after) before the driver ever
+  // greens it — eliminating the failed-verify churn it otherwise causes.
+  for (const x of checkTestSmells({ projectDir }).violations.filter((s) => s.smell === "unpinned-schema-diff-baseline")) {
+    v.push({ artifact: `${x.file}:${x.line}`, problem: x.detail });
+  }
 }
 
 /** driver (build lane): the SAME deterministic layering + ux-adherence scans the REVIEW backstop

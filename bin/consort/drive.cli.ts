@@ -250,6 +250,10 @@ function withBuildRecording(inner: DriveEffects, cfg: DriveEffectsConfig): Drive
     // build turn records via the executor's wrapper, not here, so this only fires for a non-dispatched
     // navigator/driver perform turn. Preserved so recording doesn't disable executor dispatch.
     performViaExecutor: inner.performViaExecutor ? (a, s, r) => inner.performViaExecutor!(a, s, r) : undefined,
+    // #5 parallel per-AC lanes: forward the pre-dispatch hook so the effects wrappers never DROP it
+    // (an explicit-forwarding wrapper that omits beforeAction leaves runDriver with no hook -> the
+    // fan-out silently never fires, which is exactly what happened the first lanes run).
+    beforeAction: inner.beforeAction ? (a, s) => inner.beforeAction!(a, s) : undefined,
     async perform(action) {
       await inner.perform(action);
       if (action.kind === "invoke-role" && (action.role === "navigator" || action.role === "driver") && "story" in action) {
@@ -449,6 +453,10 @@ function withTurnRecording(inner: DriveEffects, cfg: DriveEffectsConfig): DriveE
     // gates/deploy/human-proxy. Disjoint writers by construction (orchestrator-run.ts:326-330).
     // Dropping this property silently disabled the executor path under recording – the bug this fixes.
     performViaExecutor: inner.performViaExecutor ? (a, s, r) => inner.performViaExecutor!(a, s, r) : undefined,
+    // #5 parallel per-AC lanes: forward the pre-dispatch hook so the effects wrappers never DROP it
+    // (an explicit-forwarding wrapper that omits beforeAction leaves runDriver with no hook -> the
+    // fan-out silently never fires, which is exactly what happened the first lanes run).
+    beforeAction: inner.beforeAction ? (a, s) => inner.beforeAction!(a, s) : undefined,
     async perform(action) {
       logLenBeforePerform = readAgentLog({ consortDir: cfg.consortDir }).length; // pre-perform cursor for correspondence
       await inner.perform(action);
@@ -1167,9 +1175,14 @@ function teeStderrToDriveLog(consortDir: string): void {
     // (a turn's completion "[drive] <role> turn <N>s" emit + the gate-park line, written
     // milliseconds before exit) were silently dropped from drive-live.log. That is why consort-watch
     // never saw the turn-done line to open a finished role's artifacts, and why the log ended at the
-    // agent's output. writeSync lands every line on disk the instant it is written, so nothing is
-    // lost at exit. Fresh file per run (truncate via "w"); the fd is closed by the OS on exit.
-    const fd = fs.openSync(path.join(consortDir, "drive-live.log"), "w");
+    // agent's output. writeSync lands every line on disk the instant it is written, so nothing is lost
+    // at exit. APPEND ("a"), NOT truncate: ONE logical run is MANY drive invocations (the parallel
+    // fan-out's top-level drive + the serial-first AC + each resumed/auto-continued top-level). A
+    // truncate here let a LATER invocation (e.g. the post-fan-out "build already complete" resume)
+    // WIPE the fan-out + merge narration — the forensics were lost. Appending preserves the whole run;
+    // the run's true start truncates ONCE (the --detach launcher + restart runbook), so stale
+    // prior-run content does not accumulate. The fd is closed by the OS on exit.
+    const fd = fs.openSync(path.join(consortDir, "drive-live.log"), "a");
     const orig = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: string | Uint8Array, enc?: unknown, cb?: unknown): boolean => {
       try { fs.writeSync(fd, chunk as never); } catch { /* never break the run on a log write */ }

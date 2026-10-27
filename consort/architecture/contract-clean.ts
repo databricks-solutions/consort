@@ -18,8 +18,10 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
+import { splitPyBlocks, blockDefName } from "../experiment/py-source.js";
 
 import { artifactRootsRegexAlternation } from "../../consort/config/consort-paths.js";
+import { netDroppedColumns } from "./migration-columns.js";
 
 // The workflow bookkeeping roots (.consort + legacy), as a regex fragment derived
 // from the single source of truth – never hardcoded here.
@@ -76,13 +78,6 @@ const EXCLUDE_DIR_JUNK = new RegExp(
   `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`,
 );
 
-/** alembic: op.drop_column('table', 'col')  /  op.add_column('table', sa.Column('col' ... */
-const DROP_COLUMN_PY = /op\.drop_column\(\s*['"][^'"]+['"]\s*,\s*['"]([a-zA-Z_][a-zA-Z0-9_]*)['"]/g;
-const ADD_COLUMN_PY = /op\.add_column\(\s*['"][^'"]+['"]\s*,\s*sa\.Column\(\s*['"]([a-zA-Z_][a-zA-Z0-9_]*)['"]/g;
-/** raw SQL (flyway / knex .raw): ALTER TABLE t DROP COLUMN col / ADD COLUMN col */
-const DROP_COLUMN_SQL = /drop\s+column\s+(?:if\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
-const ADD_COLUMN_SQL = /add\s+column\s+(?:if\s+not\s+exists\s+)?["'`]?([a-zA-Z_][a-zA-Z0-9_]*)["'`]?/gi;
-
 function walk(dir: string, keep: (abs: string) => boolean, out: string[] = [], excludeDir: RegExp = EXCLUDE_DIR): string[] {
   let entries: string[];
   try {
@@ -107,81 +102,14 @@ function walk(dir: string, keep: (abs: string) => boolean, out: string[] = [], e
   return out;
 }
 
-function collectAll(re: RegExp, text: string): string[] {
-  const out: string[] = [];
-  let m: RegExpExecArray | null;
-  re.lastIndex = 0;
-  while ((m = re.exec(text)) !== null) out.push(m[1]);
-  return out;
-}
-
 /**
- * The FORWARD (upgrade / up) half of a migration file, excluding the
- * down/rollback half. A normal REVERSIBLE migration adds a column in upgrade()
- * and drops it in downgrade() (or vice versa); scanning the whole file would
- * misread that add-then-rollback-drop as a contract DROP and flag a column that
- * is actually present. Only the forward direction defines the live schema.
- *   - alembic (.py): the `def upgrade()` body, up to `def downgrade`.
- *   - knex / umzug (.js/.ts): the `up` function, up to the `down` half.
- *   - raw SQL (.sql): the whole file (forward-only by convention – a flyway undo
- *     lives in a separate undo file the migration dirs do not pair here).
- */
-function forwardMigrationBody(src: string, ext: string): string {
-  if (ext === ".py") {
-    const m = /def\s+upgrade\s*\(/.exec(src);
-    if (!m) return src;
-    const bodyStart = m.index + m[0].length;
-    const rel = src.slice(bodyStart).search(/\ndef\s+downgrade\s*\(/);
-    return rel === -1 ? src.slice(bodyStart) : src.slice(bodyStart, bodyStart + rel);
-  }
-  if (ext === ".js" || ext === ".ts") {
-    const up = /(exports\.up\b|async\s+function\s+up\b|\bup\s*[:=])/.exec(src);
-    if (!up) return src;
-    const after = src.slice(up.index + up[0].length);
-    const rel = after.search(/(exports\.down\b|async\s+function\s+down\b|\bdown\s*[:=])/);
-    return rel === -1 ? after : after.slice(0, rel);
-  }
-  return src;
-}
-
-/**
- * The net set of columns a migration dropped and did NOT re-add. Reading migrations
- * in filename order (alembic timestamps + most migration tools sort lexically) is a
- * good-enough proxy for revision order for the drop-vs-readd netting; a symbol whose
- * LAST add/drop action is a drop is "contract-dropped".
+ * The net set of columns a migration dropped and did NOT re-add — the "dropped
+ * symbols" of a contract delta. Delegates to the shared migration-columns parser so
+ * this check and test-smell-clean's `collectDroppedColumns` read migrations the SAME
+ * way (one source of truth for the drop/add regexes + forward-region extraction).
  */
 export function netDroppedSymbols(projectDir: string, migrationDirs = DEFAULT_MIGRATION_DIRS): string[] {
-  const files: string[] = [];
-  for (const md of migrationDirs) {
-    const abs = join(projectDir, md);
-    if (existsSync(abs)) {
-      for (const f of walk(abs, (p) => /\.(py|sql|js|ts)$/.test(p))) files.push(f);
-    }
-  }
-  files.sort(); // filename order ~ revision order (alembic timestamp prefixes, etc.)
-  // last action per symbol: "drop" | "add"
-  const lastAction = new Map<string, "drop" | "add">();
-  for (const f of files) {
-    let src: string;
-    try {
-      src = readFileSync(f, "utf8");
-    } catch {
-      continue;
-    }
-    const ext = extname(f);
-    const isPy = ext === ".py";
-    // Only the FORWARD (upgrade) direction defines the live schema; a reversible
-    // migration's downgrade() drop of a column it added is not a contract drop.
-    const body = forwardMigrationBody(src, ext);
-    const drops = isPy ? collectAll(DROP_COLUMN_PY, body) : collectAll(DROP_COLUMN_SQL, body);
-    const adds = isPy ? collectAll(ADD_COLUMN_PY, body) : collectAll(ADD_COLUMN_SQL, body);
-    // Within one migration, an add then drop (or vice versa) – take textual order by
-    // scanning positions. Simpler + robust enough: process adds then drops so a
-    // migration that drops a column marks it dropped (the common contract case).
-    for (const a of adds) lastAction.set(a, "add");
-    for (const d of drops) lastAction.set(d, "drop");
-  }
-  return [...lastAction.entries()].filter(([, act]) => act === "drop").map(([sym]) => sym);
+  return netDroppedColumns(projectDir, migrationDirs);
 }
 
 /** A word-boundary matcher for a symbol used as an identifier (not a substring). */
@@ -321,4 +249,64 @@ export function supersededTestCandidates(args: ContractCleanArgs): SupersededTes
     ` superseded (path (a)) so the Driver may permissively refactor them in the SAME repair turn as the code fix.` +
     ` Do NOT hand-edit them to force green:\n${list}`;
   return { droppedSymbols: dropped, candidates, advisory };
+}
+
+export interface SupersededPartition {
+  /** PURE: a `.py` test file where EVERY test function references a dropped symbol, so the whole file
+   *  is about the now-dropped feature. Deterministically retireable (deleted) WITHOUT the LLM sweep —
+   *  the surviving behavior, if any, is re-covered by the current story's own ACs. */
+  pureRemovable: string[];
+  /** MIXED: the file has at least one SURVIVING test function (one that does not reference a dropped
+   *  symbol), OR it is not Python (client TS/e2e — not block-classified here). These need the LLM
+   *  sweep's per-assertion judgment ("update OR remove the stale lines, keep the valid ones"). */
+  mixed: string[];
+}
+
+/**
+ * Deterministically split superseded-test files into PURE (whole-file-superseded Python test files,
+ * safe to retire without an LLM) and MIXED (need the LLM's surgical per-assertion retarget). This is
+ * the first half of the sweep HYBRID: the LLM only has to touch the mixed files, so a run whose
+ * superseded set is mostly dedicated-feature test files (the common case for a dropped column) skips
+ * most — or all — of the minutes-long sweep turn.
+ *
+ * A file is PURE only when EVERY test function in it references a dropped symbol — a conservative,
+ * file-level rule: if even one test function survives, the file is MIXED and goes to the LLM (which can
+ * remove the stale tests while keeping the survivors). A file with no recognizable test function, or a
+ * read error, is MIXED (fail safe toward the LLM). NOTE the residual judgment this trades away: a PURE
+ * file's tests are REMOVED, not RETARGETED — correct when the dropped feature is gone for good, but it
+ * does not rewrite a test onto the surviving columns. That rewrite, when the behavior persists, is the
+ * current story's ACs' job (they author the batch/serial tests), not a retarget of the prior test.
+ */
+export function partitionSupersededFiles(
+  projectDir: string,
+  candidates: { file: string }[],
+  droppedSymbols: string[],
+): SupersededPartition {
+  const files = [...new Set(candidates.map((c) => c.file))];
+  const pureRemovable: string[] = [];
+  const mixed: string[] = [];
+  if (droppedSymbols.length === 0) return { pureRemovable, mixed: files };
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const symRe = new RegExp(`\\b(${droppedSymbols.map(esc).join("|")})\\b`);
+  for (const f of files) {
+    if (!f.endsWith(".py")) {
+      mixed.push(f); // client TS/e2e — not block-classified; the LLM handles any casing variants
+      continue;
+    }
+    let src: string;
+    try {
+      src = readFileSync(join(projectDir, f), "utf8");
+    } catch {
+      mixed.push(f); // unreadable -> fail safe to the LLM
+      continue;
+    }
+    const testFns = splitPyBlocks(src).blocks.filter((b) => blockDefName(b)?.startsWith("test"));
+    if (testFns.length === 0) {
+      mixed.push(f); // no recognizable test fn -> let the LLM decide
+      continue;
+    }
+    const everyTestTouches = testFns.every((b) => symRe.test(b.lines.join("\n")));
+    (everyTestTouches ? pureRemovable : mixed).push(f);
+  }
+  return { pureRemovable, mixed };
 }

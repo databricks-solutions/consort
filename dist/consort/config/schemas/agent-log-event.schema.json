@@ -76,6 +76,8 @@
         "deploy.failed",
         "verify.passed",
         "verify.failed",
+        "verify.timing",
+        "turn.timing",
         "adherence.passed",
         "adherence.failed",
         "turn.usage",

@@ -1,4 +1,4 @@
-import { D as DriveState, W as WorkflowAction } from '../../workflow-vocabulary-DhROs8p2.js';
+import { D as DriveState, W as WorkflowAction } from '../../workflow-vocabulary-BKqGLKmH.js';
 import { T as TurnKey } from '../../step-key-D8bNukll.js';
 
 interface TurnUsage {
@@ -101,6 +101,13 @@ interface DriveEffectsConfig {
     /** Lakebase instance id (the Lakebase project id), threaded to the experiment
      *  branch ops. The experiment CLI requires it; resolved from SCM state. */
     instance?: string;
+    /** #5 parallel per-AC lanes lever + cap (build.parallelAcLanes / parallelAcLaneCap).
+     *  When on, a CONTRACT story's ACs fan out concurrently (first AC serial, then the
+     *  rest in isolated lanes). Default off = serial (byte-identical). */
+    parallelAcLanes?: boolean;
+    parallelAcLaneCap?: number;
+    /** Split a multi-kind AC into one lane per kind (build.splitAcsByKind). Default off. */
+    splitAcsByKind?: boolean;
     /** The feature's git + Lakebase branch (the PARENT a per-story experiment is
      *  cut off, and merged back into). Resolved from SCM state at drive start. */
     featureBranch?: string;
@@ -147,6 +154,8 @@ interface DriveEffectsConfig {
     loopGranularity?: "ac" | "hybrid-a" | "story";
     /** P8b: max test-list items per layer-batch (hybrid-a). Default 3. */
     batchCap?: number;
+    /** #3 batch-RED lever: let CONTRACT stories use the batched loop too (default false = forced `ac`). */
+    batchContractStories?: boolean;
     /** Optimize harness (Family-2 content/scope levers), all DEFAULT-OFF: a normal
      *  drive sets none, so every turn's prompt + spawn args are byte-identical to
      *  before. The per-handoff optimize harness sets them for ONE forked candidate

@@ -27,6 +27,7 @@ import {
   storyTestListJson,
   artifactRootsRegexAlternation,
 } from "../../consort/config/consort-paths.js";
+import { netColumnActions, moduleConsts } from "./migration-columns.js";
 
 // The workflow-bookkeeping roots (.consort + legacy) as a regex fragment, from the
 // single source of truth in consort-paths – never hardcoded here (consort-paths-guard).
@@ -39,6 +40,10 @@ export interface TestSmellArgs {
   testDirs?: string[];
   /** Migration dirs for the schema table set (relative). Default: common locations. */
   migrationDirs?: string[];
+  /** Smell kinds to NOT fail on (still computed, filtered out before the verdict). The deferred
+   *  serial-first AC passes {"dropped-column-test-reference"} so the cross-story superseded set is
+   *  handled once by the coordinator's sweep, not re-ground per-cycle here. */
+  excludeSmells?: Set<string>;
 }
 
 export type TestSmellName =
@@ -57,7 +62,9 @@ export type TestSmellName =
   | "dropped-column-dangling-reference"
   | "component-test-mock"
   | "dsn-inline-credentials"
-  | "unpinned-schema-diff-baseline";
+  | "unpinned-schema-diff-baseline"
+  | "psycopg2-pgcode-attr"
+  | "dropped-column-test-reference";
 
 /** Test-smell classes that CANNOT be closed by a surgical Driver repair (narrow a catch,
  *  drop a teardown): they require RE-AUTHORING the test's mechanics, which a Driver
@@ -105,7 +112,7 @@ export interface TestSmellCleanResult {
 }
 
 const DEFAULT_TEST_DIRS = ["tests", "client/tests"];
-const DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+export const DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 const EXCLUDE_DIR = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist)(\/|$)/;
 const TEST_FILE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs)$|\.py$/;
 
@@ -136,11 +143,22 @@ function walk(dir: string, keep: (abs: string) => boolean, out: string[] = []): 
 /** Every table the project's migrations create or alter (the satisfiable-schema set). */
 function collectKnownTables(projectDir: string, migrationDirs: string[]): Set<string> {
   const tables = new Set<string>();
-  const patterns = [
+  // LITERAL table name (a quoted or bare SQL identifier right at the call site).
+  const literalPatterns = [
     /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?(\w+)/gi, // SQL
     /ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/gi, // SQL
-    /op\.create_table\(\s*["'](\w+)["']/gi, // Alembic
-    /createTable\(\s*["'](\w+)["']/gi, // Knex
+    /op\.create_table\(\s*["'](\w+)["']/gi, // Alembic literal
+    /createTable\(\s*["'](\w+)["']/gi, // Knex literal
+  ];
+  // CONSTANT table name: `TABLE = "stock_adjustments"; op.create_table(TABLE, ...)` – the standard
+  // alembic idiom (the SAME one TABLE_ARG resolves for op.drop_column in migration-columns). The bare
+  // identifier is resolved to its module-level string value via moduleConsts; an unknown identifier
+  // resolves to nothing and is skipped (no false positive). Without this the created table is INVISIBLE
+  // and every test referencing it falsely trips schema-unsatisfiable-ref — the F2 stock_adjustments
+  // false positive that cost a Navigator assess turn to dismiss by hand.
+  const constPatterns = [
+    /op\.create_table\(\s*([A-Za-z_]\w*)\s*[,)]/g, // Alembic constant
+    /createTable\(\s*([A-Za-z_]\w*)\s*[,)]/g, // Knex constant
   ];
   for (const md of migrationDirs) {
     const abs = join(projectDir, md);
@@ -152,8 +170,15 @@ function collectKnownTables(projectDir: string, migrationDirs: string[]): Set<st
       } catch {
         continue;
       }
-      for (const re of patterns) {
+      for (const re of literalPatterns) {
         for (const m of body.matchAll(re)) tables.add(m[1].toLowerCase());
+      }
+      const consts = moduleConsts(body);
+      for (const re of constPatterns) {
+        for (const m of body.matchAll(re)) {
+          const resolved = consts.get(m[1]);
+          if (resolved) tables.add(resolved.toLowerCase());
+        }
       }
     }
   }
@@ -193,52 +218,22 @@ const SMELL_FIX: Record<TestSmellName, string> = {
     "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example — a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) — matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine — not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
   "unpinned-schema-diff-baseline":
     "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head — the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged.",
+  "dropped-column-test-reference":
+    "this TEST inserts into / selects / asserts a column that a CONTRACT migration in this feature DROPPED, and the file performs no downgrade — so it runs against HEAD where the column no longer exists and dies with a ProgrammingError ('column does not exist'), even though the app is correct (the F6/S3 cross-story supersession class: a prior story's test still references tracking_code after S3 drops it). `opt2` scopes the per-cycle backend suite to the current story, so a prior-story test like this is NOT run per-cycle and only fails LATER at the full deploy-verify as a HALT. Refactor the superseded reference: drop the dropped column from the INSERT/SELECT/assertion, or retarget it to the surviving columns (e.g. batch_number/serial_number). Do NOT re-add the column to the model or edit the migration to hide it. (A migration round-trip test that re-adds the column via its own downgrade is legitimate and is not flagged — this only flags pure-HEAD references.)",
+  "psycopg2-pgcode-attr":
+    "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) — a psycopg2 attribute — but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap — no production/driver shim.",
 };
 
-/** The upgrade()-path body of an alembic migration (forward operations only) –
- *  the downgrade() reverse must NOT count toward the forward schema state (a
- *  contract migration's downgrade re-adds the column it drops). SQL/other files
- *  return the whole body. */
-function forwardMigrationRegion(body: string): string {
-  // Allow a return annotation (`def upgrade() -> None:`). Capture the upgrade body
-  // only, up to the next top-level def (downgrade) – the downgrade REVERSES the
-  // forward migration (a contract's downgrade re-adds what it dropped, an expand's
-  // downgrade drops what it added), so counting it would invert the schema state.
-  const m = body.match(/def\s+upgrade\s*\([^)]*\)\s*(?:->[^:]+)?:([\s\S]*?)(?:\ndef\s+\w+\s*\(|$)/);
-  return m ? m[1] : body;
-}
-
 /** Columns whose NET-LATEST forward migration operation is a drop (created/added
- *  earlier, dropped later and never re-added), keyed by column name. Migrations
- *  are ordered by filename (the kit's timestamp-prefixed names sort chronologically). */
-function collectDroppedColumns(projectDir: string, migrationDirs: string[]): Set<string> {
-  const files: string[] = [];
-  for (const md of migrationDirs) {
-    const abs = join(projectDir, md);
-    if (!existsSync(abs)) continue;
-    for (const f of walk(abs, (p) => [".py", ".sql"].includes(extname(p)))) files.push(f);
-  }
-  files.sort();
+ *  earlier, dropped later and never re-added). Delegates the migration parsing to the
+ *  shared `netColumnActions` so this deploy-verify dropped-column classifier and
+ *  contract-clean's `netDroppedSymbols` read migrations IDENTICALLY (one parser); this
+ *  check adds only its own conservative filter: skip very-short + GENERIC column names
+ *  that collide too easily with unrelated identifiers. */
+export function collectDroppedColumns(projectDir: string, migrationDirs: string[]): Set<string> {
   const GENERIC = new Set(["id", "name", "type", "value", "data", "status", "key", "code", "text"]);
-  const last = new Map<string, "add" | "drop">();
-  for (const f of files) {
-    let body: string;
-    try {
-      body = readFileSync(f, "utf8");
-    } catch {
-      continue;
-    }
-    const region = f.endsWith(".py") ? forwardMigrationRegion(body) : body;
-    for (const line of region.split("\n")) {
-      for (const m of line.matchAll(/sa\.Column\(\s*["'](\w+)["']/g)) last.set(m[1], "add");
-      for (const m of line.matchAll(/add_column\([^,]*,\s*sa\.Column\(\s*["'](\w+)["']/g)) last.set(m[1], "add");
-      for (const m of line.matchAll(/ADD\s+COLUMN\s+["'`]?(\w+)/gi)) last.set(m[1].toLowerCase(), "add");
-      for (const m of line.matchAll(/drop_column\([^,]*,\s*["'](\w+)["']/g)) last.set(m[1], "drop");
-      for (const m of line.matchAll(/DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/gi)) last.set(m[1].toLowerCase(), "drop");
-    }
-  }
   const dropped = new Set<string>();
-  for (const [col, ev] of last) {
+  for (const [col, ev] of netColumnActions(projectDir, migrationDirs)) {
     if (ev === "drop" && col.length >= 4 && !GENERIC.has(col.toLowerCase())) dropped.add(col);
   }
   return dropped;
@@ -269,7 +264,7 @@ function isDbColumnRef(codeLine: string, col: string): boolean {
   return false;
 }
 
-function liveReferenceLines(body: string, col: string): number[] {
+export function liveReferenceLines(body: string, col: string): number[] {
   const lines = body.split("\n");
   const out: number[] = [];
   let inDoc = false;
@@ -460,10 +455,29 @@ function checkReversibleInvariantRoundTrip(projectDir: string): TestSmellViolati
   return out;
 }
 
+/** True when the project DECLARES psycopg2 (not psycopg3) as its driver — then reading SQLSTATE
+ *  via `.pgcode` is correct and must NOT be flagged. Reads the usual Python dependency manifests. */
+function projectDeclaresPsycopg2(projectDir: string): boolean {
+  for (const f of ["pyproject.toml", "requirements.txt", "uv.lock", "setup.cfg", "Pipfile"]) {
+    try {
+      if (/\bpsycopg2\b/.test(readFileSync(join(projectDir, f), "utf8"))) return true;
+    } catch {
+      /* manifest absent — ignore */
+    }
+  }
+  return false;
+}
+
 /** Scan the project's test files for the authoring-smell catalog. */
 export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
   const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
   const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS);
+  // psycopg2-pgcode-attr is only a smell on a psycopg3 project (where a raised exception's SQLSTATE
+  // is `.sqlstate`, not `.pgcode`). A genuinely psycopg2 project uses `.pgcode` correctly — don't flag it.
+  const usesPsycopg2 = projectDeclaresPsycopg2(args.projectDir);
+  // Columns a CONTRACT migration net-dropped (accounts for downgrade reversal). A TEST that
+  // references one at HEAD (no downgrade in the file) is superseded — dropped-column-test-reference.
+  const droppedCols = collectDroppedColumns(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS);
   const violations: TestSmellViolation[] = [];
 
   const push = (smell: TestSmellName, file: string, line: number, text: string, extra?: string) =>
@@ -486,6 +500,18 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
       // A client COMPONENT test (`.test.tsx` under client/, NOT an e2e `.spec.ts`) — the no-mock rule
       // applies to these: they must hit the real backend over `/api`, not a stubbed data path.
       const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
+
+      // dropped-column-test-reference (file-level): a Python test that references a contract-dropped
+      // column while doing NO downgrade in the file (so it runs at HEAD where the column is gone). A
+      // migration round-trip test that re-adds the column via its own downgrade is legitimate — the
+      // `\bdowngrade\b` guard skips those, keeping this conservative (false-negative over false-positive).
+      if (isPy && droppedCols.size > 0 && !/\bdowngrade\b/.test(body)) {
+        for (const col of droppedCols) {
+          for (const ln of liveReferenceLines(body, col)) {
+            push("dropped-column-test-reference", rel, ln, lines[ln - 1] ?? `references dropped column '${col}'`, `dropped column '${col}' referenced at HEAD`);
+          }
+        }
+      }
 
       // vi-mock-tdz: a vi.mock factory closing over a same-file top-level const with
       // no vi.hoisted anywhere in the file. File-level check (once per file).
@@ -569,6 +595,12 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
         // swallows (`except ... : pass`, or a bound name never asserted on), which
         // are the ones that actually mask the real failure.
         if (isPy) {
+          // psycopg2-pgcode-attr: reading SQLSTATE via `.pgcode` (psycopg2) on a psycopg3 project.
+          // psycopg3 raises exceptions whose SQLSTATE is `.sqlstate`; `.pgcode` is absent, so the
+          // assertion dies with AttributeError even though the constraint fired (F6/S1 T12/T18).
+          if (!usesPsycopg2 && /\.pgcode\b/.test(codeLines[i] ?? "")) {
+            push("psycopg2-pgcode-attr", rel, line, text, "psycopg3 uses .sqlstate, not .pgcode");
+          }
           const m = text.match(/^\s*except\s*(IntegrityError|Exception)\b(?:\s+as\s+(\w+))?/);
           if (m) {
             const varName = m[2];
@@ -724,11 +756,20 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
   // hard rule 9). Deterministic from migrations + a comment-excluding source scan.
   violations.push(...checkDroppedColumnDanglingRef(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS));
 
-  if (violations.length === 0) return { clean: true, violations: [] };
-  const list = violations.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}\n      fix: ${v.detail}`).join("\n");
+  // excludeSmells: the DEFERRED serial-first AC of a parallel-lane fan-out passes
+  // {"dropped-column-test-reference"} — those flagged files ARE the cross-story superseded set,
+  // which the coordinator's supersession sweep retargets ONCE right after this AC (and the final
+  // feature-deploy verify, no defer, re-checks them). Flagging them here would re-create the exact
+  // per-cycle serial-head grind the deferral removes. Other smells (real authoring defects) stay.
+  const effective = args.excludeSmells && args.excludeSmells.size > 0
+    ? violations.filter((v) => !args.excludeSmells!.has(v.smell))
+    : violations;
+
+  if (effective.length === 0) return { clean: true, violations: [] };
+  const list = effective.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}\n      fix: ${v.detail}`).join("\n");
   const remediation =
     `TEST-AUTHORING-SMELL: the test file(s) below carry authoring defects from the issue #199 catalog. ` +
     `The APP code is not the defect – do NOT route a Driver code repair; the test's AUTHOR fixes these in the test ` +
     `(a flaky strict-mode collision / TDZ / unsatisfiable table ref cannot be greened by changing the app):\n${list}`;
-  return { clean: false, violations, remediation };
+  return { clean: false, violations: effective, remediation };
 }

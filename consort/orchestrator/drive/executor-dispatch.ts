@@ -33,6 +33,7 @@ import {
   planningEstimatesJson,
 } from "../../config/consort-paths.js";
 import { manifestForAction, type StepManifest } from "../steps/manifest.js";
+import { emitAgentLogEvent } from "../../logging/agent-log.js";
 import { execute, type StepExecutorDeps } from "../turns/step-executor.js";
 import { Step } from "../steps/step.js";
 import { buildAgent, type AgentSpec } from "../agents/agent-catalogue.js";
@@ -637,7 +638,38 @@ export async function performTurnViaExecutor(
   // so the line prints exactly once. Same format watch-classify.ts's turn-done regex expects.
   if (action.kind === "invoke-role") {
     const doneModel = (manifest.agentOptions?.model as string | undefined) ?? "live";
-    process.stderr.write(`[drive] ${action.role} turn ${((Date.now() - turnStart) / 1000).toFixed(1)}s (${doneModel})\n`);
+    const durationMs = Date.now() - turnStart;
+    process.stderr.write(`[drive] ${action.role} turn ${(durationMs / 1000).toFixed(1)}s (${doneModel})\n`);
+    // turn.timing: per-turn wall-clock attributed by TURN-KIND + story + ac (LIVE — the
+    // turn.usage event carries duration_ms too but only role/model, so it can't tell
+    // supersession/assess churn from productive red/green). This is the signal the timing
+    // report rolls up to find WHERE a story's wall-clock goes. Best-effort (never load-bearing).
+    const turnKind =
+      "buildMode" in action && action.buildMode
+        ? (action.buildMode as string)
+        : action.role === "navigator"
+          ? "red"
+          : "green";
+    try {
+      emitAgentLogEvent(
+        {
+          role: action.role,
+          level: "info",
+          event: "turn.timing",
+          feature_id: cfg.featureId,
+          slots: {
+            turn_kind: turnKind,
+            duration_ms: durationMs,
+            model: doneModel,
+            ...("story" in action && action.story ? { story: action.story } : {}),
+            ...("ac" in action && action.ac ? { ac: action.ac } : {}),
+          },
+        },
+        { consortDir: cfg.consortDir },
+      );
+    } catch {
+      /* observability only */
+    }
   }
 
   // Divergence guard (replay-only, build turns): the turn synced the recorded snapshot + the postTurn

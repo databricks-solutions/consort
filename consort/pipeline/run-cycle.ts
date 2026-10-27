@@ -412,6 +412,36 @@ export function markGreen(
   return a;
 }
 
+/**
+ * BATCH SPLIT-ON-FAILURE (adaptive batching, the fitness-lane compression): a batched cycle whose GREEN
+ * verify PARTIALLY passed is re-scoped to cover ONLY the `banked` (passed) test ids and marked green, so
+ * the UN-banked (failed) ids fall out of coverage and return to `pending` — the next nextPendingBatch /
+ * fan-out re-forms them (resolve on their own). The batch verify DID run (the pass/fail output is the
+ * evidence), so greening the confirmed passers is honest; this bypasses markGreen's runner-contract check
+ * (which guards a FRESH single-cycle green, not this re-scope of an already-run batch). `banked` must be
+ * non-empty (the caller only splits on a partial pass). Returns the re-scoped green artifact.
+ */
+export function recordBatchSplitGreen(scope: CycleScope, cycleId: string, banked: string[]): CycleArtifact {
+  const a = readCycleArtifact(scope, cycleId);
+  if (!a) throw new Error(`cycle ${cycleId} not found`);
+  if (banked.length === 0) throw new Error(`recordBatchSplitGreen: banked is empty for cycle ${cycleId}`);
+  a.test_ids = banked;
+  a.test_id = banked[0];
+  a.green_at = new Date().toISOString();
+  a.navigator_verdict = "passed";
+  writeCycleArtifact(scope, a);
+  logCycleEvent(scope.consortDir, {
+    role: "driver",
+    level: "info",
+    event: "cycle.green",
+    feature_id: scope.feature_id,
+    cycle_id: cycleId,
+    slots: { test_id: a.test_id, ac: a.ac_id ?? "unknown", change: `batch split: banked ${banked.length} passed, re-queued the failed` },
+  });
+  logTestResults(scope.consortDir, a, "green", "driver");
+  return a;
+}
+
 export function markRefactored(scope: CycleScope, cycleId: string, refactorNotes?: string): CycleArtifact {
   const a = readCycleArtifact(scope, cycleId);
   if (!a) throw new Error(`cycle ${cycleId} not found`);

@@ -72,7 +72,7 @@ export interface ResolvedSettings {
   modelFor(role: string, turn?: TurnKey): string;
   /** Resolve a role's effort for a turn/step ("default" => omit --effort). */
   effortFor(role: string, turn?: TurnKey): EffortLevel;
-  build: { loopGranularity: "story" | "ac" | "hybrid-a"; batchCap?: number; sessionScope: "story" | "cycle" };
+  build: { loopGranularity: "story" | "ac" | "hybrid-a"; batchCap?: number; sessionScope: "story" | "cycle"; batchContractStories?: boolean; parallelAcLanes?: boolean; parallelAcLaneCap?: number; splitAcsByKind?: boolean };
   plan: { sizing: boolean };
   project: {
     uiTrack: boolean;
