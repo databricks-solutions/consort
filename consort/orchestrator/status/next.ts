@@ -122,6 +122,9 @@ export interface NextContext {
   featureBranch?: string;
   /** Kit version string for authoritative_playbook_version. */
   version?: string;
+  /** UI track (consort-config project.uiTrack), so a gate prompt can name the UI-track ux-designer
+   *  establish + its artifacts. Threaded from the planning/feature state in buildNextSnapshot. */
+  uiTrack?: boolean;
   /** The run's durable phase bound (plan|design|build|deploy|full), read back from
    *  `.consort/run-config.json`. The drive writes it at launch; `next` re-reads it so a
    *  resume computes the SAME bounded transition the drive uses and re-emits the bound in
@@ -255,9 +258,14 @@ export function buildNextOptions(action: WorkflowAction, ctx: NextContext): Next
           title: "Approve the project intake",
           hil_prompt:
             "The Product Owner drafted product-overview.md / nfrs.md" +
-            " / design-brief.md from your answers. REVIEW them (open + read), EDIT anything that's off, " +
-            "or ask for changes (edit .consort/intake/answers.md and re-run to redraft). Approve to hand " +
-            "the intake to the Spec Author, who proposes the sprint from it?",
+            (ctx.uiTrack ? " / design-brief.md" : "") +
+            " from your answers. REVIEW them (open + read), EDIT anything that's off, " +
+            "or ask for changes (edit .consort/intake/answers.md and re-run to redraft). " +
+            (ctx.uiTrack
+              ? "Approve to hand off: next the UX Designer converts the design-brief into UX assets — " +
+                "design-guide.json (the project style system) + ia.md (the information-architecture skeleton) — " +
+                "and THEN the Spec Author proposes the sprint from the intake."
+              : "Approve to hand the intake to the Spec Author, who proposes the sprint from it?"),
           kind: "gate",
           enact: gateEnact,
           note: "To request changes instead of approving: edit the drafted docs directly, or edit " +
@@ -498,7 +506,9 @@ export function buildNextSnapshot(
     blockers: blockersOf(state),
   };
   const primary = { kind: action.kind, describe: describeAction(action, { featureId: ctx.featureId }) };
-  const options = buildNextOptions(action, ctx);
+  // Thread uiTrack from the derived state so option prompts (the intake gate) can be UI-track aware
+  // even on the sprint path, where the CLI ctx carries no uiTrack (the state does, via deriveSprintPlanningState).
+  const options = buildNextOptions(action, { ...ctx, uiTrack: ctx.uiTrack ?? state.uiTrack });
   // A human is needed iff the menu offers a DECISION (a gate, or a non-`resume` action
   // like backlog.commit / accept / discard / revise) rather than an autonomous `resume`.
   // `hold` (kind:"noop") is always present and never counts.

@@ -24,7 +24,10 @@ import {
   intakeReadyOnDisk,
   intakeApprovedOnDisk,
 } from "../../consort/config/consort-paths.js";
+import { resolveConsortSettings } from "../../consort/orchestrator/settings/project-settings.js";
+import { designGuideConformance } from "../../consort/session/response-formatter.js";
 import * as fs from "node:fs";
+import { dirname } from "node:path";
 
 // Sprint-backlog read/write + SprintBacklog live in consort-paths (single source of
 // truth). Re-exported here for the existing public API (drive.cli, runSprint).
@@ -93,8 +96,18 @@ export function deriveSprintPlanningState(
   } catch {
     gateApproved = false;
   }
+  // uiTrack + designGuideReady are REQUIRED by the planning-lane UX-establish route
+  // (orchestrator-drive `:332`: intakeReady && uiTrack && !designGuideReady). Resolve BOTH here,
+  // from this function's own consortDir, so neither the drive execution path (drive.cli) nor the
+  // read-only snapshot (consort-next) can forget to thread them — the exact omission that made the
+  // establish dead code (consort-next passed uiTrack only on the FEATURE path; the sprint/planning
+  // path passed neither, so state.uiTrack was undefined and the establish never fired on UI projects).
+  const uiTrack = resolveConsortSettings({ projectDir: dirname(consortDir) }).project.uiTrack;
+  const designGuideReady = designGuideConformance(consortDir).ok;
   return {
     phase: "planning",
+    uiTrack,
+    designGuideReady,
     planning: { intakeReady: intakeReadyOnDisk(consortDir), intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated, backlogCommitted, requestsAuthored, committedEstimated, gateApproved, skipSizing: opts.skipSizing ?? false },
     breakdownDone: false,
     storyOrder: [],

@@ -17380,7 +17380,7 @@ function buildNextOptions(action, ctx) {
         {
           id: "intake.approve",
           title: "Approve the project intake",
-          hil_prompt: "The Product Owner drafted product-overview.md / nfrs.md / design-brief.md from your answers. REVIEW them (open + read), EDIT anything that's off, or ask for changes (edit .consort/intake/answers.md and re-run to redraft). Approve to hand the intake to the Spec Author, who proposes the sprint from it?",
+          hil_prompt: "The Product Owner drafted product-overview.md / nfrs.md" + (ctx.uiTrack ? " / design-brief.md" : "") + " from your answers. REVIEW them (open + read), EDIT anything that's off, or ask for changes (edit .consort/intake/answers.md and re-run to redraft). " + (ctx.uiTrack ? "Approve to hand off: next the UX Designer converts the design-brief into UX assets \u2014 design-guide.json (the project style system) + ia.md (the information-architecture skeleton) \u2014 and THEN the Spec Author proposes the sprint from the intake." : "Approve to hand the intake to the Spec Author, who proposes the sprint from it?"),
           kind: "gate",
           enact: gateEnact,
           note: "To request changes instead of approving: edit the drafted docs directly, or edit .consort/intake/answers.md and resume so the PO redrafts. Approve only once they reflect your intent."
@@ -17573,7 +17573,7 @@ function buildNextSnapshot(scope, state, ctx, transition) {
     blockers: blockersOf(state)
   };
   const primary = { kind: action.kind, describe: describeAction(action, { featureId: ctx.featureId }) };
-  const options = buildNextOptions(action, ctx);
+  const options = buildNextOptions(action, { ...ctx, uiTrack: ctx.uiTrack ?? state.uiTrack });
   const awaiting_human = options.some((o) => o.kind === "gate" || o.kind === "action" && o.id !== "resume");
   return {
     scope,
@@ -17672,6 +17672,7 @@ function readSprintGates(sprint, opts = {}) {
 
 // consort/intake/orchestrator-sprint.ts
 var fs21 = __toESM(require("fs"), 1);
+var import_node_path35 = require("path");
 function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
   const proposed = fs21.existsSync(featureProposalsMd(consortDir));
   const estimated = hasEstimates(consortDir);
@@ -17687,8 +17688,12 @@ function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
   } catch {
     gateApproved = false;
   }
+  const uiTrack = resolveConsortSettings({ projectDir: (0, import_node_path35.dirname)(consortDir) }).project.uiTrack;
+  const designGuideReady = designGuideConformance(consortDir).ok;
   return {
     phase: "planning",
+    uiTrack,
+    designGuideReady,
     planning: { intakeReady: intakeReadyOnDisk(consortDir), intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated, backlogCommitted, requestsAuthored, committedEstimated, gateApproved, skipSizing: opts.skipSizing ?? false },
     breakdownDone: false,
     storyOrder: [],
@@ -17966,7 +17971,7 @@ init_cjs_shims();
 var import_node_child_process16 = require("child_process");
 var import_node_fs29 = require("fs");
 var import_node_os2 = require("os");
-var import_node_path35 = require("path");
+var import_node_path36 = require("path");
 var import_node_crypto8 = require("crypto");
 
 // consort/telemetry/spans.ts
@@ -18033,7 +18038,7 @@ function detachedHttpSink(opts) {
     deliver(payload) {
       try {
         const body = payload.spans.map((s) => JSON.stringify(wireLine(s, payload))).join("\n") + "\n";
-        const file = (0, import_node_path35.join)(dir, `consort-telemetry-${(0, import_node_crypto8.randomUUID)()}.ndjson`);
+        const file = (0, import_node_path36.join)(dir, `consort-telemetry-${(0, import_node_crypto8.randomUUID)()}.ndjson`);
         (0, import_node_fs29.writeFileSync)(file, body);
         const child = spawnImpl(process.execPath, [opts.senderJs, file, url, opts.token ?? ""], {
           detached: true,

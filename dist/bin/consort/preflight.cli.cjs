@@ -27,10 +27,10 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var import_node_fs2 = require("fs");
 
 // consort/session/preflight.ts
-var import_node_child_process2 = require("child_process");
+var import_node_child_process3 = require("child_process");
 var import_node_fs = require("fs");
 var import_node_os = require("os");
-var import_node_path2 = require("path");
+var import_node_path3 = require("path");
 
 // consort/config/kit-bin.ts
 var import_node_child_process = require("child_process");
@@ -109,20 +109,96 @@ function readStoredConfig(deps = {}) {
   }
 }
 
+// consort/orchestrator/open/open-in-editor.ts
+var fs5 = __toESM(require("fs"), 1);
+var path3 = __toESM(require("path"), 1);
+var import_node_child_process2 = require("child_process");
+
+// consort/orchestrator/open/resolve-review-artifacts.ts
+var fs4 = __toESM(require("fs"), 1);
+var import_node_path2 = require("path");
+
+// consort/orchestrator/open/open-in-editor.ts
+var CURSOR_BUNDLES = [
+  "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
+  `${process.env.HOME}/Applications/Cursor.app/Contents/Resources/app/bin/cursor`
+];
+var CODE_BUNDLES = [
+  "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+  `${process.env.HOME}/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code`
+];
+function hostEditor(env = process.env) {
+  if (env.CURSOR_TRACE_ID) return "cursor";
+  if (env.VSCODE_PID || env.VSCODE_GIT_IPC_HANDLE || env.TERM_PROGRAM === "vscode") return "code";
+  return null;
+}
+function findEditorCmd(env = process.env) {
+  const host = hostEditor(env);
+  const names = host === "code" ? ["code", "cursor"] : ["cursor", "code"];
+  const bundles = host === "code" ? [...CODE_BUNDLES, ...CURSOR_BUNDLES] : [...CURSOR_BUNDLES, ...CODE_BUNDLES];
+  const pathDirs = (env.PATH ?? "").split(path3.delimiter).filter(Boolean);
+  for (const name of names) {
+    for (const dir of pathDirs) {
+      const p = path3.join(dir, name);
+      try {
+        if (fs5.existsSync(p) && fs5.statSync(p).isFile()) return name;
+      } catch {
+      }
+    }
+  }
+  for (const p of bundles) {
+    try {
+      if (fs5.existsSync(p)) return p;
+    } catch {
+    }
+  }
+  return null;
+}
+function hasEditorAncestor(startPpid = process.ppid) {
+  try {
+    let pid = startPpid;
+    for (let i = 0; i < 24 && pid > 1; i++) {
+      const r = (0, import_node_child_process2.spawnSync)("ps", ["-o", "ppid=,comm=", "-p", String(pid)], { encoding: "utf8" });
+      const line = (r.stdout ?? "").trim();
+      const m = line.match(/^\s*(\d+)\s+(.*)$/);
+      if (!m) break;
+      if (/cursor|visual studio code|code helper|electron/i.test(m[2])) return true;
+      pid = parseInt(m[1], 10);
+    }
+  } catch {
+  }
+  return false;
+}
+function isInsideEditor(env = process.env) {
+  if (/vscode|cursor/i.test(env.TERM_PROGRAM ?? "") || Boolean(env.CURSOR_TRACE_ID) || Boolean(env.VSCODE_PID) || Boolean(env.VSCODE_GIT_IPC_HANDLE)) {
+    return true;
+  }
+  if (Boolean(env.TMUX) || env.TERM_PROGRAM === "tmux") return hasEditorAncestor();
+  return false;
+}
+function extensionInstalled(env = process.env) {
+  const cmd = findEditorCmd(env);
+  if (!cmd) return { installed: false };
+  try {
+    const r = (0, import_node_child_process2.spawnSync)(cmd, ["--list-extensions", "--show-versions"], { encoding: "utf8" });
+    const m = (r.stdout ?? "").match(/^kevin-hartman\.lakebase-scm-extension@(.+)$/m);
+    return m ? { installed: true, version: m[1].trim() } : { installed: false };
+  } catch {
+    return { installed: false };
+  }
+}
+
 // consort/session/preflight.ts
 function tryExec(cmd, args, cwd, timeoutMs = 4e3) {
   try {
-    return (0, import_node_child_process2.execFileSync)(cmd, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: timeoutMs }).trim();
+    return (0, import_node_child_process3.execFileSync)(cmd, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: timeoutMs }).trim();
   } catch {
     return null;
   }
 }
 function firstProjectMarker(env, home) {
-  const base = env.XDG_CONFIG_HOME?.trim() || (0, import_node_path2.join)(home, ".config");
-  return (0, import_node_path2.join)(base, "consort", "first-project-offered");
-}
-function insideEditor(env) {
-  return env.TERM_PROGRAM === "vscode" || typeof env.VSCODE_GIT_IPC_HANDLE === "string" || typeof env.CURSOR_TRACE_ID === "string" || typeof env.VSCODE_PID === "string";
+  const base = env.XDG_CONFIG_HOME?.trim() || (0, import_node_path3.join)(home, ".config");
+  return (0, import_node_path3.join)(base, "consort", "first-project-offered");
 }
 function featureFromBranch(consortDir, branch) {
   const m = branch?.match(/^feature[-/](.+)$/);
@@ -138,7 +214,7 @@ function featureFromBranch(consortDir, branch) {
 }
 function soleFeatureWithPipeline(consortDir) {
   try {
-    const withPipeline = (0, import_node_fs.readdirSync)(featuresDir(consortDir), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).filter((name) => (0, import_node_fs.existsSync)((0, import_node_path2.join)(featureDir(consortDir, name), "pipeline.json")));
+    const withPipeline = (0, import_node_fs.readdirSync)(featuresDir(consortDir), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).filter((name) => (0, import_node_fs.existsSync)((0, import_node_path3.join)(featureDir(consortDir, name), "pipeline.json")));
     return withPipeline.length === 1 ? withPipeline[0] : null;
   } catch {
     return null;
@@ -152,7 +228,7 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
   try {
     const consortDir = resolveConsortDir(projectDir);
     project.is_consort = (0, import_node_fs.existsSync)(consortDir);
-    const nextPath = (0, import_node_path2.join)(consortDir, "next.json");
+    const nextPath = (0, import_node_path3.join)(consortDir, "next.json");
     if ((0, import_node_fs.existsSync)(nextPath)) {
       const n = JSON.parse((0, import_node_fs.readFileSync)(nextPath, "utf8"));
       project.awaiting_human = typeof n.awaiting_human === "boolean" ? n.awaiting_human : null;
@@ -167,7 +243,7 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
   const kit = { version: kitVersion(), ref: null, ref_local: null };
   const readRef = (rel) => {
     try {
-      const p = (0, import_node_path2.join)(projectDir, ".lakebase", rel);
+      const p = (0, import_node_path3.join)(projectDir, ".lakebase", rel);
       return (0, import_node_fs.existsSync)(p) ? (0, import_node_fs.readFileSync)(p, "utf8").trim() || null : null;
     } catch {
       return null;
@@ -208,7 +284,8 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
   } catch {
     warnings.push("first_project: could not stat the marker");
   }
-  const inside = insideEditor(env);
+  const inside = isInsideEditor(env);
+  const extension = extensionInstalled(env);
   const offers_pending = ["dashboard", ...inside ? [] : ["move-to-editor"], "extension"];
   return {
     preflight_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -218,7 +295,7 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
     scm,
     first_project: { offered_before: offeredBefore },
     env: { inside_editor: inside },
-    tooling: { offers_pending },
+    tooling: { offers_pending, extension },
     warnings
   };
 }
