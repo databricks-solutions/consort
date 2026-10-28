@@ -194,6 +194,7 @@ export function emptyState(projectDir: string, generatedAt: string): DashboardSt
       laneSteps: Object.fromEntries(LANE_IDS.map((l) => [l, [] as string[]])),
       reachedThisPass: [],
       laneCurrent: null,
+      laneLast: Object.fromEntries(LANE_IDS.map((l) => [l, null])),
       laneGate: null,
       atTimestamp: null,
     },
@@ -281,6 +282,7 @@ function deriveTopology(
     laneSteps,
     reachedThisPass: [...reachedThisPass(slice, undefined, scope)],
     laneCurrent: progress.current,
+    laneLast: progress.last,
     laneGate: progress.currentGate,
     atTimestamp: slice.length > 0 ? slice[slice.length - 1].timestamp : null,
   };
@@ -634,6 +636,23 @@ export function fold(
   // one-off. focusOf then resolves {kind:"gate",gate:"backlog"} and the GATES registry (backlog→p-req)
   // lights the node + orchestrator + transport WAITING together.
 
+  // Is the run genuinely PARKED at the pending gate (vs. actively streaming past a just-surfaced one)?
+  // The purple gate — the "awaiting your decision" WAITING focus — is a LIVE-FRONTIER state: it wins
+  // focus only when the board is AT the live edge AND the drive has gone quiet (no event for
+  // SESSION_ACTIVE_MS, the same threshold the rest of the board uses for "live") with a pending gate
+  // and no agent working. A live run between turns stays BELOW that threshold (turns arrive every few
+  // seconds), so a surfaced gate is not a park until the drive actually stops. And a SCRUBBED-BACK
+  // board (!atLive) is replaying past work, never "awaiting a decision" now — so it never parks; it
+  // follows the lane progression (see the carry below), while the gate's own node still lights from
+  // `laneGate` when the playhead sits on its gate.surfaced frame.
+  const sessionIdle = snap.sessionAgeMs >= SESSION_ACTIVE_MS;
+  const parkedAtGate = atLive && pendingGate !== null && !agents.some((a) => a.status === "working") && sessionIdle;
+  // The active role step to hold focus on while NOT parked, carried across the between-turn hand-offs
+  // where laneCurrent blinks to null. Only the lanes the derived `lane` can name (deploy folds under
+  // build for focus); null in complete/idle phases, where there is no running step to carry.
+  const carriedLaneStep: string | null =
+    lane === "design" || lane === "build" || lane === "plan" ? topology.laneLast[lane] ?? null : null;
+
   return {
     ...base,
     ok: true,
@@ -670,15 +689,30 @@ export function fold(
     orchestratorActivity: latestOrchestratorActivity(slice),
     pendingGate,
     // The one focus observation, derived once here; every surface reads it (see focusOf).
-    // When the run is PARKED at an unapproved gate — a `pendingGate` with NO agent working (the drive
-    // surfaced the gate and exited, or ran a trailing navigator-reconcile turn AFTER surfacing it) —
-    // present the topology to focusOf with `laneCurrent` cleared so the pending gate wins (focus "gate"
-    // → Transport "WAITING", the gate glows). Otherwise the stale last step (the post-gate reconcile)
-    // masks the HIL and the board never shows "awaiting your decision". focusOf prefers laneCurrent for
-    // an ACTIVE turn (a mid-phase run), not a parked one — so gate it on an agent actually working.
+    //
+    // A surfaced-but-unapproved `pendingGate` wins focus (→ Transport "WAITING", the gate glows) ONLY
+    // when the run is genuinely PARKED at it: the drive has gone quiet (session idle) with NO agent
+    // working, having surfaced the gate and exited (or run a trailing reconcile after it). Clearing
+    // laneCurrent then lets the gate win, instead of a stale post-gate step masking the HIL.
+    //
+    // While the drive is still ACTIVELY running (session live, events streaming), a surfaced gate is
+    // NOT a park — in batch `/design` the drive surfaces each story's spec gate and streams straight on
+    // to the next story, the gate never approved until the human approves the whole set at the end.
+    // Letting it grab focus bounced the board off the active role step at every turn boundary and
+    // orchestrator hand-off (the batch-/design flicker). So keep the active role step; and because
+    // laneCurrent blinks to null on the brief handoff / gate.surfaced / reasoning events between turns,
+    // carry the lane's LAST role step (topology.laneLast) across them so focus stays on the running
+    // step rather than momentarily dropping to the gate. The same carry runs when SCRUBBED back
+    // (parkedAtGate is false off the live edge), so rewinding the timeline replays the role
+    // progression instead of flashing the purple gate at every between-turns frame.
     focus: focusOf({
-      topology:
-        pendingGate && !agents.some((a) => a.status === "working") ? { ...topology, laneCurrent: null } : topology,
+      topology: parkedAtGate
+        ? { ...topology, laneCurrent: null }
+        : topology.laneCurrent
+          ? topology
+          : carriedLaneStep
+            ? { ...topology, laneCurrent: { lane, step: carriedLaneStep } }
+            : topology,
       pendingGate,
       blockers,
     }),
