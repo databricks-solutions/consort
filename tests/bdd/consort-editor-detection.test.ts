@@ -20,3 +20,19 @@ describe("isInsideEditor — env-marker branches (deterministic) + tmux fallback
     expect(typeof r).toBe("boolean");
   });
 });
+
+import { buildPreflight } from "../../consort/session/preflight";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+describe("preflight emits a deterministic env.editor fact (C3 — PATH-robust, no false 'no editor')", () => {
+  it("includes env.editor with a boolean `found` + cmd/host, so the session reads it instead of a bare command -v", () => {
+    const b = buildPreflight(mkdtempSync(join(tmpdir(), "pf-editor-")));
+    expect(b.env).toHaveProperty("editor");
+    expect(typeof b.env.editor.found).toBe("boolean");
+    // found === (cmd !== null): the fact is coherent (never found:true with a null cmd).
+    expect(b.env.editor.found).toBe(b.env.editor.cmd !== null);
+    expect([null, "cursor", "code"]).toContain(b.env.editor.host);
+  });
+});

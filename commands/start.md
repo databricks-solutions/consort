@@ -205,7 +205,7 @@ KIT_REF="${LAKEBASE_KIT_REF:-}"
 if [ -z "$KIT_REF" ] && [ -f "$CONSORT_ROOT/.claude-plugin/plugin.json" ]; then
   KIT_REF="v$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
 fi
-KIT_REF="${KIT_REF:-v0.4.29}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
+KIT_REF="${KIT_REF:-v0.4.30}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
 export LAKEBASE_KIT_REF="$KIT_REF"
 
 # Launch scaffolding DETACHED (own session): it prints the child pid + a live-log path
@@ -274,7 +274,7 @@ The extension is the Git + Lakebase **source-control view** — your code branch
 
 > "Consort has a VS Code / Cursor extension — a Git + Lakebase source-control view: your code and its paired database branch, schema migrations, diffs, the PR, and CI. (It's the SCM companion to the run dashboard, not the same view.) Want me to install (or upgrade) it and open your editor on the project?"
 
-**First check whether they even have an editor**, then, if yes, do it for them (download the latest release `.vsix`, install, open the project). The `cursor` / `code` CLI is often NOT on PATH even when the app IS installed (users skip the editor's "Install command in PATH" step), so fall back to the macOS app-bundle CLI before concluding it's missing:
+**First check whether they even have an editor.** The AUTHORITATIVE answer is `preflight.env.editor` — `found` (boolean) + `cmd` (the resolved CLI/bundle path) + `host`. It is PATH-ROBUST (it resolves the editor's app bundle even when the `cursor`/`code` CLI is not on PATH), so **TRUST it**. **NEVER conclude "no editor" from a bare `command -v cursor`/`which code`** — that check FAILS on a stripped PATH (e.g. a parallel/sandboxed shell) even when the editor is plainly installed, the exact false "no Cursor/VS Code detected" miss. Only when `preflight.env.editor` is somehow absent do you fall back to the `find_editor` bash below (which ALSO checks the macOS app bundle before concluding missing — never a bare CLI check). Then, if an editor is present, do it for them (download the latest release `.vsix`, install, open the project):
 ```bash
 # Find a usable Cursor/VS Code CLI, PREFERRING the editor whose terminal we run in (both are
 # usually installed, so cursor-first would open Cursor for a user working in VS Code). Both set

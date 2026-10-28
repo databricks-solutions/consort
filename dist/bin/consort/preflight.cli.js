@@ -270,6 +270,8 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
   }
   const inside = isInsideEditor(env);
   const extension = extensionInstalled(env);
+  const editorCmd = findEditorCmd(env);
+  const editor = { found: editorCmd !== null, cmd: editorCmd, host: hostEditor(env) };
   const offers_pending = ["dashboard", ...inside ? [] : ["move-to-editor"], "extension"];
   return {
     preflight_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -278,7 +280,7 @@ function buildPreflight(projectDir = process.cwd(), deps = {}) {
     telemetry,
     scm,
     first_project: { offered_before: offeredBefore },
-    env: { inside_editor: inside },
+    env: { inside_editor: inside, editor },
     tooling: { offers_pending, extension },
     warnings
   };
