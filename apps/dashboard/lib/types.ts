@@ -473,6 +473,12 @@ export interface DashboardState {
     // is "not yet run THIS pass" (uninvoked), even if it ran in a prior loop.
     reachedThisPass: string[];
     laneCurrent: { lane: string; step: string } | null; // sub-step lit at the playhead
+    // laneId → the LAST role step matched in that lane, CARRIED forward across events that map to no
+    // step (handoff / gate.surfaced / orchestrator reasoning). Unlike laneCurrent (strictly the
+    // playhead event's step, so it blinks to null at every hand-off), this stays on the active role
+    // through the brief transitions between turns — the focus derivation uses it to hold the board on
+    // the running step during an active run instead of bouncing to a surfaced-but-unparked gate.
+    laneLast: Record<string, string | null>;
     laneGate: string | null; // the GATE/checkpoint step id the playhead is parked AT (glows the card)
     atTimestamp: string | null; // timestamp of the event at the playhead, for the clock
   };

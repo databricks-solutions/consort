@@ -572,6 +572,60 @@ describe("focusOf — the ONE observation that drives every gate surface from on
   });
 });
 
+describe("batch /design does NOT bounce focus to a surfaced-but-unapproved spec gate between turns", () => {
+  // In a `/design`-only phase the drive designs every story, surfaces each story's spec gate, and
+  // streams straight on to the next story — no gate is approved until the human approves the whole set
+  // at the end. So a spec gate.surfaced is NOT a park while the drive keeps running. Earlier the focus
+  // derivation cleared laneCurrent whenever a gate was pending and no agent was momentarily "working"
+  // (true at every turn.usage / hand-off), so the board bounced to GATE:spec and back to the next role
+  // on every turn boundary. Focus must now stay on the active role step while the session is LIVE, and
+  // only surface the gate once the drive has actually gone quiet (parked). Mirrors the real
+  // stockflow-demo batch-/design log.
+  const BATCH_DESIGN: AgentLogEvent[] = [
+    ev("phase.start", { phase: "design", feature_id: "F1" }, { role: "architect-reviewer" }),
+    ev("turn.usage", { cost_usd: 1, phase: "design" }, { role: "architect-reviewer" }),
+    ev("gate.surfaced", { gate: "spec", subject: "story s1" }, { role: "orchestrator" }), // story 1's gate — unapproved
+    ev("handoff", { to_role: "dba" }, { role: "orchestrator" }), // drive streams on to story 2 (NOT a park)
+    ev("phase.start", { phase: "design", feature_id: "F1" }, { role: "dba" }),
+    ev("turn.usage", { cost_usd: 1, phase: "design" }, { role: "dba" }),
+  ];
+  const active = (upTo: number) => fold(BATCH_DESIGN.slice(0, upTo), snap({ sessionAgeMs: 0 }));
+
+  it("holds focus on the role step at a live-edge turn.usage (agent momentarily idle, gate open)", () => {
+    // Last event = the architect's turn.usage: the agent just went idle but the run is live and the
+    // spec gate is NOT a park — focus stays on d-arch, it must not flip to GATE:spec.
+    expect(active(2).focus).toEqual({ kind: "step", lane: "design", step: "d-arch" });
+    // ...and the same at the next story's turn.usage further along.
+    expect(active(6).focus).toEqual({ kind: "step", lane: "design", step: "d-dba" });
+  });
+
+  it("carries the active role step across the gate.surfaced + hand-off (where laneCurrent blinks null)", () => {
+    // Live edge sitting ON the spec gate.surfaced — laneCurrent maps to no step, but the run is live, so
+    // the carried last design step (d-arch) holds focus instead of the board bouncing to the gate.
+    expect(active(3).focus).toEqual({ kind: "step", lane: "design", step: "d-arch" });
+    // Live edge sitting on the orchestrator hand-off to the next story — same carry.
+    expect(active(4).focus).toEqual({ kind: "step", lane: "design", step: "d-arch" });
+  });
+
+  it("surfaces the spec gate once the drive goes quiet (session idle = parked) — the batch-approval HIL", () => {
+    // Same end-state, but the session has gone idle (no event for SESSION_ACTIVE_MS): the drive has
+    // stopped with the spec gate still open → it IS a park → the gate wins focus so the HIL shows.
+    expect(fold(BATCH_DESIGN, snap({ sessionAgeMs: Infinity })).focus).toEqual({ kind: "gate", gate: "spec" });
+  });
+
+  it("does NOT flash the purple gate while SCRUBBING back through the timeline", () => {
+    // Rewinding = the full log loaded with the playhead dragged to a PAST index (atLive false). The
+    // purple gate is a live-frontier "awaiting your decision" state — a scrubbed frame is replaying past
+    // work, never a park — so focus follows the role progression, carried across the gate.surfaced and
+    // hand-off frames, instead of bouncing to GATE:spec at every between-turns frame.
+    expect(fold(BATCH_DESIGN, snap(), 2).focus).toEqual({ kind: "step", lane: "design", step: "d-arch" }); // on arch turn.usage
+    expect(fold(BATCH_DESIGN, snap(), 3).focus).toEqual({ kind: "step", lane: "design", step: "d-arch" }); // scrubbed ONTO gate.surfaced
+    expect(fold(BATCH_DESIGN, snap(), 4).focus).toEqual({ kind: "step", lane: "design", step: "d-arch" }); // on the hand-off
+    // ...but the gate NODE still lights on its own surfaced frame (independent of the WAITING focus).
+    expect(fold(BATCH_DESIGN, snap(), 3).topology.laneGate).not.toBeNull();
+  });
+});
+
 describe("a parked gate lights the REVIEWED agent's bubble (not the orchestrator that surfaced it)", () => {
   // The orchestrator surfaces EVERY gate (gate.surfaced role=orchestrator), so keying the "waiting"
   // bubble off the surfacer alone always lit the orchestrator. The deploy/promote gates gate the
