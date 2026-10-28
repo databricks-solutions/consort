@@ -585,3 +585,35 @@ describe("performViaExecutor (Stage 1b): the 7 design roles run FULL through the
     }
   });
 });
+
+describe("performViaExecutor: feature-less planning-lane ux-designer ESTABLISH skips the feature-scoped reconcile", () => {
+  // Regression D0 exposed: the planning-lane establish is sprint-scoped (NO feature), but its mode
+  // ("establish") is not in isPlanningMode, so the executor's materializeOutputs ran
+  // `consort-log --reconcile --feature <empty>` -> "--reconcile requires --feature" (exit 2), which
+  // KILLED the planning drive before it parked at + surfaced the intake gate (no gate.surfaced ->
+  // the gate never flashed). The `!f` guard skips the feature-scoped reconcile when there's no feature.
+  it("emits NO cli:log:--reconcile when there is no feature (would have errored exit 2 + killed the drive)", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "pve-est-"));
+    const consortDir = join(projectDir, ".consort");
+    mkdirSync(join(consortDir, "design"), { recursive: true });
+    writeFileSync(join(consortDir, "product-overview.md"), "# overview\nseed\n");
+    writeFileSync(join(consortDir, "design", "design-brief.md"), "# brief\nseed\n");
+    const labels: string[] = [];
+    const runner = {
+      async run(cmd: DriveCommand) {
+        if (cmd.kind === "claude") { labels.push(`claude:${cmd.role}`); writeFileSync(join(consortDir, "design", "design-guide.json"), JSON.stringify({ components: {} })); return; }
+        if (cmd.kind === "cli") { labels.push(`cli:${cmd.bin.replace("consort-", "")}:${cmd.args[0]}`); return; }
+        labels.push(cmd.kind);
+      },
+    };
+    try {
+      const ESTABLISH: WorkflowAction = { kind: "invoke-role", role: "ux-designer", mode: "establish" } as WorkflowAction;
+      // featureId:"" => sprint/planning scope (no feature). The guard must skip reconcile.
+      const effects = buildDriveEffects(cfg(consortDir, projectDir, { useManifestSteps: true, runner, featureId: "" }));
+      await effects.performViaExecutor!(ESTABLISH, { phase: "planning" } as unknown as DriveState, routerDeps);
+      expect(labels.some((l) => l.includes("log:--reconcile"))).toBe(false);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});

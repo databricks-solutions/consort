@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { kitVersion } from "../config/kit-bin.js";
 import { resolveConsortDir, featuresDir, featureDir } from "../config/consort-paths.js";
 import { readStoredConfig } from "../telemetry/home-config.js";
-import { isInsideEditor, extensionInstalled } from "../orchestrator/open/open-in-editor.js";
+import { isInsideEditor, extensionInstalled, findEditorCmd, hostEditor } from "../orchestrator/open/open-in-editor.js";
 
 export interface PreflightBlob {
   /** ISO timestamp the blob was composed - the session treats an old blob as stale. */
@@ -67,8 +67,14 @@ export interface PreflightBlob {
     offered_before: boolean;
   };
   env: {
-    /** Running inside an IDE terminal (VS Code / Cursor), per env markers. */
+    /** Running inside an IDE terminal (VS Code / Cursor), per env markers (+ tmux ancestry). */
     inside_editor: boolean;
+    /** DETERMINISTIC editor-present fact: an editor CLI/app the session can drive (resolved via
+     *  findEditorCmd — PATH shim THEN app-bundle fallback, so it is PATH-robust and does NOT give a
+     *  false "no editor" when the session runs with a stripped PATH, the live Apple-Terminal miss).
+     *  `cmd` is the resolved CLI/bundle path (null when genuinely none); `host` is the preferred
+     *  editor from env markers. The session MUST read this instead of a bare `command -v`. */
+    editor: { found: boolean; cmd: string | null; host: "cursor" | "code" | null };
   };
   tooling: {
     /** The deterministic AGENDA of hand-off offers this session still owes the human in
@@ -241,6 +247,10 @@ export function buildPreflight(projectDir: string = process.cwd(), deps: Preflig
   //    than relying on remembering to run the prose step. ──
   const inside = isInsideEditor(env);
   const extension = extensionInstalled(env);
+  // PATH-robust editor-present fact (bundle fallback) so the session never false-concludes "no
+  // editor" from a stripped-PATH `command -v` (the live Apple-Terminal miss).
+  const editorCmd = findEditorCmd(env);
+  const editor = { found: editorCmd !== null, cmd: editorCmd, host: hostEditor(env) };
   const offers_pending = ["dashboard", ...(inside ? [] : ["move-to-editor"]), "extension"];
 
   return {
@@ -250,7 +260,7 @@ export function buildPreflight(projectDir: string = process.cwd(), deps: Preflig
     telemetry,
     scm,
     first_project: { offered_before: offeredBefore },
-    env: { inside_editor: inside },
+    env: { inside_editor: inside, editor },
     tooling: { offers_pending, extension },
     warnings,
   };

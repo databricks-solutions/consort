@@ -594,8 +594,15 @@ export async function performTurnViaExecutor(
     // feature agent-log to reconcile + declare no agent-log output, and the legacy path guards
     // reconcile with the SAME `!isPlanningMode` condition (commandsForAction / commandsFromManifest),
     // so skipping here keeps the executor byte-parallel to the legacy stream ([claude] only).
+    // ALSO skip when there is NO feature (`!f`): the planning-lane ux-designer ESTABLISH is
+    // sprint-scoped (no feature) but its mode ("establish") is NOT in isPlanningMode — without the
+    // `!f` guard it ran `consort-log --reconcile` with an empty --feature → `--reconcile requires
+    // --feature` (exit 2), which KILLED the planning drive before it could park at + surface the
+    // intake gate (so the gate never emitted gate.surfaced + never flashed on the dashboard). The
+    // DESIGN-lane establish has a feature, so it still reconciles. (The legacy path's `f &&` guard
+    // already covered this; this mirrors it on the executor path.)
     materializeOutputs: async () => {
-      if (isPlanningMode(action)) return;
+      if (isPlanningMode(action) || !f) return;
       await cfg.runner.run({ kind: "cli", bin: deps.logBin, args: ["--reconcile", "--feature", f, "--tdd-dir", cfg.consortDir] });
     },
     // Phase 6.5: the manifest's `after` CLIs – gated on clean validation by the executor. For
