@@ -8697,8 +8697,475 @@ function readSprintGates(sprint, opts = {}) {
   };
 }
 
+// consort/session/response-formatter.ts
+init_esm_shims();
+import { existsSync as existsSync14, readFileSync as readFileSync14, readdirSync as readdirSync9 } from "fs";
+import { dirname as dirname5 } from "path";
+
+// consort/architecture/e2e-route-adherence.ts
+init_esm_shims();
+import { existsSync as existsSync7, readFileSync as readFileSync7, readdirSync as readdirSync3, statSync as statSync2 } from "fs";
+import { join as join7, relative } from "path";
+var CLIENT_SRC = join7("client", "src");
+var E2E_DIR = join7("client", "tests", "e2e");
+
+// consort/architecture/layering-clean.ts
+init_esm_shims();
+import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync4, statSync as statSync3 } from "fs";
+import { join as join8 } from "path";
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
+// consort/architecture/design-adherence.ts
+init_esm_shims();
+import { existsSync as existsSync9, readFileSync as readFileSync9, readdirSync as readdirSync5, writeFileSync as writeFileSync5, mkdirSync as mkdirSync5, copyFileSync } from "fs";
+import { join as join9, dirname as dirname4, basename as basename2 } from "path";
+
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync11, readFileSync as readFileSync11, readdirSync as readdirSync7, statSync as statSync5 } from "fs";
+import { join as join11, relative as relative2, extname as extname2 } from "path";
+
+// consort/architecture/migration-columns.ts
+init_esm_shims();
+import { existsSync as existsSync10, readFileSync as readFileSync10, readdirSync as readdirSync6, statSync as statSync4 } from "fs";
+import { join as join10, extname } from "path";
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+
+// consort/architecture/test-smell-clean.ts
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+
+// consort/smells/testlist-conformance.ts
+init_esm_shims();
+import { existsSync as existsSync13, readFileSync as readFileSync13, readdirSync as readdirSync8 } from "fs";
+
+// consort/smells/smells.ts
+init_esm_shims();
+import { existsSync as existsSync12, readFileSync as readFileSync12, writeFileSync as writeFileSync6 } from "fs";
+import { createHash } from "crypto";
+import { join as join12 } from "path";
+
+// consort/pipeline/run-cycle.ts
+init_esm_shims();
+import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/experiment/experiment.ts
+init_esm_shims();
+import { execFileSync } from "child_process";
+import { createPairedBranch, deletePairedBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+var RUNTIME_ARTIFACT_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/"
+];
+
+// consort/pipeline/run-cycle.ts
+function readAcLayer2(consortDir, featureId, acId) {
+  return readAcLayer(consortDir, featureId, acId);
+}
+function coveredTestIds(c) {
+  if (c.test_ids && c.test_ids.length > 0) return c.test_ids;
+  return c.test_id ? [c.test_id] : [];
+}
+
+// consort/smells/smells.ts
+var SMELL_CATALOG = [
+  {
+    name: "test-list-drift",
+    description: "Test list grew by >25% since cycle start without HITL approval.",
+    proposed_remediation: "PO refinement on spec.",
+    // A drifted/non-orderable test list is a test-strategist decomposition
+    // defect: route the remediation back to Gate 3 on `revise`.
+    level: "spec",
+    owning_role: "test-strategist",
+    gate_to_rerun: "test_list"
+  },
+  {
+    name: "superseded-tests",
+    description: "A new AC intentionally supersedes behavior encoded in PRIOR tests (often from earlier features); the Navigator flagged them in a superseded-tests allowlist. NOT a contradiction to block (that is test-list-drift), the latest AC wins and the accumulated tests must follow it.",
+    proposed_remediation: "Driver permissively refactors ONLY the flagged tests (and the code) to the new AC, then the honest-GREEN verify re-runs. Bounded to one attempt; an unflagged regression escalates.",
+    level: "build"
+  },
+  {
+    name: "cycle-stall",
+    description: "N cycles in a row with no GREEN.",
+    proposed_remediation: "Re-examine test ordering or spec ambiguity."
+  },
+  {
+    name: "api-coherence-drift",
+    description: "Same concept named differently across two consecutive PASS reviews.",
+    proposed_remediation: "Rename refactor before next test."
+  },
+  {
+    name: "fragility-ratio",
+    description: "One behavior change failed >3 tests.",
+    proposed_remediation: "Refactor + flag tests-mirror-implementation anti-pattern."
+  },
+  {
+    name: "test-cost-spiral",
+    description: "Each subsequent test takes >2x the lines of the prior one.",
+    proposed_remediation: "Reconsider boundary; outer-loop tests probably needed."
+  },
+  {
+    name: "cross-experiment-divergence",
+    description: "Two parallel experiments are solving different problems.",
+    proposed_remediation: "Was an opinion gap hidden? Re-run design-spec gate."
+  },
+  {
+    name: "dead-requirement-signal",
+    description: "An AC has had no scenarios written in N cycles while others mature.",
+    proposed_remediation: "Deprecate or clarify via PO refinement."
+  },
+  {
+    name: "test-deletion-attempt",
+    description: "Driver or human attempts to remove or weaken an existing test.",
+    proposed_remediation: "Hard block. Tests are immutable until the test list itself is renegotiated."
+  },
+  {
+    name: "boundary-violation",
+    description: "Test references a private method or internal helper.",
+    proposed_remediation: "Refactor to public boundary or move to inner-loop list."
+  },
+  {
+    name: "import-time-build-coupling",
+    description: "The app entry module requires an optional build artifact (e.g. client/dist) at module load time, an unconditional StaticFiles mount / asset read at import scope. It greens where the artifact happens to exist and crashes at import everywhere it does not (backend-only test runs, CI before the client build, fresh clones). Caught deterministically by the `consort-imports-clean` gate; the Navigator may also flag it in REVIEW.",
+    proposed_remediation: "Guard the coupling: mount the compiled client ONLY when its directory exists, and serve a clear 503 from the SPA route when index.html is absent, so the module imports without the artifact. See the dev/prod-parity rule in software-design-principles."
+  },
+  {
+    name: "scaffold-defect",
+    description: "A test cannot run because the project scaffold is missing a piece the kit owns (e.g. tests/e2e/conftest.py + the live_server fixture for an E2E AC, or an absent runner). The role flags it instead of fabricating the missing scaffold itself. Blocking: a fabricated fixture diverges from the shipped one + reintroduces the CI-parity bugs the kit template prevents.",
+    proposed_remediation: "Halt + surface to the HIL. Fix the scaffold (re-run the kit's wiring, e.g. --enable-e2e for the project's language), never hand-author the missing piece in the build."
+  },
+  {
+    name: "ac-overlap",
+    description: "Two acceptance criteria in a story are not independent: satisfying one's `then` inherently satisfies (or contradicts) another, so the dependent AC's test can never go RED without deleting shipped code. A spec/test-list decomposition defect. Blocking, and flagged at the design gate (Gate 3) so it halts BEFORE a build cycle is wasted, rather than surfacing mid-build as a cycle-stall.",
+    proposed_remediation: "Surface to the PO at the gate. Merge the overlapping ACs, differentiate their observable behavior, or (PO decision) accept the dependent AC as already-satisfied. Do not order both as separate cycles.",
+    // An AC overlap is a spec-author decomposition defect: route back to Gate 1.
+    level: "spec",
+    owning_role: "spec-author",
+    gate_to_rerun: "spec"
+  },
+  {
+    name: "reflect-spec-defect",
+    description: "The pre-build reflection critic (Navigator, reflect mode) found a defect in the story's SPEC before the build lane: an internal contradiction between ACs, a spec-vs-architecture layer conflict, or an untestable/vacuous AC (no observable outcome). Caught on the cheap design artifacts so it is fixed BEFORE any RED/GREEN/REVIEW cycle runs, the reflection gate is a speed play (a spec fix is far cheaper than re-running build cycles).",
+    proposed_remediation: "Route back to the Spec Author (Gate 1): resolve the contradiction, make the AC observable, or realign the AC with the architecture. Bounded to one automatic revise per story; if the critic still finds the defect after the re-spec, it escalates to the human.",
+    // A spec defect the critic surfaces is a spec-author fix: route back to Gate 1.
+    level: "spec",
+    owning_role: "spec-author",
+    gate_to_rerun: "spec"
+  },
+  {
+    name: "reflect-testlist-defect",
+    description: "The pre-build reflection critic (Navigator, reflect mode) found a defect in the story's TEST-LIST before the build lane: a test that contradicts its AC, an AC with no covering test (coverage gap), an NFR with no fitness test, or a test that asserts at a layer the architecture forbids. Caught on the cheap artifacts so it is fixed BEFORE the build lane.",
+    proposed_remediation: "Route back to the Test Strategist (Gate 3): align the test with its AC, add the missing coverage, or move the assertion to the correct layer. Bounded to one automatic revise per story; if the critic still finds the defect after the re-scope, it escalates to the human. CROSS-STORY persistence-invariant case: if the uncovered invariant is one whose table is realized by THIS story but a DIFFERENT, already-gated story front-loaded its fitness item (the invariant-coverage-distinct block), the story-scoped auto-revise CANNOT clear it (it only re-runs this story). The fix is to re-anchor the invariant to its REALIZING story (per db-design schema_changes): remove the fitness item from the mis-anchored owner and add it here. That crosses a gated story boundary, so it escalates to the human with the owning story named (reopen it), rather than looping this story to a dead end.",
+    // A test-list defect the critic surfaces is a test-strategist fix: route back to Gate 3.
+    level: "spec",
+    owning_role: "test-strategist",
+    gate_to_rerun: "test_list"
+  },
+  {
+    name: "reflect-architecture-defect",
+    description: "The pre-build reflection critic (Navigator, reflect mode) found a defect in the story's ARCHITECTURE before the build lane: a persistence invariant that contradicts the stated requirement \u2014 most often a `not_null` invariant on a column the feature-request / design-brief renders when ABSENT (an explicit 'not tracked' / optional-detail state). Left unresolved it surfaces downstream as a later story relaxing the column (an avoidable supersession + build refactor).",
+    proposed_remediation: "Route back to the Architect (Gate 2 / architecture): make the invariant match the requirement \u2014 a column the brief renders when absent is nullable, not `not_null`. Bounded to one automatic revise per story; if the critic still finds the defect after the re-architecture, it escalates to the human.",
+    // An architecture defect the critic surfaces is an architect fix: route back to the architecture gate.
+    level: "spec",
+    owning_role: "architect-reviewer",
+    gate_to_rerun: "architecture"
+  },
+  {
+    name: "reflect-ia-defect",
+    description: "The pre-build reflection critic (Navigator, reflect mode) found a user-facing AC (an E2E or client AC) whose screen or form the information architecture (ia.md) does not name \u2014 the surface the AC asserts has no home in the IA. Left unresolved the architect tags an E2E layer against a screen that does not exist, and the build drives a UI the IA never described.",
+    proposed_remediation: "Route back to the UX Designer (the ia refinement): add the AC's screen/form + flow to ia.md (additive), OR, if the capability has no standalone surface, the AC's layer is reconsidered with the spec-author. Bounded to one automatic revise per story; if the critic still finds the gap after the re-refinement, it escalates to the human.",
+    // A missing IA surface is a ux-designer fix: route back to the ia refinement.
+    level: "spec",
+    owning_role: "ux-designer",
+    gate_to_rerun: "ia"
+  },
+  {
+    name: "shared-state-aggregate-assertion",
+    description: "A test asserts an ABSOLUTE aggregate over the WHOLE store (an integrity/consistency probe, a global COUNT/SUM \u2013 e.g. 'the probe reports exactly 0/2/1 nonconforming rows') without owning the table state it asserts. It passes in the per-cycle build verify (an ISOLATED ephemeral branch holding only its seeded rows) but the honest-GREEN full-feature deploy-verify FAILS it, because that runs the whole suite against the SHARED feature-branch DB where other stories' rows (same nullable columns) inflate the count. A real probe over a real deployed DB can never assert an exact global total anyway.",
+    proposed_remediation: "Route back to the Test Strategist (Gate 3): scope BOTH the seed AND the assertion to the test's own rows (filter the probe/count by the test's SKUs or a marker column, or assert a before-vs-after DELTA), never an absolute whole-table total. Bounded to one automatic revise per story; a second escape escalates to the human.",
+    // A contamination-fragile aggregate assertion is a test-strategist fix: route back to Gate 3.
+    level: "spec",
+    owning_role: "test-strategist",
+    gate_to_rerun: "test_list"
+  },
+  {
+    name: "architect-canon-gap",
+    description: "The deterministic architect-notes projection (FEIP-7902) found a story whose AC layers or architecture.json dimensions (a persistence-invariant type or an NFR category) the project canon does not yet cover. Projecting a blind architectural_note would guess at placement the canon cannot justify, so the story is routed to the Architect instead: re-annotate the story AND amend the canon so the next feature inherits the new rule. Spec-level + architect-owned; the projection is the default path and this is its reactive self-heal.",
+    proposed_remediation: "Route to the Architect Reviewer (Gate 2 architecture): annotate the uncovered ACs with real architectural_notes and declare the new dimension in architecture.json so reconcile amends the canon. Bounded to one automatic revise per story; a second escape hard-halts to the human.",
+    level: "spec",
+    owning_role: "architect-reviewer",
+    gate_to_rerun: "architecture"
+  },
+  {
+    name: "layering-violation",
+    description: "The code breaks the layered-architecture contract the architect declared in architecture.json `layers`: a fat controller (the boundary/routes layer calls the DB session directly \u2013 .query/.add/.commit/.delete \u2013 or holds business logic instead of delegating to a service + repository); a dependency that does NOT point inward (a layer imports another its `may_import` does not permit \u2013 e.g. the boundary reaching around the service into the repository, or a backward import); or leaked persistence (a non-repository layer such as the service touches the ORM session). Distinct from `boundary-violation` (which is a TEST reaching a private method). Caught deterministically by `consort-layering-clean` (boundary session ops, may_import-derived inward-dependency scan, and ORM containment across non-repository layers); the Navigator may also flag it in REVIEW.",
+    proposed_remediation: "Extract a service (business logic) + a repository (the ONLY layer that touches the ORM/session); the route handler validates input + delegates. Defended by the layering fitness test (tests/architecture/test_layering.py)."
+  },
+  {
+    name: "ux-adherence",
+    description: "The rendered UI defines the design tokens on :root yet does not USE them at the element level: hardcoded hex colors / raw px where a var(--token) belongs, an ia.md data-testid seam that was never rendered, or an action surface (form/submit) with no feedback affordance (no silent failure / unacknowledged success). Token-level adherence (assertDesignAdherence) cannot see this; the element-level checks in design-adherence.ts do, and the UX Designer flags it in REVIEW. Distinct from `layering-violation` (engineering layering): this is the experience-lens gate.",
+    proposed_remediation: "Consume tokens via var(--token) (no hardcoded hex/px), render every ia.md screen with its data-testid seams, and give every action a perceivable result. Refactor the UI to the design guide; do not weaken the guide to match the drift."
+  },
+  {
+    name: "ui-style-implementation-test",
+    description: "A test for a design-guide-governed styling property asserts the IMPLEMENTATION in the page SOURCE (an inline `style=` attr or raw CSS text, e.g. grepping the HTML for `text-align: right`) instead of the rendered SEAM (the element carries the design-guide class / data-testid) or the design-adherence gate. It greens only while the style stays inline, so the moment the design lane refactors that ad-hoc inline style into a token-driven theme.css class (as the design guide requires), the test breaks and the REFACTOR dead-locks with no valid SUPERSEDED-TESTS path (the test and the design guide cannot both be satisfied). A test-list decomposition defect the pre-build reflection critic flags (routes to the Test Strategist), so it is fixed before a build cycle wastes on it.",
+    proposed_remediation: "Test the SEAM, not the implementation: assert the quantity/styled cell carries its design-guide class or data-testid (the stable contract), and leave the visual property (alignment, tabular-nums, color) to the design-adherence gate / a rendered-output check. Never assert an inline `style=` string the design guide will move into a token-driven class.",
+    // A styling test asserting implementation is a test-strategist decomposition
+    // defect: route back to Gate 3 (test_list) on `revise`.
+    level: "spec",
+    owning_role: "test-strategist",
+    gate_to_rerun: "test_list"
+  },
+  {
+    name: "e2e-inline-regex-flag",
+    description: "An E2E Playwright matcher (to_contain_text/to_have_text/to_have_url/get_by_text) is built from a Python regex carrying INLINE FLAGS \u2013 re.compile(r\"(?i)summary\") and the like. Playwright forwards the pattern's `.pattern` string verbatim to the browser's JavaScript regex engine, which does NOT support inline-flag syntax `(?i)`/`(?s)`/`(?m)`, so the regex is invalid and the assertion can never match the running app. The test is structurally un-greenable: the honest-GREEN verify rejects it and the build raises to HIL. Caught deterministically + cheaply (no browser run) by the e2e-regex-clean static lint, which enriches the GREEN-verify failure with the exact file:line + fix.",
+    proposed_remediation: 'Pass the flag as a kwarg, not inline: re.compile("summary", re.IGNORECASE) emits the valid JS regex /summary/i. Or, for a plain case-insensitive substring, use the bare string form Playwright already matches loosely. See the E2E rule in the Navigator role.'
+  },
+  {
+    name: "e2e-row-perma-red",
+    description: "An E2E-tagged test row has failed or had zero recorded runs for N or more consecutive cycles.",
+    proposed_remediation: "Surface to PO: either fix the runner wiring (BASE_URL, paired-branch endpoint, playwright.config), narrow the failing scenario, or retag the AC to a layer with a working runner."
+  },
+  {
+    name: "contract-incompleteness",
+    description: 'A migration DROPPED (or renamed) a column the running code still references \u2013 the ORM model field, a query/repository, a serializer/DTO, or a template/view \u2013 so the app emits SQL for a column the migrated database no longer has and crashes at runtime ("column X does not exist") even though the migration itself succeeded. The contract half of expand/contract (software-design-principles hard rule 9) was left incomplete: the schema shrank but the code did not follow in the SAME change. Caught DETERMINISTICALLY by the `consort-contract-clean` gate (it parses the migration\'s net column drops and greps the code tree for residual references), which enriches the GREEN-verify failure with the exact file:line list \u2013 no model judgment needed to notice OR localize it.',
+    proposed_remediation: "Driver REPAIR: remove or replace EVERY residual reference (model field, queries, serializers/DTOs, templates/views) in the same change so the code matches the migrated schema. Never edit the migration or a test to hide it. The green-failure fixDirective carries the precise file:line list, so this self-heals without a Navigator assess."
+  },
+  {
+    name: "migration-app-coupling",
+    description: "A migration module imports application code at import scope (e.g. `from app.services... import parse_x`) to reuse app logic in a data migration. A migration is an IMMUTABLE historical artifact; the app is mutable. Coupling the two means a later rename/move/removal of that app symbol breaks replaying the migration from base (the historical revision can no longer import), and every alembic subcommand that builds the revision map (history/heads, not just upgrade) must load the module. It greens under `upgrade` (env.py puts the project root on sys.path) yet fails in CI's `alembic history`/`heads`. Caught DETERMINISTICALLY by the `consort-migration-clean` gate (it scans the migration files for module-scope app imports), which runs proactively at GREEN even when the local verify passes, so it is fixed before the PR; the Navigator may also flag it in REVIEW.",
+    proposed_remediation: "Driver REPAIR: make the migration self-contained: inline a frozen copy of the needed logic in the migration file (or express the data change in raw SQL). Do not import from app.* at module scope, so the migration stays stable as the app evolves and loads under every alembic subcommand."
+  }
+];
+function specLevelSmell(name) {
+  const def = SMELL_CATALOG.find((s) => s.name === name);
+  if (!def || def.level !== "spec" || !def.owning_role || !def.gate_to_rerun) return null;
+  return { owning_role: def.owning_role, gate_to_rerun: def.gate_to_rerun };
+}
+var BUILD_REFACTOR_ROUTABLE = /* @__PURE__ */ new Set([
+  "layering-violation",
+  "ux-adherence",
+  "import-time-build-coupling",
+  // A new AC supersedes behavior encoded in PRIOR tests the Navigator flagged
+  // (superseded-tests allowlist). The Driver's refactor turn permissively
+  // refactors ONLY those flagged tests + the code, then the honest-GREEN verify
+  // re-runs. Bounded to one attempt by supersession.refactored; an unflagged
+  // regression never reaches here (it escalates), so the backstop stays intact.
+  "superseded-tests"
+]);
+function isBuildRefactorRoutableSmell(name) {
+  return BUILD_REFACTOR_ROUTABLE.has(name);
+}
+function hasOpenBuildRefactorRoutableSmell(consortDir, story_id) {
+  return readSmellsLog(consortDir).detected.some(
+    (d) => !d.resolution && isBuildRefactorRoutableSmell(d.smell) && (story_id === void 0 || d.story_id === void 0 || d.story_id === story_id)
+  );
+}
+function readSmellsLog(consortDir) {
+  const file = join12(consortDir, "smells.json");
+  if (!existsSync12(file)) return { detected: [] };
+  return JSON.parse(readFileSync12(file, "utf8"));
+}
+function smellMatches(entry, smell, story_id) {
+  if (entry.smell !== smell) return false;
+  if (story_id === void 0) return true;
+  return entry.story_id === void 0 || entry.story_id === story_id;
+}
+function priorReviseCount(consortDir, smell, story_id) {
+  return readSmellsLog(consortDir).detected.filter(
+    (d) => d.resolution_kind === "revised" && smellMatches(d, smell, story_id)
+  ).length;
+}
+var REFLECT_SMELL_NAMES = /* @__PURE__ */ new Set([
+  "reflect-spec-defect",
+  "reflect-testlist-defect",
+  "reflect-architecture-defect",
+  "reflect-ia-defect"
+]);
+function isReflectSmell(name) {
+  return REFLECT_SMELL_NAMES.has(name);
+}
+var REFLECT_REVISE_CAP = 4;
+function priorReflectReviseCount(consortDir, story_id) {
+  const log = readSmellsLog(consortDir);
+  const laps = log.reflect_revise_count?.[story_id];
+  if (laps !== void 0) return laps;
+  return log.detected.filter(
+    (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
+  ).length;
+}
+function storyTestListFingerprint(consortDir, featureId, story_id) {
+  const f = storyTestListJson(consortDir, featureId, story_id);
+  if (!existsSync12(f)) return "";
+  try {
+    return createHash("sha1").update(readFileSync12(f)).digest("hex");
+  } catch {
+    return "";
+  }
+}
+function lastReflectReviseFingerprint(consortDir, story_id) {
+  const reflects = readSmellsLog(consortDir).detected.filter(
+    (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
+  );
+  if (reflects.length === 0) return null;
+  const last = reflects[reflects.length - 1];
+  return typeof last.revised_artifact_sha === "string" ? last.revised_artifact_sha : null;
+}
+function lastReflectReviseSmell(consortDir, story_id) {
+  const reflects = readSmellsLog(consortDir).detected.filter(
+    (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
+  );
+  return reflects.length === 0 ? null : reflects[reflects.length - 1].smell;
+}
+
+// consort/smells/testlist-conformance.ts
+function storyAcLayers(consortDir, featureId, story) {
+  const acLayerById = {};
+  const dir = acsDir(consortDir, featureId, story);
+  if (existsSync13(dir)) {
+    for (const f of readdirSync8(dir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const layer = JSON.parse(readFileSync13(`${dir}/${f}`, "utf8")).layer;
+        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
+      } catch {
+      }
+    }
+  }
+  return acLayerById;
+}
+function declaredApiEndpoints(consortDir, featureId, story) {
+  const texts = [];
+  for (const p of [architectureJson(consortDir, featureId), featureSpecJson(consortDir, featureId)]) {
+    try {
+      if (existsSync13(p)) texts.push(readFileSync13(p, "utf8"));
+    } catch {
+    }
+  }
+  const dir = acsDir(consortDir, featureId, story);
+  try {
+    if (existsSync13(dir)) {
+      for (const f of readdirSync8(dir)) if (f.endsWith(".json")) texts.push(readFileSync13(`${dir}/${f}`, "utf8"));
+    }
+  } catch {
+  }
+  const toks = /* @__PURE__ */ new Set();
+  for (const t of texts) for (const e of extractApiEndpoints(t)) toks.add(e);
+  return [...toks];
+}
+function testlistConformanceViolations(consortDir, featureId, story) {
+  const tlPath = storyTestListJson(consortDir, featureId, story);
+  if (!existsSync13(tlPath)) return null;
+  let testListJson;
+  try {
+    testListJson = readFileSync13(tlPath, "utf8");
+  } catch {
+    return null;
+  }
+  return testlistConformanceForContent(consortDir, featureId, story, testListJson);
+}
+function testlistConformanceForContent(consortDir, featureId, story, testListJson) {
+  const acLayerById = storyAcLayers(consortDir, featureId, story);
+  let dbDesign;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if (existsSync13(p)) dbDesign = readFileSync13(p, "utf8");
+  } catch {
+  }
+  let archJson;
+  try {
+    const p = architectureJson(consortDir, featureId);
+    if (existsSync13(p)) archJson = readFileSync13(p, "utf8");
+  } catch {
+  }
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const r of [
+    checkClientKindLayerCoherence(testListJson, acLayerById),
+    checkJsdomBrowserAssertion(testListJson),
+    checkTestlistWholeTableAggregate(testListJson),
+    checkTestlistFixedKeyE2e(testListJson, acLayerById),
+    checkTestlistScenarioFileCoherence(testListJson),
+    checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
+    checkTestlistE2eSpecSuffix(testListJson),
+    checkTestlistComponentScenarioFile(testListJson),
+    checkTestlistMigrationRevision(testListJson),
+    checkSchemaChangeOrphan(testListJson, dbDesign),
+    // A migration-reversibility test must carry the schema_change_id it exercises, so the orphan
+    // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
+    // un-planned change slips to the semantic reflect — the F1/S2 history).
+    checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
+    // A parent-aware schema-diff test for THIS story must assert only this story's own schema delta —
+    // a column a PRIOR story added/dropped already rides on the parent the diff compares against, so
+    // asserting it as added/removed here is unsatisfiable. Deterministic over the DBA ledger's columns
+    // + owning story; shifts the catch to the test-strategist's in-turn self-check so the design lane
+    // self-corrects instead of the Navigator bouncing it at GREEN.
+    checkSchemaDiffCrossStoryColumns(testListJson, dbDesign, story),
+    // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
+    // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
+    // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a
+    // feature-level or sibling-story NFR from false-flagging before its story is designed.
+    ...archJson !== void 0 ? [
+      checkFitnessSingularCoverage(testListJson, archJson, { onlyStory: story }),
+      checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story })
+    ] : []
+  ]) {
+    if (!r.ok) {
+      violations.push(...r.violations);
+      for (const id of r.acIds ?? []) acIds.add(id);
+    }
+  }
+  return violations.length === 0 ? null : { reason: violations.join("; "), acIds: [...acIds] };
+}
+function testListConforms(consortDir, featureId, story) {
+  return testlistConformanceViolations(consortDir, featureId, story) === null;
+}
+
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+
+// consort/session/response-formatter.ts
+function designGuideConformance(consortDir) {
+  const file = designGuideJson(consortDir);
+  if (!existsSync14(file)) {
+    return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
+  }
+  let content;
+  try {
+    content = readFileSync14(file, "utf8");
+  } catch (e) {
+    return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  const r = checkArtifactConformance(canonicalArtifactName(file), content);
+  return r.ok ? { ok: true } : { ok: false, problem: r.violations.join("; ") };
+}
+
 // consort/intake/orchestrator-sprint.ts
 import * as fs2 from "fs";
+import { dirname as dirname6 } from "path";
 function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
   const proposed = fs2.existsSync(featureProposalsMd(consortDir));
   const estimated = hasEstimates(consortDir);
@@ -8714,8 +9181,12 @@ function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
   } catch {
     gateApproved = false;
   }
+  const uiTrack = resolveConsortSettings({ projectDir: dirname6(consortDir) }).project.uiTrack;
+  const designGuideReady = designGuideConformance(consortDir).ok;
   return {
     phase: "planning",
+    uiTrack,
+    designGuideReady,
     planning: { intakeReady: intakeReadyOnDisk(consortDir), intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated, backlogCommitted, requestsAuthored, committedEstimated, gateApproved, skipSizing: opts.skipSizing ?? false },
     breakdownDone: false,
     storyOrder: [],
@@ -9212,42 +9683,19 @@ init_esm_shims();
 import * as fs9 from "fs";
 import * as path5 from "path";
 
-// consort/pipeline/run-cycle.ts
-init_esm_shims();
-import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-
-// consort/experiment/experiment.ts
-init_esm_shims();
-import { execFileSync } from "child_process";
-import { createPairedBranch, deletePairedBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-var RUNTIME_ARTIFACT_PREFIXES = [
-  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
-  ".lakebase/",
-  ".claude/agent-memory/"
-];
-
-// consort/pipeline/run-cycle.ts
-function readAcLayer2(consortDir, featureId, acId) {
-  return readAcLayer(consortDir, featureId, acId);
-}
-function coveredTestIds(c) {
-  if (c.test_ids && c.test_ids.length > 0) return c.test_ids;
-  return c.test_id ? [c.test_id] : [];
-}
-
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync24, readFileSync as readFileSync23, readdirSync as readdirSync14, statSync as statSync9, writeFileSync as writeFileSync13, mkdirSync as mkdirSync11, rmSync as rmSync5 } from "fs";
+import { existsSync as existsSync27, readFileSync as readFileSync26, readdirSync as readdirSync17, statSync as statSync10, writeFileSync as writeFileSync13, mkdirSync as mkdirSync11, rmSync as rmSync5 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
-import { join as join23, dirname as dirname11, basename as basename3 } from "path";
+import { join as join24, dirname as dirname13, basename as basename3 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
 
 // consort/gates/gates.ts
 init_esm_shims();
-import { existsSync as existsSync9, readFileSync as readFileSync8, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5 } from "fs";
-import { join as join8 } from "path";
+import { existsSync as existsSync17, readFileSync as readFileSync16, renameSync as renameSync2, unlinkSync as unlinkSync2, writeFileSync as writeFileSync7 } from "fs";
+import { join as join14 } from "path";
 var GATES_SCHEMA_VERSION = 1;
 var GATE_STATUSES = ["open", "approved", "superseded", "withdrawn"];
 function defaultGatesState(featureId) {
@@ -9266,10 +9714,10 @@ function defaultGatesState(featureId) {
 function readGates(featureId, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = gatesFilePath(consortDir, featureId);
-  if (!existsSync9(file)) {
+  if (!existsSync17(file)) {
     return defaultGatesState(featureId);
   }
-  const raw = readFileSync8(file, "utf8");
+  const raw = readFileSync16(file, "utf8");
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -9280,7 +9728,7 @@ function readGates(featureId, opts = {}) {
   return validateGatesState(parsed, file);
 }
 function gatesFilePath(consortDir, featureId) {
-  return join8(requireFeatureDir(consortDir, featureId), "gates.json");
+  return join14(requireFeatureDir(consortDir, featureId), "gates.json");
 }
 function validateGatesState(parsed, file) {
   if (typeof parsed !== "object" || parsed === null) {
@@ -9340,8 +9788,8 @@ function validateGateRecord(parsed, gateName, file) {
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync10, readFileSync as readFileSync9, readdirSync as readdirSync4, statSync as statSync2 } from "fs";
-import { join as join9, dirname as dirname5 } from "path";
+import { existsSync as existsSync18, readFileSync as readFileSync17, readdirSync as readdirSync11, statSync as statSync6 } from "fs";
+import { join as join15, dirname as dirname8 } from "path";
 
 // consort/test-list/test-list.ts
 init_esm_shims();
@@ -9349,279 +9797,18 @@ init_esm_shims();
 // consort/architecture/architecture-conventions.ts
 init_esm_shims();
 
-// consort/gates/registered-breakdown.ts
-init_esm_shims();
-
 // consort/deploy/deploy.ts
 init_esm_shims();
 import { execSync, execFileSync as execFileSync2, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync17, mkdirSync as mkdirSync7, readFileSync as readFileSync17, rmSync as rmSync2, writeFileSync as writeFileSync9 } from "fs";
-import { dirname as dirname7, join as join16 } from "path";
+import { existsSync as existsSync22, mkdirSync as mkdirSync8, readFileSync as readFileSync22, rmSync as rmSync2, writeFileSync as writeFileSync10 } from "fs";
+import { dirname as dirname10, join as join19 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // consort/gates/escalation.ts
 init_esm_shims();
 import * as fs4 from "fs";
-
-// consort/smells/smells.ts
-init_esm_shims();
-import { existsSync as existsSync11, readFileSync as readFileSync10, writeFileSync as writeFileSync6 } from "fs";
-import { createHash } from "crypto";
-import { join as join10 } from "path";
-var SMELL_CATALOG = [
-  {
-    name: "test-list-drift",
-    description: "Test list grew by >25% since cycle start without HITL approval.",
-    proposed_remediation: "PO refinement on spec.",
-    // A drifted/non-orderable test list is a test-strategist decomposition
-    // defect: route the remediation back to Gate 3 on `revise`.
-    level: "spec",
-    owning_role: "test-strategist",
-    gate_to_rerun: "test_list"
-  },
-  {
-    name: "superseded-tests",
-    description: "A new AC intentionally supersedes behavior encoded in PRIOR tests (often from earlier features); the Navigator flagged them in a superseded-tests allowlist. NOT a contradiction to block (that is test-list-drift), the latest AC wins and the accumulated tests must follow it.",
-    proposed_remediation: "Driver permissively refactors ONLY the flagged tests (and the code) to the new AC, then the honest-GREEN verify re-runs. Bounded to one attempt; an unflagged regression escalates.",
-    level: "build"
-  },
-  {
-    name: "cycle-stall",
-    description: "N cycles in a row with no GREEN.",
-    proposed_remediation: "Re-examine test ordering or spec ambiguity."
-  },
-  {
-    name: "api-coherence-drift",
-    description: "Same concept named differently across two consecutive PASS reviews.",
-    proposed_remediation: "Rename refactor before next test."
-  },
-  {
-    name: "fragility-ratio",
-    description: "One behavior change failed >3 tests.",
-    proposed_remediation: "Refactor + flag tests-mirror-implementation anti-pattern."
-  },
-  {
-    name: "test-cost-spiral",
-    description: "Each subsequent test takes >2x the lines of the prior one.",
-    proposed_remediation: "Reconsider boundary; outer-loop tests probably needed."
-  },
-  {
-    name: "cross-experiment-divergence",
-    description: "Two parallel experiments are solving different problems.",
-    proposed_remediation: "Was an opinion gap hidden? Re-run design-spec gate."
-  },
-  {
-    name: "dead-requirement-signal",
-    description: "An AC has had no scenarios written in N cycles while others mature.",
-    proposed_remediation: "Deprecate or clarify via PO refinement."
-  },
-  {
-    name: "test-deletion-attempt",
-    description: "Driver or human attempts to remove or weaken an existing test.",
-    proposed_remediation: "Hard block. Tests are immutable until the test list itself is renegotiated."
-  },
-  {
-    name: "boundary-violation",
-    description: "Test references a private method or internal helper.",
-    proposed_remediation: "Refactor to public boundary or move to inner-loop list."
-  },
-  {
-    name: "import-time-build-coupling",
-    description: "The app entry module requires an optional build artifact (e.g. client/dist) at module load time, an unconditional StaticFiles mount / asset read at import scope. It greens where the artifact happens to exist and crashes at import everywhere it does not (backend-only test runs, CI before the client build, fresh clones). Caught deterministically by the `consort-imports-clean` gate; the Navigator may also flag it in REVIEW.",
-    proposed_remediation: "Guard the coupling: mount the compiled client ONLY when its directory exists, and serve a clear 503 from the SPA route when index.html is absent, so the module imports without the artifact. See the dev/prod-parity rule in software-design-principles."
-  },
-  {
-    name: "scaffold-defect",
-    description: "A test cannot run because the project scaffold is missing a piece the kit owns (e.g. tests/e2e/conftest.py + the live_server fixture for an E2E AC, or an absent runner). The role flags it instead of fabricating the missing scaffold itself. Blocking: a fabricated fixture diverges from the shipped one + reintroduces the CI-parity bugs the kit template prevents.",
-    proposed_remediation: "Halt + surface to the HIL. Fix the scaffold (re-run the kit's wiring, e.g. --enable-e2e for the project's language), never hand-author the missing piece in the build."
-  },
-  {
-    name: "ac-overlap",
-    description: "Two acceptance criteria in a story are not independent: satisfying one's `then` inherently satisfies (or contradicts) another, so the dependent AC's test can never go RED without deleting shipped code. A spec/test-list decomposition defect. Blocking, and flagged at the design gate (Gate 3) so it halts BEFORE a build cycle is wasted, rather than surfacing mid-build as a cycle-stall.",
-    proposed_remediation: "Surface to the PO at the gate. Merge the overlapping ACs, differentiate their observable behavior, or (PO decision) accept the dependent AC as already-satisfied. Do not order both as separate cycles.",
-    // An AC overlap is a spec-author decomposition defect: route back to Gate 1.
-    level: "spec",
-    owning_role: "spec-author",
-    gate_to_rerun: "spec"
-  },
-  {
-    name: "reflect-spec-defect",
-    description: "The pre-build reflection critic (Navigator, reflect mode) found a defect in the story's SPEC before the build lane: an internal contradiction between ACs, a spec-vs-architecture layer conflict, or an untestable/vacuous AC (no observable outcome). Caught on the cheap design artifacts so it is fixed BEFORE any RED/GREEN/REVIEW cycle runs, the reflection gate is a speed play (a spec fix is far cheaper than re-running build cycles).",
-    proposed_remediation: "Route back to the Spec Author (Gate 1): resolve the contradiction, make the AC observable, or realign the AC with the architecture. Bounded to one automatic revise per story; if the critic still finds the defect after the re-spec, it escalates to the human.",
-    // A spec defect the critic surfaces is a spec-author fix: route back to Gate 1.
-    level: "spec",
-    owning_role: "spec-author",
-    gate_to_rerun: "spec"
-  },
-  {
-    name: "reflect-testlist-defect",
-    description: "The pre-build reflection critic (Navigator, reflect mode) found a defect in the story's TEST-LIST before the build lane: a test that contradicts its AC, an AC with no covering test (coverage gap), an NFR with no fitness test, or a test that asserts at a layer the architecture forbids. Caught on the cheap artifacts so it is fixed BEFORE the build lane.",
-    proposed_remediation: "Route back to the Test Strategist (Gate 3): align the test with its AC, add the missing coverage, or move the assertion to the correct layer. Bounded to one automatic revise per story; if the critic still finds the defect after the re-scope, it escalates to the human. CROSS-STORY persistence-invariant case: if the uncovered invariant is one whose table is realized by THIS story but a DIFFERENT, already-gated story front-loaded its fitness item (the invariant-coverage-distinct block), the story-scoped auto-revise CANNOT clear it (it only re-runs this story). The fix is to re-anchor the invariant to its REALIZING story (per db-design schema_changes): remove the fitness item from the mis-anchored owner and add it here. That crosses a gated story boundary, so it escalates to the human with the owning story named (reopen it), rather than looping this story to a dead end.",
-    // A test-list defect the critic surfaces is a test-strategist fix: route back to Gate 3.
-    level: "spec",
-    owning_role: "test-strategist",
-    gate_to_rerun: "test_list"
-  },
-  {
-    name: "reflect-architecture-defect",
-    description: "The pre-build reflection critic (Navigator, reflect mode) found a defect in the story's ARCHITECTURE before the build lane: a persistence invariant that contradicts the stated requirement \u2014 most often a `not_null` invariant on a column the feature-request / design-brief renders when ABSENT (an explicit 'not tracked' / optional-detail state). Left unresolved it surfaces downstream as a later story relaxing the column (an avoidable supersession + build refactor).",
-    proposed_remediation: "Route back to the Architect (Gate 2 / architecture): make the invariant match the requirement \u2014 a column the brief renders when absent is nullable, not `not_null`. Bounded to one automatic revise per story; if the critic still finds the defect after the re-architecture, it escalates to the human.",
-    // An architecture defect the critic surfaces is an architect fix: route back to the architecture gate.
-    level: "spec",
-    owning_role: "architect-reviewer",
-    gate_to_rerun: "architecture"
-  },
-  {
-    name: "reflect-ia-defect",
-    description: "The pre-build reflection critic (Navigator, reflect mode) found a user-facing AC (an E2E or client AC) whose screen or form the information architecture (ia.md) does not name \u2014 the surface the AC asserts has no home in the IA. Left unresolved the architect tags an E2E layer against a screen that does not exist, and the build drives a UI the IA never described.",
-    proposed_remediation: "Route back to the UX Designer (the ia refinement): add the AC's screen/form + flow to ia.md (additive), OR, if the capability has no standalone surface, the AC's layer is reconsidered with the spec-author. Bounded to one automatic revise per story; if the critic still finds the gap after the re-refinement, it escalates to the human.",
-    // A missing IA surface is a ux-designer fix: route back to the ia refinement.
-    level: "spec",
-    owning_role: "ux-designer",
-    gate_to_rerun: "ia"
-  },
-  {
-    name: "shared-state-aggregate-assertion",
-    description: "A test asserts an ABSOLUTE aggregate over the WHOLE store (an integrity/consistency probe, a global COUNT/SUM \u2013 e.g. 'the probe reports exactly 0/2/1 nonconforming rows') without owning the table state it asserts. It passes in the per-cycle build verify (an ISOLATED ephemeral branch holding only its seeded rows) but the honest-GREEN full-feature deploy-verify FAILS it, because that runs the whole suite against the SHARED feature-branch DB where other stories' rows (same nullable columns) inflate the count. A real probe over a real deployed DB can never assert an exact global total anyway.",
-    proposed_remediation: "Route back to the Test Strategist (Gate 3): scope BOTH the seed AND the assertion to the test's own rows (filter the probe/count by the test's SKUs or a marker column, or assert a before-vs-after DELTA), never an absolute whole-table total. Bounded to one automatic revise per story; a second escape escalates to the human.",
-    // A contamination-fragile aggregate assertion is a test-strategist fix: route back to Gate 3.
-    level: "spec",
-    owning_role: "test-strategist",
-    gate_to_rerun: "test_list"
-  },
-  {
-    name: "architect-canon-gap",
-    description: "The deterministic architect-notes projection (FEIP-7902) found a story whose AC layers or architecture.json dimensions (a persistence-invariant type or an NFR category) the project canon does not yet cover. Projecting a blind architectural_note would guess at placement the canon cannot justify, so the story is routed to the Architect instead: re-annotate the story AND amend the canon so the next feature inherits the new rule. Spec-level + architect-owned; the projection is the default path and this is its reactive self-heal.",
-    proposed_remediation: "Route to the Architect Reviewer (Gate 2 architecture): annotate the uncovered ACs with real architectural_notes and declare the new dimension in architecture.json so reconcile amends the canon. Bounded to one automatic revise per story; a second escape hard-halts to the human.",
-    level: "spec",
-    owning_role: "architect-reviewer",
-    gate_to_rerun: "architecture"
-  },
-  {
-    name: "layering-violation",
-    description: "The code breaks the layered-architecture contract the architect declared in architecture.json `layers`: a fat controller (the boundary/routes layer calls the DB session directly \u2013 .query/.add/.commit/.delete \u2013 or holds business logic instead of delegating to a service + repository); a dependency that does NOT point inward (a layer imports another its `may_import` does not permit \u2013 e.g. the boundary reaching around the service into the repository, or a backward import); or leaked persistence (a non-repository layer such as the service touches the ORM session). Distinct from `boundary-violation` (which is a TEST reaching a private method). Caught deterministically by `consort-layering-clean` (boundary session ops, may_import-derived inward-dependency scan, and ORM containment across non-repository layers); the Navigator may also flag it in REVIEW.",
-    proposed_remediation: "Extract a service (business logic) + a repository (the ONLY layer that touches the ORM/session); the route handler validates input + delegates. Defended by the layering fitness test (tests/architecture/test_layering.py)."
-  },
-  {
-    name: "ux-adherence",
-    description: "The rendered UI defines the design tokens on :root yet does not USE them at the element level: hardcoded hex colors / raw px where a var(--token) belongs, an ia.md data-testid seam that was never rendered, or an action surface (form/submit) with no feedback affordance (no silent failure / unacknowledged success). Token-level adherence (assertDesignAdherence) cannot see this; the element-level checks in design-adherence.ts do, and the UX Designer flags it in REVIEW. Distinct from `layering-violation` (engineering layering): this is the experience-lens gate.",
-    proposed_remediation: "Consume tokens via var(--token) (no hardcoded hex/px), render every ia.md screen with its data-testid seams, and give every action a perceivable result. Refactor the UI to the design guide; do not weaken the guide to match the drift."
-  },
-  {
-    name: "ui-style-implementation-test",
-    description: "A test for a design-guide-governed styling property asserts the IMPLEMENTATION in the page SOURCE (an inline `style=` attr or raw CSS text, e.g. grepping the HTML for `text-align: right`) instead of the rendered SEAM (the element carries the design-guide class / data-testid) or the design-adherence gate. It greens only while the style stays inline, so the moment the design lane refactors that ad-hoc inline style into a token-driven theme.css class (as the design guide requires), the test breaks and the REFACTOR dead-locks with no valid SUPERSEDED-TESTS path (the test and the design guide cannot both be satisfied). A test-list decomposition defect the pre-build reflection critic flags (routes to the Test Strategist), so it is fixed before a build cycle wastes on it.",
-    proposed_remediation: "Test the SEAM, not the implementation: assert the quantity/styled cell carries its design-guide class or data-testid (the stable contract), and leave the visual property (alignment, tabular-nums, color) to the design-adherence gate / a rendered-output check. Never assert an inline `style=` string the design guide will move into a token-driven class.",
-    // A styling test asserting implementation is a test-strategist decomposition
-    // defect: route back to Gate 3 (test_list) on `revise`.
-    level: "spec",
-    owning_role: "test-strategist",
-    gate_to_rerun: "test_list"
-  },
-  {
-    name: "e2e-inline-regex-flag",
-    description: "An E2E Playwright matcher (to_contain_text/to_have_text/to_have_url/get_by_text) is built from a Python regex carrying INLINE FLAGS \u2013 re.compile(r\"(?i)summary\") and the like. Playwright forwards the pattern's `.pattern` string verbatim to the browser's JavaScript regex engine, which does NOT support inline-flag syntax `(?i)`/`(?s)`/`(?m)`, so the regex is invalid and the assertion can never match the running app. The test is structurally un-greenable: the honest-GREEN verify rejects it and the build raises to HIL. Caught deterministically + cheaply (no browser run) by the e2e-regex-clean static lint, which enriches the GREEN-verify failure with the exact file:line + fix.",
-    proposed_remediation: 'Pass the flag as a kwarg, not inline: re.compile("summary", re.IGNORECASE) emits the valid JS regex /summary/i. Or, for a plain case-insensitive substring, use the bare string form Playwright already matches loosely. See the E2E rule in the Navigator role.'
-  },
-  {
-    name: "e2e-row-perma-red",
-    description: "An E2E-tagged test row has failed or had zero recorded runs for N or more consecutive cycles.",
-    proposed_remediation: "Surface to PO: either fix the runner wiring (BASE_URL, paired-branch endpoint, playwright.config), narrow the failing scenario, or retag the AC to a layer with a working runner."
-  },
-  {
-    name: "contract-incompleteness",
-    description: 'A migration DROPPED (or renamed) a column the running code still references \u2013 the ORM model field, a query/repository, a serializer/DTO, or a template/view \u2013 so the app emits SQL for a column the migrated database no longer has and crashes at runtime ("column X does not exist") even though the migration itself succeeded. The contract half of expand/contract (software-design-principles hard rule 9) was left incomplete: the schema shrank but the code did not follow in the SAME change. Caught DETERMINISTICALLY by the `consort-contract-clean` gate (it parses the migration\'s net column drops and greps the code tree for residual references), which enriches the GREEN-verify failure with the exact file:line list \u2013 no model judgment needed to notice OR localize it.',
-    proposed_remediation: "Driver REPAIR: remove or replace EVERY residual reference (model field, queries, serializers/DTOs, templates/views) in the same change so the code matches the migrated schema. Never edit the migration or a test to hide it. The green-failure fixDirective carries the precise file:line list, so this self-heals without a Navigator assess."
-  },
-  {
-    name: "migration-app-coupling",
-    description: "A migration module imports application code at import scope (e.g. `from app.services... import parse_x`) to reuse app logic in a data migration. A migration is an IMMUTABLE historical artifact; the app is mutable. Coupling the two means a later rename/move/removal of that app symbol breaks replaying the migration from base (the historical revision can no longer import), and every alembic subcommand that builds the revision map (history/heads, not just upgrade) must load the module. It greens under `upgrade` (env.py puts the project root on sys.path) yet fails in CI's `alembic history`/`heads`. Caught DETERMINISTICALLY by the `consort-migration-clean` gate (it scans the migration files for module-scope app imports), which runs proactively at GREEN even when the local verify passes, so it is fixed before the PR; the Navigator may also flag it in REVIEW.",
-    proposed_remediation: "Driver REPAIR: make the migration self-contained: inline a frozen copy of the needed logic in the migration file (or express the data change in raw SQL). Do not import from app.* at module scope, so the migration stays stable as the app evolves and loads under every alembic subcommand."
-  }
-];
-function specLevelSmell(name) {
-  const def = SMELL_CATALOG.find((s) => s.name === name);
-  if (!def || def.level !== "spec" || !def.owning_role || !def.gate_to_rerun) return null;
-  return { owning_role: def.owning_role, gate_to_rerun: def.gate_to_rerun };
-}
-var BUILD_REFACTOR_ROUTABLE = /* @__PURE__ */ new Set([
-  "layering-violation",
-  "ux-adherence",
-  "import-time-build-coupling",
-  // A new AC supersedes behavior encoded in PRIOR tests the Navigator flagged
-  // (superseded-tests allowlist). The Driver's refactor turn permissively
-  // refactors ONLY those flagged tests + the code, then the honest-GREEN verify
-  // re-runs. Bounded to one attempt by supersession.refactored; an unflagged
-  // regression never reaches here (it escalates), so the backstop stays intact.
-  "superseded-tests"
-]);
-function isBuildRefactorRoutableSmell(name) {
-  return BUILD_REFACTOR_ROUTABLE.has(name);
-}
-function hasOpenBuildRefactorRoutableSmell(consortDir, story_id) {
-  return readSmellsLog(consortDir).detected.some(
-    (d) => !d.resolution && isBuildRefactorRoutableSmell(d.smell) && (story_id === void 0 || d.story_id === void 0 || d.story_id === story_id)
-  );
-}
-function readSmellsLog(consortDir) {
-  const file = join10(consortDir, "smells.json");
-  if (!existsSync11(file)) return { detected: [] };
-  return JSON.parse(readFileSync10(file, "utf8"));
-}
-function smellMatches(entry, smell, story_id) {
-  if (entry.smell !== smell) return false;
-  if (story_id === void 0) return true;
-  return entry.story_id === void 0 || entry.story_id === story_id;
-}
-function priorReviseCount(consortDir, smell, story_id) {
-  return readSmellsLog(consortDir).detected.filter(
-    (d) => d.resolution_kind === "revised" && smellMatches(d, smell, story_id)
-  ).length;
-}
-var REFLECT_SMELL_NAMES = /* @__PURE__ */ new Set([
-  "reflect-spec-defect",
-  "reflect-testlist-defect",
-  "reflect-architecture-defect",
-  "reflect-ia-defect"
-]);
-function isReflectSmell(name) {
-  return REFLECT_SMELL_NAMES.has(name);
-}
-var REFLECT_REVISE_CAP = 4;
-function priorReflectReviseCount(consortDir, story_id) {
-  const log = readSmellsLog(consortDir);
-  const laps = log.reflect_revise_count?.[story_id];
-  if (laps !== void 0) return laps;
-  return log.detected.filter(
-    (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
-  ).length;
-}
-function storyTestListFingerprint(consortDir, featureId, story_id) {
-  const f = storyTestListJson(consortDir, featureId, story_id);
-  if (!existsSync11(f)) return "";
-  try {
-    return createHash("sha1").update(readFileSync10(f)).digest("hex");
-  } catch {
-    return "";
-  }
-}
-function lastReflectReviseFingerprint(consortDir, story_id) {
-  const reflects = readSmellsLog(consortDir).detected.filter(
-    (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
-  );
-  if (reflects.length === 0) return null;
-  const last = reflects[reflects.length - 1];
-  return typeof last.revised_artifact_sha === "string" ? last.revised_artifact_sha : null;
-}
-function lastReflectReviseSmell(consortDir, story_id) {
-  const reflects = readSmellsLog(consortDir).detected.filter(
-    (d) => d.resolution_kind === "revised" && isReflectSmell(d.smell) && d.story_id === story_id
-  );
-  return reflects.length === 0 ? null : reflects[reflects.length - 1].smell;
-}
-
-// consort/gates/escalation.ts
 var BLOCKING_SMELLS = /* @__PURE__ */ new Set([
   "test-list-drift",
   "cycle-stall",
@@ -9723,27 +9910,6 @@ function firstPendingEscalation(consortDir, featureId) {
 init_esm_shims();
 import * as fs5 from "fs";
 import * as path3 from "path";
-
-// consort/architecture/test-smell-clean.ts
-init_esm_shims();
-import { existsSync as existsSync14, readFileSync as readFileSync13, readdirSync as readdirSync7, statSync as statSync4 } from "fs";
-import { join as join12, relative, extname as extname2 } from "path";
-
-// consort/architecture/migration-columns.ts
-init_esm_shims();
-import { existsSync as existsSync13, readFileSync as readFileSync12, readdirSync as readdirSync6, statSync as statSync3 } from "fs";
-import { join as join11, extname } from "path";
-var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
-var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
-var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
-var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
-var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
-var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
-
-// consort/architecture/test-smell-clean.ts
-var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
-
-// consort/smells/deploy-verify-assess.ts
 function markerPath(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
@@ -9769,8 +9935,8 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync16, readFileSync as readFileSync15, readdirSync as readdirSync8, statSync as statSync5 } from "fs";
-import { join as join14, relative as relative2, extname as extname3 } from "path";
+import { existsSync as existsSync21, readFileSync as readFileSync20, readdirSync as readdirSync13, statSync as statSync7 } from "fs";
+import { join as join17, relative as relative3, extname as extname3 } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -9786,8 +9952,8 @@ var EXCLUDE_DIR_JUNK = new RegExp(
 
 // consort/architecture/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync9, readFileSync as readFileSync16, statSync as statSync6 } from "fs";
-import { join as join15 } from "path";
+import { readdirSync as readdirSync14, readFileSync as readFileSync21, statSync as statSync8 } from "fs";
+import { join as join18 } from "path";
 
 // consort/smells/ephemeral-verify.ts
 init_esm_shims();
@@ -9801,9 +9967,9 @@ function deployEvidencePasses(e) {
   return e !== void 0 && e.reachable === true && e.verify?.passed === true;
 }
 function readDeployEvidence(file) {
-  if (!existsSync17(file)) return void 0;
+  if (!existsSync22(file)) return void 0;
   try {
-    return JSON.parse(readFileSync17(file, "utf8"));
+    return JSON.parse(readFileSync22(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9811,45 +9977,17 @@ function readDeployEvidence(file) {
 function storyDeployVerified(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return false;
-  return deployEvidencePasses(readDeployEvidence(join16(fdir, "stories", storyId, "deploy-evidence.json")));
+  return deployEvidencePasses(readDeployEvidence(join19(fdir, "stories", storyId, "deploy-evidence.json")));
 }
-
-// consort/architecture/design-adherence.ts
-init_esm_shims();
-import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync11, writeFileSync as writeFileSync10, mkdirSync as mkdirSync8, copyFileSync } from "fs";
-import { join as join17, dirname as dirname8, basename as basename2 } from "path";
-
-// consort/architecture/layering-clean.ts
-init_esm_shims();
-import { existsSync as existsSync19, readFileSync as readFileSync19, readdirSync as readdirSync12, statSync as statSync7 } from "fs";
-import { join as join18 } from "path";
-var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
-  "node_modules",
-  "__pycache__",
-  ".venv",
-  "venv",
-  ".git",
-  "build",
-  "dist",
-  ...ALL_ARTIFACT_ROOTS,
-  ".lakebase",
-  "alembic",
-  "migrations",
-  "tests",
-  "test",
-  ".mypy_cache",
-  ".pytest_cache",
-  ".ruff_cache"
-]);
 
 // consort/smells/supersession.ts
 init_esm_shims();
 import * as fs6 from "fs";
 import { execFileSync as execFileSync3 } from "child_process";
 import { createHash as createHash2 } from "crypto";
-import { dirname as dirname9, join as join19 } from "path";
+import { dirname as dirname11, join as join20 } from "path";
 function supersededTestsJson(tdd, feature, story, ac) {
-  return join19(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
+  return join20(cycleDir(tdd, feature, story, ac), "superseded-tests.json");
 }
 function readSupersededTests(tdd, feature, story, ac) {
   const parseSuperseded = (raw) => {
@@ -9885,7 +10023,7 @@ function hasPendingSupersession(tdd, feature, story, ac) {
   return s !== void 0 && s.refactored !== true;
 }
 function greenFailureJson(tdd, feature, story, ac) {
-  return join19(cycleDir(tdd, feature, story, ac), "green-failure.json");
+  return join20(cycleDir(tdd, feature, story, ac), "green-failure.json");
 }
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -9913,7 +10051,7 @@ function readGreenFailure(tdd, feature, story, ac) {
   try {
     const value = JSON.parse(fs6.readFileSync(file, "utf8"));
     if (value.treeState) {
-      const cur = computeTreeState(dirname9(tdd));
+      const cur = computeTreeState(dirname11(tdd));
       if (cur && (cur.headSha !== value.treeState.headSha || cur.dirtySha !== value.treeState.dirtySha)) {
         fs6.rmSync(file, { force: true });
         return void 0;
@@ -9945,7 +10083,7 @@ function specDefectFromRole(tdd, feature, story, ac) {
   return gf?.specDefect?.fromRole ?? "test-strategist";
 }
 function regressionAssessmentJson(tdd, feature, story, ac) {
-  return join19(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+  return join20(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
 }
 
 // consort/smells/refactor-verify-assess.ts
@@ -9977,14 +10115,14 @@ function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync22, readFileSync as readFileSync22, readdirSync as readdirSync13, statSync as statSync8 } from "fs";
-import { join as join21, relative as relative3, extname as extname4 } from "path";
+import { existsSync as existsSync25, readFileSync as readFileSync25, readdirSync as readdirSync16, statSync as statSync9 } from "fs";
+import { join as join22, relative as relative4, extname as extname4 } from "path";
 
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
 import { execFileSync as execFileSync4 } from "child_process";
-import { existsSync as existsSync23 } from "fs";
-import { join as join22 } from "path";
+import { existsSync as existsSync26 } from "fs";
+import { join as join23 } from "path";
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
@@ -9996,27 +10134,27 @@ init_esm_shims();
 // consort/pipeline/cycle-record.ts
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync24(file)) {
+  if (!existsSync27(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse(readFileSync23(file, "utf8"));
+  const data = JSON.parse(readFileSync26(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyCycles(consortDir, featureId, story) {
-  const base = join23(cyclesRootDir(consortDir), featureId, story);
-  if (!existsSync24(base)) return [];
+  const base = join24(cyclesRootDir(consortDir), featureId, story);
+  if (!existsSync27(base)) return [];
   const out = [];
-  for (const acDir of readdirSync14(base)) {
-    const dir = join23(base, acDir);
+  for (const acDir of readdirSync17(base)) {
+    const dir = join24(base, acDir);
     try {
-      if (!statSync9(dir).isDirectory()) continue;
+      if (!statSync10(dir).isDirectory()) continue;
     } catch {
       continue;
     }
-    for (const f of readdirSync14(dir)) {
+    for (const f of readdirSync17(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(readFileSync23(join23(dir, f), "utf8")));
+        out.push(JSON.parse(readFileSync26(join24(dir, f), "utf8")));
       } catch {
       }
     }
@@ -10053,9 +10191,9 @@ function pendingItemKind(consortDir, featureId, story) {
 }
 function readReview(consortDir, featureId, story, acId) {
   const f = acReviewJson(consortDir, featureId, story, acId);
-  if (!existsSync24(f)) return {};
+  if (!existsSync27(f)) return {};
   try {
-    return JSON.parse(readFileSync23(f, "utf8"));
+    return JSON.parse(readFileSync26(f, "utf8"));
   } catch {
     return {};
   }
@@ -10105,9 +10243,9 @@ function firstRefactorPendingAc(consortDir, featureId, story) {
 }
 function readStoryReview(consortDir, featureId, story) {
   const f = storyReviewJson(consortDir, featureId, story);
-  if (!existsSync24(f)) return {};
+  if (!existsSync27(f)) return {};
   try {
-    return JSON.parse(readFileSync23(f, "utf8"));
+    return JSON.parse(readFileSync26(f, "utf8"));
   } catch {
     return {};
   }
@@ -10261,7 +10399,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_esm_shims();
 import { createHash as createHash3 } from "crypto";
-import { readFileSync as readFileSync24 } from "fs";
+import { readFileSync as readFileSync27 } from "fs";
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -10280,7 +10418,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = readFileSync24(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = readFileSync27(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
@@ -10300,7 +10438,7 @@ import { readWorkflowState, SCM_STATES } from "@databricks-solutions/lakebase-sc
 
 // consort/smells/reflection.ts
 init_esm_shims();
-import { existsSync as existsSync26, readFileSync as readFileSync26, writeFileSync as writeFileSync15, mkdirSync as mkdirSync13, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync29, readFileSync as readFileSync29, writeFileSync as writeFileSync15, mkdirSync as mkdirSync13, rmSync as rmSync6 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect",
@@ -10309,9 +10447,9 @@ var SMELL_FOR_OWNER = {
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
-  if (!existsSync26(p)) return void 0;
+  if (!existsSync29(p)) return void 0;
   try {
-    return JSON.parse(readFileSync26(p, "utf8"));
+    return JSON.parse(readFileSync29(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -10324,115 +10462,10 @@ function reflectionVerdictWritten(consortDir, feature, story) {
 }
 var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
-// consort/smells/testlist-conformance.ts
-init_esm_shims();
-import { existsSync as existsSync27, readFileSync as readFileSync27, readdirSync as readdirSync15 } from "fs";
-function storyAcLayers(consortDir, featureId, story) {
-  const acLayerById = {};
-  const dir = acsDir(consortDir, featureId, story);
-  if (existsSync27(dir)) {
-    for (const f of readdirSync15(dir)) {
-      if (!f.endsWith(".json")) continue;
-      try {
-        const layer = JSON.parse(readFileSync27(`${dir}/${f}`, "utf8")).layer;
-        if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
-      } catch {
-      }
-    }
-  }
-  return acLayerById;
-}
-function declaredApiEndpoints(consortDir, featureId, story) {
-  const texts = [];
-  for (const p of [architectureJson(consortDir, featureId), featureSpecJson(consortDir, featureId)]) {
-    try {
-      if (existsSync27(p)) texts.push(readFileSync27(p, "utf8"));
-    } catch {
-    }
-  }
-  const dir = acsDir(consortDir, featureId, story);
-  try {
-    if (existsSync27(dir)) {
-      for (const f of readdirSync15(dir)) if (f.endsWith(".json")) texts.push(readFileSync27(`${dir}/${f}`, "utf8"));
-    }
-  } catch {
-  }
-  const toks = /* @__PURE__ */ new Set();
-  for (const t of texts) for (const e of extractApiEndpoints(t)) toks.add(e);
-  return [...toks];
-}
-function testlistConformanceViolations(consortDir, featureId, story) {
-  const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync27(tlPath)) return null;
-  let testListJson;
-  try {
-    testListJson = readFileSync27(tlPath, "utf8");
-  } catch {
-    return null;
-  }
-  return testlistConformanceForContent(consortDir, featureId, story, testListJson);
-}
-function testlistConformanceForContent(consortDir, featureId, story, testListJson) {
-  const acLayerById = storyAcLayers(consortDir, featureId, story);
-  let dbDesign;
-  try {
-    const p = dbDesignJson(consortDir, featureId);
-    if (existsSync27(p)) dbDesign = readFileSync27(p, "utf8");
-  } catch {
-  }
-  let archJson;
-  try {
-    const p = architectureJson(consortDir, featureId);
-    if (existsSync27(p)) archJson = readFileSync27(p, "utf8");
-  } catch {
-  }
-  const violations = [];
-  const acIds = /* @__PURE__ */ new Set();
-  for (const r of [
-    checkClientKindLayerCoherence(testListJson, acLayerById),
-    checkJsdomBrowserAssertion(testListJson),
-    checkTestlistWholeTableAggregate(testListJson),
-    checkTestlistFixedKeyE2e(testListJson, acLayerById),
-    checkTestlistScenarioFileCoherence(testListJson),
-    checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
-    checkTestlistE2eSpecSuffix(testListJson),
-    checkTestlistComponentScenarioFile(testListJson),
-    checkTestlistMigrationRevision(testListJson),
-    checkSchemaChangeOrphan(testListJson, dbDesign),
-    // A migration-reversibility test must carry the schema_change_id it exercises, so the orphan
-    // check above can reconcile it against the DBA ledger (else a prose-asserted migration for an
-    // un-planned change slips to the semantic reflect — the F1/S2 history).
-    checkMigrationTestSchemaChangeTag(testListJson, dbDesign),
-    // A parent-aware schema-diff test for THIS story must assert only this story's own schema delta —
-    // a column a PRIOR story added/dropped already rides on the parent the diff compares against, so
-    // asserting it as added/removed here is unsatisfiable. Deterministic over the DBA ledger's columns
-    // + owning story; shifts the catch to the test-strategist's in-turn self-check so the design lane
-    // self-corrects instead of the Navigator bouncing it at GREEN.
-    checkSchemaDiffCrossStoryColumns(testListJson, dbDesign, story),
-    // Story-scoped NFR fitness-coverage (the pre-reflect complement to the feature-wide
-    // fitness*CoverageReason at the test_list gate): a product NFR whose applies_to is THIS
-    // story needs >=1 nfr_id-tagged item in this story's list. onlyStory scoping keeps a
-    // feature-level or sibling-story NFR from false-flagging before its story is designed.
-    ...archJson !== void 0 ? [
-      checkFitnessSingularCoverage(testListJson, archJson, { onlyStory: story }),
-      checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story })
-    ] : []
-  ]) {
-    if (!r.ok) {
-      violations.push(...r.violations);
-      for (const id of r.acIds ?? []) acIds.add(id);
-    }
-  }
-  return violations.length === 0 ? null : { reason: violations.join("; "), acIds: [...acIds] };
-}
-function testListConforms(consortDir, featureId, story) {
-  return testlistConformanceViolations(consortDir, featureId, story) === null;
-}
-
 // consort/smells/ia-conformance.ts
 init_esm_shims();
-import { existsSync as existsSync28, readFileSync as readFileSync28, readdirSync as readdirSync16 } from "fs";
-import { join as join24 } from "path";
+import { existsSync as existsSync30, readFileSync as readFileSync30, readdirSync as readdirSync18 } from "fs";
+import { join as join25 } from "path";
 function iaNamesSeam(iaMarkdown, seam) {
   const esc = seam.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(?<![\\w-])${esc}(?![\\w-])`).test(iaMarkdown);
@@ -10440,11 +10473,11 @@ function iaNamesSeam(iaMarkdown, seam) {
 function storyUiSeams(consortDir, featureId, story) {
   const out = [];
   const dir = acsDir(consortDir, featureId, story);
-  if (!existsSync28(dir)) return out;
-  for (const f of readdirSync16(dir)) {
+  if (!existsSync30(dir)) return out;
+  for (const f of readdirSync18(dir)) {
     if (!f.endsWith(".json")) continue;
     try {
-      const ac = JSON.parse(readFileSync28(join24(dir, f), "utf8"));
+      const ac = JSON.parse(readFileSync30(join25(dir, f), "utf8"));
       const seams = Array.isArray(ac.ui_seams) ? ac.ui_seams.filter((s) => typeof s === "string" && s.length > 0) : [];
       if (seams.length > 0) out.push({ id: typeof ac.id === "string" ? ac.id : f.replace(/\.json$/, ""), seams });
     } catch {
@@ -10454,12 +10487,12 @@ function storyUiSeams(consortDir, featureId, story) {
 }
 function iaConformanceViolations(consortDir, featureId, story) {
   const iaPath = iaMd(consortDir);
-  if (!existsSync28(iaPath)) return null;
+  if (!existsSync30(iaPath)) return null;
   const acs = storyUiSeams(consortDir, featureId, story);
   if (acs.length === 0) return null;
   let iaMarkdown;
   try {
-    iaMarkdown = readFileSync28(iaPath, "utf8");
+    iaMarkdown = readFileSync30(iaPath, "utf8");
   } catch {
     return null;
   }
@@ -10482,12 +10515,12 @@ function iaConforms(consortDir, featureId, story) {
 
 // consort/smells/reconcile.ts
 init_esm_shims();
-import { existsSync as existsSync29, readFileSync as readFileSync29, writeFileSync as writeFileSync16, mkdirSync as mkdirSync14, rmSync as rmSync7 } from "fs";
+import { existsSync as existsSync31, readFileSync as readFileSync31, writeFileSync as writeFileSync16, mkdirSync as mkdirSync14, rmSync as rmSync7 } from "fs";
 function readReconcileVerdict(consortDir, feature) {
   const p = reconcileVerdictJson(consortDir, feature);
-  if (!existsSync29(p)) return void 0;
+  if (!existsSync31(p)) return void 0;
   try {
-    return JSON.parse(readFileSync29(p, "utf8"));
+    return JSON.parse(readFileSync31(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -10500,15 +10533,15 @@ function reconcilePassed(consortDir, feature) {
 
 // consort/architecture/architecture-canon.ts
 init_esm_shims();
-import { existsSync as existsSync30, readFileSync as readFileSync30, writeFileSync as writeFileSync17, mkdirSync as mkdirSync15, readdirSync as readdirSync17 } from "fs";
+import { existsSync as existsSync32, readFileSync as readFileSync32, writeFileSync as writeFileSync17, mkdirSync as mkdirSync15, readdirSync as readdirSync19 } from "fs";
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
 function readCanon(consortDir) {
   const f = architectureCanonJson(consortDir);
-  if (!existsSync30(f)) return void 0;
+  if (!existsSync32(f)) return void 0;
   try {
-    return JSON.parse(readFileSync30(f, "utf8"));
+    return JSON.parse(readFileSync32(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -10545,7 +10578,7 @@ function architectNovelty(canon, storyAcs, storyArchitectureJsonContent) {
 
 // consort/test-list/fan-out-plan.ts
 init_esm_shims();
-import { join as join25 } from "path";
+import { join as join26 } from "path";
 
 // consort/test-list/test-analyst-catalogue.ts
 init_esm_shims();
@@ -10596,7 +10629,7 @@ var TEST_ANALYST_CATALOGUE = {
 };
 
 // consort/test-list/fan-out-plan.ts
-var analystOrderedJson = (consortDir, f, s) => join25(storyDir(consortDir, f, s), "analyst-ordered.json");
+var analystOrderedJson = (consortDir, f, s) => join26(storyDir(consortDir, f, s), "analyst-ordered.json");
 
 // consort/orchestrator/state/orchestrator-probe.ts
 function storyRequiresE2e(consortDir, featureId, story) {
@@ -10985,7 +11018,7 @@ init_esm_shims();
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync32, readFileSync as readFileSync32, writeFileSync as writeFileSync18, mkdirSync as mkdirSync16, readdirSync as readdirSync19, statSync as statSync11, rmSync as rmSync8 } from "fs";
+import { existsSync as existsSync34, readFileSync as readFileSync34, writeFileSync as writeFileSync18, mkdirSync as mkdirSync16, readdirSync as readdirSync21, statSync as statSync12, rmSync as rmSync8 } from "fs";
 
 // consort/gates/gates-lock.ts
 init_esm_shims();
@@ -10999,8 +11032,8 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!existsSync32(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync32(p, "utf8"));
+  if (!existsSync34(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync34(p, "utf8"));
 }
 
 // consort/orchestrator/status/feature-status.ts
@@ -11029,35 +11062,35 @@ function deriveFeaturePhase(stories) {
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_esm_shims();
 import * as fs19 from "fs";
-import { dirname as dirname25, join as join49 } from "path";
+import { dirname as dirname26, join as join49 } from "path";
 
 // consort/orchestrator/drive/executor-dispatch.ts
 init_esm_shims();
 import * as fs16 from "fs";
-import { join as join42, relative as relative6 } from "path";
+import { join as join43, relative as relative7 } from "path";
 
 // consort/orchestrator/turns/step-executor.ts
 init_esm_shims();
-import { existsSync as existsSync33 } from "fs";
-import { join as join27 } from "path";
+import { existsSync as existsSync35 } from "fs";
+import { join as join28 } from "path";
 
 // consort/orchestrator/provisioning/channels.ts
 init_esm_shims();
 
 // consort/orchestrator/steps/step.ts
 init_esm_shims();
-import { join as join29 } from "path";
-import { existsSync as existsSync35 } from "fs";
+import { join as join30 } from "path";
+import { existsSync as existsSync37 } from "fs";
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
 init_esm_shims();
-import { readFileSync as readFileSync33, existsSync as existsSync34, statSync as statSync12, readdirSync as readdirSync20 } from "fs";
-import { join as join28 } from "path";
+import { readFileSync as readFileSync35, existsSync as existsSync36, statSync as statSync13, readdirSync as readdirSync22 } from "fs";
+import { join as join29 } from "path";
 function conformsTo(artifactName) {
   return (producedPath) => {
     let content;
     try {
-      content = readFileSync33(producedPath, "utf8");
+      content = readFileSync35(producedPath, "utf8");
     } catch {
       return { ok: false, violations: [`${artifactName} not readable at ${producedPath}`] };
     }
@@ -11079,8 +11112,8 @@ init_esm_shims();
 
 // consort/orchestrator/agents/agent-catalogue.ts
 init_esm_shims();
-import { join as join40 } from "path";
-import { readFileSync as readFileSync42, writeFileSync as writeFileSync26, existsSync as existsSync45 } from "fs";
+import { join as join41 } from "path";
+import { readFileSync as readFileSync44, writeFileSync as writeFileSync26, existsSync as existsSync47 } from "fs";
 
 // consort/orchestrator/agents/claude-step-agent.ts
 init_esm_shims();
@@ -11115,8 +11148,8 @@ import { spawnSync as spawnSync2 } from "child_process";
 
 // consort/config/kit-ref.ts
 init_esm_shims();
-import { existsSync as existsSync38, readFileSync as readFileSync36, writeFileSync as writeFileSync20, mkdirSync as mkdirSync19 } from "fs";
-import { dirname as dirname15, join as join32 } from "path";
+import { existsSync as existsSync40, readFileSync as readFileSync38, writeFileSync as writeFileSync20, mkdirSync as mkdirSync19 } from "fs";
+import { dirname as dirname17, join as join33 } from "path";
 
 // consort/lakebase/update-commands.ts
 init_esm_shims();
@@ -11126,8 +11159,8 @@ import * as path8 from "path";
 // consort/lakebase/kit-ref-pin.ts
 init_esm_shims();
 import { fileURLToPath as fileURLToPath3 } from "url";
-import { dirname as dirname17, join as join34, resolve as resolve2 } from "path";
-import { readFileSync as readFileSync38, existsSync as existsSync40, mkdirSync as mkdirSync21, writeFileSync as writeFileSync22 } from "fs";
+import { dirname as dirname19, join as join35, resolve as resolve2 } from "path";
+import { readFileSync as readFileSync40, existsSync as existsSync42, mkdirSync as mkdirSync21, writeFileSync as writeFileSync22 } from "fs";
 
 // consort/lakebase/upgrade.ts
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -11169,8 +11202,8 @@ import { readWorkflowState as readWorkflowState2 } from "@databricks-solutions/l
 
 // consort/setup/stray-artifact-recovery.ts
 init_esm_shims();
-import { existsSync as existsSync43, mkdirSync as mkdirSync24, cpSync as cpSync3, rmSync as rmSync10, readdirSync as readdirSync26, statSync as statSync14 } from "fs";
-import { join as join37, dirname as dirname20, basename as basename4 } from "path";
+import { existsSync as existsSync45, mkdirSync as mkdirSync24, cpSync as cpSync3, rmSync as rmSync10, readdirSync as readdirSync28, statSync as statSync15 } from "fs";
+import { join as join38, dirname as dirname22, basename as basename4 } from "path";
 
 // consort/orchestrator/turns/turn-monitor.ts
 init_esm_shims();
@@ -11183,8 +11216,8 @@ var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e
 
 // consort/orchestrator/agents/mock-replay-agent.ts
 init_esm_shims();
-import { readFileSync as readFileSync41, writeFileSync as writeFileSync25, existsSync as existsSync44, mkdirSync as mkdirSync26, cpSync as cpSync4, readdirSync as readdirSync28, statSync as statSync16 } from "fs";
-import { join as join39, dirname as dirname21, relative as relative4, sep } from "path";
+import { readFileSync as readFileSync43, writeFileSync as writeFileSync25, existsSync as existsSync46, mkdirSync as mkdirSync26, cpSync as cpSync4, readdirSync as readdirSync30, statSync as statSync17 } from "fs";
+import { join as join40, dirname as dirname23, relative as relative5, sep } from "path";
 
 // consort/orchestrator/agents/replay-recorder-wrapper.ts
 init_esm_shims();
@@ -11195,29 +11228,29 @@ import { createHash as createHash4 } from "crypto";
 import {
   appendFileSync,
   cpSync as cpSync5,
-  existsSync as existsSync46,
+  existsSync as existsSync48,
   mkdirSync as mkdirSync27,
-  readFileSync as readFileSync43,
-  readdirSync as readdirSync29,
+  readFileSync as readFileSync45,
+  readdirSync as readdirSync31,
   rmSync as rmSync11,
-  statSync as statSync17,
+  statSync as statSync18,
   writeFileSync as writeFileSync27
 } from "fs";
-import { dirname as dirname22, join as join41, relative as relative5 } from "path";
+import { dirname as dirname24, join as join42, relative as relative6 } from "path";
 
 // consort/pipeline/record-build.ts
 init_esm_shims();
 
 // consort/orchestrator/steps/assert-route-satisfiable.ts
 init_esm_shims();
-import { existsSync as existsSync48 } from "fs";
-import { join as join43 } from "path";
+import { existsSync as existsSync50 } from "fs";
+import { join as join44 } from "path";
 
 // consort/experiment/ac-lane-live.ts
 init_esm_shims();
 import { spawn as spawn3, execFileSync as execFileSync9 } from "child_process";
-import { join as join46 } from "path";
-import { appendFileSync as appendFileSync2, createWriteStream, mkdirSync as mkdirSync28, writeFileSync as writeFileSync29, existsSync as existsSync50, cpSync as cpSync7, rmSync as rmSync13 } from "fs";
+import { join as join47 } from "path";
+import { appendFileSync as appendFileSync2, createWriteStream, mkdirSync as mkdirSync28, writeFileSync as writeFileSync29, existsSync as existsSync52, cpSync as cpSync7, rmSync as rmSync13 } from "fs";
 
 // consort/experiment/ac-lane-coordinator.ts
 init_esm_shims();
@@ -11228,50 +11261,22 @@ init_esm_shims();
 // consort/experiment/ac-lane.ts
 init_esm_shims();
 import { execFileSync as execFileSync7 } from "child_process";
-import { mkdtempSync, rmSync as rmSync12, existsSync as existsSync49, cpSync as cpSync6 } from "fs";
+import { mkdtempSync, rmSync as rmSync12, existsSync as existsSync51, cpSync as cpSync6 } from "fs";
 import { tmpdir } from "os";
-import { join as join44 } from "path";
+import { join as join45 } from "path";
 import { createBranch as createBranch2, deleteBranch as deleteBranch2 } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // consort/experiment/ac-lane-merge.ts
 init_esm_shims();
 import { execFileSync as execFileSync8 } from "child_process";
 import { writeFileSync as writeFileSync28 } from "fs";
-import { join as join45 } from "path";
-
-// consort/session/response-formatter.ts
-init_esm_shims();
-import { existsSync as existsSync52, readFileSync as readFileSync46, readdirSync as readdirSync31 } from "fs";
-import { dirname as dirname23 } from "path";
-
-// consort/architecture/e2e-route-adherence.ts
-init_esm_shims();
-import { existsSync as existsSync51, readFileSync as readFileSync45, readdirSync as readdirSync30, statSync as statSync19 } from "fs";
-import { join as join47, relative as relative7 } from "path";
-var CLIENT_SRC = join47("client", "src");
-var E2E_DIR = join47("client", "tests", "e2e");
-
-// consort/session/response-formatter.ts
-function designGuideConformance(consortDir) {
-  const file = designGuideJson(consortDir);
-  if (!existsSync52(file)) {
-    return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
-  }
-  let content;
-  try {
-    content = readFileSync46(file, "utf8");
-  } catch (e) {
-    return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
-  }
-  const r = checkArtifactConformance(canonicalArtifactName(file), content);
-  return r.ok ? { ok: true } : { ok: false, problem: r.violations.join("; ") };
-}
+import { join as join46 } from "path";
 
 // consort/orchestrator/build/build-context.ts
 init_esm_shims();
 import { execSync as execSync2 } from "child_process";
 import * as fs17 from "fs";
-import { dirname as dirname24, join as join48 } from "path";
+import { dirname as dirname25, join as join48 } from "path";
 
 // consort/orchestrator/build/preconditions.ts
 init_esm_shims();
@@ -11383,7 +11388,7 @@ function buildNextOptions(action, ctx) {
         {
           id: "intake.approve",
           title: "Approve the project intake",
-          hil_prompt: "The Product Owner drafted product-overview.md / nfrs.md / design-brief.md from your answers. REVIEW them (open + read), EDIT anything that's off, or ask for changes (edit .consort/intake/answers.md and re-run to redraft). Approve to hand the intake to the Spec Author, who proposes the sprint from it?",
+          hil_prompt: "The Product Owner drafted product-overview.md / nfrs.md" + (ctx.uiTrack ? " / design-brief.md" : "") + " from your answers. REVIEW them (open + read), EDIT anything that's off, or ask for changes (edit .consort/intake/answers.md and re-run to redraft). " + (ctx.uiTrack ? "Approve to hand off: next the UX Designer converts the design-brief into UX assets \u2014 design-guide.json (the project style system) + ia.md (the information-architecture skeleton) \u2014 and THEN the Spec Author proposes the sprint from the intake." : "Approve to hand the intake to the Spec Author, who proposes the sprint from it?"),
           kind: "gate",
           enact: gateEnact,
           note: "To request changes instead of approving: edit the drafted docs directly, or edit .consort/intake/answers.md and resume so the PO redrafts. Approve only once they reflect your intent."
@@ -11576,7 +11581,7 @@ function buildNextSnapshot(scope, state, ctx, transition) {
     blockers: blockersOf(state)
   };
   const primary = { kind: action.kind, describe: describeAction(action, { featureId: ctx.featureId }) };
-  const options = buildNextOptions(action, ctx);
+  const options = buildNextOptions(action, { ...ctx, uiTrack: ctx.uiTrack ?? state.uiTrack });
   const awaiting_human = options.some((o) => o.kind === "gate" || o.kind === "action" && o.id !== "resume");
   return {
     scope,

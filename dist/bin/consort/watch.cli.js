@@ -312,8 +312,27 @@ function findEditorCmd(env = process.env) {
   }
   return null;
 }
+function hasEditorAncestor(startPpid = process.ppid) {
+  try {
+    let pid = startPpid;
+    for (let i = 0; i < 24 && pid > 1; i++) {
+      const r = spawnSync("ps", ["-o", "ppid=,comm=", "-p", String(pid)], { encoding: "utf8" });
+      const line = (r.stdout ?? "").trim();
+      const m = line.match(/^\s*(\d+)\s+(.*)$/);
+      if (!m) break;
+      if (/cursor|visual studio code|code helper|electron/i.test(m[2])) return true;
+      pid = parseInt(m[1], 10);
+    }
+  } catch {
+  }
+  return false;
+}
 function isInsideEditor(env = process.env) {
-  return /vscode|cursor/i.test(env.TERM_PROGRAM ?? "") || Boolean(env.CURSOR_TRACE_ID) || Boolean(env.VSCODE_PID);
+  if (/vscode|cursor/i.test(env.TERM_PROGRAM ?? "") || Boolean(env.CURSOR_TRACE_ID) || Boolean(env.VSCODE_PID) || Boolean(env.VSCODE_GIT_IPC_HANDLE)) {
+    return true;
+  }
+  if (Boolean(env.TMUX) || env.TERM_PROGRAM === "tmux") return hasEditorAncestor();
+  return false;
 }
 function openRoleArtifacts(consortDir, role, opts = {}) {
   const env = opts.env ?? process.env;

@@ -10,8 +10,10 @@
 // null/false, never an error. It is a CACHE the session reads once, not the source of
 // truth: `preflight_at` is stamped so the session re-derives (git + consort-next) if
 // the blob is stale or before any mutating action. Network/auth-dependent checks (the
-// GitHub newer-version check) and the editor-extension probe are deliberately left to
-// the session - a preflight must never gate startup on the network.
+// GitHub newer-version / extension UPGRADE check) are deliberately left to the session - a
+// preflight must never gate startup on the network. The extension INSTALLED probe (a LOCAL
+// `--list-extensions` spawn, no network, works through tmux) IS done here so the session never
+// false-offers to INSTALL an extension that is already installed (the live Cursor+tmux miss).
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -21,6 +23,7 @@ import { join } from "node:path";
 import { kitVersion } from "../config/kit-bin.js";
 import { resolveConsortDir, featuresDir, featureDir } from "../config/consort-paths.js";
 import { readStoredConfig } from "../telemetry/home-config.js";
+import { isInsideEditor, extensionInstalled } from "../orchestrator/open/open-in-editor.js";
 
 export interface PreflightBlob {
   /** ISO timestamp the blob was composed - the session treats an old blob as stale. */
@@ -77,6 +80,10 @@ export interface PreflightBlob {
      *  `"move-to-editor"` is owed ONLY when not already inside an IDE terminal (nothing to
      *  move otherwise). A non-empty list the session skipped past is the defect. */
     offers_pending: string[];
+    /** DETERMINISTIC extension-installed fact (local `--list-extensions` probe, no network) so the
+     *  session never false-offers to INSTALL an already-installed extension. `version` is the
+     *  installed version when present; the latest-release / UPGRADE decision stays agent-side. */
+    extension: { installed: boolean; version?: string };
   };
   /** Non-fatal issues collected while composing (a source that failed to read). */
   warnings: string[];
@@ -98,15 +105,6 @@ function firstProjectMarker(env: NodeJS.ProcessEnv, home: string): string {
   return join(base, "consort", "first-project-offered");
 }
 
-/** True when running inside a VS Code / Cursor integrated terminal (best-effort env sniff). */
-function insideEditor(env: NodeJS.ProcessEnv): boolean {
-  return (
-    env.TERM_PROGRAM === "vscode" ||
-    typeof env.VSCODE_GIT_IPC_HANDLE === "string" ||
-    typeof env.CURSOR_TRACE_ID === "string" ||
-    typeof env.VSCODE_PID === "string"
-  );
-}
 
 /** Resolve the in-flight feature when the drive has not written next.json yet (a freshly
  *  cloned / rehydrated project). Branch-first: a `feature-<slug>` / `feature/<slug>` branch
@@ -241,7 +239,8 @@ export function buildPreflight(projectDir: string = process.cwd(), deps: Preflig
   //    the terminal move only when external, then the extension). Derived purely from the
   //    editor sniff — no spawn, no network — so the session clears a concrete list rather
   //    than relying on remembering to run the prose step. ──
-  const inside = insideEditor(env);
+  const inside = isInsideEditor(env);
+  const extension = extensionInstalled(env);
   const offers_pending = ["dashboard", ...(inside ? [] : ["move-to-editor"]), "extension"];
 
   return {
@@ -252,7 +251,7 @@ export function buildPreflight(projectDir: string = process.cwd(), deps: Preflig
     scm,
     first_project: { offered_before: offeredBefore },
     env: { inside_editor: inside },
-    tooling: { offers_pending },
+    tooling: { offers_pending, extension },
     warnings,
   };
 }

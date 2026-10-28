@@ -62,11 +62,57 @@ export function findEditorCmd(env: NodeJS.ProcessEnv = process.env): string | nu
   return null;
 }
 
+/** Walk the process ancestry (bounded) for a Cursor/Code/Electron editor parent. The fallback
+ *  when the editor env markers are STRIPPED — the tmux case: tmux rewrites TERM_PROGRAM=tmux and
+ *  does NOT propagate CURSOR_TRACE_ID/VSCODE_PID into its panes, so the env sniff alone wrongly
+ *  reads "external" for a terminal that is in fact inside the editor (the live Cursor+tmux miss).
+ *  Best-effort: any ps error / non-macos => false (no worse than the old env-only sniff). */
+function hasEditorAncestor(startPpid: number = process.ppid): boolean {
+  try {
+    let pid = startPpid;
+    for (let i = 0; i < 24 && pid > 1; i++) {
+      const r = spawnSync("ps", ["-o", "ppid=,comm=", "-p", String(pid)], { encoding: "utf8" });
+      const line = (r.stdout ?? "").trim();
+      const m = line.match(/^\s*(\d+)\s+(.*)$/);
+      if (!m) break;
+      if (/cursor|visual studio code|code helper|electron/i.test(m[2])) return true;
+      pid = parseInt(m[1], 10);
+    }
+  } catch {
+    /* best-effort: ps unavailable / non-macos */
+  }
+  return false;
+}
+
 /** True when the process runs INSIDE Cursor/Code's integrated terminal – the signal
  *  that the user is actually viewing this project in the editor. Both Cursor and VS
- *  Code set TERM_PROGRAM=vscode; a Cursor-specific marker also counts. */
+ *  Code set TERM_PROGRAM=vscode; a Cursor-specific marker also counts. Under tmux the
+ *  env markers are stripped (TERM_PROGRAM=tmux, no CURSOR_TRACE_ID), so fall back to a
+ *  process-ancestry probe rather than falsely concluding "external". */
 export function isInsideEditor(env: NodeJS.ProcessEnv = process.env): boolean {
-  return /vscode|cursor/i.test(env.TERM_PROGRAM ?? "") || Boolean(env.CURSOR_TRACE_ID) || Boolean(env.VSCODE_PID);
+  if (/vscode|cursor/i.test(env.TERM_PROGRAM ?? "") || Boolean(env.CURSOR_TRACE_ID) || Boolean(env.VSCODE_PID) || Boolean(env.VSCODE_GIT_IPC_HANDLE)) {
+    return true;
+  }
+  if (Boolean(env.TMUX) || env.TERM_PROGRAM === "tmux") return hasEditorAncestor();
+  return false;
+}
+
+/** DETERMINISTIC extension-installed probe (reverses start.md's "left to the agent" decision for the
+ *  INSTALL check): find the editor CLI (PATH shim or app bundle — works THROUGH tmux, unlike the env
+ *  markers) and read its installed extensions. Returns the installed Lakebase SCM extension version, or
+ *  installed:false. A local spawn, NO network (the latest-release/upgrade check stays agent-side). This
+ *  is what lets `/start` stop offering to INSTALL an extension that is already installed (the live
+ *  Cursor+tmux false-offer). */
+export function extensionInstalled(env: NodeJS.ProcessEnv = process.env): { installed: boolean; version?: string } {
+  const cmd = findEditorCmd(env);
+  if (!cmd) return { installed: false };
+  try {
+    const r = spawnSync(cmd, ["--list-extensions", "--show-versions"], { encoding: "utf8" });
+    const m = (r.stdout ?? "").match(/^kevin-hartman\.lakebase-scm-extension@(.+)$/m);
+    return m ? { installed: true, version: m[1].trim() } : { installed: false };
+  } catch {
+    return { installed: false };
+  }
 }
 
 export interface OpenResult {

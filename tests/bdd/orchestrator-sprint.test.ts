@@ -131,21 +131,33 @@ describe("deriveSprintPlanningState", () => {
     expect(nextTransition(s)).toEqual({ kind: "invoke-role", role: "product-owner", mode: "intake" });
   });
 
-  it("intake DRAFTED but NOT approved => the drive PARKS at the intake gate (review before propose)", () => {
-    writeFileSync(join(tdd, "product-overview.md"), "# Overview\n\nA product.\n");
-    writeFileSync(join(tdd, "nfrs.md"), "# NFRs\n\n## Required\n- R1 fast\n");
-    const s = deriveSprintPlanningState(tdd, SPRINT);
+  // These two use a NON-UI project (controlled proj/.consort + uiTrack:false config) so the gate and
+  // propose transitions are tested without the UI-track ux-designer establish preempting them (on a UI
+  // project the establish fires between intake and the gate — covered in the uiTrack describe below).
+  function nonUiProject(withApproval: boolean): string {
+    const proj = mkdtempSync(join(tmpdir(), "nonui-"));
+    const cd = join(proj, ".consort");
+    mkdirSync(cd, { recursive: true });
+    mkdirSync(join(proj, ".lakebase"), { recursive: true });
+    writeFileSync(join(proj, ".lakebase", "consort-config.json"), JSON.stringify({ project: { uiTrack: false } }));
+    writeFileSync(join(cd, "product-overview.md"), "# Overview\n\nA product.\n");
+    writeFileSync(join(cd, "nfrs.md"), "# NFRs\n\n## Required\n- R1 fast\n");
+    if (withApproval) {
+      mkdirSync(join(cd, "intake"), { recursive: true });
+      writeFileSync(join(cd, "intake", "approved"), "approved\n"); // the intake gate's approval marker
+    }
+    return cd;
+  }
+
+  it("intake DRAFTED but NOT approved (non-UI) => the drive PARKS at the intake gate (review before propose)", () => {
+    const s = deriveSprintPlanningState(nonUiProject(false), SPRINT);
     expect(s.planning?.intakeReady).toBe(true);
     expect(s.planning?.intakeApproved).toBe(false); // no approval marker yet
     expect(nextTransition(s)).toEqual({ kind: "approve-intake-gate" });
   });
 
-  it("intake drafted AND approved (marker present) => past the intake gate to propose", () => {
-    writeFileSync(join(tdd, "product-overview.md"), "# Overview\n\nA product.\n");
-    writeFileSync(join(tdd, "nfrs.md"), "# NFRs\n\n## Required\n- R1 fast\n");
-    mkdirSync(join(tdd, "intake"), { recursive: true });
-    writeFileSync(join(tdd, "intake", "approved"), "approved\n"); // the intake gate's approval marker
-    const s = deriveSprintPlanningState(tdd, SPRINT);
+  it("intake drafted AND approved (non-UI) => past the intake gate to propose", () => {
+    const s = deriveSprintPlanningState(nonUiProject(true), SPRINT);
     expect(s.planning?.intakeReady).toBe(true);
     expect(s.planning?.intakeApproved).toBe(true);
     expect(nextTransition(s)).toEqual({ kind: "invoke-role", role: "spec-author", mode: "propose" });
@@ -422,5 +434,39 @@ describe("runSprint (pure over SprintEffects)", () => {
     expect(result.pendingFeature).toBe("F1-a");
     // Stops on F1-a's gate; never advances to F2-b.
     expect(calls).toEqual(["claim:F1-a", "drive:F1-a"]);
+  });
+});
+
+describe("deriveSprintPlanningState threads uiTrack + designGuideReady (planning-lane UX establish routing)", () => {
+  // REGRESSION (the dead planning-lane establish): the sprint/planning state never set state.uiTrack,
+  // so orchestrator-drive `:332` (intakeReady && uiTrack && !designGuideReady) was ALWAYS false and the
+  // ux-designer establish never fired on UI projects — the drive went PO intake -> intake gate ->
+  // spec-author, skipping the establish (verified live on stockflow-demo, uiTrack:true in config).
+  // deriveSprintPlanningState now resolves BOTH from its own consortDir so no caller can omit them.
+  function uiProject(uiTrack: boolean): string {
+    const proj = mkdtempSync(join(tmpdir(), "planproj-"));
+    const consortDir = join(proj, ".consort");
+    mkdirSync(consortDir, { recursive: true });
+    mkdirSync(join(proj, ".lakebase"), { recursive: true });
+    writeFileSync(join(proj, ".lakebase", "consort-config.json"), JSON.stringify({ project: { uiTrack } }));
+    // intake authored (intakeReady) but NOT approved, no design-guide yet.
+    writeFileSync(join(consortDir, "product-overview.md"), "# Overview\n");
+    writeFileSync(join(consortDir, "nfrs.md"), "# NFRs\n");
+    return consortDir;
+  }
+
+  it("UI track (uiTrack:true) + intake ready + no design-guide => state carries uiTrack & routes the ux-designer ESTABLISH (before the gate)", () => {
+    const consortDir = uiProject(true);
+    const s = deriveSprintPlanningState(consortDir, SPRINT);
+    expect(s.uiTrack).toBe(true);
+    expect(s.designGuideReady).toBe(false);
+    expect(nextTransition(s)).toEqual({ kind: "invoke-role", role: "ux-designer", mode: "establish" });
+  });
+
+  it("non-UI (uiTrack:false) => establish is NOT routed; parks at the intake gate", () => {
+    const consortDir = uiProject(false);
+    const s = deriveSprintPlanningState(consortDir, SPRINT);
+    expect(s.uiTrack).toBe(false);
+    expect(nextTransition(s)).toEqual({ kind: "approve-intake-gate" });
   });
 });

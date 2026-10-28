@@ -17378,7 +17378,7 @@ function buildNextOptions(action, ctx) {
         {
           id: "intake.approve",
           title: "Approve the project intake",
-          hil_prompt: "The Product Owner drafted product-overview.md / nfrs.md / design-brief.md from your answers. REVIEW them (open + read), EDIT anything that's off, or ask for changes (edit .consort/intake/answers.md and re-run to redraft). Approve to hand the intake to the Spec Author, who proposes the sprint from it?",
+          hil_prompt: "The Product Owner drafted product-overview.md / nfrs.md" + (ctx.uiTrack ? " / design-brief.md" : "") + " from your answers. REVIEW them (open + read), EDIT anything that's off, or ask for changes (edit .consort/intake/answers.md and re-run to redraft). " + (ctx.uiTrack ? "Approve to hand off: next the UX Designer converts the design-brief into UX assets \u2014 design-guide.json (the project style system) + ia.md (the information-architecture skeleton) \u2014 and THEN the Spec Author proposes the sprint from the intake." : "Approve to hand the intake to the Spec Author, who proposes the sprint from it?"),
           kind: "gate",
           enact: gateEnact,
           note: "To request changes instead of approving: edit the drafted docs directly, or edit .consort/intake/answers.md and resume so the PO redrafts. Approve only once they reflect your intent."
@@ -17571,7 +17571,7 @@ function buildNextSnapshot(scope, state, ctx, transition) {
     blockers: blockersOf(state)
   };
   const primary = { kind: action.kind, describe: describeAction(action, { featureId: ctx.featureId }) };
-  const options = buildNextOptions(action, ctx);
+  const options = buildNextOptions(action, { ...ctx, uiTrack: ctx.uiTrack ?? state.uiTrack });
   const awaiting_human = options.some((o) => o.kind === "gate" || o.kind === "action" && o.id !== "resume");
   return {
     scope,
@@ -17670,6 +17670,7 @@ function readSprintGates(sprint, opts = {}) {
 
 // consort/intake/orchestrator-sprint.ts
 import * as fs21 from "fs";
+import { dirname as dirname29 } from "path";
 function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
   const proposed = fs21.existsSync(featureProposalsMd(consortDir));
   const estimated = hasEstimates(consortDir);
@@ -17685,8 +17686,12 @@ function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
   } catch {
     gateApproved = false;
   }
+  const uiTrack = resolveConsortSettings({ projectDir: dirname29(consortDir) }).project.uiTrack;
+  const designGuideReady = designGuideConformance(consortDir).ok;
   return {
     phase: "planning",
+    uiTrack,
+    designGuideReady,
     planning: { intakeReady: intakeReadyOnDisk(consortDir), intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated, backlogCommitted, requestsAuthored, committedEstimated, gateApproved, skipSizing: opts.skipSizing ?? false },
     breakdownDone: false,
     storyOrder: [],
