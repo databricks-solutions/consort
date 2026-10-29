@@ -626,6 +626,43 @@ describe("batch /design does NOT bounce focus to a surfaced-but-unapproved spec 
   });
 });
 
+describe("a HITL gate the drive has STOPPED at (next.json open_gates) wins focus immediately — not after a timer", () => {
+  // The acceptance gate is a genuine HITL park the instant it is reached: the drive halts and writes
+  // next.json with the gate in `open_gates`. But its pre-acceptance deploy/verify logs a big driver
+  // test-run AFTER the gate.surfaced, so the carried last step is `b-green`. Keying the park only on a
+  // 15s idle timer left the board flashing `driver-green` until the timer elapsed. The drive's own
+  // stop-state (next.json `open_gates`) is authoritative and immediate — mirrors the real
+  // stockflow-demo-f2 acceptance park (gate surfaced, then a full deploy-verify driver run after it).
+  const ACCEPT: AgentLogEvent[] = [
+    ev("phase.start", { phase: "green", story: "S1", feature_id: "F1" }, { role: "driver" }),
+    ev("test.result", { status: "green" }, { role: "driver" }), // → carried last build step = b-green
+    ev("turn.usage", { phase: "green" }, { role: "driver" }), // close the driver turn → idle
+    ev("gate.surfaced", { gate: "acceptance", story: "S1" }, { role: "orchestrator" }), // unapproved
+    // deploy-verify runs AFTER the gate surfaces, then the drive STOPS to await acceptance:
+    ev("phase.start", { phase: "deploy" }, { role: "release-engineer" }),
+    ev("turn.usage", { phase: "deploy" }, { role: "release-engineer" }), // close the RE turn → idle
+    ev("deploy.verified", {}, { role: "release-engineer" }),
+    ev("phase.end", { phase: "deploy" }, { role: "release-engineer" }), // all agents idle now (parked)
+  ];
+  // next.json the drive wrote at the park: it is awaiting the human at the acceptance gate.
+  const parkedNext = { state: { open_gates: ["acceptance"] }, generated_at: "2026-10-28T09:00:00.000Z" } as SnapshotInputs["next"];
+
+  it("open_gates names the gate → gate wins NOW, even with the session still active (the b-green bug)", () => {
+    expect(fold(ACCEPT, snap({ next: parkedNext, sessionAgeMs: 0 })).focus).toEqual({ kind: "gate", gate: "acceptance" });
+  });
+
+  it("without the stop-state, an active session still carries the role step (open_gates is the signal)", () => {
+    // No next.json / nothing in open_gates + session active (< SESSION_ACTIVE_MS) → not treated as a
+    // park, so focus carries the last build step (b-green) rather than the gate. This isolates the
+    // open_gates stop-state as the thing that makes the gate win immediately in the test above.
+    expect(fold(ACCEPT, snap({ sessionAgeMs: 0 })).focus).toEqual({ kind: "step", lane: "build", step: "b-green" });
+  });
+
+  it("idle fallback still parks the gate when there is no stop-state", () => {
+    expect(fold(ACCEPT, snap({ sessionAgeMs: Infinity })).focus).toEqual({ kind: "gate", gate: "acceptance" });
+  });
+});
+
 describe("a parked gate lights the REVIEWED agent's bubble (not the orchestrator that surfaced it)", () => {
   // The orchestrator surfaces EVERY gate (gate.surfaced role=orchestrator), so keying the "waiting"
   // bubble off the surfacer alone always lit the orchestrator. The deploy/promote gates gate the

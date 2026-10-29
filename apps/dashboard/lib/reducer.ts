@@ -637,16 +637,27 @@ export function fold(
   // lights the node + orchestrator + transport WAITING together.
 
   // Is the run genuinely PARKED at the pending gate (vs. actively streaming past a just-surfaced one)?
-  // The purple gate — the "awaiting your decision" WAITING focus — is a LIVE-FRONTIER state: it wins
-  // focus only when the board is AT the live edge AND the drive has gone quiet (no event for
-  // SESSION_ACTIVE_MS, the same threshold the rest of the board uses for "live") with a pending gate
-  // and no agent working. A live run between turns stays BELOW that threshold (turns arrive every few
-  // seconds), so a surfaced gate is not a park until the drive actually stops. And a SCRUBBED-BACK
-  // board (!atLive) is replaying past work, never "awaiting a decision" now — so it never parks; it
-  // follows the lane progression (see the carry below), while the gate's own node still lights from
-  // `laneGate` when the playhead sits on its gate.surfaced frame.
+  // The purple gate — the "awaiting your decision" WAITING focus — is a LIVE-FRONTIER state (only at
+  // the live edge; a SCRUBBED-BACK board is replaying past work, never "awaiting a decision" now, so it
+  // never parks — it follows the lane progression via the carry below, while the gate's own node still
+  // lights from `laneGate` on its gate.surfaced frame). At the live edge the gate wins when there is a
+  // pending gate, no agent working, AND the run has actually STOPPED at it. Two signals say "stopped":
+  //   (a) the drive's own stop-state — `next.json` lists this gate in `open_gates`. This is the
+  //       AUTHORITATIVE, immediate signal: the drive only writes an open gate when it halts there, so
+  //       it fires the instant a HITL park is reached (e.g. the acceptance gate, whose deploy/verify
+  //       logs a big driver test-run AFTER the gate surfaces — the stale last step would otherwise mask
+  //       it as `b-green` until the timer below elapsed). It is NOT set mid-batch-`/design`, where the
+  //       drive surfaces each spec gate and streams on WITHOUT stopping (open_gates stays empty), so it
+  //       cannot reintroduce the between-turns flicker.
+  //   (b) fallback — the session has gone quiet for SESSION_ACTIVE_MS (no next.json / stale), the same
+  //       "is this live" threshold the rest of the board uses. A live run between turns stays below it.
   const sessionIdle = snap.sessionAgeMs >= SESSION_ACTIVE_MS;
-  const parkedAtGate = atLive && pendingGate !== null && !agents.some((a) => a.status === "working") && sessionIdle;
+  const nextOpenGates = snap.next?.state?.open_gates ?? [];
+  const parkedAtGate =
+    atLive &&
+    pendingGate !== null &&
+    !agents.some((a) => a.status === "working") &&
+    (nextOpenGates.includes(pendingGate) || sessionIdle);
   // The active role step to hold focus on while NOT parked, carried across the between-turn hand-offs
   // where laneCurrent blinks to null. Only the lanes the derived `lane` can name (deploy folds under
   // build for focus); null in complete/idle phases, where there is no running step to carry.
