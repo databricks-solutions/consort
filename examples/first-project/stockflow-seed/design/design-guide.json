@@ -32,9 +32,7 @@
     "brand": {
       "brand": "#FF3621",
       "brand-hover": "#EB1600",
-      "brand-light": "rgba(255,54,33,0.08)"
-    },
-    "navy": {
+      "brand-light": "rgba(255,54,33,0.08)",
       "navy-900": "#1B3139",
       "navy-700": "#1B5162",
       "navy-500": "#618794",
@@ -117,87 +115,74 @@
   "components": {
     "navbar": {
       "class": "navbar",
-      "notes": "navy-900 64px bar, 2px brand-red bottom border, --shadow-navbar; navbar__brand (navbar__icon + 'StockFlow') left, navbar__links right; navbar__link--active in brand red"
-    },
-    "app_icon": {
-      "class": "navbar__icon",
-      "notes": "warehouse.png at --icon-brand; also page__icon next to page titles and the favicon"
-    },
-    "favicon": {
-      "class": "favicon",
-      "notes": "index.html <link rel=icon href=/warehouse.png>"
+      "notes": "navy-900 bar, 64px, 2px brand-red bottom border; navbar__brand (warehouse icon + 'StockFlow') left, navbar__links right, active link brand red via navbar__link--active / aria-current=page"
     },
     "page": {
       "class": "page",
-      "variants": "page--narrow (single column for detail + forms)",
-      "notes": "warm-oat bg, centered --content-max-width column; page__header with page__icon + page__title + page__subtitle"
+      "variants": "page--narrow (560px, detail + forms)",
+      "notes": "warm-oat bg, centered 960px column, page__header with page__title and app icon"
     },
     "card": {
       "class": "card",
-      "notes": "white, --radius-lg, --shadow-sm, --space-5 padding; hover lifts --lift with --shadow-md; card__title"
+      "notes": "white, --radius-lg, --shadow-sm, hover lift (shadow-md, translateY -2px); holds stock table and detail panels"
     },
     "button": {
       "class": "btn",
-      "variants": "btn--primary (brand red, --radius-none), btn--secondary (navy-200 outline), btn--ghost, btn--danger, btn--danger-outline, btn--sm; btn__spinner while in flight (disabled)",
-      "notes": "min --tap-target"
-    },
-    "form": {
-      "class": "form",
-      "notes": "stacked fields, form__actions row; inline alert on failure"
+      "variants": "btn--primary (solid brand red, 0 radius), btn--secondary (outlined navy-200), btn--ghost, btn--danger, btn--danger-outline, btn--sm; min 44px tap target; disabled+spinner (aria-busy) in flight"
     },
     "form_input": {
       "class": "field",
-      "variants": "field--error (error border + error-light fill)",
-      "notes": "field__label persistent, field__input, focus ring --color-info, field__error names the field, field__hint"
-    },
-    "table": {
-      "class": "stock-table",
-      "notes": "cool uppercase --text-xs header, navy-200 row separators, navy-100 hover; stock-table__num right-aligned --font-mono tabular-nums; stock-table__row--flash success flash on in-place update"
-    },
-    "status_badge": {
-      "class": "badge",
-      "variants": "badge--in-stock (success), badge--low (warning), badge--out (error), badge--on-order (info), badge--quarantined (navy-500)",
-      "notes": "pill, --text-xs uppercase, text label always present (never color alone)"
-    },
-    "empty_state": {
-      "class": "empty-state",
-      "notes": "empty-state__icon + empty-state__title + empty-state__copy + CTA btn"
-    },
-    "not_tracked": {
-      "class": "not-tracked",
-      "notes": "explicit 'Not tracked' for SKUs with no batch/serial, never blank"
-    },
-    "toast": {
-      "class": "toast",
-      "variants": "toast--success (auto-dismiss --toast-dismiss), toast--error (persistent, toast__close)",
-      "notes": "inside fixed top-right toast-region (aria-live); no layout shift"
+      "notes": "field__label persistent (never placeholder-only), field__input info-color focus ring, field--error (error border + error-light fill) with field__error naming the field inline"
     },
     "alert": {
       "class": "alert",
-      "variants": "alert--error, alert--success",
-      "notes": "role=alert; page-load failure + form validation only"
+      "notes": "inline alert for page-load failure and validation only; role=alert"
     },
-    "confirmation": {
-      "class": "confirmation",
-      "notes": "post-submit confirmation view, confirmation__icon + summary + next action"
+    "stock_table": {
+      "class": "stock-table",
+      "notes": "cool uppercase header; .num cells right-aligned, DM Mono tabular-nums; row-flash on in-place update"
+    },
+    "status_pill": {
+      "class": "pill",
+      "variants": "pill--in-stock, pill--low, pill--out, pill--on-order, pill--quarantined, pill--not-tracked; meaning carried by text label + color + border style, never color alone"
+    },
+    "new_to_verify_pill": {
+      "class": "pill pill--new-to-verify",
+      "notes": "F6: info-blue pill reading 'New - verify' on the Batch and Serial column headers/cells"
+    },
+    "to_be_retired_pill": {
+      "class": "pill pill--to-be-retired",
+      "notes": "F6: dashed neutral pill reading 'To be retired' on the combined tracking code column; absent after F10"
+    },
+    "stage_label": {
+      "class": "stage-label",
+      "variants": "stage-label--transition",
+      "notes": "F6/F10: small uppercase chip beside the home page__title, text 'Today' or 'Transition - to verify'; text carries the meaning"
+    },
+    "migration_overlay": {
+      "class": "migration-overlay",
+      "notes": "F6: fixed full-screen navy scrim with spinner (migration-overlay__spinner) and step text, role=status aria-live=polite; shown while a migration step runs, hidden when it finishes; no layout shift"
+    },
+    "empty_state": {
+      "class": "empty-state",
+      "notes": "icon + teaching heading + copy + CTA; never a blank region; 'No stock at this location - receive an inbound shipment'"
     },
     "scan_zone": {
       "class": "scan-zone",
-      "variants": "scan-zone--success (green flash), scan-zone--error (red flash + persistent toast)",
-      "notes": "barcode input focus target, min --tap-target"
+      "variants": "scan-zone--success, scan-zone--error",
+      "notes": "green flash on success, red flash on failure paired with persistent error toast"
     },
-    "search": {
-      "class": "search",
-      "notes": "search__input with label, search__results list of SKUs"
+    "toast": {
+      "class": "toast",
+      "variants": "toast--success (auto-dismiss ~3s), toast--error (persists)",
+      "notes": "inside fixed top-right toast-region; role=status / role=alert; no layout shift"
     },
-    "spinner": {
-      "class": "spinner",
-      "notes": "loading state with data-testid, --transition-base"
+    "feedback_matrix": {
+      "class": "toast",
+      "notes": "Feedback matrix (no silent failures): form_submit: success=navigate to confirmation view | failure=inline alert + field-named error; barcode_scan: success=row updates in place + green scan-zone flash | failure=red scan-zone flash + persistent error toast; inline_mutation: success=auto-dismiss success toast (~3s) | failure=persistent error toast; delete_remove: success=success toast + optimistic update | failure=persistent toast + local revert; page_load: success=n/a | failure=inline alert replaces content area; button_action: success=disabled + spinner while in flight | failure=re-enabled + error shown"
     },
-    "icon": {
-      "class": "icon",
-      "variants": "icon--sm, icon--md",
-      "notes": "single line-style set: inbound, outbound, scan, warehouse, stock states"
+    "browse_provenance": {
+      "notes": "browsed:https://www.databricks.com (raw CSS: #1b3139, #f9f7f4, #ff3621, #eeede9, DM Sans) -> brand+color; browsed:https://brand.databricks.com (raw markup: DM Sans, #1B3139, #F9F7F4) -> typography+palette; browsed:https://www.cin7.com (marketing page: card-grouped feature areas, horizontal top nav; no dashboard UI visible) -> layout cue only; browse-gap:https://www.linnworks.com (marketing copy only, no product UI); browse-gap:https://www.fishbowlinventory.com (not fetched); browse-gap: no reference showed a real stock table, so table density comes from the brief"
     }
   }
 }

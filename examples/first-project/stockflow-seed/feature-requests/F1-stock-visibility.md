@@ -1,15 +1,54 @@
-# Record and view stock by SKU and location
+---
+author: Product Owner
+feature: F1-stock-visibility
+sprint: 1
+---
 
-I need the team to file a SKU's stock at a physical location and see it again. This is the foundation: until we can record what is on a shelf and read it back, nothing else in the warehouse works.
+# File a stock record and see it by SKU and location
 
-Concretely for this feature:
+## Why
 
-- File the stock level of one SKU at one location, and retrieve it later.
-- When the operator enters a location, they shouldn't have to retype one they've already used: offer the locations already on record to choose from, while still letting them record stock at a brand-new location that has never been used. How that's presented is the designer's call; what matters is that an existing location is reusable without retyping and a new one is never blocked.
-- A SKU can hold stock at more than one location; each `(sku, location)` pair is its own record and is uniquely addressable. Two records must never share that pair (resolve the collision at write time, never store a duplicate, never show an error page).
-- Each unit is identified by a single tracking code (a `tracking_code`) that encodes its location, batch, and serial together. The team is fine with one combined code for V1; a later iteration will revisit splitting those fields apart. Store and show that combined code on the stock record now.
-- The home screen is a calm, scannable stock-by-location table: SKU, location, quantity (right-aligned), and the tracking code column, rendered adaptively (a cell shows its value, or an explicit "not tracked" when absent, never blank). An empty location shows an explicit "No stock at this location" state, never a blank page.
-- A SKU detail view shows that SKU's stock across its locations, including its tracking code. Optional detail that is not tracked (par level) shows a clear "not tracked", never a blank region or a null crash.
-- This feature establishes the app shell, and the shell carries the StockFlow brand: a navbar with the **warehouse app icon** next to the "StockFlow" title, plus a browser-tab favicon. The icon asset ships with the design brief (alongside `design-brief.md`, in `assets/warehouse.png`); the design system installs it (the guide's `app_icon`) and references it from the navbar and the favicon. The shell is not done until the warehouse icon actually renders (a real navbar image + favicon, not a placeholder or a missing image). See the design brief, "Iconography and app identity".
+Before we can receive, pick, count, or adjust anything, the team needs the one
+foundational answer: what do we have, in what quantity, at which location, right
+now. This is the first job StockFlow exists to do, and it is the schema and the
+app shell every later feature writes into. It also establishes the StockFlow
+brand and the single-page experience the warehouse-floor tablet lives in.
 
-This is read-and-record only; adjusting quantities and receiving inbound goods are their own features. Stock data recorded here must survive every later schema change with no loss.
+## What I want
+
+- A form to file a stock record: SKU, location, quantity, and the combined
+  tracking code that encodes location, batch, and serial together.
+- Every SKU at a location is uniquely addressable — no two records may share the
+  same `(sku, location)` pair `R3`.
+- A home view with a calm, scannable stock-by-location table, and a SKU detail
+  view for a single record.
+- A row whose optional detail (par level, batch, serial) is missing still renders
+  cleanly, showing an explicit "not tracked" per field, judged independently, and
+  an empty location shows an explicit empty state rather than a blank page `R9`.
+- Clear, field-named validation when the form is submitted incomplete or invalid,
+  shown inline next to the offending field, never a generic "bad request" `R7`.
+- Delivered as a single-page React + TypeScript app the tablet loads once and
+  navigates without full-page reloads `R5`.
+- The write and read paths are proven by integration tests running against the
+  paired Lakebase branch, not a mock `R4`.
+
+## What I see when it's done
+
+I fill in a SKU, a location, a quantity, and a tracking code, submit the form,
+and watch the new row appear in the home stock-by-location table. I click into
+that row and see the SKU detail view, with any untracked optional field showing
+"not tracked". If I leave a required field blank, the form tells me exactly which
+field is wrong, inline. An empty home view shows a teaching empty state.
+
+## Not in this feature
+
+- Adjusting, receiving, picking, or counting stock — those are F2 through F5.
+- Searching or filtering the table — that is F9.
+- Splitting the combined tracking code into batch and serial columns — that is
+  the F6 refactor.
+
+## Builds on
+
+Nothing — this is the foundation. It establishes the schema, the `(sku, location)`
+key, the combined tracking code, the SPA shell, the StockFlow brand, and the
+real-branch integration-test baseline that every later feature composes on.

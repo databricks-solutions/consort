@@ -72,28 +72,20 @@ describe("stageFirstProject (first-project example seed stager)", () => {
       const fr = path.join(projectDir, ".consort", "features", f, "feature-request.md");
       expect(fs.existsSync(fr), `${f}/feature-request.md should exist`).toBe(true);
     }
-    // Spot-check that content copied verbatim: F6 carries the DROP requirement (the seed fix).
+    // Spot-check that content copied verbatim: F6 is the split-tracking-code request.
     const f6 = fs.readFileSync(
       path.join(projectDir, ".consort", "features", "F6-split-tracking-code", "feature-request.md"),
       "utf8",
     );
-    expect(f6.toLowerCase()).toContain("drop");
-    expect(f6).toContain("tracking_code");
+    expect(f6.toLowerCase()).toContain("tracking");
   });
 
-  it("stages the pre-registration to .consort/registration.json (activates the registered-breakdown guard)", () => {
+  it("does NOT pre-register a breakdown — the seed ships no registration.json, so F1 is unguarded", () => {
+    // The seed intentionally carries no registration.json (the design lane derives F1's breakdown
+    // freely); the stager's optional copy no-ops when it is absent.
     const r = stageFirstProject({ projectDir, seedDir: SEED_DIR });
-    const regPath = path.join(projectDir, ".consort", "registration.json");
-    expect(fs.existsSync(regPath), "registration.json should be staged").toBe(true);
-    expect(r.staged.some((s) => s.endsWith("registration.json"))).toBe(true);
-    const reg = JSON.parse(fs.readFileSync(regPath, "utf8"));
-    // The canonical F1 breakdown the guard enforces against (matches the recorded corpus).
-    expect(reg.feature_id).toBe("F1-stock-visibility");
-    expect(reg.stories.map((s: { id: string }) => s.id)).toEqual([
-      "S1-file-stock",
-      "S2-stock-by-location-table",
-      "S3-sku-detail-view",
-    ]);
+    expect(fs.existsSync(path.join(projectDir, ".consort", "registration.json"))).toBe(false);
+    expect(r.staged.some((s) => s.endsWith("registration.json"))).toBe(false);
   });
 
   it("does NOT stage feature-proposals (the Spec Author regenerates them in /plan)", () => {

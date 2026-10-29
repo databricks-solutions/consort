@@ -1,12 +1,40 @@
-# Operate across multiple warehouses
+---
+author: Product Owner
+feature: F7-multi-warehouse
+sprint: 3
+---
 
-The team needs to run more than one warehouse from a single deployment, without each warehouse needing its own copy of the system. Today every stock record is addressed by `(sku, location)`; that has no room for "the same location name in a different building".
+# Operate several warehouses from one deployment
 
-Concretely for this feature:
+## Why
 
-- Introduce a warehouse as a first-class dimension of stock addressing. A stock record is uniquely addressable by `(warehouse, sku, location)`; the same `(sku, location)` pair may exist in more than one warehouse without collision.
-- Existing stock records survive the change with no loss: they are assigned to a single default warehouse so every prior record stays valid and readable.
-- The operator picks (or is scoped to) a warehouse, and the stock-by-location table, the SKU detail, and the receive / pick / adjust / count forms all operate within that warehouse. Cross-warehouse totals are out of scope for this feature.
-- No two warehouses share stock: a pick, receipt, adjustment, or count in one warehouse never moves quantity in another.
+The operation runs more than one warehouse, and I do not want each one standing up
+its own copy of StockFlow. Each stock figure needs to be scoped to its warehouse,
+and the records we already have must survive the change — preserved under a default
+warehouse — so nothing we built in earlier sprints is lost.
 
-Builds on F1-stock-visibility (the stock model this extends) and every write path from F2 through F5 (each becomes warehouse-scoped).
+## What I want
+
+- Operate several warehouses from one deployment, with each stock figure scoped to
+  its warehouse.
+- Existing records survive the migration, backfilled under a default warehouse, so
+  no data created before this change is lost `R1`.
+- The scoping is additive so reads keep working during rollout — adding the
+  warehouse dimension never breaks an existing page `R8`.
+
+## What I see when it's done
+
+I select or scope to a warehouse and see the stock figures for just that
+warehouse. The records that existed before this feature are all present under the
+default warehouse. Reads keep working through the rollout.
+
+## Not in this feature
+
+- Multi-tenant isolation across customer companies — one tenant per deployment,
+  out of scope per the product overview.
+- Transfers of stock between warehouses — not in this increment.
+
+## Builds on
+
+F1-stock-visibility — the stock schema this scopes. Shares the data-survival and
+additive-migration guarantees (R1, R8) with the F6 refactor.

@@ -1,12 +1,42 @@
-# Pick stock for a customer order
+---
+author: Product Owner
+feature: F4-outbound-pick
+sprint: 2
+---
 
-The team needs to pick goods off the shelf for a customer order, drawing stock down at a location, without ever promising more than is actually there. This closes the basic in-and-out loop for the warehouse.
+# Pick stock for an order without overcommitting
 
-Concretely for this feature:
+## Why
 
-- Record an outbound pick: a SKU, a quantity, and the location it comes from. Recording the pick decreases the stock level at that location.
-- A pick can never overcommit. If the requested quantity exceeds what is available at that location, the pick is rejected at write time, never stored as a negative balance and never allowed as a silent double-allocation against the same stock (R2).
-- The pick form has visible, persistent labels and lands on a confirmation when saved. A rejected pick (over-available, unknown SKU, non-positive quantity) is shown inline next to the offending field, naming it (for example "only 3 available at A-12").
-- Each pick keeps an unmodifiable record of when it happened and who made it, consistent with adjustments and receipts.
+Picking is where StockFlow earns trust. When a customer order draws stock down,
+the operator must never be allowed to promise more than is actually on the shelf.
+A pick that would overcommit has to be refused at the moment it is attempted, with
+a message that says exactly what is available.
 
-Builds on F1-stock-visibility (stock records) and shares the audit + validation conventions established by F2-stock-adjustment and F3-inbound-receipt.
+## What I want
+
+- Draw stock down for a SKU at a location for a customer order.
+- A pick that would take the level below what is actually available is rejected at
+  write time — never a stored negative, never a silently allowed
+  double-allocation against the same stock `R2`.
+- A rejected pick names the shortfall inline — for example "only 3 available at
+  A-12" — never a generic error `R7`.
+
+## What I see when it's done
+
+I submit a pick for a quantity that is on the shelf and land on a confirmation
+view with the stock drawn down. I submit a pick for more than is there and get an
+inline, field-named rejection telling me exactly how much is available at that
+location, with the stored quantity untouched.
+
+## Not in this feature
+
+- Receiving or counting stock — F3 and F5.
+- Scan-driven pick on the tablet — that is F8.
+- Order management, allocation across multiple locations, carrier/label/shipping
+  integration — out of scope per the product overview.
+
+## Builds on
+
+F1-stock-visibility — the stock record and quantity this draws down. Shares the
+no-overcommit guarantee (R2) with F2.
