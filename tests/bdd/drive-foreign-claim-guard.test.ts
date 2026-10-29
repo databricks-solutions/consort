@@ -16,6 +16,14 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
 const DRIVE_SRC = readFileSync(new URL("../../bin/consort/drive.cli.ts", import.meta.url), "utf8");
+const DESIGN_CMD = readFileSync(
+  new URL("../../templates/project/common/.claude/commands/design.md", import.meta.url),
+  "utf8",
+);
+const DESIGN_PREHOOK = readFileSync(
+  new URL("../../templates/project/common/.claude/commands/design.pre-hook.md", import.meta.url),
+  "utf8",
+);
 
 describe("consort-drive wires the foreign-claim refusal (FEIP-8023)", () => {
   it("imports the isForeignFeatureClaim decision from the SCM workflow state module", () => {
@@ -58,6 +66,61 @@ describe("consort-drive AUTO-CLAIMS the feature branch when none is claimed (any
     expect(idx).toBeGreaterThan(DRIVE_SRC.indexOf("if (args.dryRun)"));
     // The auto-claim block is gated on !inReplayLane (replay has no live branch).
     expect(DRIVE_SRC.slice(Math.max(0, idx - 400), idx)).toMatch(/inReplayLane/);
+  });
+});
+
+// The incident: a feature was ALREADY claimed, so the auto-claim above was skipped — but
+// nothing ever moved the working tree onto the claimed branch (the claim CLI only
+// `git checkout -b`s on CREATE). HEAD stayed on the tier parent (staging), the whole design
+// lane ran + committed its corpus there, and the experiment cut forked the still-stale
+// feature branch → "story not in the pipeline" → HIL. The single owner must therefore ALSO
+// check out the claimed branch, UNCONDITIONALLY — not only when it just claimed.
+describe("consort-drive Step 0 ALSO checks out the claimed paired branch, unconditionally (one door)", () => {
+  const idxClaim = DRIVE_SRC.indexOf("no feature branch claimed");
+
+  it("reads the claimed branch from the SCM workflow state AFTER the auto-claim block", () => {
+    const after = DRIVE_SRC.slice(idxClaim);
+    expect(after).toMatch(/const scm = readWorkflowState\(cfg\.projectDir\);/);
+    expect(after).toMatch(/const claimedBranch =[^\n]*scm\?\.branch/);
+  });
+
+  it("checks out that branch independently of the claim-when-absent block, so it holds when already claimed", () => {
+    expect(DRIVE_SRC).toMatch(/spawnCmd\("git",\s*\["checkout",\s*claimedBranch\]/);
+    // Ordering proves it is NOT nested in the `if (!claimed)` auto-claim: the fresh state
+    // read and the checkout both come AFTER the auto-claim's own spawnCmd(lkShim, …).
+    const idxAutoClaim = DRIVE_SRC.indexOf("lakebase-scm-claim-feature-branch", idxClaim);
+    const idxScmRead = DRIVE_SRC.indexOf("const scm = readWorkflowState(cfg.projectDir);", idxClaim);
+    const idxCheckout = DRIVE_SRC.indexOf('spawnCmd("git", ["checkout", claimedBranch]', idxClaim);
+    expect(idxScmRead).toBeGreaterThan(idxAutoClaim);
+    expect(idxCheckout).toBeGreaterThan(idxScmRead);
+  });
+
+  it("refuses loud (return 2) with a remedy if the checkout fails, and records the branch on cfg", () => {
+    const idxCheckout = DRIVE_SRC.indexOf('spawnCmd("git", ["checkout", claimedBranch]', idxClaim);
+    const region = DRIVE_SRC.slice(idxCheckout, idxCheckout + 700);
+    expect(region).toMatch(/could not check out the claimed paired branch/i);
+    expect(region).toMatch(/return 2;/);
+    expect(DRIVE_SRC.slice(idxClaim)).toMatch(/cfg\.featureBranch = claimedBranch;/);
+  });
+});
+
+// One door, in the docs too: the `/design` command + its pre-hook must DEFER the claim and
+// checkout to the drive's Step 0, not re-implement them (the duplicated agent-markdown copies
+// were a second door where off-branch `git checkout -b` drift crept in).
+describe("the /design command docs defer the branch claim+checkout to the drive (no second door)", () => {
+  it("design.md Step 0 says the drive owns claim+checkout and forbids the agent doing it", () => {
+    expect(DESIGN_CMD).toMatch(/owned by the drive/i);
+    expect(DESIGN_CMD).toMatch(/does NOT claim the branch or run `git checkout`/i);
+    // It no longer instructs the agent to run the claim CLI itself as Step 0.
+    const step0 = DESIGN_CMD.slice(DESIGN_CMD.indexOf("## Step 0"), DESIGN_CMD.indexOf("## Step 0.5"));
+    expect(step0).not.toMatch(/the agent MUST claim/i);
+  });
+
+  it("the pre-hook no longer claims or checks out — it is an optional extension point only", () => {
+    expect(DESIGN_PREHOOK).toMatch(/NOT done here/i);
+    expect(DESIGN_PREHOOK).toMatch(/do NOT `git checkout`/i);
+    // No live claim invocation remains in the default pre-hook.
+    expect(DESIGN_PREHOOK).not.toMatch(/```bash[\s\S]*lakebase-scm-claim-feature-branch[\s\S]*```/);
   });
 });
 

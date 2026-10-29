@@ -638,7 +638,14 @@ const COMPONENT_VOCAB_REMEDIATION =
  */
 export function checkComponentVocabularyDefined(declaredClasses: string[], globalCss: string): ComponentVocabResult {
   if (declaredClasses.length === 0) return { ok: true, missing: [] };
-  const missing = declaredClasses.filter((cls) => {
+  // A guide `components[].class` value may be a MULTI-class string (e.g.
+  // "pill pill--new-to-verify") — the element applies every class in it. Verify each
+  // individual class TOKEN is defined in global.css, not the whole string: a
+  // whitespace-containing selector (`.pill pill--new-to-verify`) can never match, so a
+  // compound class whose parts ARE both defined was false-flagged as missing. This
+  // mirrors checkTokenConsumption, which already splits className values on whitespace.
+  const tokens = [...new Set(declaredClasses.flatMap((c) => c.split(/\s+/)).filter(Boolean))];
+  const missing = tokens.filter((cls) => {
     // Match `.<class>` as a class selector (followed by a non-identifier char:
     // space, {, ,, :, ::, --modifier is a DIFFERENT class so require a boundary).
     const re = new RegExp(`\\.${cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);

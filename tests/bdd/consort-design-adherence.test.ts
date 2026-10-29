@@ -360,6 +360,22 @@ describe("checkComponentVocabularyDefined: the guide's component classes must be
   it("trivially ok when the guide declares no component classes", () => {
     expect(checkComponentVocabularyDefined([], "").ok).toBe(true);
   });
+
+  it("resolves EACH token of a multi-class declaration against global.css (no false 'missing' on a compound class)", () => {
+    // A guide `components[].class` of "pill pill--new-to-verify" applies two classes.
+    // Both defined -> ok. Matching the whole string as one selector (the old bug) built
+    // `.pill pill--new-to-verify` (a space-containing selector) and never matched, so it
+    // false-flagged a compound class whose parts are both present.
+    const css = ".pill { display: inline-flex; }\n.pill--new-to-verify { color: var(--color-gain); }\n.pill--to-be-retired { color: var(--color-loss); }";
+    expect(checkComponentVocabularyDefined(["pill pill--new-to-verify", "pill pill--to-be-retired"], css).ok).toBe(true);
+  });
+
+  it("still flags a MISSING token inside a multi-class declaration, and reports it token-level", () => {
+    const css = ".pill { display: inline-flex; }\n.pill--new-to-verify { color: var(--color-gain); }"; // pill--to-be-retired absent
+    const r = checkComponentVocabularyDefined(["pill pill--new-to-verify", "pill pill--to-be-retired"], css);
+    expect(r.ok).toBe(false);
+    expect(r.missing).toEqual(["pill--to-be-retired"]); // the defined tokens (pill, pill--new-to-verify) are not reported
+  });
 });
 
 // ── checkUxClean (I/O boundary): scans a project's client/, no-op without one ──

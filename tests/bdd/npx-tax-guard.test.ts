@@ -37,7 +37,14 @@ describe("npx-tax guard: scaffolded command templates use ./scripts/lk", () => {
   for (const rel of COMMAND_TEMPLATES) {
     it(`${path.basename(rel)} invokes kit CLIs via ./scripts/lk, not npx --package`, () => {
       const body = read(rel);
-      expect(body, "should route kit CLIs through the lk resolver").toMatch(/\.\/scripts\/lk\b/);
+      // The guard is conditional: a doc that invokes a kit CLI in a code fence MUST route it
+      // through lk. A pure extension-point doc (design.pre-hook.md, which now defers the
+      // claim+checkout to the drive's Step 0) invokes NO kit CLI, so there is nothing to route —
+      // forcing an lk call into it would re-introduce the very duplication it exists without.
+      const invokesKitCliInFence = /```[\s\S]*?(?:lakebase-|consort-)[\s\S]*?```/.test(body);
+      if (invokesKitCliInFence) {
+        expect(body, "should route kit CLIs through the lk resolver").toMatch(/\.\/scripts\/lk\b/);
+      }
       expect(body, "no npx --package kit-CLI calls").not.toMatch(/npx\s+--yes\s+--package/);
       expect(body, "no leftover KIT_PKG plumbing").not.toMatch(/KIT_PKG/);
     });
