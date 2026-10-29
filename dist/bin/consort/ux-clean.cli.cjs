@@ -121,7 +121,8 @@ function checkAppIcon(input) {
 var COMPONENT_VOCAB_REMEDIATION = "The design guide names component classes its `components` declares, but they are not DEFINED in client/src/styles/global.css \u2014 so the app has no styling for that vocabulary and a page applying the class renders unstyled. The UX Designer must author one class per `components` entry (named exactly its `class`), styled through var(--token). This is what turns 'tokens exist on :root' into 'this project's components actually look like the brief' \u2014 the gap that made every app render the generic baseline. See the `ux-adherence` smell.";
 function checkComponentVocabularyDefined(declaredClasses, globalCss) {
   if (declaredClasses.length === 0) return { ok: true, missing: [] };
-  const missing = declaredClasses.filter((cls) => {
+  const tokens = [...new Set(declaredClasses.flatMap((c) => c.split(/\s+/)).filter(Boolean))];
+  const missing = tokens.filter((cls) => {
     const re = new RegExp(`\\.${cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`);
     return !re.test(globalCss);
   });

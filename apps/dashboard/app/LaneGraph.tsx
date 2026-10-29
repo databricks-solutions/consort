@@ -723,11 +723,21 @@ function stepState(
   // fall back to the parked-gate focus (the spec/acceptance surface→approve window).
   const gateKey = GATE_KEY_BY_STEP[s.id];
   if (state.topology.laneGate) {
-    // A HITL human-decision gate (acceptance/deploy/promote/spec/plan/intake/backlog — it carries a
-    // gate KEY) glows purple ("gate-current"). A role-worked checkpoint the playhead is at — the
-    // deploy-lane automated verify (`dp-verify`: gate:true but NOT a HITL gate, so no key) — is the
-    // role's active WORK, so it glows in that ROLE's colour ("current"), never gate-purple.
-    if (s.id === state.topology.laneGate) return gateKey ? "gate-current" : "current";
+    if (s.id === state.topology.laneGate) {
+      // A role-worked checkpoint the playhead is at — the deploy-lane automated verify (`dp-verify`:
+      // gate:true but NOT a HITL gate, so no key) — is the role's active WORK, so it glows in that
+      // ROLE's colour ("current"), never gate-purple. Always.
+      if (!gateKey) return "current";
+      // A HITL human-decision gate (acceptance/deploy/promote/spec/plan/intake/backlog) glows purple
+      // ("gate-current") only when the run is actually PARKED there (focus=gate) OR when the board is
+      // SCRUBBED onto its gate.surfaced frame (!atLive — replaying that moment). During LIVE active
+      // work — the surface→approve window where a role turn (e.g. the end-of-design reconcile) runs
+      // AFTER the gate surfaced — the running role step glows via `currentStep` instead; the gate does
+      // NOT also light (the "both the role and the gate are lit" bug). The gate takes the glow back the
+      // instant the drive parks (focus flips to gate).
+      if (!state.atLive || (state.focus.kind === "gate" && gateKey === state.focus.gate)) return "gate-current";
+      // else: fall through — not lit here, so the active role step (currentStep) is the only glow.
+    }
   } else if (gateKey && state.focus.kind === "gate" && gateKey === state.focus.gate) {
     return "gate-current";
   }

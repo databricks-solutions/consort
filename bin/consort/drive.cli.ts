@@ -1422,13 +1422,36 @@ async function main(): Promise<number> {
         );
         return 2;
       }
-      if (!readWorkflowState(cfg.projectDir)?.feature_id?.trim()) {
-        process.stderr.write(
-          `consort-drive: claim ran but the SCM workflow state still has no feature_id for "${cfg.featureId}" — reconcile, then re-run.\n`,
-        );
-        return 2;
-      }
     }
+    // Claiming is only HALF the invariant. The claim CLI `git checkout -b`s the paired branch
+    // only when it CREATES it; an ALREADY-claimed feature leaves the working tree wherever HEAD
+    // happened to be — the tier parent (e.g. staging) when a lane is entered directly. The OTHER
+    // half — the working tree is actually ON the claimed paired branch — belongs to the SAME single
+    // owner and must hold UNCONDITIONALLY, every entry (/design, /build, /deploy, plain --feature,
+    // or a phase-bound --only), every time. Without it an `--only design` entered from staging ran
+    // the ENTIRE design lane on staging and committed the corpus there; the experiment cut then
+    // forked the still-stale feature branch and raised "story not in the pipeline" to HIL. There is
+    // no second door: this is the one place the branch gets claimed AND checked out. A plain
+    // (non-force) checkout is a no-op when already on the branch and SURFACES (never destroys) a
+    // conflicting dirty tree rather than force-switching over uncommitted work.
+    const scm = readWorkflowState(cfg.projectDir);
+    const claimedBranch = scm?.feature_id?.trim() ? scm?.branch?.trim() : undefined;
+    if (!claimedBranch) {
+      process.stderr.write(
+        `consort-drive: claim ran but the SCM workflow state has no claimed branch for "${cfg.featureId}" — reconcile (lakebase-scm-claim-feature-branch ${cfg.featureId}), then re-run.\n`,
+      );
+      return 2;
+    }
+    try {
+      await spawnCmd("git", ["checkout", claimedBranch], cfg.projectDir);
+    } catch (err) {
+      process.stderr.write(
+        `consort-drive: could not check out the claimed paired branch "${claimedBranch}": ${err instanceof Error ? err.message : String(err)}.\n` +
+          `        The working tree may carry conflicting uncommitted changes; resolve them, then re-run.\n`,
+      );
+      return 2;
+    }
+    cfg.featureBranch = claimedBranch;
   }
 
   cfg.runner = execRunner(cfg);

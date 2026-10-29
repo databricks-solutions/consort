@@ -372,6 +372,36 @@ describe("render — LaneGraph", () => {
     expect(backingRectFor(approved)).not.toContain("glowpulse"); // cleared → quiet, no pulse
   });
 
+  it("never lights BOTH a role step and the gate step — the surface→approve reconcile window (B)", () => {
+    // After the last spec gate.surfaced, the end-of-design RECONCILE turn runs (navigator active) before
+    // the drive parks for approval. The playhead sits on the spec gate step (topology.laneGate="d-gate")
+    // while focus carries the running role (d-nav). The gate step must NOT also glow purple — only one
+    // thing lights at a time. It glows purple ONLY when the run is parked at it (focus=gate) or when the
+    // board is SCRUBBED onto that frame (replay). (Regression: "both the navigator and the approve gate
+    // were lit"; and the gate falsely lit during the live reconcile.)
+    const specGateTitle = (m: string): string => m.match(/<title>Spec gate[^<]*<\/title>/)?.[0] ?? "";
+    const base = { ...state, gates: [{ name: "spec", status: "open" as const }] };
+
+    // LIVE + active role turn (focus=step, laneGate on the gate step): the spec gate does NOT glow.
+    const live = renderToStaticMarkup(
+      <LaneGraph state={{ ...base, atLive: true, topology: { ...state.topology, laneGate: "d-gate" }, focus: { kind: "step", lane: "design", step: "d-nav" } }} />,
+    );
+    expect(specGateTitle(live)).not.toContain("gate current"); // gate quiet while the role runs
+
+    // PARKED at the spec gate (focus flips to the gate): it glows.
+    const parked = renderToStaticMarkup(
+      <LaneGraph state={{ ...base, atLive: true, topology: { ...state.topology, laneGate: null }, focus: { kind: "gate", gate: "spec" } }} />,
+    );
+    expect(specGateTitle(parked)).toContain("gate current");
+
+    // SCRUBBED onto the gate.surfaced frame (!atLive): the gate glows, replaying that moment, even
+    // though focus carries a role step.
+    const scrub = renderToStaticMarkup(
+      <LaneGraph state={{ ...base, atLive: false, topology: { ...state.topology, laneGate: "d-gate" }, focus: { kind: "step", lane: "design", step: "d-nav" } }} />,
+    );
+    expect(specGateTitle(scrub)).toContain("gate current");
+  });
+
   it("renders the per-step 'model·effort·turns' metric on the step it credits (no cost)", () => {
     const markup = renderToStaticMarkup(
       <LaneGraph state={{ ...state, laneStepMeta: { "p-propose": { model: "opus", effort: "low", cost: 1.5, turns: 2 } } }} />,

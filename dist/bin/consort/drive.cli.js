@@ -19527,14 +19527,27 @@ then re-run.
         );
         return 2;
       }
-      if (!readWorkflowState3(cfg.projectDir)?.feature_id?.trim()) {
-        process.stderr.write(
-          `consort-drive: claim ran but the SCM workflow state still has no feature_id for "${cfg.featureId}" \u2014 reconcile, then re-run.
-`
-        );
-        return 2;
-      }
     }
+    const scm = readWorkflowState3(cfg.projectDir);
+    const claimedBranch = scm?.feature_id?.trim() ? scm?.branch?.trim() : void 0;
+    if (!claimedBranch) {
+      process.stderr.write(
+        `consort-drive: claim ran but the SCM workflow state has no claimed branch for "${cfg.featureId}" \u2014 reconcile (lakebase-scm-claim-feature-branch ${cfg.featureId}), then re-run.
+`
+      );
+      return 2;
+    }
+    try {
+      await spawnCmd("git", ["checkout", claimedBranch], cfg.projectDir);
+    } catch (err) {
+      process.stderr.write(
+        `consort-drive: could not check out the claimed paired branch "${claimedBranch}": ${err instanceof Error ? err.message : String(err)}.
+        The working tree may carry conflicting uncommitted changes; resolve them, then re-run.
+`
+      );
+      return 2;
+    }
+    cfg.featureBranch = claimedBranch;
   }
   cfg.runner = execRunner(cfg);
   const gates = effectiveGates(args, cfg.projectDir);

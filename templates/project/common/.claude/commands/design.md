@@ -14,32 +14,18 @@ Follow `@consort/references/orchestrator-contract.md`: drive to completion via `
 
 If `.consort/` does not exist in the project root, this command hard-fails with a setup hint instead of lazy-initializing: the TDD workflow has invariants (`.consort/` shape, `selection-log.md`) a lazy bootstrap cannot reconstruct. Run the project's TDD adoption bin first, or `lakebase-create-project` when starting fresh.
 
-## Step 0 (cannot skip): claim the paired branch via the SCM workflow
+## Step 0 (cannot skip, owned by the drive): the paired branch
 
-**Before any design phase runs, the agent MUST claim a paired Lakebase + git branch for this feature through the SCM workflow.** This is the kit's invariant: every git branch gets a Lakebase branch, the SCM workflow state machine is its enforcement surface, and `lakebase-scm-claim-feature-branch` is the ONLY supported creation path. Skipping this step OR shelling out to `git checkout -b` directly is a contract violation and must be refused.
+The design lane runs ONLY on this feature's claimed paired branch, and that claim-and-checkout is the **drive's own un-skippable first step** — not a gesture the agent performs. On every entry `consort-drive`'s Step 0:
 
-The bin handles precondition gating (refuses unless `.lakebase/workflow-state.json` is at `scaffold-complete` or `merged`), parent-branch resolution from the project's tier topology, the paired Lakebase + git + .env creation via `createFeaturePairedBranch` (30-day TTL), and the state-file transition to `feature-claimed` in a single call. Idempotent: re-running with the same feature-id on a `feature-claimed` row returns a no-op success.
+- ensures the feature is claimed through the SCM workflow (`lakebase-scm-claim-feature-branch` — the ONLY supported branch-creation path: it precondition-gates on `.lakebase/workflow-state.json` being at `scaffold-complete` or `merged`, resolves the tier parent, creates the paired Lakebase + git + .env via `createFeaturePairedBranch` with a 30-day TTL, and writes the `feature-claimed` state), **and**
+- checks the working tree out onto that branch.
 
-Concretely, the agent:
+It is idempotent and holds **no matter how the lane is entered** — `/design`, `/sprint`, or a raw `consort-drive --only design`. That is the point: there is exactly **one door**, so a design run can never land its corpus on the tier parent (e.g. `staging`) because the lane was entered off-branch.
 
-1. Verifies `.lakebase/workflow-state.json` exists (run `lakebase-scm-state` to inspect). If absent, hard-fail with `SCM workflow state missing; run lakebase-create-project first.`
-2. Invokes the workflow CLI with the feature id (no path/branch math required: the bin derives `feature/<slug>` and picks the parent from `tier_topology`):
+Because the drive owns this, **the agent does NOT claim the branch or run `git checkout` itself.** Shelling out to `git checkout -b`, or running the claim CLI as a separate pre-step, is a contract violation — it re-creates the second door this step exists to remove. If the drive cannot claim or check out the paired branch it refuses loud (exit 2) and names the fix; surface that to the user rather than working around it. If `.lakebase/workflow-state.json` is missing entirely, the project was never scaffolded — run `lakebase-create-project` first.
 
-   ```bash
-   ./scripts/lk \
-     lakebase-scm-claim-feature-branch "<feature-id>" \
-       --project-dir "$PWD" \
-       --json --pretty
-   ```
-
-   When `LAKEBASE_KIT_REF` is unset the npx target is the kit's main branch (the default-published-pin behavior). Setting it to a branch/tag/sha (e.g. `feip-7458-scm-state-phase-a-c`) pulls that ref, useful for smoke runs that validate an unreleased kit build.
-
-   The bin's `--parent` flag overrides the tier-default parent when the feature must fork from somewhere else (e.g. a hotfix off production on a 2-tier project). The bin's `--instance` flag overrides the `project_id` recorded in the workflow state; usually unneeded.
-
-3. If the bin exits non-zero, do NOT fall back to a lower-level kit primitive. Diagnose via `lakebase-scm-state --json --pretty` and surface the error message to the user. Exit codes: `1` no state file, `2` precondition refused (wrong state, invalid feature-id, already claimed for a different feature), `3` kit failure.
-4. Run `.claude/commands/design.pre-hook.md` if present. The default pre-hook (shipped with the kit) documents this very step for reference; projects may APPEND project-specific gestures to it (claim a JIRA epic, post to Slack, etc.). The pre-hook does NOT replace step 0 above; it extends it.
-
-If step 0 cannot complete, REFUSE to proceed to phase 1. Do not work around. The kit is the only path; the SCM workflow is how that path is enforced.
+Projects may still add project-specific gestures (claim a JIRA epic, post to Slack) by appending to `.claude/commands/design.pre-hook.md`; that hook extends the drive's Step 0, it never re-implements the claim or checkout.
 
 ## Step 0.5 (cannot skip): HIL intake, a hard precondition
 
