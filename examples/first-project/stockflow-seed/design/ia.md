@@ -1,44 +1,33 @@
 # StockFlow Information Architecture
 
 ## Screens
-| Screen | Route | Purpose | Stories | Key seams |
-|---|---|---|---|---|
-| Home: stock by location | `/` | warehouse picker (F7) + `stock-table` of SKU x location with qty + status badge; scan zone | F1, F7, F8 | `stock-table`, `stock-row-<sku>-<loc>`, `stock-empty`, `stock-loading`, `stock-error`, `warehouse-select`, `scan-zone`, `scan-input` |
-| SKU detail | `/sku/:sku` | narrow page: per-location qty, batch/serial (tracking code parts, F6) or "Not tracked" | F1, F6 | `sku-detail`, `sku-locations`, `sku-tracking`, `sku-not-tracked`, `sku-error` |
-| Adjust stock | `/adjust` (prefill `?sku=&location=`) | set/adjust qty for one SKU at one location | F2 | `adjust-form`, `field-sku`, `field-location`, `field-quantity`, `form-error`, `adjust-success` |
-| Receive | `/receive` | inbound receipt: supplier, SKU, qty, location | F3 | `receive-form`, `field-supplier`, `form-error`, `receive-confirmation` |
-| Pick | `/pick` | outbound pick for an order; refuses overcommit | F4 | `pick-form`, `field-order`, `field-quantity-error`, `pick-confirmation` |
-| Cycle count | `/count` | count a location, show the variance, reconcile | F5 | `count-form`, `count-variance`, `count-confirmation` |
-| Search | `/search?q=` | find SKUs or tracking codes | F9 | `search-input`, `search-results`, `search-empty` |
-| About | `/about` | product tagline | — | `about-page` |
+| Screen | Route | Purpose | Key seams |
+|---|---|---|---|
+| Home: stock by location | `/` | Calm stock-by-location table (SKU, location, quantity, state pill, tracking code / batch / serial), with the search surface above it | `home-title`, `stage-label`, `search-input`, `stock-table`, `stock-row`, `integrity-count`, `migration-overlay` |
+| SKU detail | `/sku/:sku` | Narrow single-column view of one SKU: stock per location, tracking code / batch / serial, "not tracked" where empty | `sku-detail`, `stage-label`, `stock-state-pill` |
+| Receive | `/receive` | Inbound receipt form (supplier, SKU, quantity, location) | `receive-form`, field errors |
+| Pick | `/pick` | Outbound pick form; refuses overcommit inline | `pick-form` |
+| Adjust | `/adjust` | Level correction, never negative; inline green flash | `adjust-form` |
+| Count | `/count` | Cycle count with variance, then reconcile | `count-form` |
+| Confirmation | `/confirmation/:id` | Landing view after a successful form submit (navigation is the feedback) | `confirmation` |
 
-Global seams: `navbar`, `toast-region`, `toast-success`, `toast-error`.
-
-## Controls
-Each interactive control declares its TYPE, its OPTION SOURCE, and the states a user must be able to reach THROUGH the control — so the surface is usable by construction and an e2e drives the real control, never a URL/query-param bypass. A named-but-unusable control (e.g. a native `<datalist>` whose options are only the filtered rows and whose empty option cannot be selected) is an IA defect.
-| Control | Screen | Type | Option source | Reachable states |
-|---|---|---|---|---|
-| `warehouse-select` | Home `/` | accessible combobox (listbox popup anchored under the input, keyboard-navigable) | ALL distinct locations (not only those currently holding stock), plus an "All locations" option | pick a location with stock → table; pick an EMPTY location → `stock-empty` reachable through the control; clear → all locations |
-| `search-input` | Search `/search` | text search box | free-text, server-queried | results; no match → `search-empty` |
+Forms and detail use the `page--narrow` variant; home uses the 960px page.
 
 ## Navigation
-- **Navbar** (`App.tsx`):
-  - brand (icon + "StockFlow") links to `/`
-  - links: Stock `/`, Receive `/receive`, Pick `/pick`, Adjust `/adjust`, Count `/count`, Search `/search`, About `/about`
-  - the active link is brand red
-- **Contextual links:**
-  - a stock row or a search result opens `/sku/:sku`
-  - the SKU detail page has Adjust / Receive / Pick buttons that open the form prefilled
-  - the empty-state CTA opens `/receive`
-  - a confirmation view links back to `/sku/:sku` and `/`
-- **Routing:** every screen above is a `<Route>` in `App.tsx`. Unknown routes show an inline not-found alert with a link home.
+Navbar on every screen: brand (warehouse icon + "StockFlow") links to `/`. Links: Stock (`/`), Receive (`/receive`), Pick (`/pick`), Adjust (`/adjust`), Count (`/count`). Active link in brand red. Home rows link to `/sku/:sku`. Empty-state CTAs link to `/receive`. Every route is declared in `App.tsx` `<Routes>` and reachable from the navbar or a row link. The search lives on home (F9, read-only), not a separate route; an empty result shows the empty state "No stock matches that SKU or location".
+
+## F6 / F10 surfacing
+- Stage label sits beside the home title and the detail title. F6 states: "Today" (before) and "Transition - to verify" (after expand + backfill). F10 shows the contracted end state with no combined-code column.
+- F6 home and detail: Batch and Serial columns carry the new-to-verify pill; the combined tracking-code column carries the to-be-retired pill. NULL batch/serial shows the "not tracked" pill, never blank.
+- The integrity-probe nonconforming-row count is shown in the app on home (and detail where relevant) for PO sign-off.
+- The migration overlay covers the screen while a stepwise step (reset, expand + backfill, verify) runs and clears when it finishes.
+- F10: the combined tracking-code column and its pill disappear; Batch and Serial show without the new-to-verify pill once signed off, "not tracked" where empty.
 
 ## User flows
-1. **See stock (F1/F7):** open `/` → pick a warehouse → the table shows qty + status pill. Empty location → empty state → CTA to Receive.
-2. **Drill down (F1/F6):** click a row → `/sku/:sku` → see locations and tracking detail, or "Not tracked".
-3. **Adjust (F2):** detail → Adjust → submit. Success: green toast + the row updates. Invalid input: inline field error.
-4. **Receive (F3):** `/receive` → supplier, SKU, qty, location → confirmation view. Unknown SKU: inline field error.
-5. **Pick (F4):** `/pick` → order, SKU, qty, location → confirmation. Overcommit: inline error on the quantity field, stating what is available.
-6. **Cycle count (F5):** `/count` → enter the counted qty → variance shown → reconcile → confirmation.
-7. **Scan (F8):** focus the scan zone on `/` → scan. Success: green flash + row flash + qty update. Unknown barcode or locked SKU: red flash + persistent error toast.
-8. **Search (F9):** `/search` → type → results. No match: empty state.
+1. View stock: open `/`, scan the table, search by SKU or location, open a SKU detail.
+2. Receive: `/receive`, submit, land on confirmation; invalid SKU shows an inline field-named error.
+3. Pick: `/pick`, submit; an overcommit shows an inline quantity error.
+4. Adjust: `/adjust`, submit, inline green flash and success toast.
+5. Count: `/count`, enter counted quantity, see variance, reconcile.
+6. Scan (F8): scan a barcode on any write form; success flashes the zone green and the row updates in place, failure flashes red with a persistent toast.
+7. F6 demo walk: reset, expand + backfill (overlay), verify (stage label, pills, probe count) on the isolated branch.

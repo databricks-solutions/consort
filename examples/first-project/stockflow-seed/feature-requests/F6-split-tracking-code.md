@@ -1,14 +1,67 @@
-# Split the combined tracking code into batch and serial columns
+---
+author: Product Owner
+feature: F6-split-tracking-code
+sprint: 2
+---
 
-The V1 `tracking_code` introduced in F1 is a hyphen-delimited location-batch-serial code (for example "A12-B7-S001"). It bundles three facts into one opaque string, so nothing can query or validate batch and serial on their own. This iteration is the canonical schema refactor the Product Owner demos after sprint 1: it pulls the batch and serial out into their own columns and retires the combined code, while every existing stock row survives the change.
+# Split the tracking code into batch and serial — expand and verify, tracking code retained
 
-Concretely for this feature:
+## Why
 
-- Add `batch_number` and `serial_number` as first-class columns on the stock record, backfill them from the existing `tracking_code`, and then **drop the `tracking_code` column entirely**. Retiring the combined code is the whole point of this refactor, not an optional cleanup: leaving `tracking_code` in place (even unused) is an incomplete F6. `location` is already its own column (part of UNIQUE(sku, location)), so this iteration does NOT recreate a location column. It extracts only batch and serial.
-- Deliver this as **expand-then-contract** (parallel change), so the last step is the drop: (1) the expand story adds `batch_number` + `serial_number`, backfills them, and runs the integrity probe while `tracking_code` still exists; (2) the **final (contract) story physically drops `tracking_code`** once nothing reads it. F6 is not done after the expand story — it is done only after the contract story has removed the column.
-- The backfill parses by delimiter (split on "-", segment 2 is batch, segment 3 is serial), NOT by fixed width. The seed and fixture data is variable width and not uniform (some codes such as "X-1" or a bare "c" have no batch or serial segment).
-- No silent data loss or corruption (R1). Every sprint-1 row must survive the migration. Codes that do not parse as location-batch-serial leave `batch_number` and `serial_number` NULL rather than being guessed or dropped, and an integrity probe surfaces the count of nonconforming rows for review before the change is accepted. The code's leading segment is NOT treated as authoritative for `location`, which stays canonical and unchanged.
-- The migration is reversible, and reversibility is a **property of the contract migration** proven as a round-trip (the down path reconstructs a combined `tracking_code` from the canonical `location` plus the split-out batch and serial; re-applying up drops it again). Reversibility is NOT a separate story and must NOT become the final story: F6's accepted end state is the **up-migrated** schema with `tracking_code` dropped. Do not leave the branch on the down migration (with `tracking_code` restored) — that is a failed F6, not a delivered one.
-- After the change, batch and serial are distinct, separately addressable fields shown wherever the combined code appeared, on the SKU detail view AND as adaptive columns in the home stock-by-location table (Batch, Serial), replacing the single tracking-code column; a field with no value renders "not tracked" per column, never blank (R3, single unambiguous identity per stock position).
+This is the showcase live-data schema refactor, and I am deliberately doing it in
+two increments. This first increment expands the schema — add new batch and serial
+columns and backfill them from the combined tracking code — while leaving the
+combined tracking code exactly where it is. I want stakeholders to see the split
+populate correctly against real data and lose nothing before anything destructive
+happens. Retiring the old column is a separate, later feature (F10), not part of
+this one. The accepted end state here is the expanded schema with the combined
+tracking code retained on purpose.
 
-Builds on F1-stock-visibility (the stock table and `tracking_code` it introduced). The proof of correctness is the parent-aware schema diff plus the integrity-probe warning count, run against the paired Lakebase branch (R1, R4). The schema diff must show `tracking_code` **removed** from the stock table (a dropped column) alongside `batch_number` + `serial_number` added — a diff that only adds the two new columns and still lists `tracking_code` means the contract step has not run and F6 is not complete.
+## What I want
+
+- Add new batch and serial columns to the stock record, and backfill them from the
+  combined tracking code — while leaving the combined tracking code in place `R1`.
+- Backfill parses the combined code **by delimiter**: split on `-`, segment 2 is
+  the batch, segment 3 is the serial. Never fixed-width; codes are variable-width
+  and some have no batch or serial segment.
+- Codes that do not parse leave batch and serial NULL — never guessed, never
+  dropped `R1`.
+- `location` stays canonical and unchanged — the split extracts only batch and
+  serial and does not recreate a location column from the code `R3`.
+- Surface an integrity-probe count of nonconforming rows **in the app** for my
+  review and sign-off before this increment is accepted.
+- The add + backfill is additive so reads keep working throughout the rollout; the
+  home table and SKU detail keep rendering the whole time `R8`.
+- Prove correctness with the parent-aware schema diff on the paired Lakebase
+  branch — batch + serial **added**, the combined tracking code **still present** —
+  alongside the integrity-probe warning count `R4`.
+- A UI-visible, stepwise walk on an isolated branch (reset → expand + backfill →
+  verify) that pauses between steps so each change is observable, with a "before"
+  seed that includes nonconforming codes so the probe count is visibly non-zero.
+- In the transition UI, the new Batch and Serial columns carry a **new-to-verify**
+  pill AND the combined tracking-code column carries a **to-be-retired** pill; each
+  screen carries a stage label (today / transition-to-verify); a running migration
+  shows an overlay that clears when the step finishes.
+
+## What I see when it's done
+
+I walk the refactor step by step: reset to a "before" state with nonconforming
+codes seeded in, run the expand + backfill, and watch the home table and SKU detail
+re-render from the live schema with new Batch and Serial columns — each marked with
+a new-to-verify pill — while the combined tracking-code column is still there,
+marked to-be-retired. The app shows me the integrity-probe count of nonconforming
+rows so I can sign off. Each screen tells me which stage I am on, and a running
+step shows a migration overlay that clears when it finishes. The schema diff on the
+paired branch confirms batch + serial added with the combined code retained.
+
+## Not in this feature
+
+- Dropping the combined tracking-code column — that is deliberately deferred to
+  F10. This increment retains it on purpose.
+- Scoping records by warehouse — that is F7.
+
+## Builds on
+
+F1-stock-visibility — the stock schema and the combined tracking code this expands.
+This increment is the prerequisite for F10, which contracts the schema only after
+this one is deployed and signed off.

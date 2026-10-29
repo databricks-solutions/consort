@@ -1,12 +1,45 @@
-# Adjust the stock level of a SKU at a location
+---
+author: Product Owner
+feature: F2-stock-adjustment
+sprint: 2
+---
 
-When the count on the shelf does not match what the system says, the team needs to correct it. This is the write path that makes the inventory trustworthy.
+# Correct a stock level, audited and never negative
 
-Concretely for this feature:
+## Why
 
-- Adjust the stock level of one SKU at one location to a corrected value (or by a delta).
-- Every adjustment keeps an unmodifiable record of when it happened and who made it. That audit trail is never editable after the fact.
-- Stock can never go below zero. An adjustment that would drive it negative is rejected at write time, never stored as a negative.
-- The adjustment form has visible, persistent labels. A successful save lands on a confirmation (or a green inline flash); a rejected adjustment is shown inline next to the field that caused it, naming the field (for example "quantity would go below zero"), never a generic "bad request".
+Shelves and the system drift apart. The inventory manager needs to correct a
+level for a SKU at a location and trust that the correction is recorded, that it
+can never drive the quantity below zero, and that the affected row moves in place
+so the floor sees the new number immediately. This is the reconcile job in its
+simplest form.
 
-Builds directly on the stock records from F1-stock-visibility.
+## What I want
+
+- Adjust the stock level for a given SKU at a given location.
+- The level can never go below zero; an adjustment that would make it negative is
+  rejected at write time, never stored as a negative `R2`.
+- Every adjustment records an unmodifiable timestamp and actor that cannot be
+  edited after the fact and stays queryable later `R1`.
+- The affected row updates in place with an optimistic update reconciled against
+  the server response, rather than re-rendering the page `R5`.
+- A rejected adjustment names the offending field inline — for example "quantity
+  would go below zero" — never a generic error `R7`.
+
+## What I see when it's done
+
+I adjust a row inline, see a green-flash success, and watch that one row settle
+to the new quantity without the page reloading. If my adjustment would take the
+level negative, I get an inline, field-named rejection right where I typed it, and
+the stored quantity is unchanged. The adjustment is on the audit record with who
+and when.
+
+## Not in this feature
+
+- Receiving, picking, or counting stock — those are F3, F4, and F5.
+- Scan-driven adjustment on the tablet — that is F8.
+
+## Builds on
+
+F1-stock-visibility — the stock record, the `(sku, location)` key, and the home
+table whose row this adjusts in place.

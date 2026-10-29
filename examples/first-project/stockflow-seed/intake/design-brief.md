@@ -1,182 +1,227 @@
----
-author: Product Owner
----
+# StockFlow — Design brief
 
-# Design brief (StockFlow)
-
-The PO's design intent for the StockFlow UI, the UX Designer's intake.
-Recorded ahead of time so the Human Proxy can supply it in a headless
-run (the same brief a human would author at the `/design` UX
-interview). The UI is small (a home stock-by-location view, a SKU
-detail page, an adjustment / receipt / pick form, a search), and this
-brief is deliberately small.
-
-## UI delivery
-
-StockFlow ships as a single-page application, not server-rendered
-pages. The client is a React + TypeScript app under `client/` (Vite),
-talking to the backend over a JSON API; the design tokens below live in
-`client/src/styles/` and are consumed as `var(--token)`. Screens are
-client-side routed (home, SKU detail, the forms) with no full-page
-reloads, and every state (empty, loading, success, validation error)
-is a component state with a stable `data-testid` seam. The framework
-choice itself is the Architect's to record (`renders_via`); this brief
-states the product intent: a React SPA client plus a JSON API backend,
-each tested on its own side.
+StockFlow is warehouse operations, batched and barcoded, on one Postgres. The UI
+is a single-page web app the warehouse-floor tablet loads once. The experience
+must be calm and scannable for the read-mostly home and detail views, and
+loud-on-feedback for the write and scan flows — the operator never has to wonder
+whether a scan or a save landed.
 
 ## References
 
-The design language is teased from these references; the UX Designer
-extracts tokens from them and cites which decision came from which.
-
-- **Databricks-brand default** (`client/src/styles/STYLE_GUIDE.md` and
-  `theme.css`): take BRAND and COLOR from here. DM Sans typography,
-  navy-900 (`#1B3139`) text, warm-oat (`#F9F7F4`) page background,
-  white cards, Databricks brand red (`#FF3621`) for primary actions
-  only.
-- **A clean warehouse / inventory dashboard** (e.g. Cin7, Fishbowl,
-  Linnworks card-and-table view): take LAYOUT and INFORMATION DENSITY
-  from here. A calm, scannable table of stock-by-location on the home
-  page, generous whitespace, numeric columns right-aligned with
-  tabular figures, and a single narrow column for the detail page and
-  the form.
-
-## Design tokens (emit the full system)
-
-Emit the complete Databricks token system into `design-guide.json` and
-`theme.css`, not a reduced subset. The UX Designer should produce these
-families (values from the Databricks-brand reference):
-
-- **Navy ramp (7 steps), not a single text color:** 900 `#1B3139`
-  (text, navbar), 700 `#1B5162` (secondary headings), 500 `#618794`
-  (tertiary text + icons), 400 `#90A5B1` (placeholder / disabled), 300
-  `#C4CCD6` (borders), 200 `#E5EAF1` (input borders, row separators),
-  100 `#EDF2F8` (row hover, filter panels).
-- **Backgrounds:** white `#FFFFFF` (cards), warm `#F9F7F4` (page), cool
-  `#F0F2F5` (table header, filter panels).
-- **Semantic with light pairs:** success `#2E844A`, warning `#FFAB00`,
-  info `#0176D3`, error `#FF3621`, each with a translucent `-light`
-  background for pill fills and alert tints.
-- **Radius:** none `0px` (the primary button, a Databricks signature),
-  sm `4`, md `8`, lg `12`, xl `15`, pill. **Shadows (navy-tinted,
-  never black):** sm, md, a layered lg, and a navbar-specific shadow.
-  **Transitions:** fast `0.15s ease`, base `0.2s ease`.
-- **Layout + breakpoints:** content max-width `960px`, navbar height
-  `64px`; breakpoints mobile `480` / tablet `768` / desktop `1024`;
-  minimum tap target `44x44px`.
-- **Type scale xs..xxl** (10 / 13 / 15 / 16 / 20 / 24 / 29px), DM Sans
-  for body + headings, DM Mono with tabular figures for every numeric
-  cell.
+- **Reference 1 — Databricks brand / design system**
+  (https://www.databricks.com, https://brand.databricks.com). **Take BRAND and
+  COLOR.** DM Sans typography, navy-900 (`#1B3139`) text, warm-oat (`#F9F7F4`)
+  page background, white cards, Databricks brand red (`#FF3621`) for primary
+  actions only. The sharp-cornered primary CTA is a Databricks brand signature.
+- **Reference 2 — a clean warehouse / inventory dashboard** (e.g. Cin7
+  https://www.cin7.com, Fishbowl https://www.fishbowlinventory.com, Linnworks
+  https://www.linnworks.com — the card-and-table view). **Take LAYOUT and
+  INFORMATION DENSITY.** A calm, scannable stock-by-location table on the home
+  page, generous whitespace, numeric columns right-aligned with tabular figures,
+  and a single narrow column for the detail page and the form.
+- **Reference 3** — no specific requirement; the two lenses above are sufficient.
 
 ## Brand constraints
 
-- Use the Databricks brand red for the primary action / active state
-  only (Receive, Pick, Save, the active link). Keep the stock table
-  itself calm and high-contrast so quantities and SKUs are easy to
-  scan.
-- System / UI font stack from `theme.css` (DM Sans). No custom web
-  font beyond what is loaded there.
-- Cards are white on the warm-oat background with a soft navy-tinted
-  shadow and a gentle radius. The primary button is solid brand-red
-  with sharp (0px) corners. Keep these consistent across home, detail,
-  and form.
+- **Color.** Navy `#1B3139` text, warm-oat `#F9F7F4` page surface, white cards,
+  brand red `#FF3621` for the primary action / accent only (Receive, Pick, Save,
+  the active link). Keep the stock table itself calm and high-contrast so
+  quantities and SKUs are easy to scan.
+- **Semantic.** `#2E844A` success, `#FFAB00` warning, `#0176D3` info, brand red
+  for error. Meaning is always carried by text as well — never color alone.
+- **Typography.** DM Sans for UI, DM Mono for code/numerics. No custom web font
+  beyond what the theme loads.
+- **Spacing.** A 4px base grid (`--space-1` .. `--space-12`).
+- **Radius.** Soft containers (`--radius-lg` cards), sharp primary CTA
+  (`border-radius: 0`, a Databricks brand signature). Cards are white on the
+  warm-oat background with a soft navy-tinted shadow and a gentle radius; the
+  primary button is solid brand-red with sharp (0px) corners. Keep these
+  consistent across home, detail, and form.
 
-## Interaction and feedback
+## Materialized token theme to leverage
 
-- Every state is shown explicitly: an empty stock location shows an
-  explicit empty state ("No stock at this location, receive an inbound
-  shipment"), never a blank page; a SKU with no batches or serial
-  detail shows a clear "not tracked", never a blank region.
-- Forms never fail silently: a successful save lands on a confirmation
-  view (or an inline green flash for an adjustment), and a validation
-  problem (e.g. a pick that would overcommit, an unknown SKU) is shown
-  inline next to the field that caused it, naming the field.
-- Barcode scans are the primary input on the warehouse floor. A scan
-  succeeds with a green flash and the stock row updating in place; a
-  scan that fails (unknown barcode, locked SKU) flashes the scan zone
-  red and shows a persistent toast.
-- The home grid and the detail page are read-mostly; the
-  no-silent-failure principle applies to receipt, pick, adjustment,
-  and cycle-count forms.
+```css
+:root {
+  --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --text-xs: 10px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-xxl: 29px;
+  --line-height-body: 1.5;
+  --line-height-heading: 1.25;
+  --line-height-tight: 1.1;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --color-brand: #FF3621;
+  --color-brand-hover: #EB1600;
+  --color-brand-light: rgba(255,54,33,0.08);
+  --color-navy-900: #1B3139;
+  --color-navy-700: #1B5162;
+  --color-navy-500: #618794;
+  --color-navy-400: #90A5B1;
+  --color-navy-300: #C4CCD6;
+  --color-navy-200: #E5EAF1;
+  --color-navy-100: #EDF2F8;
+  --color-success: #2E844A;
+  --color-success-light: rgba(46,132,74,0.10);
+  --color-warning: #FFAB00;
+  --color-warning-light: rgba(255,171,0,0.12);
+  --color-info: #0176D3;
+  --color-info-light: rgba(1,118,211,0.10);
+  --color-error: #FF3621;
+  --color-error-light: rgba(255,54,33,0.08);
+  --color-card: #FFFFFF;
+  --color-page: #F9F7F4;
+  --color-cool: #F0F2F5;
+  --color-text: #1B3139;
+  --color-text-secondary: #1B5162;
+  --color-text-tertiary: #618794;
+  --color-text-disabled: #90A5B1;
+  --color-text-inverse: #FFFFFF;
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --content-max-width: 960px;
+  --narrow-max-width: 560px;
+  --navbar-height: 64px;
+  --tap-target: 44px;
+  --border-width: 1px;
+  --border-accent: 2px;
+  --focus-ring: 2px;
+  --lift: -2px;
+  --icon-sm: 16px;
+  --icon-md: 24px;
+  --icon-brand: 32px;
+  --icon-empty: 48px;
+  --radius-none: 0px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 15px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 2px 8px rgba(27,49,57,0.06);
+  --shadow-md: 0 4px 16px rgba(27,49,57,0.08);
+  --shadow-lg: 0 2px 4px rgba(27,49,57,0.04), 0 8px 24px rgba(27,49,57,0.10), 0 16px 48px rgba(27,49,57,0.08);
+  --shadow-navbar: 0 2px 12px rgba(27,49,57,0.24);
+  --mobile: 480px;
+  --tablet: 768px;
+  --desktop: 1024px;
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+  --toast-dismiss: 3s;
+}
+```
+
+## Interaction constraints
+
+- **Every state is shown explicitly.** An empty stock location shows an explicit
+  empty state ("No stock at this location — receive an inbound shipment"), never a
+  blank page; a SKU with no batches or serial detail shows a clear "not tracked",
+  never a blank region.
+- **Forms never fail silently.** A successful save lands on a confirmation view
+  (or an inline green flash for an adjustment); a validation problem (a pick that
+  would overcommit, an unknown SKU) is shown inline next to the field that caused
+  it, naming the field.
+- **Barcode scans are the primary input on the warehouse floor.** A scan succeeds
+  with a green flash and the stock row updating in place; a scan that fails
+  (unknown barcode, locked SKU) flashes the scan zone red and shows a persistent
+  toast.
+- The home grid and the detail page are read-mostly; the no-silent-failure
+  principle applies to the receipt, pick, adjustment, and cycle-count forms.
+- **Feedback never shifts the page layout:** toasts are fixed-position; inline
+  alerts are reserved for page-load and validation. Optimistic updates revert on
+  failure.
+
+## Accessibility constraints
+
+- Touch targets sized for warehouse-floor tablet use (`--tap-target: 44px`
+  minimum).
+- Meaning is always carried by text as well as color — never color alone (status
+  pills, success/warning/error states).
+- Form inputs have persistent visible labels, never placeholder-only, with an
+  info-color focus ring (`--focus-ring`) and an explicit error state.
+- High-contrast calm table so quantities and SKUs stay legible on the floor
+  tablet.
 
 ## Feedback matrix (no silent failures, no unacknowledged success)
 
-Specify the success and failure behavior per action, so the UI never
-leaves a result unacknowledged:
-
 | Action | Success | Failure |
 |---|---|---|
-| Form submit | navigate to a confirmation (navigation IS feedback) | inline alert + field-named messages |
-| Barcode scan | row updates in place + green scan-zone flash | red scan-zone flash + persistent toast |
-| Inline mutation (adjust, status) | auto-dismiss success toast (3s) | persistent error toast |
+| Form submit | navigate to a confirmation view (navigation IS the feedback) | inline alert + a field-named error |
+| Barcode scan | row updates in place + green scan-zone flash | red scan-zone flash + persistent error toast |
+| Inline mutation (adjust, status change) | auto-dismiss success toast (~3s) | persistent error toast |
 | Delete / remove | success toast + optimistic update | persistent toast + local revert |
 | Page load | n/a | inline alert replaces the content area |
 | Button action | disabled + spinner while in flight | re-enabled + error shown |
 
-Every error is routed through a `describeError()` that maps status codes
-to actionable text and includes the status code. Optimistic updates
-revert on failure. Feedback never shifts the page layout (toasts are
-fixed-position; inline alerts are for page-load and validation only).
+Every error is routed through a single `describeError()` helper that maps status
+codes to actionable text and includes the status code. Optimistic updates revert
+on failure. Feedback never shifts the page layout: toasts are fixed-position;
+inline alerts are reserved for page-load and validation.
 
-## Accessibility
+## Component vocabulary (emit the full set, named in `design-guide.json` `components`)
 
-- Form inputs have visible, persistent labels (not placeholder-only).
-- Tap targets on the tablet UI are at least 44x44 px.
-- Quantity cells and stock-level pills use both shape and text, not
-  color alone, to communicate state. An "out of stock" cell reads
-  "out" AND uses the error color; a "low" cell reads "low" AND uses
-  the warning color.
-- Every action is keyboard-reachable and readable at 200% zoom (the
-  warehouse-floor tablet defaults to large text).
-- Numeric quantities use tabular figures so columns of numbers align
-  visually.
+The UI is built from a small, consistent set of named components so every screen
+looks like the same product. Every feature page composes these rather than
+hand-rolling markup.
 
-## Component vocabulary
+- **Navbar** — navy top bar (64px) with a 2px brand-red bottom border; the app
+  icon + "StockFlow" title on the left, nav links on the right, active link in
+  brand red.
+- **Page** — warm-oat background, a centered ~960px content column, a
+  `page__header` with the page title (app icon next to the name); a narrow
+  (560px) variant for the detail page and forms.
+- **Card** — white surface, soft navy-tinted shadow, gentle radius, with a subtle
+  hover lift (shadow deepens, lifts a couple px); the stock table and detail
+  panels live in cards.
+- **Buttons** — primary (solid brand-red, sharp corners), secondary (outlined
+  navy-200), ghost (text-only), plus danger, danger-outline, and a small
+  (`--sm`) size. Corners stay sharp on the primary everywhere; minimum 44px tap
+  target.
+- **Form inputs** — persistent visible labels (never placeholder-only), an
+  info-color focus ring, and an explicit error state (error border + error-light
+  fill); a validation problem shows inline next to the field, naming it.
+- **Stock table** — cool uppercase header row; quantity cells right-aligned in
+  the mono/tabular figure font; an in-place row flash on update.
+- **Status (stock-state) pills** — in-stock / low / out / on-order / quarantined
+  / not-tracked, each a pill whose meaning is carried by BOTH text and color
+  (never color alone). The refactor adds a **new-to-verify** pill (new Batch and
+  Serial columns) and a **to-be-retired** pill (the combined tracking-code
+  column).
+- **Empty state** — an icon + a teaching heading + copy + a CTA (e.g. "No stock
+  at this location — receive an inbound shipment"; "No stock matches that SKU or
+  location").
+- **Toasts** — fixed top-right; a success toast auto-dismisses (~3s), an error
+  toast persists; feedback never shifts the page layout.
 
-The UI is built from a small, consistent set of named components, so
-every screen looks like the same product. The UX Designer records these
-in `design-guide.json` `components` (each with the CSS class the pages
-apply), and every feature page composes them rather than hand-rolling
-markup:
+## App icon + identity
 
-- **Navbar** – navy top bar (64px) with a 2px brand-red bottom border,
-  the app icon + "StockFlow" title on the left, nav links on the right.
-- **Page** – warm-oat background, a centered ~960px content column, a
-  `page__header` with the page title (the app icon next to the name).
-- **Card** – white surface, soft navy-tinted shadow, gentle radius, with
-  a subtle hover lift (shadow deepens, lifts a couple px); the stock
-  table and detail panels live in cards.
-- **Buttons** – primary (solid brand-red, sharp 0px corners), secondary
-  (outlined navy-200), ghost (text-only), plus danger, danger-outline,
-  and a small (`--sm`) size. Corners stay sharp on the primary everywhere.
-- **Form inputs** – persistent visible labels, an info-color focus ring,
-  and an explicit error state (error border + error-light fill); a
-  validation problem shows inline next to the field, naming it.
-- **Stock table** – cool uppercase header row; quantity cells
-  right-aligned in the mono/tabular figure font.
-- **Status (stock-state) pills** – in-stock / low / out / on-order /
-  quarantined, each a pill whose meaning is carried by BOTH text and
-  color (never color alone).
-- **Empty state** – an icon + a teaching heading + copy + a CTA (e.g.
-  "No stock at this location, receive an inbound shipment").
-- **Toasts** – fixed top-right; a success toast auto-dismisses, an
-  error toast persists; feedback never shifts the page layout.
-
-## Iconography and app identity
-
-- **App icon.** StockFlow has a brand icon (a warehouse mark) shown
-  next to the title, plus a favicon for the browser tab. The asset ships
-  **alongside this brief**, staged at `design/assets/warehouse.png`. Wiring
-  the warehouse icon in is required, not optional: a shell that ships without
-  the icon actually rendering (navbar image + favicon), or with a
-  placeholder, has not met the brand requirement. Every screen should
-  feel like one branded product. The UX Designer declares where the asset
-  installs in `design-guide.json` `app_icon` (`install_to`), and the
-  design-apply step installs it there and wires the favicon + navbar — the
-  design system owns the install path.
-- **Icon set.** Use a single line-style icon set consistently (e.g.
-  inbound/outbound, scan, warehouse, stock-level states); do not mix
-  icon styles.
-- **Name + tagline.** The product is "StockFlow": warehouse operations,
-  batched and barcoded, on one Postgres. Empty states and headings use
-  this plain, guiding voice.
+- **App icon (required, not optional).** StockFlow has a brand icon — a warehouse
+  mark — shown next to the title, plus a favicon for the browser tab. The asset
+  ships with this brief, staged at `.consort/design/assets/warehouse.png`. Wiring
+  the warehouse icon in is a brand requirement: a shell that ships without the
+  icon actually rendering (navbar image + favicon), or with a placeholder, has NOT
+  met it. The UX Designer declares where the asset installs in `design-guide.json`
+  `app_icon` (`source` = `.consort/design/assets/warehouse.png`, `install_to` =
+  `client/public/warehouse.png`), and the design-apply step installs it and wires
+  the favicon (`index.html <link rel="icon">`) + the navbar brand image. The
+  design system owns the install path. Do NOT fall back to the scaffold
+  `favicon.svg`.
+- **Icon set.** Use a single line-style icon set consistently (inbound / outbound,
+  scan, warehouse, search, and the stock-level states); do not mix icon styles.
+- **Name + tagline.** The product is "StockFlow" — warehouse operations, batched
+  and barcoded, on one Postgres. Empty states and headings use this plain, guiding
+  voice.
