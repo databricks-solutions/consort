@@ -158,14 +158,6 @@
     {
       "name": "test_list",
       "status": "open"
-    },
-    {
-      "name": "promote",
-      "status": "approved"
-    },
-    {
-      "name": "deploy",
-      "status": "approved"
     }
   ],
   "blockers": [],

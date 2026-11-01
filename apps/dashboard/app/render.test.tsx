@@ -129,7 +129,8 @@ describe("render — WorkflowGraph shipped terminal", () => {
       ...state,
       blockers: [],
       focus: { kind: "step", lane: "deploy", step: "dp-merge" },
-      topology: { ...state.topology, activeNode: "promote" },
+      // The locus (what the spine colours by) reads the fold: the merge is the genuinely-running step.
+      topology: { ...state.topology, activeNode: "promote", laneCurrent: { lane: "deploy", step: "dp-merge" } },
     };
     const g = shippedGroup(renderToStaticMarkup(<WorkflowGraph state={merging} />));
     expect(g).toContain("Shipped · active now");
@@ -437,10 +438,10 @@ describe("render — LaneGraph", () => {
     expect(markup).toContain("genuine"); // assess → raise-to-HIL
   });
 
-  it("a new build loop at b-red shows the later steps PENDING, not the prior loop's results", () => {
+  it("a new build loop at b-red glows ONLY b-red — the later steps stay base (no stale glow)", () => {
     // The reported bug: at the start of a new TDD loop (navigator red) the later cards (green/
-    // review/refactor) carried last cycle's turns. With reachedThisPass reset to just b-red, they
-    // must read pending — even though the monotonic laneSteps still lists them from the prior loop.
+    // review/refactor) carried last cycle's turns. In the binary model the running step (b-red) is the
+    // ONE glowing locus; every later step is base (idle), so no stale turn/metrics are shown for them.
     const markup = renderToStaticMarkup(
       renderLane(
         withTopology(
@@ -454,12 +455,12 @@ describe("render — LaneGraph", () => {
         ),
       ),
     );
-    // The later steps are pending (not done), so no stale turn/metrics are shown for them.
-    expect(markup).toContain("minimal honest code + verify (GREEN) · pending"); // b-green
-    expect(markup).toContain("review / assess · pending"); // b-review
-    expect(markup).toContain("refactor (structure) · pending"); // b-refactor
-    // ...and none of them read "done" this pass.
-    expect(markup).not.toContain("minimal honest code + verify (GREEN) · done");
+    // Only b-red glows (current); the later steps are base, never the prior loop's lit result.
+    expect(markup).toContain("write failing test (RED) · current"); // b-red is the locus
+    expect(markup).toContain("minimal honest code + verify (GREEN) · idle"); // b-green base
+    expect(markup).toContain("review / assess · idle"); // b-review base
+    expect(markup).toContain("refactor (structure) · idle"); // b-refactor base
+    expect(markup).not.toContain("minimal honest code + verify (GREEN) · current");
   });
 
   it("survives an empty board without throwing", () => {
