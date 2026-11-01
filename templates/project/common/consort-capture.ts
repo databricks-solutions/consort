@@ -133,6 +133,18 @@ function resolveOwner(consortDir: string, id: string, file: string): TestOwner |
   return null;
 }
 
+/** The role that RAN this suite, for per-test attribution. The deploy/promote lane re-runs the suite
+ *  as the release-engineer (verify); every other phase is the driver's build cycle. The dashboard
+ *  routes a release-engineer `test.result` to the deploy lane's Verify step, NOT the build lane's
+ *  Green, so a deploy-verify re-run never lights the driver's card. Falls back to driver on any error. */
+function testRunnerRole(consortDir: string): string {
+  try {
+    const ws = JSON.parse(readFileSync(join(consortDir, "workflow-state.json"), "utf8")) as { phase?: unknown };
+    if (ws.phase === "deploy") return "release-engineer";
+  } catch { /* best-effort: fall back to the build-cycle driver */ }
+  return "driver";
+}
+
 /** Append a durable, schema-valid `test.result` to the agent-log (+ the corpus mirror when a recording
  *  is in flight), shaped exactly like the kit's emitAgentLogEvent output so the dashboard fold reads it
  *  identically. Only emitted for an attributable test; best-effort. */
@@ -144,7 +156,7 @@ export function recordTestResultEvent(consortDir: string, id: string, status: Te
       JSON.stringify({
         timestamp: ts,
         level: "info",
-        role: "driver",
+        role: testRunnerRole(consortDir),
         event: "test.result",
         message: `TEST ${id} ${status}`,
         metadata: { feature_id: owner.feature_id, test_id: id, status, story_id: owner.story_id, ac_id: owner.ac_id },

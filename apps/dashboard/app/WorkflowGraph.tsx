@@ -4,6 +4,7 @@ import { useState } from "react";
 import { STEP_OUTPUTS, WORKFLOW, gateForNode, type WorkflowNode } from "@/lib/topology";
 import { colorForRole, font, radius } from "@/lib/theme";
 import { activeColorForFocus } from "./active-color";
+import { foldViewOf, locusFocus } from "@/lib/card-state";
 import type { DashboardState, GateInfo } from "@/lib/types";
 
 // The Consort lifecycle graph (Figure 1), rendered in the light theme. Layout is a single
@@ -63,16 +64,12 @@ export function WorkflowGraph({
   // there and needs the whole prefix, so it is derived once rather than recomputed on the client.
   const passed = new Set(state.topology.passedNodes);
   const activeNode = state.topology.activeNode;
-  // The active node's highlight is a NEUTRAL slate (the deterministic conductor's colour), NOT any
-  // agent role colour , so "this lane is active" never collides with e.g. the navigator's orange.
-  // The human states keep their own: a HIL issue/escalation is red, a parked gate is purple. Which
-  // agents own a node is shown by its role DOTS, not the highlight. Reads the ONE focus observation
-  // + blockers, so it never disagrees with the other surfaces.
-  const focus = state.focus;
-  // The active-highlight colour comes from the ONE shared helper: a working agent's role colour, a
-  // gate's purple, an escalation's red, or slate when the orchestrator is in charge. Same key every
-  // surface uses, so the workflow node, the lane panel, and the step never disagree.
-  const activeColor = activeColorForFocus(focus);
+  // The highlight reads the ONE LOCUS — the SAME source the glowing card and the active-lane panel read
+  // (`locusFocus`, NOT raw `state.focus`, whose between-turns carry can lag onto a stale step and paint
+  // the wrong node/colour). So the spine node, the lane panel, and the step can never disagree. Which
+  // agents own a node is shown by its role DOTS; the human states keep their own (HIL red, gate purple).
+  const focus = locusFocus(foldViewOf(state));
+  const liveStep = state.topology.laneCurrent?.step ?? null; // the genuinely-running step (null between turns)
   // The gate DIAMOND the run is parked at also highlights (not just the phase node beside it): find
   // the gate node whose gate name is the one the focus is awaiting, and treat it as active too, so it
   // glows in the gate colour (activeColor is the gate colour while focus.kind === "gate").
@@ -91,24 +88,33 @@ export function WorkflowGraph({
   //   merging      → the active spine node advances Promote → Shipped, in the merge agent's colour
   //   shipped/done → Shipped stays lit STEADILY (no pulse) in the orchestrator's slate
   //   ship issue   → a promote-stage escalation turns Shipped red
-  // All three colours already fall out of activeColorForFocus(focus) — merge step = release-engineer,
-  // idle = orchestrator slate, escalation = red — so `activeColor` needs no special-casing here.
-  const shipMerging = focus.kind === "step" && focus.step === "dp-merge";
+  // These read the FOLD directly (liveStep + locus), the same source as every other highlight — NOT a
+  // separate focus notion. `liveStep` (the running step) distinguishes "actively merging" from "done":
+  // a finished run has NO live step even though the furthest-reached card locus is still dp-merge.
+  const shipMerging = liveStep === "dp-merge";
   const shipIssue = focus.kind === "escalation" && activeNode === "promote";
-  // Done = the run reached promote and nothing is running now (a clean, blocker-free idle). During
-  // the merge focus is a step (not idle), so this stays false until the merge completes. But
-  // `passed.has("promote")` is sprint-AGNOSTIC — it stays true for the whole run the moment ANY
-  // sprint promotes — so once the `shipped → plan` loop carries the playhead into the next sprint,
-  // an idle moment would relight Shipped while Plan is the active node (both hot at once). Gate on
-  // the playhead NOT having looped back: Shipped is "done" only at the terminal end — activeNode
-  // null (a trailing `workflow` phase.end ended the walk) or still on promote — never while a live
-  // earlier phase (plan/intake/design/build/deploy) is active for the next sprint.
+  // Done = reached promote with NOTHING running now, and not looped into a next sprint.
+  // `passed.has("promote")` is sprint-AGNOSTIC — true the moment ANY sprint promotes — so once the
+  // `shipped → plan` loop carries the playhead into the next sprint, an active earlier phase would
+  // relight Shipped. Gate on NOT having looped back: Shipped is "done" only at the terminal end.
+  // The park/idle GUARD reads `state.focus.kind` (the run's HITL STATUS — reliably "gate"/"escalation"
+  // when parked, "idle" when at rest), NOT the locus: the locus is "which card glows" and can be an
+  // already-approved gate at a finished run, which must not block "done". Two different questions.
   const loopedBack = activeNode !== null && activeNode !== "promote" && activeNode !== "shipped";
-  const shipDone = focus.kind === "idle" && passed.has("promote") && !loopedBack;
+  const shipDone =
+    liveStep === null &&
+    state.focus.kind !== "gate" &&
+    state.focus.kind !== "escalation" &&
+    passed.has("promote") &&
+    !loopedBack;
   const shipLit = shipMerging || shipIssue || shipDone;
   // Merging / a ship-stage escalation move the active node off Promote onto Shipped (Promote then
   // reads as reached); a done run keeps activeNode null and lights Shipped steadily instead.
   const spineActiveNode = shipMerging || shipIssue ? "shipped" : activeNode;
+  // The active-highlight colour: the ONE locus key — a working agent's role, gate purple, escalation
+  // red — EXCEPT the terminal done state, which is the orchestrator's slate (nothing is running; the
+  // conductor owns the shipped terminal). locusFocus is never `idle`, so that slate is set explicitly.
+  const activeColor = shipDone ? "var(--role-orchestrator)" : activeColorForFocus(focus);
 
   // The current sprint's FEATURE + its current state, shown in the panel's header band — mirroring a
   // lane panel's "lane · status" heading. The active story (if any) is the sharpest state; otherwise

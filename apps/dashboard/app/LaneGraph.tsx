@@ -12,7 +12,8 @@ import {
 import { GATE_KEY_BY_STEP, GATE_STEP_BY_KEY } from "@/lib/gates";
 import { colorForRole, font, radius } from "@/lib/theme";
 import { activeColorForFocus } from "./active-color";
-import type { DashboardState, LaneStepMeta } from "@/lib/types";
+import { deriveCardStates, foldViewOf, locusFocus, type CardState } from "@/lib/card-state";
+import type { DashboardState, Focus, LaneStepMeta } from "@/lib/types";
 
 // "3m", "45s" — how long the current open turn has been running. (Was in AgentBubble, now removed;
 // this is its only consumer — the active step card's bottom-row duration.)
@@ -80,21 +81,26 @@ const PROMOTE_STEP_IDS = new Set(["dp-pr", "dp-ci", "dp-promgate", "dp-merge", "
 // (propose → sizing → choose → breakdown → plan gate), mirroring the deploy/promote dot split.
 const INTAKE_STEP_IDS = new Set(["p-intake", "p-intake-gate"]);
 
-type StepState = "done" | "current" | "pending" | "gate-current" | "escalation-current";
+// A box is either the ONE glowing locus (current / gate-current / escalation-current) or `base` — one
+// uniform, un-dimmed neutral. No done/done-past/pending gradations (see CARD-LIGHTING-DESIGN.md).
+type StepState = "current" | "gate-current" | "escalation-current" | "base";
+
+// The single opacity every non-current (`base`) dot renders at. One level — not a dim/faint split.
+const BASE_OPACITY = 0.3;
 
 export function LaneGraph({ state, onOpenRole }: { state: DashboardState; onOpenRole?: (role: string, stepId: string) => void }) {
-  // The run's active step, from the ONE focus observation. Step ids are unique across lanes, so a
-  // single value passed to every lane only matches (lights) in its owning lane. Gate/escalation/idle
-  // focus means no step is running (currentStep null); a parked gate is read from state.focus.
-  const currentStep = state.focus.kind === "step" ? state.focus.step : null;
-  // ALL lanes stay expanded – no accordion – so clicking one never collapses the others. The
-  // active lane is highlighted (LanePanel's accent border + header tint); the rest render quietly.
-  // The per-lane sub-graph lights nodes by the CURRENT pass's traversal (reachedThisPass), NOT the
-  // monotonic lane-reach: at a new build loop (b-red) the later nodes go dim/pending again instead
-  // of carrying last cycle's cards. Step ids are unique across lanes, so one global set serves every
-  // LanePanel (each only queries its own steps). The lifecycle SPINE (WorkflowGraph) keeps using
-  // passedNodes, so a feature's overall design-done/build-in-progress arc is unaffected.
-  const reachedPass = new Set(state.topology.reachedThisPass);
+  // ONE source of truth for EVERY highlight (see CARD-LIGHTING-DESIGN.md): the fold view → the one
+  // locus. The glowing card, the active-lane panel, AND the lifecycle spine all read this same locus
+  // (via `locusFocus`), so they can never disagree — a card cannot glow in one lane while the panel
+  // outline lights another. `locusFocus` is deliberately NOT raw `state.focus`, whose between-turns
+  // carry can lag onto a stale step (e.g. a `b-review` carry while the run is actually deploy-verifying).
+  const foldView = foldViewOf(state);
+  const focus = locusFocus(foldView); // the locus re-expressed as a Focus — the one highlight key
+  const cardStates = deriveCardStates(foldView);
+  const currentStep = focus.kind === "step" ? focus.step : null;
+  // The per-lane sub-graph lights nodes by the CURRENT pass's traversal (reachedThisPass); each lane
+  // gets its own pass-scoped subset below so a build lane with nothing reached reads 0/not-started.
+  const reachedPass = foldView.reachedThisPass;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {LANE_IDS.map((laneId) => (
@@ -102,6 +108,8 @@ export function LaneGraph({ state, onOpenRole }: { state: DashboardState; onOpen
           key={laneId}
           laneId={laneId}
           lane={WORKFLOW.lanes[laneId]}
+          cardStates={cardStates}
+          focus={focus}
           // Each lane gets ITS OWN pass-scoped reached subset (not the global union), so the
           // per-lane `done.size`/count/status semantics hold — a build lane with nothing reached
           // this pass still reads 0/not-started while design is lit.
@@ -120,6 +128,8 @@ function LanePanel({
   lane,
   done,
   currentStep,
+  cardStates,
+  focus,
   state,
   onOpenRole,
 }: {
@@ -127,6 +137,8 @@ function LanePanel({
   lane: Lane;
   done: Set<string>;
   currentStep: string | null;
+  cardStates: Map<string, CardState>;
+  focus: Focus; // the LOCUS as a Focus (see LaneGraph) — the one highlight key, NOT raw state.focus
   state: DashboardState;
   onOpenRole?: (role: string, stepId: string) => void;
 }) {
@@ -138,19 +150,17 @@ function LanePanel({
   // VERIFY checkpoint (gate:true but role release-engineer) DOES real work and stays counted.
   const lightable = lane.steps.filter((s) => s.match !== null && !(s.gate && s.role === null));
   const reached = lightable.filter((s) => done.has(s.id)).length;
-  // Active = this lane owns the focus. Either the running step is in THIS lane (step ids are unique
-  // per lane), OR the run is PARKED at a gate whose lane step is in THIS lane — so the deploy/promote
-  // lane lights (purple, via activeColorForFocus) while parked at the deploy gate, not just the gate
-  // node's dot. A gate park has currentStep null, which is why the step check alone missed it.
-  const gateStep = state.focus.kind === "gate" ? GATE_STEP_BY_KEY[state.focus.gate] : null;
+  // Active = this lane OWNS THE LOCUS (the same locus the glowing card reads — `focus` here is
+  // `locusFocus`, NOT raw state.focus, so the outline can't light a different lane than the glow).
+  // The locus is either a running step in THIS lane, or a gate the run sits on whose lane step is in
+  // THIS lane (so the deploy lane lights while parked at the deploy gate, not just the gate dot).
+  const gateStep = focus.kind === "gate" ? GATE_STEP_BY_KEY[focus.gate] : null;
   const active =
     (currentStep !== null && lane.steps.some((s) => s.id === currentStep)) ||
     (gateStep != null && lane.steps.some((s) => s.id === gateStep));
-  // The active lane's highlight takes the CURRENT ACTOR's colour (the same one focus key every
-  // surface reads): the working agent's role colour, not a fixed slate. A lane is only `active` when
-  // a step is running in it, so this resolves to that agent's colour; slate stays the orchestrator-
-  // in-charge / gate / escalation cases, which don't light a lane panel.
-  const accent = activeColorForFocus(state.focus);
+  // The active lane's highlight takes the locus's colour (the ONE key every surface reads): the working
+  // agent's role colour, gate-purple, escalation-red, or slate when the orchestrator is in charge.
+  const accent = activeColorForFocus(focus);
 
   // Lane status takes the LIFECYCLE as its sole authority. The lane's own lit-step count is
   // NOT evidence about completion in either direction, and both directions were shipped bugs:
@@ -262,21 +272,22 @@ function LanePanel({
         <span style={{ display: "flex", alignItems: "center", gap: 3, marginLeft: "auto" }}>
           {(() => {
             const dot = (s: LaneStep) => {
-              // Active from the ONE focus: the running step, the gate the run is parked at, or the
-              // escalation terminal it is parked on. focus is mutually exclusive (step XOR gate XOR
-              // escalation XOR idle), so nothing double-flashes — no per-surface juggling.
-              const gateKey = GATE_KEY_BY_STEP[s.id];
-              const parkedGate = state.focus.kind === "gate" && !!gateKey && gateKey === state.focus.gate;
-              const parkedEsc = state.focus.kind === "escalation" && s.escalation === true && state.focus.step === s.id;
-              const active = s.id === currentStep || parkedGate || parkedEsc;
-              const reached = done.has(s.id) || active;
-              const dotColor = s.role
-                ? colorForRole(s.role)
-                : parkedEsc
+              // Dumb map: the card's semantic state (deriveCardStates) -> dot style. BINARY — exactly
+              // one card is a current-* (it flashes, full opacity); every other is `base`, rendered at
+              // ONE uniform opacity. No dim/faint/done gradations.
+              const cs = cardStates.get(s.id) ?? "base";
+              const current = cs !== "base";
+              const flash = current;
+              const dotColor =
+                cs === "current-escalation"
                   ? "var(--status-critical)"
-                  : s.gate
-                    ? gateTintFor(s, state)
-                    : "var(--border-strong)";
+                  : cs === "current-gate"
+                    ? "var(--status-gate)"
+                    : s.role
+                      ? colorForRole(s.role)
+                      : s.gate
+                        ? "var(--border-strong)"
+                        : "var(--border-strong)";
               return (
                 <span
                   key={s.id}
@@ -286,11 +297,11 @@ function LanePanel({
                     height: 7,
                     borderRadius: s.gate ? 1 : "50%",
                     background: dotColor,
-                    opacity: reached ? 1 : 0.28,
+                    opacity: current ? 1 : BASE_OPACITY,
                     transform: s.gate ? "rotate(45deg)" : undefined,
-                    // The active light FLASHES (opacity pulse — a box-shadow glow would be clipped
-                    // by the card's overflow:hidden).
-                    ...(active ? { animation: "lightflash 1.1s ease-in-out infinite" } : {}),
+                    // The active/parked light FLASHES (opacity pulse — a box-shadow glow would be
+                    // clipped by the card's overflow:hidden).
+                    ...(flash ? { animation: "lightflash 1.1s ease-in-out infinite" } : {}),
                   }}
                 />
               );
@@ -330,18 +341,11 @@ function LanePanel({
 
       {collapsed ? null : (
         <div style={{ borderTop: `1px solid var(--border-default)`, padding: "10px 12px" }}>
-          <LaneSvg laneId={laneId} lane={lane} done={done} currentStep={currentStep} state={state} onOpenRole={onOpenRole} />
+          <LaneSvg laneId={laneId} lane={lane} done={done} currentStep={currentStep} cardStates={cardStates} state={state} onOpenRole={onOpenRole} />
         </div>
       )}
     </div>
   );
-}
-
-function gateTintFor(step: LaneStep, state: DashboardState): string {
-  // A gate dot is purple ONLY while it is the gate the run is currently parked at (the ONE focus).
-  // A passed or upcoming gate is neutral — purple never lingers on a gate the run has moved past.
-  const key = GATE_KEY_BY_STEP[step.id];
-  return key && state.focus.kind === "gate" && key === state.focus.gate ? "var(--status-gate)" : "var(--border-strong)";
 }
 
 // --------------------------------------------------------------------------- the graph
@@ -354,6 +358,7 @@ function LaneSvg({
   lane,
   done,
   currentStep,
+  cardStates,
   state,
   onOpenRole,
 }: {
@@ -361,6 +366,7 @@ function LaneSvg({
   lane: Lane;
   done: Set<string>;
   currentStep: string | null;
+  cardStates: Map<string, CardState>;
   state: DashboardState;
   onOpenRole?: (role: string, stepId: string) => void;
 }) {
@@ -690,7 +696,7 @@ function LaneSvg({
               step={s}
               x={pos.get(s.id)!.x}
               y={pos.get(s.id)!.y}
-              state={stepState(s, done, currentStep, state)}
+              state={stepState(s, cardStates)}
               // Metrics only for a step the CURRENT pass has reached (or the running one). A node
               // not yet traversed this pass shows NO metrics — never last cycle's model/cost/turns
               // (laneStepMeta is run-cumulative), so it reads as pending everywhere.
@@ -705,52 +711,18 @@ function LaneSvg({
   );
 }
 
-function stepState(
-  s: LaneStep,
-  done: Set<string>,
-  currentStep: string | null,
-  state: DashboardState,
-): StepState {
-  if (s.id === currentStep) return "current";
-  // The ONE gate the run is parked at pulses ("gate-current"); the escalation terminal the run is
-  // parked on pulses red ("escalation-current"). Both read from the single focus. Every OTHER gate —
-  // passed or upcoming — is neutral; purple/red is only ever the currently-parked one.
-  // The gate/checkpoint step the playhead is parked AT glows (purple), and TAKES PRECEDENCE over the
-  // focus/pendingGate glow: it lights the one-turn ship gates (deploy/promote) + the deploy-lane
-  // automated verify (dp-verify) that never become a parked `pendingGate`, and it stops a lingering
-  // surfaced-but-not-cleared gate (acceptance, still open while the release-engineer verifies) from
-  // stealing the glow from the step the run is actually at. When the playhead is NOT at a gate step,
-  // fall back to the parked-gate focus (the spec/acceptance surface→approve window).
-  const gateKey = GATE_KEY_BY_STEP[s.id];
-  if (state.topology.laneGate) {
-    if (s.id === state.topology.laneGate) {
-      // A role-worked checkpoint the playhead is at — the deploy-lane automated verify (`dp-verify`:
-      // gate:true but NOT a HITL gate, so no key) — is the role's active WORK, so it glows in that
-      // ROLE's colour ("current"), never gate-purple. Always.
-      if (!gateKey) return "current";
-      // A HITL human-decision gate (acceptance/deploy/promote/spec/plan/intake/backlog) glows purple
-      // ("gate-current") only when the run is actually PARKED there (focus=gate) OR when the board is
-      // SCRUBBED onto its gate.surfaced frame (!atLive — replaying that moment). During LIVE active
-      // work — the surface→approve window where a role turn (e.g. the end-of-design reconcile) runs
-      // AFTER the gate surfaced — the running role step glows via `currentStep` instead; the gate does
-      // NOT also light (the "both the role and the gate are lit" bug). The gate takes the glow back the
-      // instant the drive parks (focus flips to gate).
-      if (!state.atLive || (state.focus.kind === "gate" && gateKey === state.focus.gate)) return "gate-current";
-      // else: fall through — not lit here, so the active role step (currentStep) is the only glow.
-    }
-  } else if (gateKey && state.focus.kind === "gate" && gateKey === state.focus.gate) {
-    return "gate-current";
-  }
-  // Only the ONE HIL terminal the run is parked on flashes red — not every lane's raise-to-HIL box.
-  if (s.escalation && state.focus.kind === "escalation" && state.focus.step === s.id) return "escalation-current";
-  if (done.has(s.id)) return "done";
-  // A gate that has been REACHED (approved, or its later sibling reached) reads as done, not pending,
-  // so the label dims like any passed step (colour is neutral either way).
-  if (s.gate) {
-    const g = gateKey ? state.gates.find((x) => x.name === gateKey) : undefined;
-    if (g) return "done";
-  }
-  return "pending";
+// The box's visual state is a PURE map of its semantic CardState (deriveCardStates, the single source)
+// — no gate/laneGate/atLive/state.gates logic here. Dots and boxes read the same card state, so they
+// can never disagree. Exactly one card glows; everything else is `base` (one uniform neutral).
+const CARD_TO_STEP_STATE: Record<CardState, StepState> = {
+  "current-step": "current",
+  "current-gate": "gate-current",
+  "current-escalation": "escalation-current",
+  base: "base",
+};
+
+function stepState(s: LaneStep, cardStates: Map<string, CardState>): StepState {
+  return CARD_TO_STEP_STATE[cardStates.get(s.id) ?? "base"];
 }
 
 // A fail/side path: arcs below the row, labelled, in warning amber so it never reads as the
@@ -857,9 +829,10 @@ function StepBox({
   // role panel is a safe fallback even with no recorded turn, exactly like the bubble.
   const clickable = step.role != null && !!onOpenRole;
   const open = clickable ? () => onOpenRole!(step.role!, step.id) : undefined;
+  const stateLabel = state === "base" ? "idle" : state.replace("gate-", "gate ");
   const title = `${step.label} — ${step.sub}${isGate ? " (human gate)" : ""}${
     step.branch ? " (branch: only on failure)" : ""
-  } · ${state.replace("gate-", "gate ")}${clickable ? ` · open ${step.role}'s turn` : ""}`;
+  } · ${stateLabel}${clickable ? ` · open ${step.role}'s turn` : ""}`;
 
   // Per-step agent-card metric: "model · effort · turns" (or "model · turns" when there's no effort),
   // from the step's phase.start + the turns credited to it. Turns are 0 on a replay corpus, so they
@@ -875,9 +848,7 @@ function StepBox({
 
   return (
     <g
-      style={{
-        ...(clickable ? { cursor: "pointer" } : {}),
-      }}
+      style={clickable ? { cursor: "pointer" } : {}}
       onClick={open}
       role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
@@ -960,8 +931,8 @@ function StepBox({
         style={{
           fontSize: STEP_BODY_FONT,
           // On the active turn / parked gate the non-white text takes the border colour (the agent's
-          // colour for a turn, gate-purple for a parked gate).
-          fill: highlighted ? stroke : state === "pending" ? "var(--text-faint)" : "var(--text-muted)",
+          // colour for a turn, gate-purple for a parked gate); every `base` box uses the one muted tone.
+          fill: highlighted ? stroke : "var(--text-muted)",
           fontFamily: font.sans,
         }}
       >

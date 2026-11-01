@@ -925,9 +925,25 @@ export function laneStepForEvent(e: AgentLogEvent | null | undefined): LaneHit |
   // INTO green (cycle.verified is the driver's own real-branch run that proves the green), so greening
   // the whole cycle (tests + verify included) is the driver's; it is NOT a separate card.
   if (e.event === "test.result") {
-    const st = (e.metadata as Record<string, unknown> | undefined)?.status;
-    if (st === "green" || st === "refactored") return { lane: "build", step: "b-green" };
-    if (st === "red") return { lane: "build", step: "b-red" };
+    // Route by the PRODUCING role first. The release-engineer's DEPLOY-VERIFY suite re-run belongs to
+    // the deploy lane's Verify (dp-verify), NOT the driver's build Green — status alone must never force
+    // a deploy re-run onto the build lane. (Writer contract: consort-capture stamps the producing role.)
+    if (e.role === "release-engineer") return { lane: "deploy", step: "dp-verify" };
+    // The status→b-green/b-red shortcut is ONLY for the BASE cycle (the navigator RED turn, the driver
+    // GREEN turn — no variant buildMode). In a VARIANT build turn the test.result is that turn's own
+    // re-verification, so it must stay on the turn's step, not be yanked to b-green by status: otherwise
+    // the locus flips turn-step↔b-green as `running`/`green` results alternate (the driver-repair flip,
+    // and the same for review/refactor/assess). So defer to the carried turn buildMode — fall through to
+    // the buildMode match below whenever a variant mode is in force. This is the general rule (the locus
+    // is the turn), not a per-turn patch: `b-green`/`b-red` light from status ONLY at the base cycle.
+    const bm = buildModeOf(e); // the TURN's buildMode, carried onto this event by withCarried
+    const baseCycle = !bm || bm === "green" || bm === "red";
+    if (baseCycle) {
+      const st = (e.metadata as Record<string, unknown> | undefined)?.status;
+      if (st === "green" || st === "refactored") return { lane: "build", step: "b-green" };
+      if (st === "red") return { lane: "build", step: "b-red" };
+    }
+    // variant turn → fall through; PASS 2 matches the turn's step by role + buildMode (b-repair, …).
   }
   // PASS 1 — exact-event matches (m.event / m.eventAny) win regardless of lane/step order, because an
   // exact event name is MORE SPECIFIC than a role/phase match (e.g. a deploy `verify.passed` lands on
@@ -1081,11 +1097,18 @@ export function latestTurnOrdinalForStep(
 function* eventsWithFeature(
   events: AgentLogEvent[],
   upTo?: number,
-): Generator<{ e: AgentLogEvent; feature: string | null; phase: string | null; buildMode: string | null }> {
+): Generator<{
+  e: AgentLogEvent;
+  feature: string | null;
+  phase: string | null;
+  buildMode: string | null;
+  turnRole: string | null;
+}> {
   const end = upTo === undefined ? events.length : Math.max(0, Math.min(upTo, events.length));
   let feature: string | null = null;
   let phase: string | null = null;
   let buildMode: string | null = null;
+  let turnRole: string | null = null;
   for (let i = 0; i < end; i++) {
     const e = events[i];
     const f = featureIdOf(e);
@@ -1098,25 +1121,44 @@ function* eventsWithFeature(
     // phase-less narration (`reasoning` / `turn.usage`) so those events map to the SAME build step as
     // the turn, not to the base green step. This is the ONE place the active step's turn-identity is
     // carried — the central rule that keeps a `reasoning` line from jumping the highlight.
-    if (e.event === "phase.start") buildMode = buildModeOf(e);
-    else {
+    //
+    // The turn's OWNER role is carried forward the SAME way, set at each phase.start. Phase, buildMode
+    // AND role together are the turn's identity; carrying all three means every event inside a turn
+    // attributes to that turn's step — the ONE rule. Without the role, an event that names another role
+    // (a reconciled/back-filled `artifact.written` "present on disk" — e.g. the ux-designer/architect
+    // artifacts re-stated during a spec-author breakdown turn) hijacked the locus onto that role's step.
+    if (e.event === "phase.start") {
+      buildMode = buildModeOf(e);
+      turnRole = e.role ?? turnRole;
+    } else {
       const bm = buildModeOf(e);
       if (bm) buildMode = bm;
     }
-    yield { e, feature, phase, buildMode };
+    yield { e, feature, phase, buildMode, turnRole };
   }
 }
 
-/** The event as seen with its effective (carried-forward) phase AND buildMode attached, so a
- *  phase/mode-less narration event (`reasoning` / `turn.usage`) is disambiguated by the TURN the run
- *  is actually in — otherwise a driver `reasoning` during a REFACTOR turn matches the base GREEN step
- *  and jumps the highlight. A no-op when the event already carries them. */
-function withCarried(e: AgentLogEvent, phase: string | null, buildMode: string | null): AgentLogEvent {
+/** The event as seen with the TURN's identity (carried-forward phase, buildMode AND role) attached,
+ *  so EVERY event inside a turn maps to that turn's step. Phase/mode disambiguate a phase-less
+ *  narration event (`reasoning` / `turn.usage`) — otherwise a driver `reasoning` during a REFACTOR turn
+ *  matches the base GREEN step and jumps the highlight. Role does the same for an event that names a
+ *  DIFFERENT role than the turn owner: a reconciled/back-filled `artifact.written` ("present on disk")
+ *  carries its original author in its provenance, but it is part of the CURRENT turn, so it maps to the
+ *  turn's step (a spec-author breakdown turn's reconciled ux/architect artifacts stay on d-breakdown —
+ *  they never light d-ux-ia / d-arch). One rule, every event. A no-op when the event already matches. */
+function withCarried(
+  e: AgentLogEvent,
+  phase: string | null,
+  buildMode: string | null,
+  turnRole: string | null = null,
+): AgentLogEvent {
   const needPhase = !!phase && phaseOf(e) !== phase;
   const needMode = !!buildMode && buildModeOf(e) !== buildMode;
-  if (!needPhase && !needMode) return e;
+  const needRole = !!turnRole && e.role !== turnRole;
+  if (!needPhase && !needMode && !needRole) return e;
   return {
     ...e,
+    ...(needRole ? { role: turnRole } : {}),
     metadata: { ...(e.metadata ?? {}), ...(needPhase ? { phase } : {}), ...(needMode ? { buildMode } : {}) },
   };
 }
@@ -1174,14 +1216,16 @@ export function laneProgress(events: AgentLogEvent[], upTo?: number, feature?: s
   // The playhead event with its effective phase — tracked here (before the feature filter) because
   // `current` is deliberately NOT feature-filtered, while the done-set below is.
   let playhead: AgentLogEvent | null = null;
-  for (const { e, feature: f, phase, buildMode } of eventsWithFeature(events, upTo)) {
-    // Attach BOTH the carried phase and buildMode, so a phase-less breakdown artifact maps to plan's
-    // p-breakdown (not design's d-spec), a phase-less design artifact still maps into design, AND a
-    // driver `reasoning` during a refactor turn stays on b-refactor instead of falling to b-green.
-    const carried = withCarried(e, phase, buildMode);
-    playhead = carried;
+  for (const { e, feature: f, phase, buildMode, turnRole } of eventsWithFeature(events, upTo)) {
+    // The LOCUS (`current`, below) carries the full TURN identity — phase + buildMode + ROLE — so every
+    // event maps to the turn's step: a driver `reasoning` during a refactor turn stays on b-refactor,
+    // AND a reconciled cross-role artifact (a ux/architect artifact re-stated during a spec-author
+    // breakdown turn) stays on the turn's step instead of hijacking the glow onto its own role's step.
+    playhead = withCarried(e, phase, buildMode, turnRole);
+    // The DONE set carries phase + buildMode but NOT role: it is the historical "which steps ran",
+    // feature-scoped per event, and a role-carry would mis-credit a reconciled artifact's lane there.
     if (feature !== undefined && f !== feature) continue;
-    const hit = laneStepForEvent(carried);
+    const hit = laneStepForEvent(withCarried(e, phase, buildMode));
     if (!hit) continue;
     done[hit.lane].add(hit.step);
     last[hit.lane] = hit.step;

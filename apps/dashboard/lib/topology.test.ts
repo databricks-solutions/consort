@@ -438,6 +438,16 @@ describe("matchesStep", () => {
     expect(step("refactor")).toEqual({ lane: "build", step: "b-refactor" }); // structure refactor
   });
 
+  // A per-test result is routed by its PRODUCING role, not by status alone: the driver's build-cycle
+  // greens/reds light b-green/b-red, but the release-engineer's deploy-verify suite RE-RUN belongs to
+  // the deploy lane's Verify (dp-verify) — otherwise the deploy re-run lights the driver's build Green.
+  it("routes a test.result by producing role: driver -> build, release-engineer deploy-verify -> dp-verify", () => {
+    expect(laneStepForEvent(ev("test.result", "driver", { status: "green", story: "S1" }))).toEqual({ lane: "build", step: "b-green" });
+    expect(laneStepForEvent(ev("test.result", "driver", { status: "red", story: "S1" }))).toEqual({ lane: "build", step: "b-red" });
+    // the deploy-verify re-run (release-engineer) must NOT land on the build lane's driver Green
+    expect(laneStepForEvent(ev("test.result", "release-engineer", { status: "green", story: "S1" }))).toEqual({ lane: "deploy", step: "dp-verify" });
+  });
+
   it("ignores non-string metadata rather than coercing it", () => {
     expect(matchesStep({ role: "driver", phase: "green" }, ev("x", "driver", { phase: 7 }))).toBe(false);
     // a numeric buildMode is treated as absent, so phaseNot/buildModeNot don't exclude
@@ -517,12 +527,14 @@ describe("laneProgress / passedNodes", () => {
     expect(p.current).toEqual({ lane: "build", step: "b-green" });
   });
 
-  it("current follows the event AT the playhead, not the last match", () => {
-    // fold through the unmatched orchestrator handoff: nothing is current
+  it("current STAYS on the last turn's step across a between-turns handoff (no flicker to null)", () => {
+    // A handoff between turns carries the FINISHED turn's identity (role+phase+buildMode) forward, so
+    // the locus holds on that turn's step until the NEXT phase.start — rather than blinking to null on
+    // the orchestrator handoff. (The glow is the current turn; a handoff is not a new turn.)
     const withTrailingNoise = [...events, ev("handoff", "orchestrator", { phase: "design" })];
     const p = laneProgress(withTrailingNoise);
-    expect(p.current).toBeNull();
-    // but the reached set is unchanged
+    expect(p.current).toEqual({ lane: "build", step: "b-green" }); // holds on the driver's green turn
+    // the reached set is unchanged — the handoff itself maps to no step
     expect([...p.done.build]).toEqual(["b-red", "b-green"]);
   });
 
