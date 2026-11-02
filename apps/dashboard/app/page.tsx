@@ -619,8 +619,9 @@ export default function Home() {
               speed={speed}
               onSpeedChange={setSpeed}
               atTimestamp={lineTimestamp(lineAt)}
-              awaitingGate={state.focus.kind === "gate"}
+              awaitingGate={state.focus.kind === "gate" && state.focus.status === "surfaced"}
               escalated={state.focus.kind === "escalation"}
+              running={state.focus.kind === "step"}
               replay={state.source?.mode === "replay"}
               granularity="lines"
               lineTotal={timeline?.total ?? 0}

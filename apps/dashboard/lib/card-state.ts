@@ -133,7 +133,10 @@ export function locusFocus(v: FoldView): Focus {
   if (loc.kind === "escalation") return { kind: "escalation", step: loc.step };
   if (loc.kind === "gate") {
     const gate = GATE_KEY_BY_STEP[loc.step];
-    return gate ? { kind: "gate", gate } : { kind: "step", lane: loc.lane, step: loc.step };
+    if (!gate) return { kind: "step", lane: loc.lane, step: loc.step };
+    // The gate's status is authoritative from approvedGates: a furthest-along APPROVED gate (the
+    // completed-phase locus) reads "approved"; a gate the playhead merely sits on is still "surfaced".
+    return { kind: "gate", gate, status: v.approvedGates.has(gate) ? "approved" : "surfaced" };
   }
   return { kind: "step", lane: loc.lane, step: loc.step };
 }
