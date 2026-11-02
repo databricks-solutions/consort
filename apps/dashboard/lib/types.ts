@@ -334,6 +334,10 @@ export interface SnapshotInputs {
   handbacks: { role: Role; story: string | null }[];
   // Age of the most recent Claude session transcript write, in ms. Infinity when unknown.
   sessionAgeMs: number;
+  // Whether `.consort/drive.pid` names a LIVE process — the authoritative "the drive is running"
+  // signal (STOP = drive-pid-gone). A live drive is RUNNING; a gone drive is at rest (WAITING at an
+  // unapproved frontier gate, PARKED at an approved one). false in replay (no live drive).
+  driveAlive: boolean;
   pendingPermission: PendingPermission | null;
   generatedAt: string;
   /**

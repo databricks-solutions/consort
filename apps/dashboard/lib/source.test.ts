@@ -656,6 +656,7 @@ describe("DashboardSource — a fake source satisfies the contract", () => {
         status: null,
         handbacks: [],
         sessionAgeMs: Infinity,
+        driveAlive: false,
         pendingPermission: null,
         generatedAt,
       };

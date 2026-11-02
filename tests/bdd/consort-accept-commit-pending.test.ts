@@ -1,10 +1,16 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { gitInit } from "@databricks-solutions/lakebase-scm-utils/git";
 import { exec } from "@databricks-solutions/lakebase-scm-utils/util";
 import { commitExperimentCode, commitDriveStateForAccept } from "../../consort/pipeline/cycle-record.js";
+
+// Every test here does REAL git I/O (gitInit + several commits, ~8-9s each in isolation). Inside the
+// full pre-push suite (thousands of tests, high parallelism) the git subprocesses contend for CPU/disk
+// and can blow the default 30s per-test timeout — a load flake, not a defect (they pass well under the
+// limit run alone). Give this file generous headroom so the release gate is robust to machine load.
+vi.setConfig({ testTimeout: 120_000 });
 
 // Regression guard for the accept-merge dirty-tree abort: a supersession/repair
 // turn can edit CODE on the experiment branch outside any green/refactor commit,

@@ -30,7 +30,9 @@ function ev(
 }
 
 // No-op snapshot: the fold's disk half supplies nothing, so these tests exercise purely
-// the event-derived half. `sessionAgeMs: Infinity` means "no session activity".
+// the event-derived half. `sessionAgeMs: Infinity` = no session activity; `driveAlive: false` =
+// the drive is STOPPED (at rest) — the default, since most focus tests assert an at-rest frontier.
+// Pass `driveAlive: true` for the RUNNING cases (drive alive → the role step holds focus).
 function snap(over: Partial<SnapshotInputs> = {}): SnapshotInputs {
   return {
     projectDir: "/tmp/proj",
@@ -38,6 +40,7 @@ function snap(over: Partial<SnapshotInputs> = {}): SnapshotInputs {
     status: null,
     handbacks: [],
     sessionAgeMs: Infinity,
+    driveAlive: false,
     pendingPermission: null,
     generatedAt: "2026-08-05T00:00:00.000Z",
     ...over,
@@ -609,7 +612,7 @@ describe("batch /design does NOT bounce focus to a surfaced-but-unapproved spec 
     ev("phase.start", { phase: "design", feature_id: "F1" }, { role: "dba" }),
     ev("turn.usage", { cost_usd: 1, phase: "design" }, { role: "dba" }),
   ];
-  const active = (upTo: number) => fold(BATCH_DESIGN.slice(0, upTo), snap({ sessionAgeMs: 0 }));
+  const active = (upTo: number) => fold(BATCH_DESIGN.slice(0, upTo), snap({ driveAlive: true }));
 
   it("holds focus on the role step at a live-edge turn.usage (agent momentarily idle, gate open)", () => {
     // Last event = the architect's turn.usage: the agent just went idle but the run is live and the
@@ -627,10 +630,10 @@ describe("batch /design does NOT bounce focus to a surfaced-but-unapproved spec 
     expect(active(4).focus).toEqual({ kind: "step", lane: "design", step: "d-arch" });
   });
 
-  it("surfaces the spec gate once the drive goes quiet (session idle = parked) — the batch-approval HIL", () => {
-    // Same end-state, but the session has gone idle (no event for SESSION_ACTIVE_MS): the drive has
-    // stopped with the spec gate still open → it IS a park → the gate wins focus so the HIL shows.
-    expect(fold(BATCH_DESIGN, snap({ sessionAgeMs: Infinity })).focus).toEqual({ kind: "gate", gate: "spec", status: "surfaced" });
+  it("surfaces the spec gate once the drive has STOPPED (drive.pid gone = parked) — the batch-approval HIL", () => {
+    // Same end-state, but the drive has exited (driveAlive false): it stopped with the spec gate still
+    // open → it IS a park → the gate wins focus so the HIL shows.
+    expect(fold(BATCH_DESIGN, snap({ driveAlive: false })).focus).toEqual({ kind: "gate", gate: "spec", status: "surfaced" });
   });
 
   it("does NOT flash the purple gate while SCRUBBING back through the timeline", () => {
@@ -646,40 +649,33 @@ describe("batch /design does NOT bounce focus to a surfaced-but-unapproved spec 
   });
 });
 
-describe("a HITL gate the drive has STOPPED at (next.json open_gates) wins focus immediately — not after a timer", () => {
-  // The acceptance gate is a genuine HITL park the instant it is reached: the drive halts and writes
-  // next.json with the gate in `open_gates`. But its pre-acceptance deploy/verify logs a big driver
-  // test-run AFTER the gate.surfaced, so the carried last step is `b-green`. Keying the park only on a
-  // 15s idle timer left the board flashing `driver-green` until the timer elapsed. The drive's own
-  // stop-state (next.json `open_gates`) is authoritative and immediate — mirrors the real
-  // stockflow-demo-f2 acceptance park (gate surfaced, then a full deploy-verify driver run after it).
+describe("a HITL gate the drive has STOPPED at (drive.pid gone) wins focus immediately — not after a timer", () => {
+  // The acceptance gate is a genuine HITL park the instant it is reached: the drive EXITS ("re-run to
+  // continue"). But its pre-acceptance deploy/verify logs a big driver test-run AFTER the gate.surfaced,
+  // so the carried last step is `b-green`. The drive process itself (drive.pid gone) is the authoritative,
+  // immediate stop signal — mirrors the real stockflow-demo-f2 acceptance park (gate surfaced, then a
+  // full deploy-verify driver run after it, then the drive exits).
   const ACCEPT: AgentLogEvent[] = [
     ev("phase.start", { phase: "green", story: "S1", feature_id: "F1" }, { role: "driver" }),
     ev("test.result", { status: "green" }, { role: "driver" }), // → carried last build step = b-green
     ev("turn.usage", { phase: "green" }, { role: "driver" }), // close the driver turn → idle
     ev("gate.surfaced", { gate: "acceptance", story: "S1" }, { role: "orchestrator" }), // unapproved
-    // deploy-verify runs AFTER the gate surfaces, then the drive STOPS to await acceptance:
+    // deploy-verify runs AFTER the gate surfaces, then the drive EXITS to await acceptance:
     ev("phase.start", { phase: "deploy" }, { role: "release-engineer" }),
     ev("turn.usage", { phase: "deploy" }, { role: "release-engineer" }), // close the RE turn → idle
     ev("deploy.verified", {}, { role: "release-engineer" }),
     ev("phase.end", { phase: "deploy" }, { role: "release-engineer" }), // all agents idle now (parked)
   ];
-  // next.json the drive wrote at the park: it is awaiting the human at the acceptance gate.
-  const parkedNext = { state: { open_gates: ["acceptance"] }, generated_at: "2026-10-28T09:00:00.000Z" } as SnapshotInputs["next"];
 
-  it("open_gates names the gate → gate wins NOW, even with the session still active (the b-green bug)", () => {
-    expect(fold(ACCEPT, snap({ next: parkedNext, sessionAgeMs: 0 })).focus).toEqual({ kind: "gate", gate: "acceptance", status: "surfaced" });
+  it("drive gone → the gate wins NOW (WAITING), even with the carried b-green step trailing it", () => {
+    expect(fold(ACCEPT, snap({ driveAlive: false })).focus).toEqual({ kind: "gate", gate: "acceptance", status: "surfaced" });
   });
 
-  it("without the stop-state, an active session still carries the role step (open_gates is the signal)", () => {
-    // No next.json / nothing in open_gates + session active (< SESSION_ACTIVE_MS) → not treated as a
-    // park, so focus carries the last build step (b-green) rather than the gate. This isolates the
-    // open_gates stop-state as the thing that makes the gate win immediately in the test above.
-    expect(fold(ACCEPT, snap({ sessionAgeMs: 0 })).focus).toEqual({ kind: "step", lane: "build", step: "b-green" });
-  });
-
-  it("idle fallback still parks the gate when there is no stop-state", () => {
-    expect(fold(ACCEPT, snap({ sessionAgeMs: Infinity })).focus).toEqual({ kind: "gate", gate: "acceptance", status: "surfaced" });
+  it("drive ALIVE → the role step still carries (b-green), NOT the gate — the inter-story-gap RUNNING case", () => {
+    // The drive is still alive (building the next story / provisioning), so even with the acceptance
+    // gate.surfaced trailing, the run is RUNNING: focus carries the last build step rather than flipping
+    // to the gate. This is the bug the drive-liveness signal fixes — a quiet-but-alive drive is not parked.
+    expect(fold(ACCEPT, snap({ driveAlive: true })).focus).toEqual({ kind: "step", lane: "build", step: "b-green" });
   });
 
   // The completed-phase case (the F1 bug): a gate surfaced then APPROVED, with a role turn that ran
@@ -692,17 +688,18 @@ describe("a HITL gate the drive has STOPPED at (next.json open_gates) wins focus
     ev("gate.surfaced", { gate: "spec", story: "S1" }, { role: "orchestrator" }),
     ev("gate.approved", { gate: "spec", story: "S1" }, { role: "product-owner" }), // the human approved
   ];
-  it("an APPROVED frontier gate at rest is the locus (status approved), NOT the trailing carried step", () => {
-    expect(fold(APPROVED_AT_REST, snap({ sessionAgeMs: Infinity })).focus).toEqual({
+  it("an APPROVED frontier gate at rest (drive gone) is the locus (status approved = PARKED), NOT the trailing carried step", () => {
+    expect(fold(APPROVED_AT_REST, snap({ driveAlive: false })).focus).toEqual({
       kind: "gate",
       gate: "spec",
       status: "approved",
     });
   });
-  it("while the session is still ACTIVE after the approval, the role step still carries (no premature rest)", () => {
-    // The approval landed but the drive is streaming on (session active, open_gates empty) → the
-    // frontier gate is not a rest yet; focus stays on the carried step until the drive quiesces.
-    expect(fold(APPROVED_AT_REST, snap({ sessionAgeMs: 0 })).focus).toEqual({ kind: "step", lane: "build", step: "b-green" });
+  it("while the drive is still ALIVE after the approval, the role step still carries (RUNNING, no premature PARKED)", () => {
+    // The approval landed but the drive is streaming on (alive — building the next story) → the frontier
+    // gate is not a rest yet; focus stays on the carried step until the drive actually exits. This is the
+    // PARKED-while-running bug: a live drive past an approved gate is RUNNING, not PARKED between stages.
+    expect(fold(APPROVED_AT_REST, snap({ driveAlive: true })).focus).toEqual({ kind: "step", lane: "build", step: "b-green" });
   });
 });
 
