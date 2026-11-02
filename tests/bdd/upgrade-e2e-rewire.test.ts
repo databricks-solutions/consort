@@ -53,6 +53,62 @@ describe("refreshSurface re-wires the E2E block for a UI project (upgrade must n
     expect(runTests()).toMatch(/FALSE-GREEN GUARD/);
   });
 
+  // SCAFFOLD ↔ UPGRADE SURFACE CONTRACT (see scm-utils scripts/lakebase/scaffold.ts): kit-owned
+  // per-test instrumentation deployed at scaffold time MUST be force-refreshed on upgrade, else a fix
+  // (e.g. the feature/story stamp in app/consort_capture.py) reaches fresh scaffolds but never an
+  // existing project — the exact "capture stayed pre-stamp on a project pinned to a newer scm-utils"
+  // bug. These assertions enforce the contract so it can't silently regress.
+  it("brings kit-owned per-test instrumentation forward: app/consort_capture.py + client reporter/fixtures", () => {
+    const cfg = defaultConsortConfig();
+    cfg.project!.uiTrack = true;
+    cfg.project!.clientFramework = "react";
+    writeConsortConfig(dir, cfg);
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "app", scripts: {}, devDependencies: {} }));
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname='app'\n"); // marks a Python project
+    // Project carries STALE copies of each instrumentation file (what an older scaffold deployed).
+    mkdirSync(join(dir, "app"), { recursive: true });
+    writeFileSync(join(dir, "app", "consort_capture.py"), "# STALE pre-stamp capture\n");
+    mkdirSync(join(dir, "client", "tests", "e2e"), { recursive: true });
+    writeFileSync(join(dir, "client", "package.json"), JSON.stringify({ name: "client", scripts: {}, devDependencies: {} }));
+    writeFileSync(join(dir, "client", "consort-vitest-reporter.ts"), "// STALE reporter\n");
+    writeFileSync(join(dir, "client", "tests", "e2e", "consort-fixtures.ts"), "// STALE fixtures\n");
+
+    const r = refreshSurface(dir, KIT_ROOT, "v0.3.52-test");
+
+    // All three are reported refreshed and are no longer the stale stubs.
+    expect(r.reporterFiles).toEqual(
+      expect.arrayContaining([
+        "app/consort_capture.py",
+        "client/consort-vitest-reporter.ts",
+        "client/tests/e2e/consort-fixtures.ts",
+      ]),
+    );
+    const capture = readFileSync(join(dir, "app", "consort_capture.py"), "utf8");
+    expect(capture).not.toContain("STALE");
+    expect(capture).toContain("_consort_scope"); // the feature/story stamp — proof the FIX reached the file
+    expect(readFileSync(join(dir, "client", "consort-vitest-reporter.ts"), "utf8")).not.toContain("STALE");
+    expect(readFileSync(join(dir, "client", "tests", "e2e", "consort-fixtures.ts"), "utf8")).not.toContain("STALE");
+  });
+
+  it("refreshes app/consort_capture.py on a backend-only project, but not the client instrumentation", () => {
+    const cfg = defaultConsortConfig();
+    cfg.project!.uiTrack = false;
+    cfg.project!.clientFramework = "none";
+    writeConsortConfig(dir, cfg);
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "api", scripts: {}, devDependencies: {} }));
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname='api'\n");
+    mkdirSync(join(dir, "app"), { recursive: true });
+    writeFileSync(join(dir, "app", "consort_capture.py"), "# STALE\n");
+
+    const r = refreshSurface(dir, KIT_ROOT, "v0.3.52-test");
+
+    expect(r.reporterFiles).toContain("app/consort_capture.py");
+    // No client/ dir → refreshReporter's dest-dir guard skips the client files (no stray files).
+    expect(r.reporterFiles).not.toContain("client/consort-vitest-reporter.ts");
+    expect(existsSync(join(dir, "client"))).toBe(false);
+    expect(readFileSync(join(dir, "app", "consort_capture.py"), "utf8")).toContain("_consort_scope");
+  });
+
   it("substitutes {{LAKEBASE_SCM_UTILS_VERSION}} in the refreshed CI workflows (no literal placeholder ships)", () => {
     const cfg = defaultConsortConfig();
     cfg.project!.uiTrack = false;

@@ -1,16 +1,16 @@
 {
   "/_not-found/page": "/_not-found",
   "/favicon.ico/route": "/favicon.ico",
-  "/api/project-branch/route": "/api/project-branch",
-  "/api/artifact/route": "/api/artifact",
   "/api/planning/route": "/api/planning",
-  "/api/driver-activity/route": "/api/driver-activity",
-  "/api/test-run-live/route": "/api/test-run-live",
-  "/api/step-outputs/route": "/api/step-outputs",
-  "/api/story-tests/route": "/api/story-tests",
   "/api/state/route": "/api/state",
+  "/api/artifact/route": "/api/artifact",
+  "/api/driver-activity/route": "/api/driver-activity",
+  "/api/step-outputs/route": "/api/step-outputs",
+  "/api/test-run-live/route": "/api/test-run-live",
+  "/api/story-tests/route": "/api/story-tests",
+  "/api/project-branch/route": "/api/project-branch",
   "/api/turn/[ord]/route": "/api/turn/[ord]",
-  "/page": "/",
+  "/api/activity-timeline/route": "/api/activity-timeline",
   "/api/story-tables/route": "/api/story-tables",
-  "/api/activity-timeline/route": "/api/activity-timeline"
+  "/page": "/"
 }

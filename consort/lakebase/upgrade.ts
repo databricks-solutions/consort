@@ -154,7 +154,7 @@ export interface RefreshSurfaceResult {
   scripts: number; // kit-owned scripts copied
   workflows: number; // CI workflow files copied
   e2e: boolean; // whether the Playwright E2E block was (re)wired into run-tests.sh (UI projects)
-  reporterFiles: string[]; // kit-owned per-test REPORTER files refreshed from the pinned scm-utils (tests/conftest.py, tests/e2e/conftest.py)
+  reporterFiles: string[]; // kit-owned per-test INSTRUMENTATION refreshed from the pinned scm-utils: tests/conftest.py, tests/e2e/conftest.py, app/consort_capture.py, client/consort-vitest-reporter.ts, client/tests/e2e/consort-fixtures.ts
 }
 
 /** Count the files (recursively) under `dir`, or 0 if it does not exist. */
@@ -300,15 +300,18 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
       removedRootFiles.push("playwright.config.ts");
     }
   }
-  // Kit-owned per-test REPORTER conftests (tests/conftest.py + tests/e2e/conftest.py) live in the
-  // scm-utils LANGUAGE/common templates, NOT consort's common/ bundle — so refreshSurface never
-  // touched them and a reporter fix (the cross-feature owner-resolution; the _is_up narrow-except)
-  // reached FRESH scaffolds but never an UPGRADED project. Refresh them FROM the installed scm-utils
-  // templates (this kit's pinned version), treating them as kit-owned surface like consort-capture.ts
-  // (force-overwrite). Resolve the scm-utils templates by node module resolution from kitDir (never a
-  // guessed node_modules layout). GUARDED: only refresh a conftest whose target dir already exists, so
-  // a project without tests/ or tests/e2e/ never gets a stray file. Best-effort; a failure here must
-  // never abort the surface refresh.
+  // Kit-owned per-test INSTRUMENTATION that lives in the scm-utils LANGUAGE/common/client templates
+  // (NOT consort's common/ bundle) — reporter conftests (tests/conftest.py + tests/e2e/conftest.py),
+  // the backend row-capture (app/consort_capture.py), and the client Vitest reporter + Playwright e2e
+  // header fixture. refreshSurface historically touched NONE of them, so a fix that landed in scm-utils
+  // reached FRESH scaffolds but never an UPGRADED project (the capture stayed pre-stamp; a reporter fix
+  // never propagated). Refresh them FROM the installed scm-utils templates (this kit's pinned version),
+  // treating them as kit-owned surface like consort-capture.ts (force-overwrite). Resolve the scm-utils
+  // templates by node module resolution from kitDir (never a guessed node_modules layout). GUARDED:
+  // only refresh a file whose target dir already exists, so a project without tests/, app/, or client/
+  // never gets a stray file. Best-effort; a failure here must never abort the surface refresh.
+  // CONTRACT: this set MUST stay in sync with what the scm-utils scaffold deploys — see the
+  // "SCAFFOLD ↔ UPGRADE SURFACE CONTRACT" header in scm-utils scripts/lakebase/scaffold.ts.
   const reporterFiles: string[] = [];
   try {
     // Locate the installed scm-utils templates by existsSync candidate paths (portable across the
@@ -336,7 +339,26 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
     // Main per-test reporter conftest (language-specific) — Python projects.
     const isPython =
       fs.existsSync(path.join(projectDir, "pyproject.toml")) || fs.existsSync(path.join(projectDir, "requirements.txt"));
-    if (isPython) refreshReporter(path.join("python", "tests", "conftest.py"), path.join("tests", "conftest.py"));
+    if (isPython) {
+      refreshReporter(path.join("python", "tests", "conftest.py"), path.join("tests", "conftest.py"));
+      // The per-test STORED/RETRIEVED capture (app/consort_capture.py) is scm-utils-owned instrumentation
+      // CODE deployed into the app at scaffold time. Like the conftests it was NEVER refreshed on upgrade,
+      // so a project pinned to a newer scm-utils kept running the capture it was scaffolded with — e.g. a
+      // project pinned to scm-utils 0.3.14 still ran PRE-STAMP capture (no feature/story stamping, so the
+      // dashboard could not scope reads/writes per feature). Bring it forward from the pinned scm-utils
+      // templates too (force-overwrite, guarded on app/ existing by refreshReporter).
+      refreshReporter(path.join("python", "app", "consort_capture.py"), path.join("app", "consort_capture.py"));
+    }
+    // Client-side per-test instrumentation — the Vitest reporter (component/hook test liveness) and
+    // the Playwright e2e header fixture (tags browser requests with X-Consort-Test-Id so the backend
+    // capture can attribute e2e reads/writes). Same scm-utils-owned CODE family as the conftests and
+    // app/consort_capture.py, and historically NOT refreshed on upgrade — so a client project on a
+    // newer scm-utils kept running stale reporter/fixture code. Bring them forward too (guarded on
+    // client/ existing by refreshReporter).
+    if (hasClient) {
+      refreshReporter(path.join("client", "consort-vitest-reporter.ts"), path.join("client", "consort-vitest-reporter.ts"));
+      refreshReporter(path.join("client", "tests", "e2e", "consort-fixtures.ts"), path.join("client", "tests", "e2e", "consort-fixtures.ts"));
+    }
   } catch {
     /* scm-utils templates not resolvable from this kit (dev checkout) — skip; fresh scaffolds still carry the fix */
   }

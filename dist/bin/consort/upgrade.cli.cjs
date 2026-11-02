@@ -460,7 +460,14 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
     };
     refreshReporter(path4.join("common", "tests", "e2e", "conftest.py"), path4.join("tests", "e2e", "conftest.py"));
     const isPython = fs5.existsSync(path4.join(projectDir, "pyproject.toml")) || fs5.existsSync(path4.join(projectDir, "requirements.txt"));
-    if (isPython) refreshReporter(path4.join("python", "tests", "conftest.py"), path4.join("tests", "conftest.py"));
+    if (isPython) {
+      refreshReporter(path4.join("python", "tests", "conftest.py"), path4.join("tests", "conftest.py"));
+      refreshReporter(path4.join("python", "app", "consort_capture.py"), path4.join("app", "consort_capture.py"));
+    }
+    if (hasClient) {
+      refreshReporter(path4.join("client", "consort-vitest-reporter.ts"), path4.join("client", "consort-vitest-reporter.ts"));
+      refreshReporter(path4.join("client", "tests", "e2e", "consort-fixtures.ts"), path4.join("client", "tests", "e2e", "consort-fixtures.ts"));
+    }
   } catch {
   }
   const substrate = resolveSubstrateVersion(kitDir);
