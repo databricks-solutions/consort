@@ -9221,6 +9221,13 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
           reason: `deploy-evidence records verify.passed=false (feature-verify did not pass against the running app). An approve cannot clear stale failed evidence (issue #198): fix the cause, then re-run the deploy \`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale deploy server first: \`lsof -tiTCP:8000 | xargs kill\`) to rewrite the evidence, and approve then.`
         };
       }
+      const tlForDeploy = readIfPresent("test-list.json");
+      if (tlForDeploy !== void 0) {
+        const pReason = persistenceCoverageReason(consortDir, featureId, tlForDeploy);
+        if (pReason !== null) return { reason: `${pReason} [re-checked at the deploy gate \u2014 a persistence invariant was declared/realized after the test_list gate and is still uncovered; add its test (consort-pipeline repair) before accepting]` };
+        const dReason = invariantCoverageDistinctReason(consortDir, featureId, tlForDeploy);
+        if (dReason !== null) return { reason: `${dReason} [re-checked at the deploy gate]` };
+      }
       return withConformance({ "deploy-evidence.json": evidence });
     }
   }

@@ -523,6 +523,45 @@ describe("nextTransition: build lane (after a story is gated)", () => {
     expect(nextTransition(st)).toEqual({ kind: "dispatch", story: "S1" });
   });
 
+  describe("surgical post-acceptance repair (repairPending) reuses Navigator-RED -> Driver-GREEN, then complete-repair", () => {
+    // An ACCEPTED story (built, merged, deployVerified, accepted all true) with a pending repair:
+    // the repair CLI appended one covering test item, so testsWritten/codeWritten flip exactly as
+    // in a normal build. The repair branch pre-empts the experiment/accept machinery entirely — a
+    // repair must never re-cut or re-accept.
+    function acceptedRepairing(): StoryView {
+      const v = builtAccepted();
+      v.build.repairPending = true;
+      return v;
+    }
+
+    it("routes the Navigator to write the appended test's RED (testsWritten false right after the append)", () => {
+      const v = acceptedRepairing();
+      v.build.testsWritten = false; // the appended item is pending, no RED cycle yet
+      const st = ws({ stories: { S1: v }, buildActive: "S1" });
+      expect(nextTransition(st)).toEqual({ kind: "invoke-role", role: "navigator", story: "S1" });
+    });
+
+    it("routes the Driver to GREEN the repair test once its RED is written", () => {
+      const v = acceptedRepairing();
+      v.build.testsWritten = true;
+      v.build.codeWritten = false;
+      const st = ws({ stories: { S1: v }, buildActive: "S1" });
+      expect(nextTransition(st)).toEqual({ kind: "invoke-role", role: "driver", story: "S1" });
+    });
+
+    it("closes with complete-repair once the appended test is green (NOT accept/complete — the story stays accepted)", () => {
+      const v = acceptedRepairing(); // testsWritten + codeWritten already true (all green again)
+      const st = ws({ stories: { S1: v }, buildActive: "S1" });
+      expect(nextTransition(st)).toEqual({ kind: "complete-repair", story: "S1" });
+    });
+
+    it("an accepted story WITHOUT a pending repair never enters the repair branch (lane completes normally)", () => {
+      const v = builtAccepted(); // repairPending unset
+      const st = ws({ stories: { S1: v }, buildActive: "S1" });
+      expect(nextTransition(st)).toEqual({ kind: "complete", story: "S1" });
+    });
+  });
+
   it("advances the design lane when the build lane is idle and nothing is ready to build", () => {
     // S1 fresh (not gated), nothing ready -> design lane works S1.
     const st = ws({ storyOrder: ["S1", "S2"], stories: { S1: freshStory(), S2: freshStory() }, buildActive: null });

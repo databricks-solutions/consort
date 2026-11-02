@@ -108,6 +108,27 @@ export interface StoryAcceptance {
   history: StoryAcceptanceHistoryEntry[];
 }
 
+// A surgical post-acceptance REPAIR, distinct from a revise. `revise` = "the design
+// was wrong" → full teardown (discard the experiment, reopen the gate, back to designing).
+// `repair` = "the design was right, close a gap additively" → the story STAYS accepted
+// (acceptance + experiment records preserved), and only the roles the gap needs run: the
+// test-strategist adds the missing test item(s), the driver RED→GREEN's just those tests
+// against the story's FEATURE branch (the experiment is already merged), then re-verify +
+// re-conformance. Used for an uncovered-invariant (the PI8 class), a cross-story regression,
+// or a late-found defect — the kit otherwise forced a destructive revise or off-lane
+// hand-authoring for these.
+export const STORY_REPAIR_GAPS = ["uncovered-invariant", "regression", "defect"] as const;
+export type StoryRepairGap = (typeof STORY_REPAIR_GAPS)[number];
+
+export interface StoryRepair {
+  gap: StoryRepairGap;
+  /** The specific thing to close, e.g. the invariant id "PI8-stock-records-survive-migration". */
+  detail?: string;
+  status: "pending" | "done";
+  at: string;
+  approver: string;
+}
+
 export interface StoryEntry {
   status: StoryStatus;
   /** The per-story spec gate; present once the story has been surfaced for review. */
@@ -116,6 +137,8 @@ export interface StoryEntry {
   experiment?: StoryExperiment;
   /** The PO's post-build accept/discard/revise decision. */
   acceptance?: StoryAcceptance;
+  /** An in-flight surgical repair (additive gap-close), preserving acceptance + experiment. */
+  repair?: StoryRepair;
 }
 
 export interface StoryPipeline {
@@ -713,6 +736,55 @@ export function reviseStory(
   }
   if (story.gate) story.gate = { status: "open", history: story.gate.history };
   setStoryStatus(pipeline, storyId, "designing");
+  freeLaneIfActive(pipeline, storyId);
+  return pipeline;
+}
+
+/**
+ * Surgically REPAIR an accepted/built story: record the gap, claim the single build lane for a
+ * minimal test-add cycle, and set the story `building` for that cycle — but PRESERVE the acceptance
+ * decision and the (merged) experiment record, unlike `reviseStory` which discards them and resets to
+ * `designing`. The drive routes a pending repair to the test-strategist (add the gap's test item) then
+ * the driver (RED→GREEN those tests against the feature branch), NOT a full design re-entry or an
+ * experiment re-cut. Preconditions: the story is `done` (accepted) or `awaiting-acceptance` and the
+ * lane is free. Throws otherwise.
+ */
+export function repairStory(
+  pipeline: StoryPipeline,
+  storyId: string,
+  opts: { gap: StoryRepairGap; detail?: string; approver: string; at: string },
+): StoryPipeline {
+  const story = pipeline.stories[storyId];
+  if (!story) throw new Error(`repairStory: story ${storyId} is not in the pipeline`);
+  if (story.status !== "done" && story.status !== "awaiting-acceptance") {
+    throw new Error(`repairStory: story ${storyId} is ${story.status}; only an accepted/built story (done|awaiting-acceptance) can be repaired (use reviseStory for an in-design story)`);
+  }
+  if (pipeline.build_active !== null && pipeline.build_active !== storyId) {
+    throw new Error(`repairStory: the build lane is busy on ${pipeline.build_active}; wait for it to free before repairing ${storyId}`);
+  }
+  story.repair = { gap: opts.gap, status: "pending", at: opts.at, approver: opts.approver, ...(opts.detail !== undefined ? { detail: opts.detail } : {}) };
+  // Claim the lane + run a build cycle for the repair. acceptance + experiment are LEFT INTACT: the
+  // PO's accept is not revoked, and the experiment stays `merged` (the repair runs against the feature
+  // branch where the merged code lives — no re-cut).
+  pipeline.build_active = storyId;
+  setStoryStatus(pipeline, storyId, "building");
+  return pipeline;
+}
+
+/**
+ * The repair cycle closed: mark the repair `done`, free the lane, and restore the story to `done`
+ * (the acceptance record was preserved throughout, so the story remains accepted — only a test was
+ * added). Throws when the story is unknown or carries no pending repair.
+ */
+export function completeRepair(pipeline: StoryPipeline, storyId: string, opts: { at: string }): StoryPipeline {
+  const story = pipeline.stories[storyId];
+  if (!story) throw new Error(`completeRepair: story ${storyId} is not in the pipeline`);
+  if (!story.repair || story.repair.status !== "pending") {
+    throw new Error(`completeRepair: story ${storyId} has no pending repair`);
+  }
+  story.repair.status = "done";
+  story.repair.at = opts.at;
+  setStoryStatus(pipeline, storyId, "done");
   freeLaneIfActive(pipeline, storyId);
   return pipeline;
 }

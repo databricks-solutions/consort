@@ -9950,6 +9950,8 @@ function actionLane(action) {
       return "build";
     case "complete":
       return action.laneExit ? "done" : "build";
+    case "complete-repair":
+      return "build";
     case "feature-complete":
       return "coarse";
     case "deploy":
@@ -10031,6 +10033,11 @@ function nextDesignAction(state, opts = {}) {
   return { kind: "design-complete" };
 }
 function nextBuildAction(story, b) {
+  if (b.repairPending) {
+    if (!b.testsWritten) return { kind: "invoke-role", role: "navigator", story };
+    if (!b.codeWritten) return { kind: "invoke-role", role: "driver", story };
+    return { kind: "complete-repair", story };
+  }
   if (!b.experimentCut || b.experimentStale) {
     return b.experimentDiscarded || b.experimentStale ? { kind: "cut-experiment", story, resetStaleBranch: true } : { kind: "cut-experiment", story };
   }
@@ -10701,6 +10708,8 @@ function orchestratorLogEvents(action, ctx = {}) {
       return [{ role: "release-engineer", level: "info", feature_id, event: "phase.start", slots: { phase: "deploy" } }];
     case "complete":
       return [{ ...base, event: "phase.end", slots: { phase: "story", outcome: "complete", ...withStory } }];
+    case "complete-repair":
+      return [{ ...base, event: "phase.end", slots: { phase: "story", outcome: "repaired", ...withStory } }];
     case "planning-complete":
       return [{ ...base, event: "phase.end", slots: { phase: "planning", outcome: "complete" } }];
     case "design-complete":
@@ -10928,7 +10937,12 @@ function storyView(id, e, probe, loop) {
       deployVerifyRefactorPending: probe.deployVerifyRefactorPending(id),
       refactorVerifyAssessEligible: probe.refactorVerifyAssessEligible(id),
       refactorVerifyRefactorPending: probe.refactorVerifyRefactorPending(id),
-      accepted
+      accepted,
+      // A surgical post-acceptance repair is pending: the repair CLI recorded the gap +
+      // claimed the lane. nextBuildAction routes the Navigator-RED -> Driver-GREEN of the
+      // one appended covering test, then complete-repair. Read straight off the pipeline
+      // (durable), not the probe — the marker is pipeline state, not an on-disk cycle.
+      repairPending: e.repair != null && e.repair.status === "pending"
     }
   };
 }
@@ -16947,6 +16961,8 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
       ];
     case "complete":
       return [{ kind: "cli", bin: PIPELINE_BIN, args: ["complete", ...tdd] }];
+    case "complete-repair":
+      return [{ kind: "cli", bin: PIPELINE_BIN, args: ["complete-repair", "--story", action.story, ...tdd] }];
     case "approve-intake-gate":
       return [
         {
@@ -17927,6 +17943,7 @@ var GATE_KINDS = [
   "await-acceptance",
   "accept",
   "complete",
+  "complete-repair",
   "feature-complete",
   "deploy",
   "approve-deploy-gate",

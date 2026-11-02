@@ -207,6 +207,14 @@ interface StoryBuild {
     deployVerifyRefactorPending?: boolean;
     /** The PO accepted: experiment merged into the feature branch, story done. */
     accepted: boolean;
+    /** A SURGICAL post-acceptance repair is pending on this already-accepted story
+     *  (pipeline `story.repair.status === "pending"`). The repair CLI recorded the gap
+     *  and appended a covering test-list item (e.g. an uncovered persistence invariant's
+     *  migration-survival test) + re-froze the test_list gate; the build lane now RE-USES
+     *  the ordinary Navigator-RED -> Driver-GREEN steps to build + green that one added
+     *  test against the (already-merged) feature branch, then `complete-repair` restores
+     *  the story to done. This is NOT revise: the acceptance + merged experiment stand. */
+    repairPending?: boolean;
 }
 /** A story's full design + gate + build status, as the driver sees it. */
 interface StoryView extends DriveStoryView {
@@ -411,6 +419,9 @@ type WorkflowAction = DriveAction | {
     kind: "complete";
     story: string;
     laneExit?: boolean;
+} | {
+    kind: "complete-repair";
+    story: string;
 } | {
     kind: "feature-complete";
 } | {

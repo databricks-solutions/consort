@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "node:fs";
 import { readArtifactAtHead, consortDir, isSafeSegment } from "@/lib/consort";
 import { resolveContained } from "@/lib/safepath";
+import { inScope, deriveColumns } from "@/lib/story-scope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,13 +29,6 @@ export const revalidate = 0;
 const SNAPSHOT_FILE = "table-snapshots.jsonl";
 const INTERACTIONS_FILE = "test-interactions.jsonl";
 
-/** Scope a capture line to the viewed feature+story. A line that stamps feature_id/story_id must
- *  match; a line that stamps NEITHER (a pre-scoping corpus) is kept — back-compat, so old runs still
- *  render by test_id alone. Closes the cross-feature/story test-id collision for new runs. */
-function inScope(e: { featureId?: string; storyId?: string }, feature: string, story: string): boolean {
-  if (!e.featureId && !e.storyId) return true;
-  return (e.featureId ?? "") === feature && (e.storyId ?? "") === story;
-}
 
 /** Per-test RETRIEVED/STORED rows (the precise capture written by the app's per-request events —
  *  app/consort_capture.py), grouped by table. Unlike the whole-table snapshot, these are exactly the
@@ -220,19 +214,31 @@ export async function GET(req: NextRequest) {
   const touched = new Set(design.changes.filter((c) => c.story_id === story && c.table).map((c) => c.table as string));
   for (const name of byTable.keys()) touched.add(name);
   for (const name of interactions.keys()) touched.add(name);
-  const storyTables = design.tables.filter((t) => touched.has(t.name));
+  // Show EVERY touched table, not just those the CURRENT feature's db-design declares. A story that
+  // reads/writes a PRIOR feature's table (e.g. F2's adjust story touching F1's stock_records) captures
+  // interactions/snapshots on it, but that table is absent from THIS feature's db-design; intersecting
+  // with design.tables (the old behaviour) silently HID all its reads/writes — so "retrieved" came up
+  // empty even though the rows were read. db-design tables lead (declared order); extra touched tables
+  // follow (sorted), with columns derived from the captured rows.
+  const designByName = new Map(design.tables.map((t) => [t.name, t]));
+  const ordered = [
+    ...design.tables.filter((t) => touched.has(t.name)).map((t) => t.name),
+    ...[...touched].filter((n) => !designByName.has(n)).sort(),
+  ];
 
-  const tables = storyTables.map((t) => {
-    const s = byTable.get(t.name);
+  const tables = ordered.map((name) => {
+    const dt = designByName.get(name);
+    const s = byTable.get(name);
     const rows = s?.rows ?? [];
-    const io = interactions.get(t.name);
+    const io = interactions.get(name);
     return {
-      name: t.name,
-      columns: t.columns ?? [],
-      changes: design.changes.filter((c) => c.story_id === story && c.table === t.name),
+      name,
+      // db-design columns when this feature declares the table, else derived from the captured rows.
+      columns: dt?.columns ?? deriveColumns(rows, io?.read ?? [], io?.stored ?? []),
+      changes: design.changes.filter((c) => c.story_id === story && c.table === name),
       rows,
       // Per-row provenance: the T# that drove each row into this state (see attributeRows).
-      rowDrivers: attributeRows(all, t.name, rows, testId, s?.ts ?? ""),
+      rowDrivers: attributeRows(all, name, rows, testId, s?.ts ?? ""),
       // Precise per-test interactions (app/consort_capture.py): exactly the rows THIS test read/wrote.
       retrieved: io?.read ?? [],
       stored: io?.stored ?? [],

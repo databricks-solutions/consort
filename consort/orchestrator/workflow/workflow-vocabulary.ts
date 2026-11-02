@@ -237,6 +237,14 @@ export interface StoryBuild {
   deployVerifyRefactorPending?: boolean;
   /** The PO accepted: experiment merged into the feature branch, story done. */
   accepted: boolean;
+  /** A SURGICAL post-acceptance repair is pending on this already-accepted story
+   *  (pipeline `story.repair.status === "pending"`). The repair CLI recorded the gap
+   *  and appended a covering test-list item (e.g. an uncovered persistence invariant's
+   *  migration-survival test) + re-froze the test_list gate; the build lane now RE-USES
+   *  the ordinary Navigator-RED -> Driver-GREEN steps to build + green that one added
+   *  test against the (already-merged) feature branch, then `complete-repair` restores
+   *  the story to done. This is NOT revise: the acceptance + merged experiment stand. */
+  repairPending?: boolean;
 }
 
 /** A story's full design + gate + build status, as the driver sees it. */
@@ -425,6 +433,10 @@ export type WorkflowAction =
   | { kind: "await-acceptance"; story: string }
   | { kind: "accept"; story: string }
   | { kind: "complete"; story: string; laneExit?: boolean }
+  // Close a SURGICAL post-acceptance repair: the added covering test is built + green,
+  // so restore the (still-accepted) story to done and free the lane (`pipeline
+  // complete-repair`). The legible opposite of `revise`/`accept`: no teardown, no re-merge.
+  | { kind: "complete-repair"; story: string }
   | { kind: "feature-complete" }
   | { kind: "deploy" }
   | { kind: "approve-deploy-gate" }
@@ -559,6 +571,9 @@ export function actionLane(action: WorkflowAction): ActionLane {
       // fan-out hollow (the serial-first AC completing the story, so sibling lanes built nothing).
       // A top-level (non-lane) complete stays "build" and IS performed → the story is marked done.
       return action.laneExit ? "done" : "build";
+    case "complete-repair":
+      // The surgical repair closes on the build lane (same place accept/complete live).
+      return "build";
     case "feature-complete":
       return "coarse";
     case "deploy":

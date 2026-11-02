@@ -8997,6 +8997,8 @@ function orchestratorLogEvents(action, ctx = {}) {
       return [{ role: "release-engineer", level: "info", feature_id, event: "phase.start", slots: { phase: "deploy" } }];
     case "complete":
       return [{ ...base, event: "phase.end", slots: { phase: "story", outcome: "complete", ...withStory } }];
+    case "complete-repair":
+      return [{ ...base, event: "phase.end", slots: { phase: "story", outcome: "repaired", ...withStory } }];
     case "planning-complete":
       return [{ ...base, event: "phase.end", slots: { phase: "planning", outcome: "complete" } }];
     case "design-complete":
@@ -9980,6 +9982,8 @@ function actionLane(action) {
       return "build";
     case "complete":
       return action.laneExit ? "done" : "build";
+    case "complete-repair":
+      return "build";
     case "feature-complete":
       return "coarse";
     case "deploy":
@@ -10055,6 +10059,11 @@ function nextDesignAction(state, opts = {}) {
   return { kind: "design-complete" };
 }
 function nextBuildAction(story, b) {
+  if (b.repairPending) {
+    if (!b.testsWritten) return { kind: "invoke-role", role: "navigator", story };
+    if (!b.codeWritten) return { kind: "invoke-role", role: "driver", story };
+    return { kind: "complete-repair", story };
+  }
   if (!b.experimentCut || b.experimentStale) {
     return b.experimentDiscarded || b.experimentStale ? { kind: "cut-experiment", story, resetStaleBranch: true } : { kind: "cut-experiment", story };
   }
@@ -13225,7 +13234,12 @@ function storyView(id, e, probe, loop) {
       deployVerifyRefactorPending: probe.deployVerifyRefactorPending(id),
       refactorVerifyAssessEligible: probe.refactorVerifyAssessEligible(id),
       refactorVerifyRefactorPending: probe.refactorVerifyRefactorPending(id),
-      accepted
+      accepted,
+      // A surgical post-acceptance repair is pending: the repair CLI recorded the gap +
+      // claimed the lane. nextBuildAction routes the Navigator-RED -> Driver-GREEN of the
+      // one appended covering test, then complete-repair. Read straight off the pipeline
+      // (durable), not the probe — the marker is pipeline state, not an on-disk cycle.
+      repairPending: e.repair != null && e.repair.status === "pending"
     }
   };
 }
@@ -15806,6 +15820,13 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         return {
           reason: `deploy-evidence records verify.passed=false (feature-verify did not pass against the running app). An approve cannot clear stale failed evidence (issue #198): fix the cause, then re-run the deploy \`./scripts/lk consort-deploy --target local --feature <F>\` (kill any stale deploy server first: \`lsof -tiTCP:8000 | xargs kill\`) to rewrite the evidence, and approve then.`
         };
+      }
+      const tlForDeploy = readIfPresent("test-list.json");
+      if (tlForDeploy !== void 0) {
+        const pReason = persistenceCoverageReason(consortDir, featureId, tlForDeploy);
+        if (pReason !== null) return { reason: `${pReason} [re-checked at the deploy gate \u2014 a persistence invariant was declared/realized after the test_list gate and is still uncovered; add its test (consort-pipeline repair) before accepting]` };
+        const dReason = invariantCoverageDistinctReason(consortDir, featureId, tlForDeploy);
+        if (dReason !== null) return { reason: `${dReason} [re-checked at the deploy gate]` };
       }
       return withConformance({ "deploy-evidence.json": evidence });
     }
@@ -19312,6 +19333,8 @@ Edit ONLY those test files. The orchestrator re-deploys + re-verifies the whole 
       ];
     case "complete":
       return [{ kind: "cli", bin: PIPELINE_BIN, args: ["complete", ...tdd] }];
+    case "complete-repair":
+      return [{ kind: "cli", bin: PIPELINE_BIN, args: ["complete-repair", "--story", action.story, ...tdd] }];
     case "approve-intake-gate":
       return [
         {

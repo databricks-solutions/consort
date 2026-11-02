@@ -2203,6 +2203,12 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
     case "complete":
       return [{ kind: "cli", bin: PIPELINE_BIN, args: ["complete", ...tdd] }];
 
+    case "complete-repair":
+      // The surgical repair's added test is built + green: restore the (still-accepted)
+      // story to done and free the lane. No merge, no teardown — the code already landed
+      // at the original accept; this only closed a test-coverage gap on the feature branch.
+      return [{ kind: "cli", bin: PIPELINE_BIN, args: ["complete-repair", "--story", action.story, ...tdd] }];
+
     case "approve-intake-gate":
       // HITL intake gate: AFTER the PO drafts the intake, BEFORE propose. Interactive, the drive
       // PARKS here (the human reviews/edits/approves via consort-approve-gate --gate intake);

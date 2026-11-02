@@ -168,6 +168,19 @@ export function nextDesignAction(state: DesignDriveState, opts: { featureReconci
 
 /** The next build-lane action for the story the lane is on. */
 function nextBuildAction(story: string, b: StoryBuild): WorkflowAction {
+  // SURGICAL post-acceptance repair (the PI8 class): the story is already accepted +
+  // merged, and the repair CLI appended ONE covering test-list item (+ re-froze the
+  // test_list gate). Close the gap by RE-USING the ordinary Navigator-RED -> Driver-GREEN
+  // steps on the (merged) feature branch — no re-cut, no re-accept. testsWritten/codeWritten
+  // flip exactly as in a normal build (the appended item is pending, so testsWritten is
+  // false until the Navigator writes its RED, then codeWritten false until the Driver greens
+  // it); once green, complete-repair restores the story to done. This pre-empts the whole
+  // experiment/accept machinery below, which a repair must not re-run.
+  if (b.repairPending) {
+    if (!b.testsWritten) return { kind: "invoke-role", role: "navigator", story };
+    if (!b.codeWritten) return { kind: "invoke-role", role: "driver", story };
+    return { kind: "complete-repair", story };
+  }
   if (!b.experimentCut || b.experimentStale) {
     // A re-cut after a discarded experiment re-forks the polluted paired branch. A STALE
     // experiment (still active, but its design was re-authored under it – the withdraw-gate
