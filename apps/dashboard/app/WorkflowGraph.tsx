@@ -103,7 +103,9 @@ export function WorkflowGraph({
   const loopedBack = activeNode !== null && activeNode !== "promote" && activeNode !== "shipped";
   const shipDone =
     liveStep === null &&
-    state.focus.kind !== "gate" &&
+    // Only an UNAPPROVED gate ("surfaced") is a live park that blocks "done"; an already-approved
+    // frontier gate is the locus of a finished phase and must NOT block it (as this guard's note says).
+    !(state.focus.kind === "gate" && state.focus.status === "surfaced") &&
     state.focus.kind !== "escalation" &&
     passed.has("promote") &&
     !loopedBack;

@@ -65,7 +65,9 @@ export function OrchestratorLane({ state }: { state: DashboardState }) {
   // coordinating. focusOf already ranks escalation > step > gate, so reading focus.kind here needs no
   // separate blockers check — the same key that glows the gate node + flips the transport.
   const issue = focus.kind === "escalation";
-  const waiting = focus.kind === "gate";
+  // "Waiting on you" is only an UNapproved gate (status "surfaced"); an "approved" frontier gate is a
+  // completed phase at rest, not a pending decision — it reads as idle, not waiting.
+  const waiting = focus.kind === "gate" && focus.status === "surfaced";
   const running = focus.kind === "step";
   // The gate bubbles: the five HIL gates in lifecycle order, scoped to (and resetting with) the
   // current story. When PARKED at a gate, scope to THAT gate's story — `activity.story` can lag onto
