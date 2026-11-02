@@ -24,6 +24,8 @@ import {
   acceptStory,
   discardStory,
   reviseStory,
+  repairStory,
+  completeRepair,
   getStoryAcceptance,
   syncBreakdownToPipeline,
 } from "../../consort/pipeline/story-pipeline";
@@ -424,6 +426,80 @@ describe("story-pipeline: per-story experiment + PO acceptance", () => {
     expect(getValidator("story-pipeline.schema.json")(p)).toBe(true);
     writePipeline(tdd, p);
     expect(readPipeline(tdd, "F1")).toEqual(p);
+  });
+});
+
+describe("story-pipeline: surgical repair of an accepted story (PI8-class gap) — NOT revise", () => {
+  const AT = "2026-06-07T13:00:00.000Z";
+  const AT2 = "2026-06-07T14:30:00.000Z";
+
+  // An ACCEPTED story: built on its experiment, merged, done, lane freed.
+  function accepted(): ReturnType<typeof initPipeline> {
+    const p = initPipeline("F1");
+    surfaceForGate(p, "S1");
+    approveStoryGate(p, "S1", { approver: "po", at: AT });
+    dispatchNext(p);
+    cutStoryExperiment(p, "S1", { slug: "s1-exp", branch: "exp/F1/S1-exp", parent: "feature/F1", parent_sha: "abc1234", at: AT });
+    awaitAcceptance(p, "S1");
+    acceptStory(p, "S1", { approver: "po", at: AT });
+    return p;
+  }
+
+  it("repairStory: records the gap marker, claims the lane, sets building — PRESERVING acceptance + merged experiment (the opposite of reviseStory)", () => {
+    const p = accepted();
+    repairStory(p, "S1", { gap: "uncovered-invariant", detail: "PI8-stock-records-survive-migration", approver: "po", at: AT2 });
+    // The repair marker is recorded, pending.
+    expect(p.stories.S1.repair).toEqual({
+      gap: "uncovered-invariant",
+      detail: "PI8-stock-records-survive-migration",
+      status: "pending",
+      at: AT2,
+      approver: "po",
+    });
+    // The lane is claimed for the minimal cycle; the story is transiently building.
+    expect(p.build_active).toBe("S1");
+    expect(p.stories.S1.status).toBe("building");
+    // UNLIKE reviseStory: the acceptance stands and the experiment stays MERGED (not discarded,
+    // not reopened-to-designing). The repair runs against the feature branch the code lives on.
+    expect(p.stories.S1.acceptance!.decision).toBe("accepted");
+    expect(p.stories.S1.experiment!.status).toBe("merged");
+    expect(getStoryGate(p, "S1").status).not.toBe("open");
+    expect(getValidator("story-pipeline.schema.json")(p)).toBe(true);
+  });
+
+  it("completeRepair: closes the repair, frees the lane, restores done — the story stays accepted", () => {
+    const p = accepted();
+    repairStory(p, "S1", { gap: "uncovered-invariant", detail: "PI8", approver: "po", at: AT2 });
+    completeRepair(p, "S1", { at: "2026-06-07T15:00:00.000Z" });
+    expect(p.stories.S1.repair!.status).toBe("done");
+    expect(p.stories.S1.repair!.at).toBe("2026-06-07T15:00:00.000Z");
+    expect(p.stories.S1.status).toBe("done");
+    expect(p.build_active).toBeNull();
+    expect(p.stories.S1.acceptance!.decision).toBe("accepted"); // still accepted
+    expect(getValidator("story-pipeline.schema.json")(p)).toBe(true);
+  });
+
+  it("repairStory refuses a story that is not accepted/built (in-design → use reviseStory)", () => {
+    const p = initPipeline("F1");
+    surfaceForGate(p, "S1"); // designing/awaiting-gate, never built
+    expect(() => repairStory(p, "S1", { gap: "defect", approver: "po", at: AT2 })).toThrow(/only an accepted\/built story/);
+  });
+
+  it("repairStory refuses when the build lane is busy on a different story", () => {
+    const p = accepted();
+    // S2 dispatched onto the lane.
+    surfaceForGate(p, "S2");
+    approveStoryGate(p, "S2", { approver: "po", at: AT });
+    dispatchNext(p);
+    expect(p.build_active).toBe("S2");
+    expect(() => repairStory(p, "S1", { gap: "defect", approver: "po", at: AT2 })).toThrow(/build lane is busy/);
+  });
+
+  it("repairStory / completeRepair throw for an unknown story; completeRepair throws with no pending repair", () => {
+    const p = accepted();
+    expect(() => repairStory(p, "S9", { gap: "defect", approver: "po", at: AT2 })).toThrow(/not in the pipeline/);
+    expect(() => completeRepair(p, "S9", { at: AT2 })).toThrow(/not in the pipeline/);
+    expect(() => completeRepair(p, "S1", { at: AT2 })).toThrow(/no pending repair/); // never repaired
   });
 });
 

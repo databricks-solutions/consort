@@ -18,6 +18,8 @@
 //   consort-pipeline accept         --feature F --story S --approver A    (PO accepts -> experiment merged, story done, lane freed)
 //   consort-pipeline discard        --feature F --story S --approver A --reason R   (PO discards -> torn down, out of sprint)
 //   consort-pipeline revise         --feature F --story S --approver A --reason R   (PO sends back -> designing; self-heals a blocking smell)
+//   consort-pipeline repair         --feature F --story S --gap <uncovered-invariant|regression|defect> --approver A [--invariant ID] [--retag testId] [--reason R]   (SURGICAL: close a gap in an ACCEPTED story additively via the same roles — preserves acceptance + experiment, claims the lane for a minimal cycle; NOT revise. uncovered-invariant RETAGS an existing round-trip test when one covers the invariant's table, else AUTHORS a new one; --retag names the test when ambiguous)
+//   consort-pipeline complete-repair --feature F --story S [--at ISO]   (the repair cycle closed -> story back to done, lane freed)
 //   consort-pipeline rebuild-story  --feature F --story S [--approver A] [--at ISO]  (clean-slate re-drive: clears build cycles + escalations + smells, re-forks the experiment, back on the build lane)
 //   consort-pipeline resolve-smell  --feature F --smell NAME --approver A [--story S] [--reason R]   (clear a blocking smell without revise/discard)
 //
@@ -52,8 +54,12 @@ import {
   cutStoryExperiment,
   awaitAcceptance,
   discardStory,
+  repairStory,
+  completeRepair,
   STORY_STATUSES,
+  STORY_REPAIR_GAPS,
   type StoryStatus,
+  type StoryRepairGap,
   type StoryPipeline,
 } from "../../consort/pipeline/story-pipeline";
 import { storyDesignFingerprint } from "../../consort/pipeline/design-fingerprint.js";
@@ -61,6 +67,7 @@ import { healAndReportStoryNarrative } from "../../consort/intake/spec-sync";
 import { join } from "path";
 import { resolveConsortDir, ARTIFACT_ROOT } from "../../consort/config/consort-paths.js";
 import { reviseStoryWithSelfHeal, clearStoryBlockingSmellOnDiscard, rebuildStory } from "../../consort/orchestrator/status/revise.js";
+import { coverInvariant, refreezeTestListGate, AmbiguousCoverageError } from "../../consort/pipeline/story-repair.js";
 import { markSmellResolved } from "../../consort/smells/smells.js";
 import { resolveAcceptMergeArgs, experimentMergeArgv } from "../../consort/experiment/experiment-merge.js";
 import { runKitBinSync } from "../../consort/config/kit-bin.js";
@@ -81,6 +88,9 @@ interface Args {
   lakebaseUid?: string;
   n?: string;
   smell?: string;
+  gap?: string;
+  invariant?: string;
+  retag?: string;
   consortDir?: string;
   projectDir?: string;
   instance?: string;
@@ -106,6 +116,9 @@ function parse(argv: string[]): Args {
     else if (a === "--lakebase-uid") out.lakebaseUid = argv[++i];
     else if (a === "--n") out.n = argv[++i];
     else if (a === "--smell") out.smell = argv[++i];
+    else if (a === "--gap") out.gap = argv[++i];
+    else if (a === "--invariant") out.invariant = argv[++i];
+    else if (a === "--retag") out.retag = argv[++i];
     else if (a === "--tdd-dir") out.consortDir = argv[++i];
     else if (a === "--project-dir") out.projectDir = argv[++i];
     else if (a === "--instance") out.instance = argv[++i];
@@ -117,7 +130,7 @@ function parse(argv: string[]): Args {
 function usage(msg: string): number {
   process.stderr.write(
     `${msg}\n` +
-      `Usage: consort-pipeline <status|set|surface|approve-gate|withdraw-gate|enqueue|dispatch|complete|cut-experiment|await-acceptance|accept|discard|revise|rebuild-story|resolve-smell> --feature <F> [--tdd-dir <dir>]\n` +
+      `Usage: consort-pipeline <status|set|surface|approve-gate|withdraw-gate|enqueue|dispatch|complete|cut-experiment|await-acceptance|accept|discard|revise|repair|complete-repair|rebuild-story|resolve-smell> --feature <F> [--tdd-dir <dir>]\n` +
       `  set additionally needs --story <S> --status <${STORY_STATUSES.join("|")}>\n` +
       `  surface needs --story <S>\n` +
       `  approve-gate needs --story <S> --approver <A> [--spec-hash <H>] [--at <ISO>]\n` +
@@ -127,6 +140,8 @@ function usage(msg: string): number {
       `  await-acceptance needs --story <S>\n` +
       `  accept needs --story <S> --approver <A> [--at <ISO>]\n` +
       `  discard / revise need --story <S> --approver <A> --reason <R> [--at <ISO>]\n` +
+      `  repair needs --story <S> --gap <${STORY_REPAIR_GAPS.join("|")}> --approver <A> [--invariant <ID>] [--retag <testId>] [--reason <R>] [--at <ISO>]\n` +
+      `  complete-repair needs --story <S> [--at <ISO>]\n` +
       `  rebuild-story needs --story <S> [--approver <A>] [--at <ISO>]\n` +
       `  resolve-smell needs --smell <NAME> --approver <A> [--story <S>] [--reason <R>]\n`,
   );
@@ -391,6 +406,73 @@ async function main(): Promise<number> {
       } else {
         process.stdout.write(`revising ${args.story} (${args.reason}); experiment torn down, back to designing, lane freed\n`);
       }
+      return 0;
+    }
+    case "repair": {
+      // SURGICAL recovery of an ACCEPTED/built story (the PI8-class late gap): record
+      // the gap, claim the lane for a minimal test-add cycle, PRESERVE the acceptance +
+      // merged experiment. The drive routes the pending repair to the test-strategist
+      // (add the gap's test) then the driver (RED->GREEN against the feature branch) then
+      // complete-repair. This is NOT revise (no teardown, no reset-to-designing).
+      if (!args.story) return usage("repair needs --story");
+      if (!args.gap || !(STORY_REPAIR_GAPS as readonly string[]).includes(args.gap)) {
+        return usage(`repair needs a valid --gap (${STORY_REPAIR_GAPS.join("|")})`);
+      }
+      if (!args.approver) return usage("repair needs --approver");
+      if (args.gap === "uncovered-invariant" && !args.invariant) {
+        return usage("repair --gap uncovered-invariant needs --invariant <ID>");
+      }
+      // detail: the invariant id for an uncovered-invariant gap, else the free reason.
+      const detail = args.invariant ?? args.reason;
+      const at = args.at ?? new Date().toISOString();
+      let appendNote = "";
+      try {
+        // For an uncovered invariant: COVER it retag-first (retag an existing round-trip test,
+        // else author a new one) and RE-FREEZE the test_list gate in place (so the RED-start drift
+        // backstop does not read the list change as an in-build mutation). On `author`, the
+        // Navigator/Driver then build + green the new item on the feature branch; on `retag` the
+        // coverage already passes (an existing green test), so the drive goes straight to close.
+        if (args.gap === "uncovered-invariant") {
+          const { itemId, mode } = coverInvariant(consortDir, feature, args.story, args.invariant!, {
+            ...(args.retag ? { retagTestId: args.retag } : {}),
+          });
+          if (mode !== "present") {
+            const reFroze = refreezeTestListGate(consortDir, feature, { approver: args.approver, at, reason: `repair: ${mode} ${itemId} covers ${args.invariant}` });
+            const froze = reFroze ? " + re-froze the test_list gate" : " (test_list gate not approved here)";
+            appendNote =
+              mode === "retag"
+                ? `; retagged existing round-trip test ${itemId} with ${args.invariant}${froze}`
+                : `; authored covering test ${itemId}${froze}`;
+          } else {
+            appendNote = `; ${itemId} already covers ${args.invariant}`;
+          }
+        }
+        repairStory(pipeline, args.story, {
+          gap: args.gap as StoryRepairGap,
+          approver: args.approver,
+          at,
+          ...(detail !== undefined ? { detail } : {}),
+        });
+      } catch (e) {
+        process.stderr.write(`repair: ${e instanceof Error ? e.message : String(e)}\n`);
+        return 2;
+      }
+      writePipeline(consortDir, pipeline);
+      process.stdout.write(
+        `repairing ${args.story} (gap: ${args.gap}${detail ? `, ${detail}` : ""})${appendNote}; acceptance + experiment PRESERVED, lane claimed for a minimal test-add cycle (building)\n`,
+      );
+      return 0;
+    }
+    case "complete-repair": {
+      if (!args.story) return usage("complete-repair needs --story");
+      try {
+        completeRepair(pipeline, args.story, { at: args.at ?? new Date().toISOString() });
+      } catch (e) {
+        process.stderr.write(`complete-repair: ${e instanceof Error ? e.message : String(e)}\n`);
+        return 2;
+      }
+      writePipeline(consortDir, pipeline);
+      process.stdout.write(`completed repair of ${args.story}; back to done, lane freed\n`);
       return 0;
     }
     case "rebuild-story": {

@@ -288,6 +288,11 @@ function storyView(
       refactorVerifyAssessEligible: probe.refactorVerifyAssessEligible(id),
       refactorVerifyRefactorPending: probe.refactorVerifyRefactorPending(id),
       accepted,
+      // A surgical post-acceptance repair is pending: the repair CLI recorded the gap +
+      // claimed the lane. nextBuildAction routes the Navigator-RED -> Driver-GREEN of the
+      // one appended covering test, then complete-repair. Read straight off the pipeline
+      // (durable), not the probe — the marker is pipeline state, not an on-disk cycle.
+      repairPending: e.repair != null && e.repair.status === "pending",
     },
   };
 }

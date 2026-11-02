@@ -225,6 +225,61 @@ describe("gates cross-cutting: test-list / AC coverage rules", () => {
   });
 });
 
+describe("gates cross-cutting: the DEPLOY gate re-checks persistence-invariant coverage (PI8 class)", () => {
+  // A persistence_invariant declared/realized AFTER the test_list gate passed (e.g. the DBA adds a
+  // migration-survival PI about a PRE-EXISTING table during build) would otherwise reach accept
+  // uncovered — the PI8-stock-records-survive-migration bounce. The deploy gate (last gate before
+  // accept) now re-runs the coverage check so the gap is caught before accept, not post-accept.
+  function seedDeployFixture(testListItems: TestList["items"]): string {
+    const fdir = makeFeatureDir();
+    makeAcDir("S1", "AC1");
+    writeFileSync(
+      join(fdir, "architecture.json"),
+      JSON.stringify({
+        feature_id: FEATURE_ID,
+        nfrs: [],
+        service_backed: true,
+        layers: [{ role: "repository", module: "app/repositories" }],
+        persistence_invariants: [
+          { id: "PI1-unique", type: "unique", table: "stock_receipts", brief: "duplicate rejected" },
+          { id: "PI8-stock-records-survive-migration", type: "migration_reversible", table: "stock_records", brief: "existing stock_records survive the additive migration" },
+        ],
+      })
+    );
+    writeMasterTestList(tdd, { feature_id: FEATURE_ID, ordered_for: "design-momentum", items: testListItems });
+    // deploy-evidence passes the reachable + verify.passed pre-checks, so the gate reaches the re-check.
+    writeFileSync(join(fdir, "deploy-evidence.json"), JSON.stringify({ reachable: true, verify: { passed: true } }));
+    return fdir;
+  }
+
+  it("BLOCKS the deploy gate when a declared persistence invariant has no covering test (PI8 uncovered)", () => {
+    const fdir = seedDeployFixture([
+      { id: "T1", description: "GET /receipts lists", ac_id: "AC1", status: "pending", kind: "behavior" },
+      { id: "T2", description: "duplicate rejected on the branch", ac_id: "AC1", status: "pending", kind: "fitness", invariant_id: "PI1-unique" },
+      // PI8-stock-records-survive-migration: NO covering item -> uncovered.
+    ]);
+    const res = resolveArtifactInputs("deploy", fdir, undefined, tdd, FEATURE_ID);
+    expect("reason" in res).toBe(true);
+    if ("reason" in res) {
+      expect(res.reason).toMatch(/persistence coverage/);
+      expect(res.reason).toMatch(/PI8-stock-records-survive-migration/);
+      expect(res.reason).toMatch(/re-checked at the deploy gate/);
+    }
+  });
+
+  it("does NOT block the deploy gate on persistence once every declared invariant is covered", () => {
+    const fdir = seedDeployFixture([
+      { id: "T1", description: "GET /receipts lists", ac_id: "AC1", status: "pending", kind: "behavior" },
+      { id: "T2", description: "duplicate rejected on the branch", ac_id: "AC1", status: "pending", kind: "fitness", invariant_id: "PI1-unique" },
+      { id: "T3", description: "additive migration down->up preserves existing stock_records rows", ac_id: "AC1", status: "pending", kind: "fitness", invariant_id: "PI8-stock-records-survive-migration" },
+    ]);
+    const res = resolveArtifactInputs("deploy", fdir, undefined, tdd, FEATURE_ID);
+    // The persistence re-check passes (it may still return other conformance reasons, but NOT persistence).
+    const reason = "reason" in res ? res.reason : "";
+    expect(reason).not.toMatch(/persistence coverage|PI8-stock-records-survive-migration/);
+  });
+});
+
 describe("gates cross-cutting: test_list gate integrity catches test mutations", () => {
   it("approveGate(test_list) -> mutation -> verifyGateIntegrity returns drift", () => {
     makeFeatureDir();

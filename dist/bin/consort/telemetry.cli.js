@@ -124,6 +124,7 @@ var GATE_KINDS = [
   "await-acceptance",
   "accept",
   "complete",
+  "complete-repair",
   "feature-complete",
   "deploy",
   "approve-deploy-gate",

@@ -156,6 +156,11 @@ export function orchestratorLogEvents(
       return [{ role: "release-engineer", level: "info", feature_id, event: "phase.start", slots: { phase: "deploy" } }];
     case "complete":
       return [{ ...base, event: "phase.end", slots: { phase: "story", outcome: "complete", ...withStory } }];
+    case "complete-repair":
+      // A surgical post-acceptance repair closed (the added covering test is green). Record it
+      // as the story phase ending with a `repaired` outcome so the trail shows the gap was closed
+      // additively, distinct from a first-time `complete` or a teardown `revise`.
+      return [{ ...base, event: "phase.end", slots: { phase: "story", outcome: "repaired", ...withStory } }];
     case "planning-complete":
       return [{ ...base, event: "phase.end", slots: { phase: "planning", outcome: "complete" } }];
     case "design-complete":

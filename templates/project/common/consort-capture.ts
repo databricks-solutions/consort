@@ -180,9 +180,21 @@ export function emitTableSnapshot(id: string, absFile: string, table: string, ro
     mkdirSync(dir, { recursive: true });
     const root = dirname(dir);
     const file = (absFile || "").replace(`${root}/`, "");
+    // Stamp feature/story so the dashboard scopes this snapshot per feature (test ids repeat across
+    // features). resolveOwner uses the scenario_file + the active feature to pick the owning story;
+    // omit on no resolution so the reader keeps the line by test id (back-compat).
+    const owner = resolveOwner(dir, id, absFile);
     appendFileSync(
       join(dir, "table-snapshots.jsonl"),
-      JSON.stringify({ ts: new Date().toISOString(), test_id: id, file, table, rows, row_count: rowCount }) + "\n",
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        test_id: id,
+        ...(owner ? { feature_id: owner.feature_id, story_id: owner.story_id } : {}),
+        file,
+        table,
+        rows,
+        row_count: rowCount,
+      }) + "\n",
     );
   } catch {
     /* best-effort */

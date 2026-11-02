@@ -1258,6 +1258,20 @@ export function resolveArtifactInputs(
             `\`lsof -tiTCP:8000 | xargs kill\`) to rewrite the evidence, and approve then.`,
         };
       }
+      // RE-CHECK persistence-invariant coverage at the LAST gate before accept. The same check runs at
+      // the test_list gate, but that is a one-time checkpoint: a persistence_invariant declared/realized
+      // AFTER it passed (e.g. the DBA adds a migration-survival PI about a PRE-EXISTING table during
+      // build) reaches accept uncovered — the PI8-stock-records-survive-migration class, which then
+      // surfaces only as a post-accept blocker with no clean repair path. Re-checking here catches an
+      // uncovered declared invariant before the story is accepted, so prevention (not a late bounce) is
+      // the outcome. Vacuous when there is no test-list / no declared invariants (checkPersistenceCoverage).
+      const tlForDeploy = readIfPresent("test-list.json");
+      if (tlForDeploy !== undefined) {
+        const pReason = persistenceCoverageReason(consortDir, featureId, tlForDeploy);
+        if (pReason !== null) return { reason: `${pReason} [re-checked at the deploy gate — a persistence invariant was declared/realized after the test_list gate and is still uncovered; add its test (consort-pipeline repair) before accepting]` };
+        const dReason = invariantCoverageDistinctReason(consortDir, featureId, tlForDeploy);
+        if (dReason !== null) return { reason: `${dReason} [re-checked at the deploy gate]` };
+      }
       return withConformance({ "deploy-evidence.json": evidence });
     }
   }

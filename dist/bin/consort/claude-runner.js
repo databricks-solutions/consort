@@ -8484,6 +8484,8 @@ function orchestratorLogEvents(action, ctx = {}) {
       return [{ role: "release-engineer", level: "info", feature_id, event: "phase.start", slots: { phase: "deploy" } }];
     case "complete":
       return [{ ...base, event: "phase.end", slots: { phase: "story", outcome: "complete", ...withStory } }];
+    case "complete-repair":
+      return [{ ...base, event: "phase.end", slots: { phase: "story", outcome: "repaired", ...withStory } }];
     case "planning-complete":
       return [{ ...base, event: "phase.end", slots: { phase: "planning", outcome: "complete" } }];
     case "design-complete":

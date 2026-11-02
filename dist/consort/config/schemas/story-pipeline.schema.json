@@ -106,6 +106,30 @@
               }
             },
             "additionalProperties": false
+          },
+          "repair": {
+            "type": "object",
+            "description": "A surgical post-acceptance repair of this already-accepted story: the same roles close a gap additively (a missing test), PRESERVING the acceptance + merged experiment — distinct from an acceptance `revise` (teardown + redesign).",
+            "required": ["gap", "status", "at", "approver"],
+            "properties": {
+              "gap": {
+                "type": "string",
+                "enum": ["uncovered-invariant", "regression", "defect"],
+                "description": "The class of gap being closed (e.g. a declared persistence invariant with no covering test — the PI8 class)."
+              },
+              "detail": {
+                "type": "string",
+                "description": "The specific target, e.g. the invariant id for an uncovered-invariant gap."
+              },
+              "status": {
+                "type": "string",
+                "enum": ["pending", "done"],
+                "description": "pending while the minimal test-add + green cycle runs on the lane; done once completeRepair restores the story."
+              },
+              "at": { "type": "string" },
+              "approver": { "type": "string" }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
