@@ -253,6 +253,23 @@ function sessionActivityAgeMs(): number {
   return age;
 }
 
+// Whether the drive process is CURRENTLY running — the authoritative "running vs stopped" signal
+// (STOP = drive-pid-gone). `.consort/drive.pid` is JSON {pid, started_at}; the file LINGERS after the
+// drive exits, so liveness is `process.kill(pid, 0)` on the pid (throws ESRCH when gone), NOT the
+// file's mere existence. The dashboard runs on the same host as the drive, so the signal is local and
+// exact. Any missing/unparseable file or dead pid → NOT alive (safer: a run that can't be confirmed
+// live is shown at rest — WAITING/PARKED — never a false RUNNING).
+function driveIsAlive(): boolean {
+  try {
+    const pid = (JSON.parse(readFileSync(join(consortDir(), "drive.pid"), "utf8")) as { pid?: number }).pid;
+    if (typeof pid !== "number" || pid <= 0) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 
 // A trailing tool_use resolves within a second or two when it's auto-approved and just
@@ -458,7 +475,7 @@ export function readSnapshot(events: AgentLogEvent[], generatedAt: string): Snap
   const sessionAgeMs = needsLiveness ? sessionActivityAgeMs() : Infinity;
   const pendingPermission = ENABLE_PERMISSION_BANNER ? findPendingPermission() : null;
 
-  return { projectDir: projectDir(), next, status, handbacks, sessionAgeMs, pendingPermission, generatedAt };
+  return { projectDir: projectDir(), next, status, handbacks, sessionAgeMs, driveAlive: driveIsAlive(), pendingPermission, generatedAt };
 }
 
 /**

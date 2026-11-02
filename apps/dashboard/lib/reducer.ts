@@ -651,36 +651,29 @@ export function fold(
   // one-off. focusOf then resolves {kind:"gate",gate:"backlog"} and the GATES registry (backlog→p-req)
   // lights the node + orchestrator + transport WAITING together.
 
-  // Is the run genuinely PARKED at the pending gate (vs. actively streaming past a just-surfaced one)?
-  // The purple gate — the "awaiting your decision" WAITING focus — is a LIVE-FRONTIER state (only at
-  // the live edge; a SCRUBBED-BACK board is replaying past work, never "awaiting a decision" now, so it
+  // Is the run AT REST at its frontier gate — vs. actively RUNNING (streaming past a just-surfaced
+  // gate, or between stories/turns)? At rest the gate is the run's locus REGARDLESS of whether it is
+  // still awaiting approval or already approved, so this one condition reflects BOTH a pending park
+  // (→ WAITING) AND a completed, all-approved phase the drive quiesced at (→ PARKED between stages) —
+  // instead of the stale last role step. The purple WAITING gate is a LIVE-FRONTIER state (only at the
+  // live edge; a SCRUBBED-BACK board is replaying past work, never "awaiting a decision" now, so it
   // never parks — it follows the lane progression via the carry below, while the gate's own node still
-  // lights from `laneGate` on its gate.surfaced frame). At the live edge the gate wins when there is a
-  // pending gate, no agent working, AND the run has actually STOPPED at it. Two signals say "stopped":
-  //   (a) the drive's own stop-state — `next.json` lists this gate in `open_gates`. This is the
-  //       AUTHORITATIVE, immediate signal: the drive only writes an open gate when it halts there, so
-  //       it fires the instant a HITL park is reached (e.g. the acceptance gate, whose deploy/verify
-  //       logs a big driver test-run AFTER the gate surfaces — the stale last step would otherwise mask
-  //       it as `b-green` until the timer below elapsed). It is NOT set mid-batch-`/design`, where the
-  //       drive surfaces each spec gate and streams on WITHOUT stopping (open_gates stays empty), so it
-  //       cannot reintroduce the between-turns flicker.
-  //   (b) fallback — the session has gone quiet for SESSION_ACTIVE_MS (no next.json / stale), the same
-  //       "is this live" threshold the rest of the board uses. A live run between turns stays below it.
-  const sessionIdle = snap.sessionAgeMs >= SESSION_ACTIVE_MS;
-  const nextOpenGates = snap.next?.state?.open_gates ?? [];
-  // Is the run AT REST at its frontier gate — vs. actively streaming past a just-surfaced one? At
-  // rest the gate is the run's locus REGARDLESS of whether it is still awaiting approval or already
-  // approved, so this one condition reflects BOTH a pending park AND a completed, all-approved phase
-  // (the drive quiesced at the gate) — instead of the stale last role step. "At rest" = at the live
-  // edge, no agent working, and the drive has stopped (next.json lists the gate open — the immediate
-  // authoritative signal for a pending park; OR the session has gone quiet — which also catches an
-  // approved frontier whose open_gates is already empty). It is NEVER set mid-batch-/design (session
-  // live, open_gates empty), so it cannot reintroduce the between-turns flicker the carry prevents.
+  // lights from `laneGate` on its gate.surfaced frame).
+  //
+  // The ONE authoritative "the drive has STOPPED" signal is the drive process itself: `.consort/drive.pid`
+  // no longer names a live process (STOP = drive-pid-gone). A LIVE drive is RUNNING, full stop; only a
+  // GONE drive is at rest. The consort drive EXITS at every HIL gate ("re-run to continue"), so
+  // drive-gone fires the instant a park is reached — as immediate as the old next.json `open_gates`
+  // signal but without its staleness: open_gates was observed still listing story N's acceptance gate
+  // while the drive was already BUILDING story N+1 (alive), which flipped the board to PARKED mid-run.
+  // It also replaces the 15s session-quiet fallback, which mistook a long quiet turn (model thinking, no
+  // streamed events) for a stopped drive. NEVER set mid-batch-`/design` (drive alive the whole time), so
+  // it cannot reintroduce the between-turns flicker the carry prevents.
   const restingAtGate =
     atLive &&
     frontierGate !== null &&
-    !agents.some((a) => a.status === "working") &&
-    (nextOpenGates.includes(frontierGate.gate) || sessionIdle);
+    !snap.driveAlive &&
+    !agents.some((a) => a.status === "working");
   // The active role step to hold focus on while NOT parked, carried across the between-turn hand-offs
   // where laneCurrent blinks to null. Only the lanes the derived `lane` can name (deploy folds under
   // build for focus); null in complete/idle phases, where there is no running step to carry.

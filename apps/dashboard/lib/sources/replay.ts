@@ -407,6 +407,7 @@ export class ReplaySource implements DashboardSource {
       status,
       handbacks: [], // .handback/ is live routing state; a finished run has none outstanding.
       sessionAgeMs: Infinity, // no live session — this is why `liveness` isn't claimed.
+      driveAlive: false, // a recorded run has no live drive — at rest at the frontier gate.
       pendingPermission: null,
       generatedAt,
       // The counts came from a snapshot taken at or before the playhead, so they describe
