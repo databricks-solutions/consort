@@ -351,13 +351,15 @@ export interface SnapshotInputs {
 }
 
 // Where the run is RIGHT NOW — a single, mutually-exclusive locus. `step`: a role turn is running.
-// `gate`: parked at a human gate awaiting a decision. `idle`: nothing active (complete / not
-// started, or between). Every surface listens to this instead of re-deriving. (Blockers like a
-// failed verify are auto-heal agent issues, not a run locus, so they don't appear here — they drive
-// the agent-bubble "issue" state, not the run's focus.)
+// `gate`: the run's frontier is a human gate — `status` says whether it is still awaiting a decision
+// (`"surfaced"`) or already approved (`"approved"`, e.g. a completed design whose spec gates are all
+// approved: the locus is the gate, shown done, NOT the last role turn that ran before it). `idle`:
+// nothing active (not started / between). Every surface listens to this instead of re-deriving.
+// (Blockers like a failed verify are auto-heal agent issues, not a run locus, so they don't appear
+// here — they drive the agent-bubble "issue" state, not the run's focus.)
 export type Focus =
   | { kind: "step"; lane: string; step: string }
-  | { kind: "gate"; gate: string }
+  | { kind: "gate"; gate: string; status: "surfaced" | "approved" }
   // `step` = the SPECIFIC raise-to-HIL terminal the run is parked on (e.g. "b-hil", "dp-hil"), so
   // only that one lane's escalation box flashes red — not every lane's. null when undeterminable.
   | { kind: "escalation"; step: string | null }

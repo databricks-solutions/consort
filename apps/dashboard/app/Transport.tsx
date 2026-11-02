@@ -28,6 +28,9 @@ export interface TransportProps {
   // gate-purple, which is a normal checkpoint, NOT an alarm.
   awaitingGate?: boolean;
   escalated?: boolean;
+  // A role step is actively running (focus.kind === "step"). At the newest event, distinguishes
+  // RUNNING from PARKED (at rest: a completed/approved phase, between drives, a quiesced lane).
+  running?: boolean;
   // A recorded run is always being REVIEWED (never live/running/waiting on you), so the state
   // readout stays "REVIEWING" at every playhead — the RUNNING/RAISED/WAITING states are live-run only.
   replay?: boolean;
@@ -59,6 +62,7 @@ export function Transport({
   atTimestamp,
   awaitingGate = false,
   escalated = false,
+  running = false,
   replay = false,
   granularity = "events",
   onGranularityChange,
@@ -189,9 +193,10 @@ export function Transport({
         <span style={{ fontVariantNumeric: "tabular-nums", fontFamily: font.mono, color: "var(--text-faint)" }}>
           {atTimestamp ? atTimestamp.slice(11, 19) : "--:--:--"}
         </span>
-        {replay || !live ? (
-          // REVIEWING = you're reviewing history, not following a live edge. A recorded run is ALWAYS
-          // this (nothing is running / waiting on you now); a live run shows it when scrubbed back.
+        {replay || activePos < activeTotal ? (
+          // REVIEWING = you're reviewing EARLIER history (the playhead is behind the newest event), or
+          // a recorded run. At the newest event we instead reflect the run's REAL state below, even when
+          // not auto-following — sitting at the frontier is "here is where the run is", not "reviewing".
           // NOT "PAUSED" — that read as the run being paused. Jump-to-end (⏭) returns to the edge.
           <span style={{ color: "var(--status-accent-text)", fontWeight: 700 }}>REVIEWING</span>
         ) : escalated ? (
@@ -207,10 +212,13 @@ export function Transport({
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--status-gate)", animation: "softpulse 1.6s ease-in-out infinite" }} />
             WAITING
           </span>
-        ) : (
-          // At the newest event, following the run forward. No glyph — the active step already
-          // flashes on the board, so this is just the label.
+        ) : running ? (
+          // A role step is actively running. No glyph — the active step already flashes on the board.
           <span style={{ color: "var(--status-good)", fontWeight: 700 }}>RUNNING</span>
+        ) : (
+          // At the newest event but nothing is running or awaiting a decision — the run is at REST
+          // (a completed, all-approved phase; between drives; a quiesced lane). PARKED, not RUNNING.
+          <span style={{ color: "var(--text-muted)", fontWeight: 700 }}>PARKED</span>
         )}
       </div>
 

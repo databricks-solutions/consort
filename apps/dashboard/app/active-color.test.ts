@@ -9,7 +9,7 @@ describe("activeColorForFocus — the active colour follows who is in charge", (
   });
 
   it("a parked gate → purple (WAITING)", () => {
-    expect(activeColorForFocus({ kind: "gate", gate: "backlog" })).toBe("var(--status-gate)");
+    expect(activeColorForFocus({ kind: "gate", gate: "backlog", status: "surfaced" })).toBe("var(--status-gate)");
   });
 
   it("an escalation → red (RAISING)", () => {

@@ -73,7 +73,7 @@ describe("fold — topology", () => {
     // single key that drives the gate node (backlog→p-req) + orchestrator + transport WAITING together.
     const withBacklogGate = fold([...RUN, ev("gate.surfaced", { gate: "backlog", subject: "sprint s1" })], snap());
     expect(withBacklogGate.topology.laneCurrent).toBeNull();
-    expect(withBacklogGate.focus).toEqual({ kind: "gate", gate: "backlog" });
+    expect(withBacklogGate.focus).toEqual({ kind: "gate", gate: "backlog", status: "surfaced" });
   });
 
   it("rewinds with the scrub position — it is pure timeline data", () => {
@@ -535,7 +535,11 @@ describe("focusOf — the ONE observation that drives every gate surface from on
   // WAITING/RAISED: gate → all glow purple + WAITING; escalation → all glow red + RAISED. Priority
   // is escalation > step > gate > idle, and a gate carries its key so the right node/bubble lights.
   const f = (laneCurrent: { lane: string; step: string } | null, pendingGate: string | null, blockers: unknown[]) =>
-    focusOf({ topology: { laneCurrent }, pendingGate, blockers } as Parameters<typeof focusOf>[0]);
+    focusOf({
+      topology: { laneCurrent },
+      gateFocus: pendingGate ? { gate: pendingGate, status: "surfaced" } : null,
+      blockers,
+    } as Parameters<typeof focusOf>[0]);
 
   it("escalation (an open blocker) outranks a running step and a pending gate → RAISED", () => {
     // A source-less blocker falls back to the lane the run is parked in (build → b-hil).
@@ -555,7 +559,7 @@ describe("focusOf — the ONE observation that drives every gate surface from on
     // → d-hil (was: step null, so NO lane flashed for a design-phase HIL).
     const focus = focusOf({
       topology: { laneCurrent: null, activeNode: "design" },
-      pendingGate: null,
+      gateFocus: null,
       blockers: [{ source: "smell:reflect-testlist-defect" }],
     } as Parameters<typeof focusOf>[0]);
     expect(focus).toEqual({ kind: "escalation", step: "d-hil" });
@@ -563,9 +567,25 @@ describe("focusOf — the ONE observation that drives every gate surface from on
   it("a running step outranks a lingering pending gate", () => {
     expect(f({ lane: "build", step: "b-green" }, "spec", [])).toEqual({ kind: "step", lane: "build", step: "b-green" });
   });
-  it("a parked gate carries its key when nothing is running → that gate's node + bubble + WAITING", () => {
-    expect(f(null, "spec", [])).toEqual({ kind: "gate", gate: "spec" });
-    expect(f(null, "backlog", [])).toEqual({ kind: "gate", gate: "backlog" });
+  it("a parked gate carries its key + status when nothing is running → that gate's node + bubble + WAITING", () => {
+    expect(f(null, "spec", [])).toEqual({ kind: "gate", gate: "spec", status: "surfaced" });
+    expect(f(null, "backlog", [])).toEqual({ kind: "gate", gate: "backlog", status: "surfaced" });
+  });
+  it("an APPROVED frontier gate is the locus (status approved) when nothing runs — the completed-phase focus, NOT the trailing step", () => {
+    const focus = focusOf({
+      topology: { laneCurrent: null, activeNode: null },
+      gateFocus: { gate: "spec", status: "approved" },
+      blockers: [],
+    } as Parameters<typeof focusOf>[0]);
+    expect(focus).toEqual({ kind: "gate", gate: "spec", status: "approved" });
+  });
+  it("a running step still outranks an approved frontier gate (a new loop glows the step, not the done gate)", () => {
+    const focus = focusOf({
+      topology: { laneCurrent: { lane: "build", step: "b-red" }, activeNode: null },
+      gateFocus: { gate: "spec", status: "approved" },
+      blockers: [],
+    } as Parameters<typeof focusOf>[0]);
+    expect(focus).toEqual({ kind: "step", lane: "build", step: "b-red" });
   });
   it("idle when nothing is parked or running", () => {
     expect(f(null, null, [])).toEqual({ kind: "idle" });
@@ -610,7 +630,7 @@ describe("batch /design does NOT bounce focus to a surfaced-but-unapproved spec 
   it("surfaces the spec gate once the drive goes quiet (session idle = parked) — the batch-approval HIL", () => {
     // Same end-state, but the session has gone idle (no event for SESSION_ACTIVE_MS): the drive has
     // stopped with the spec gate still open → it IS a park → the gate wins focus so the HIL shows.
-    expect(fold(BATCH_DESIGN, snap({ sessionAgeMs: Infinity })).focus).toEqual({ kind: "gate", gate: "spec" });
+    expect(fold(BATCH_DESIGN, snap({ sessionAgeMs: Infinity })).focus).toEqual({ kind: "gate", gate: "spec", status: "surfaced" });
   });
 
   it("does NOT flash the purple gate while SCRUBBING back through the timeline", () => {
@@ -648,7 +668,7 @@ describe("a HITL gate the drive has STOPPED at (next.json open_gates) wins focus
   const parkedNext = { state: { open_gates: ["acceptance"] }, generated_at: "2026-10-28T09:00:00.000Z" } as SnapshotInputs["next"];
 
   it("open_gates names the gate → gate wins NOW, even with the session still active (the b-green bug)", () => {
-    expect(fold(ACCEPT, snap({ next: parkedNext, sessionAgeMs: 0 })).focus).toEqual({ kind: "gate", gate: "acceptance" });
+    expect(fold(ACCEPT, snap({ next: parkedNext, sessionAgeMs: 0 })).focus).toEqual({ kind: "gate", gate: "acceptance", status: "surfaced" });
   });
 
   it("without the stop-state, an active session still carries the role step (open_gates is the signal)", () => {
@@ -659,7 +679,30 @@ describe("a HITL gate the drive has STOPPED at (next.json open_gates) wins focus
   });
 
   it("idle fallback still parks the gate when there is no stop-state", () => {
-    expect(fold(ACCEPT, snap({ sessionAgeMs: Infinity })).focus).toEqual({ kind: "gate", gate: "acceptance" });
+    expect(fold(ACCEPT, snap({ sessionAgeMs: Infinity })).focus).toEqual({ kind: "gate", gate: "acceptance", status: "surfaced" });
+  });
+
+  // The completed-phase case (the F1 bug): a gate surfaced then APPROVED, with a role turn that ran
+  // just before it (the trailing carried step), and the drive quiesced. The frontier gate is the
+  // locus at its REAL status ("approved") — NOT the stale last role step that masked it before.
+  const APPROVED_AT_REST: AgentLogEvent[] = [
+    ev("phase.start", { phase: "green", story: "S1", feature_id: "F1" }, { role: "driver" }),
+    ev("test.result", { status: "green" }, { role: "driver" }), // → carried last step = b-green
+    ev("turn.usage", { phase: "green" }, { role: "driver" }), // close the turn → idle
+    ev("gate.surfaced", { gate: "spec", story: "S1" }, { role: "orchestrator" }),
+    ev("gate.approved", { gate: "spec", story: "S1" }, { role: "product-owner" }), // the human approved
+  ];
+  it("an APPROVED frontier gate at rest is the locus (status approved), NOT the trailing carried step", () => {
+    expect(fold(APPROVED_AT_REST, snap({ sessionAgeMs: Infinity })).focus).toEqual({
+      kind: "gate",
+      gate: "spec",
+      status: "approved",
+    });
+  });
+  it("while the session is still ACTIVE after the approval, the role step still carries (no premature rest)", () => {
+    // The approval landed but the drive is streaming on (session active, open_gates empty) → the
+    // frontier gate is not a rest yet; focus stays on the carried step until the drive quiesces.
+    expect(fold(APPROVED_AT_REST, snap({ sessionAgeMs: 0 })).focus).toEqual({ kind: "step", lane: "build", step: "b-green" });
   });
 });
 
@@ -674,7 +717,7 @@ describe("a parked gate lights the REVIEWED agent's bubble (not the orchestrator
 
   it("deploy gate → the release-engineer bubble reads 'waiting'", () => {
     const s = fold([ev("gate.surfaced", { gate: "deploy" }, { role: "orchestrator" })], snap());
-    expect(s.focus).toEqual({ kind: "gate", gate: "deploy" });
+    expect(s.focus).toEqual({ kind: "gate", gate: "deploy", status: "surfaced" });
     expect(s.agents.find((a) => a.role === "release-engineer")?.status).toBe("waiting");
   });
 
