@@ -29,7 +29,14 @@ import { focusOf } from "@/lib/reducer";
 
 // Fixtures predate the `focus` field; derive it the same way the fold does so components that read
 // state.focus work, and so a test that overrides topology gets a focus matching that override.
-const withFocus = (s: DashboardState): DashboardState => ({ ...s, focus: focusOf(s) });
+const withFocus = (s: DashboardState): DashboardState => ({
+  ...s,
+  focus: focusOf({
+    topology: s.topology,
+    gateFocus: s.pendingGate ? { gate: s.pendingGate, status: "surfaced" } : null,
+    blockers: s.blockers,
+  }),
+});
 
 const fixture = (name: string): DashboardState =>
   withFocus(JSON.parse(readFileSync(join(__dirname, "..", "lib", "__fixtures__", name), "utf8")));
@@ -86,7 +93,7 @@ describe("render — WorkflowGraph", () => {
     const parked: DashboardState = {
       ...state,
       blockers: [],
-      focus: { kind: "gate", gate: "intake" },
+      focus: { kind: "gate", gate: "intake", status: "surfaced" },
       topology: { ...state.topology, activeNode: "intake" },
     };
     const markup = renderToStaticMarkup(<WorkflowGraph state={parked} />);
@@ -109,7 +116,11 @@ describe("render — WorkflowGraph", () => {
     const parked: DashboardState = {
       ...state,
       blockers: [],
-      focus: { kind: "gate", gate: "deploy" },
+      focus: { kind: "gate", gate: "deploy", status: "surfaced" },
+      // Awaiting the deploy gate means it is SURFACED, not approved — keep the fixture consistent with
+      // the focus so the awaited gate (and its feeding phase) glow in the gate colour, not the
+      // approved-at-rest slate (locusFocus derives the gate's status from the gate registry).
+      gates: state.gates.map((g) => (g.name === "deploy" ? { ...g, status: "surfaced" } : g)),
       topology: { ...state.topology, activeNode: null },
     };
     const markup = renderToStaticMarkup(<WorkflowGraph state={parked} />);
@@ -339,7 +350,7 @@ describe("render — LaneGraph", () => {
     expect(specStroke(idleApproved)).toBeNull();
 
     // Parked at the spec gate → purple, from the ONE focus.
-    const parked = renderToStaticMarkup(<LaneGraph state={{ ...state, gates: [{ name: "spec", status: "open" }], focus: { kind: "gate", gate: "spec" } }} />);
+    const parked = renderToStaticMarkup(<LaneGraph state={{ ...state, gates: [{ name: "spec", status: "open" }], focus: { kind: "gate", gate: "spec", status: "surfaced" } }} />);
     expect(specStroke(parked)).toBe("var(--status-gate)");
   });
 
@@ -354,7 +365,7 @@ describe("render — LaneGraph", () => {
 
     // Parked at the spec gate (focus): it pulses WHITE and wears a purple border.
     const parked = renderToStaticMarkup(
-      <LaneGraph state={{ ...state, gates: [{ name: "spec", status: "open" }], focus: { kind: "gate", gate: "spec" } }} />,
+      <LaneGraph state={{ ...state, gates: [{ name: "spec", status: "open" }], focus: { kind: "gate", gate: "spec", status: "surfaced" } }} />,
     );
     expect(backingRectFor(parked)).toContain("glowpulse"); // the live wait → pulses (SVG-visible glow)
     expect(backingRectFor(parked)).toContain("var(--text-strong)"); // glows WHITE, like the bubble cards
@@ -362,7 +373,7 @@ describe("render — LaneGraph", () => {
 
     // Spec gate still `open` but the drive is parked ELSEWHERE (acceptance): spec must NOT pulse.
     const elsewhere = renderToStaticMarkup(
-      <LaneGraph state={{ ...state, gates: [{ name: "spec", status: "open" }], focus: { kind: "gate", gate: "acceptance" } }} />,
+      <LaneGraph state={{ ...state, gates: [{ name: "spec", status: "open" }], focus: { kind: "gate", gate: "acceptance", status: "surfaced" } }} />,
     );
     expect(backingRectFor(elsewhere)).not.toContain("glowpulse"); // open but not the live wait → quiet
 
@@ -391,7 +402,7 @@ describe("render — LaneGraph", () => {
 
     // PARKED at the spec gate (focus flips to the gate): it glows.
     const parked = renderToStaticMarkup(
-      <LaneGraph state={{ ...base, atLive: true, topology: { ...state.topology, laneGate: null }, focus: { kind: "gate", gate: "spec" } }} />,
+      <LaneGraph state={{ ...base, atLive: true, topology: { ...state.topology, laneGate: null }, focus: { kind: "gate", gate: "spec", status: "surfaced" } }} />,
     );
     expect(specGateTitle(parked)).toContain("gate current");
 
@@ -480,13 +491,25 @@ describe("render — LaneGraph", () => {
 describe("render — Transport", () => {
   const noop = () => {};
 
-  it("renders RUNNING at the newest event", () => {
+  it("renders RUNNING at the newest event when a role step is running", () => {
     const markup = renderToStaticMarkup(
-      <Transport at={null} total={380} onChange={noop} playing={false} onPlayingChange={noop} speed={5} onSpeedChange={noop} atTimestamp="2026-08-04T15:09:36.000Z" />,
+      <Transport at={null} total={380} onChange={noop} playing={false} onPlayingChange={noop} speed={5} onSpeedChange={noop} atTimestamp="2026-08-04T15:09:36.000Z" running />,
     );
     expect(markup).toContain("RUNNING");
     expect(markup).not.toContain("REVIEWING");
+    expect(markup).not.toContain("PARKED");
     expect(markup).toMatchSnapshot();
+  });
+
+  it("renders PARKED at the newest event when the run is at rest (nothing running, nothing awaiting)", () => {
+    // A completed, all-approved phase / between drives: at the frontier but no step runs and no gate
+    // awaits — the honest state is at-rest, NOT RUNNING and NOT REVIEWING (we are at the edge).
+    const markup = renderToStaticMarkup(
+      <Transport at={null} total={380} onChange={noop} playing={false} onPlayingChange={noop} speed={5} onSpeedChange={noop} atTimestamp="2026-08-04T15:09:36.000Z" />,
+    );
+    expect(markup).toContain("PARKED");
+    expect(markup).not.toContain("RUNNING");
+    expect(markup).not.toContain("REVIEWING");
   });
 
   it("renders REVIEWING (not PAUSED — the run keeps going) when scrubbed back off the newest event", () => {

@@ -73,10 +73,18 @@ export const ENABLE_WAITING_BANNER = false;
 // links every surface — the lane node, the lifecycle node, the orchestrator card, and the transport
 // WAITING/RAISED all read state.focus rather than recombining laneCurrent / pendingGate / blockers
 // themselves. focus.kind "gate" carries the gate key; "escalation" is a raised problem.
-export function focusOf(s: Pick<DashboardState, "topology" | "pendingGate" | "blockers">): Focus {
+export function focusOf(s: {
+  topology: Pick<DashboardState["topology"], "laneCurrent" | "activeNode">;
+  // The run's FRONTIER gate (the most-recent gate transition) + whether it is still awaiting a
+  // decision ("surfaced") or already approved ("approved"). null when the frontier is not a gate.
+  // This is what lets focus reflect an APPROVED gate (a completed design) rather than falling back
+  // to the last role turn that ran before it — the frontier fully describes itself.
+  gateFocus: { gate: string; status: "surfaced" | "approved" } | null;
+  blockers: DashboardState["blockers"];
+}): Focus {
   if (s.blockers.length > 0) return { kind: "escalation", step: escalationStepId(s.blockers[0], s.topology) };
   if (s.topology.laneCurrent) return { kind: "step", lane: s.topology.laneCurrent.lane, step: s.topology.laneCurrent.step };
-  if (s.pendingGate) return { kind: "gate", gate: s.pendingGate };
+  if (s.gateFocus) return { kind: "gate", gate: s.gateFocus.gate, status: s.gateFocus.status };
   return { kind: "idle" };
 }
 
@@ -616,21 +624,28 @@ export function fold(
   // also more forgiving than findPendingGate's "the surface must be the very last event": a benign
   // trailing log line must not blank the highlight. Cleared = a later gate.approved for the same gate,
   // or (for acceptance only) a later experiment.accepted.
-  let pendingGate: string | null = null;
+  // The FRONTIER gate: the most-recently-surfaced gate + whether it has since been approved. Keeping
+  // the gate AND its approved-ness (rather than nulling it on approval) is what lets focus reflect the
+  // gate at its REAL status once a turn completes — an approved frontier gate (a done design whose
+  // spec gates are all approved) is the run's locus, not the last role turn that ran before it.
+  let frontierGate: { gate: string; approved: boolean } | null = null;
   for (let i = slice.length - 1; i >= 0; i--) {
     if (slice[i].event !== "gate.surfaced") continue;
     const gname = (slice[i].metadata as Record<string, unknown> | undefined)?.gate;
-    if (typeof gname !== "string") break; // most-recent surface is malformed → no gate to pulse
-    let cleared = false;
+    if (typeof gname !== "string") break; // most-recent surface is malformed → no frontier gate
+    let approved = false;
     for (let j = i + 1; j < slice.length; j++) {
       const mj = (slice[j].metadata as Record<string, unknown> | undefined) ?? {};
-      if (slice[j].event === "gate.approved" && mj.gate === gname) cleared = true;
-      else if (gname === "acceptance" && slice[j].event === "experiment.accepted") cleared = true;
-      if (cleared) break;
+      if (slice[j].event === "gate.approved" && mj.gate === gname) approved = true;
+      else if (gname === "acceptance" && slice[j].event === "experiment.accepted") approved = true;
+      if (approved) break;
     }
-    pendingGate = cleared ? null : gname;
-    break; // only the most recent surface decides the live wait
+    frontierGate = { gate: gname, approved };
+    break; // only the most recent surface decides the frontier
   }
+  // The gate still AWAITING approval — the WAITING-park signal the rest of the board reads (unchanged
+  // semantics: a frontier gate that has NOT been approved). Null once it's approved.
+  const pendingGate: string | null = frontierGate && !frontierGate.approved ? frontierGate.gate : null;
   // The backlog gate now emits gate.surfaced(gate:"backlog") from the kit like every other gate, so
   // the scan above parks on it from the LOG (its most-recent surface, not yet approved) — no next.json
   // one-off. focusOf then resolves {kind:"gate",gate:"backlog"} and the GATES registry (backlog→p-req)
@@ -653,11 +668,19 @@ export function fold(
   //       "is this live" threshold the rest of the board uses. A live run between turns stays below it.
   const sessionIdle = snap.sessionAgeMs >= SESSION_ACTIVE_MS;
   const nextOpenGates = snap.next?.state?.open_gates ?? [];
-  const parkedAtGate =
+  // Is the run AT REST at its frontier gate — vs. actively streaming past a just-surfaced one? At
+  // rest the gate is the run's locus REGARDLESS of whether it is still awaiting approval or already
+  // approved, so this one condition reflects BOTH a pending park AND a completed, all-approved phase
+  // (the drive quiesced at the gate) — instead of the stale last role step. "At rest" = at the live
+  // edge, no agent working, and the drive has stopped (next.json lists the gate open — the immediate
+  // authoritative signal for a pending park; OR the session has gone quiet — which also catches an
+  // approved frontier whose open_gates is already empty). It is NEVER set mid-batch-/design (session
+  // live, open_gates empty), so it cannot reintroduce the between-turns flicker the carry prevents.
+  const restingAtGate =
     atLive &&
-    pendingGate !== null &&
+    frontierGate !== null &&
     !agents.some((a) => a.status === "working") &&
-    (nextOpenGates.includes(pendingGate) || sessionIdle);
+    (nextOpenGates.includes(frontierGate.gate) || sessionIdle);
   // The active role step to hold focus on while NOT parked, carried across the between-turn hand-offs
   // where laneCurrent blinks to null. Only the lanes the derived `lane` can name (deploy folds under
   // build for focus); null in complete/idle phases, where there is no running step to carry.
@@ -701,30 +724,37 @@ export function fold(
     pendingGate,
     // The one focus observation, derived once here; every surface reads it (see focusOf).
     //
-    // A surfaced-but-unapproved `pendingGate` wins focus (→ Transport "WAITING", the gate glows) ONLY
-    // when the run is genuinely PARKED at it: the drive has gone quiet (session idle) with NO agent
-    // working, having surfaced the gate and exited (or run a trailing reconcile after it). Clearing
-    // laneCurrent then lets the gate win, instead of a stale post-gate step masking the HIL.
+    // When the run is AT REST at its frontier gate (restingAtGate), the gate is the locus: focus is
+    // that gate at its REAL status — "surfaced" (awaiting a decision → the gate glows, Transport
+    // WAITING) or "approved" (a completed, all-approved phase → the gate shows done, NOT the last role
+    // turn that ran before it). Suppressing laneCurrent lets the frontier win over any trailing step.
+    // This is ONE rule for every completed-turn frontier, not a per-phase case.
     //
     // While the drive is still ACTIVELY running (session live, events streaming), a surfaced gate is
-    // NOT a park — in batch `/design` the drive surfaces each story's spec gate and streams straight on
-    // to the next story, the gate never approved until the human approves the whole set at the end.
-    // Letting it grab focus bounced the board off the active role step at every turn boundary and
+    // NOT a rest — in batch `/design` the drive surfaces each story's spec gate and streams straight on
+    // to the next story, the gates unapproved until the human approves the whole set at the end.
+    // Letting the gate grab focus bounced the board off the active role step at every turn boundary and
     // orchestrator hand-off (the batch-/design flicker). So keep the active role step; and because
     // laneCurrent blinks to null on the brief handoff / gate.surfaced / reasoning events between turns,
     // carry the lane's LAST role step (topology.laneLast) across them so focus stays on the running
     // step rather than momentarily dropping to the gate. The same carry runs when SCRUBBED back
-    // (parkedAtGate is false off the live edge), so rewinding the timeline replays the role
-    // progression instead of flashing the purple gate at every between-turns frame.
+    // (restingAtGate is false off the live edge), so rewinding the timeline replays the role
+    // progression instead of flashing the gate at every between-turns frame.
     focus: focusOf({
-      topology: parkedAtGate
+      topology: restingAtGate
         ? { ...topology, laneCurrent: null }
         : topology.laneCurrent
           ? topology
           : carriedLaneStep
             ? { ...topology, laneCurrent: { lane, step: carriedLaneStep } }
             : topology,
-      pendingGate,
+      // At rest the frontier gate (approved OR surfaced) is the locus; while running/scrubbed only an
+      // unapproved gate can be the fallback locus (an approved gate behind a running step is not it).
+      gateFocus: restingAtGate
+        ? { gate: frontierGate!.gate, status: frontierGate!.approved ? "approved" : "surfaced" }
+        : pendingGate
+          ? { gate: pendingGate, status: "surfaced" }
+          : null,
       blockers,
     }),
     // Per-step model/effort/cost/turns for the step cards, folded over the full slice.
