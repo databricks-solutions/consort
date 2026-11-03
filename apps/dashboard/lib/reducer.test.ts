@@ -69,6 +69,32 @@ describe("fold — topology", () => {
     expect(t.atTimestamp).toBe(RUN[RUN.length - 1].timestamp);
   });
 
+  it("an escalation.raised playhead CLEARS laneCurrent — the raising role's step must not stay lit AT the HIL", () => {
+    // REGRESSION (reported): a driver-green HIL. The failing GREEN turn ran (b-green), then raised to
+    // HIL. `escalation.raised` carries role=driver, so laneStepForEvent matches b-green — but a HITL
+    // boundary is NEVER the current running step (same as a gate.surfaced), so laneCurrent must be
+    // null and the HIL box glows from `focus`, not a stale b-green. Before the fix, laneCurrent stayed
+    // {lane:build, step:b-green} → currentLocus Rule 1 lit b-green instead of the HIL.
+    const run: AgentLogEvent[] = [
+      ev("phase.start", { phase: "green", story: "S1", feature_id: "F1" }, { role: "driver" }),
+      {
+        timestamp: "2026-07-31T20:00:01.000Z",
+        level: "error",
+        role: "driver",
+        event: "escalation.raised",
+        message: "genuine regression",
+        metadata: { source: "driver-green", story: "S1" },
+      },
+    ];
+    // With blockers supplied (the real run derives them from the log/next.json), focus resolves to the
+    // escalation and the HIL box lights; here we assert the ROOT this fix changes — laneCurrent is
+    // CLEARED, so no stale b-green can win over the HIL in currentLocus.
+    const s = fold(run, snap());
+    expect(s.topology.laneCurrent).toBeNull();
+    const withBlocker = fold(run, snap({ next: { state: { blockers: [{ source: "driver-green", reason: "genuine regression", story: "S1" }] } } as unknown as SnapshotInputs["next"] }));
+    expect(withBlocker.focus).toEqual({ kind: "escalation", step: "b-hil" });
+  });
+
   it("a surfaced (not-yet-approved) backlog gate parks the ONE focus on the backlog GATE, from the LOG", () => {
     // The backlog gate now emits gate.surfaced(gate:"backlog") from the kit like every other gate —
     // no next.json one-off. The pendingGate scan picks it up, the gate.surfaced playhead clears the
