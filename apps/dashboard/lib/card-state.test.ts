@@ -117,4 +117,42 @@ describe("card-state — exactly ONE card glows: the current locus", () => {
     const g = glowing(deriveCardStates(v));
     expect(g).not.toBeNull(); // one locus, not a dark board and not a fully-lit one
   });
+
+  // REGRESSION (the reported bug): a promote RE-DRIVEN on a shipped sprint runs with the coarse phase
+  // still reading `complete`. The done-terminal guard must NOT blank an ACTIVELY-RUNNING lane step —
+  // the dashboard reducer said laneCurrent=dp-ci, but currentLocus returned null (nothing lit) because
+  // the guard ran before the running-step check. One doorway, running step wins first.
+  it("LIVE: a running step lights even when the coarse phase reads 'complete' (re-driven promote at wait-ci)", () => {
+    const v = base({
+      focus: { kind: "step", lane: "deploy", step: "dp-ci" } as Focus,
+      liveStep: "dp-ci",
+      complete: true, // the sprint snapshot's phase is 'complete'
+      atLive: true,
+      reachedThisPass: new Set([...DESIGN, ...BUILD, "dp-deploy", "dp-verify", "dp-pr", "dp-ci"]),
+      approvedGates: new Set(["intake", "plan", "spec", "acceptance", "deploy"]),
+    });
+    expect(glowing(deriveCardStates(v))).toEqual({ id: "dp-ci", state: "current-step" });
+  });
+
+  it("LIVE: a SURFACED gate still lights when phase reads 'complete' (re-driven promote paused at its gate)", () => {
+    const v = base({
+      focus: { kind: "gate", gate: "promote", status: "surfaced" } as Focus,
+      liveStep: null,
+      complete: true,
+      atLive: true,
+    });
+    expect(glowing(deriveCardStates(v))).toEqual({ id: "dp-promgate", state: "current-gate" });
+  });
+
+  it("LIVE: a truly done run lights NOTHING — an APPROVED promote-gate focus does not re-light the gate", () => {
+    const v = base({
+      focus: { kind: "gate", gate: "promote", status: "approved" } as Focus,
+      liveStep: null,
+      complete: true,
+      atLive: true,
+      reachedThisPass: new Set([...DESIGN, ...BUILD, "dp-deploy", "dp-verify", "dp-pr", "dp-merge"]),
+      approvedGates: new Set(["intake", "plan", "spec", "acceptance", "deploy", "promote"]),
+    });
+    expect(glowing(deriveCardStates(v))).toBeNull(); // Shipped rests; nothing flashes
+  });
 });

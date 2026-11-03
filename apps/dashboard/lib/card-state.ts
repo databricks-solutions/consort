@@ -76,7 +76,10 @@ const ORDER: ReadonlyMap<string, number> = (() => {
  * not light it. That is why `parkedGateStep` counts only when `!atLive`.
  */
 function pendingGateStep(v: FoldView): string | null {
-  if (v.focus.kind === "gate") return GATE_STEP_BY_KEY[v.focus.gate] ?? null;
+  // A gate the playhead sits on — but NOT an APPROVED one: an approved gate is a REACHED milestone (the
+  // done terminal's focus), never an awaiting park, so it must not light here (lighting it re-lit the
+  // promote gate on a shipped run). A SURFACED or status-less gate focus is a real live park → lights.
+  if (v.focus.kind === "gate" && v.focus.status !== "approved") return GATE_STEP_BY_KEY[v.focus.gate] ?? null;
   return v.atLive ? null : v.parkedGateStep;
 }
 
@@ -102,19 +105,29 @@ export function currentLocus(v: FoldView): Locus | null {
     return lane ? { step, kind, lane } : null;
   };
 
-  // The SHIPPED terminal at the live edge has NO current locus: the run is done, nothing is "current",
-  // so no card glows (the promote gate must not linger as the lit locus once the merge completed). A
-  // SCRUBBED-back view of a finished run (atLive false) still replays its historical locus below.
-  // EXCEPTION: a gate ACTIVELY SURFACED (a live human park awaiting approval) must still light (WAITING)
-  // even when the coarse phase already reads "complete" — e.g. a re-driven promote pausing at its gate.
-  // Mirrors the WorkflowGraph `shipDone` guard, which also excludes a surfaced gate.
-  if (v.complete && v.atLive && !(v.focus.kind === "gate" && v.focus.status === "surfaced")) return null;
-
+  // ONE doorway: this is the ONLY place the lit locus is decided, and it is ORDERED so the live work
+  // always wins. `laneCurrent` (the server topology reducer) feeds in as `liveStep`; the two never
+  // disagree, because a running step here is exactly that laneCurrent step.
+  //
+  // 1. A genuinely RUNNING step is the live work and ALWAYS wins — even when the coarse phase already
+  //    reads "complete" (a promote RE-DRIVEN on a shipped sprint runs prepare-pr/wait-ci/merge; those
+  //    are live steps, not the done terminal). This MUST precede the done-terminal guard (3). Placing
+  //    that guard first was the bug that blanked an actively-running lane step on a complete-phase run
+  //    (the dashboard said laneCurrent=dp-ci but currentLocus returned null, so nothing lit).
   if (v.liveStep && STEP_LANE[v.liveStep]) return withLane(v.liveStep, "step");
 
+  // 2. A gate the playhead sits on (a live SURFACED park, or a scrubbed gate.surfaced frame) or an
+  //    escalation the run is parked on. pendingGateStep excludes an APPROVED gate so the done-terminal
+  //    guard (3) can rest on Shipped instead of re-lighting the approved promote gate.
   const pg = pendingGateStep(v);
   if (pg) return withLane(pg, "gate");
   if (v.focus.kind === "escalation" && v.focus.step) return withLane(v.focus.step, "escalation");
+
+  // 3. SHIPPED terminal at the live edge: nothing running, no gate awaiting, no escalation — the run is
+  //    done, so NOTHING glows (Shipped rests; the promote gate does not linger lit once the merge
+  //    completed). A SCRUBBED-back view of a finished run (atLive false) still replays its historical
+  //    locus via the fallback below.
+  if (v.complete && v.atLive) return null;
 
   // Between turns / idle: the FURTHEST-along point reached this pass — a reached role step, or an
   // approved gate (which outranks the pre-gate role step). A plain loop (no closure) so the pick is
