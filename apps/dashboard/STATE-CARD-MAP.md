@@ -40,7 +40,7 @@ precisely an invariant violation: a lit card with no valid backing state.
 | `restingAtGate` | `atLive && frontierGate!=null && !driveAlive && !agents.working` (`reducer.ts`) | I1, I5 |
 | `focus` (`focusOf`) | `escalation > step(laneCurrent/carry) > gate(frontierGate, status from frontierGate.approved) > idle` (`reducer.ts:76-88`) | I1, I5 |
 | `approvedGates` | `new Set(state.gates.filter(status==='approved').name)` (`card-state.ts:151`) | **I3 (live)** |
-| `currentLocus` | `liveStep > pendingGateStep(focus.kind==='gate') > escalation > furthest(reachedThisPass ∪ approvedGates)` (`card-state.ts:95-122`) | I1, I3 |
+| `currentLocus` | the **§8 decision table** (authoritative): `liveStep` → non-approved-gate focus / scrubbed `parkedGateStep` → escalation → (`complete && atLive` ⇒ none) → furthest(`reachedThisPass ∪ approvedGates`) (`card-state.ts`) | I1, I3 |
 | `locusFocus` | `currentLocus` re-expressed; **gate status = `approvedGates.has(gate) ? 'approved' : 'surfaced'`** (`card-state.ts:130-139`) | I1, **I3** |
 
 > **Note the split brain:** `focus` (reducer) takes a gate's approved-ness from the **log** (I1,
@@ -162,6 +162,104 @@ it, what the kit does today, and the fix.
   phase of work), and emit a `phase.end [release-engineer] promote` before the workflow END. Then the Promote
   lane + RE dot light from RE's own events, live AND in rewind.
 
-> **Status:** both tracked; neither applied yet (map-first, per the "do not one-off this" directive). The
-> exploratory dashboard-only `awaitedGateNode` guard is to be reverted; the real fix is G1 (+ its dashboard
-> companion) and G2, as one coherent change.
+> **Status:** G1-companion (log∪gates.json reconciliation), G2 (RE-attributed promote ladder +
+> `phase.end [release-engineer] promote` + per-sub-step span-close), and the lit-card decision table
+> (§8) all SHIPPED in **consort 0.4.40**. G1-root (persist promote to `gates.json`) still tracked.
+
+---
+
+## 8. TRUTH TABLE — EVERY card ↔ the exact state that lights it (both directions)
+
+There are **36 cards** across the four lanes. Each is one of three kinds, lit by a DIFFERENT mechanism:
+- **ROLE STEP** — lit by a `phase.start` (or named event) carrying a specific `role` + `phase`/`buildMode`.
+- **GATE (purple diamond)** — lit by its own gate KEY's `gate.surfaced`/`gate.approved` (via `GATE_KEY_BY_STEP`, `gates.ts`). **7 of them, each a different key.**
+- **HIL (red terminal)** — lit by `escalation.raised`, routed to ONE lane's box by `escalationStepId(source, activeNode)` (`reducer.ts`). **4 of them, each a different origin.**
+
+Columns: **Lights WHEN** = the variable/event condition (card→state). **Emitted by / Emitted?** = the kit emission that produces that condition, verified in source (state→card). When several cards match at once, §8R picks the ONE that glows.
+
+### 8R. Resolver — which ONE card wins (`currentLocus`, ordered; FIRST match wins)
+| # | Rule | Condition (FoldView vars) | Lights |
+|---|---|---|---|
+| 1 | **RUNNING STEP wins always** | `liveStep` present (= `topology.laneCurrent.step`) | `liveStep` — even when phase reads `complete` (re-driven promote) |
+| 2 | **Live / surfaced GATE** | `liveStep` null, `focus.kind='gate'`, `focus.status ≠ 'approved'` | that gate |
+| 3 | **Scrubbed gate.surfaced frame** | `liveStep` null, not (2), `!atLive`, `parkedGateStep` set | `parkedGateStep` |
+| 4 | **ESCALATION park** | `liveStep` null, no gate above, `focus.kind='escalation'` | `focus.step` (the HIL) |
+| 5 | **SHIPPED terminal** | none of 1–4, `complete && atLive` | **NOTHING** (Shipped rests) |
+| 6 | **Furthest reached** (idle/between-turns/scrubbed history) | otherwise | furthest of `reachedThisPass ∪ approvedGates`, else nothing |
+> ONE-DOORWAY invariant: `liveStep` IS the server's `laneCurrent.step`; Rule 1 lights it unconditionally, so server and client never disagree for a running step. `complete` is a COARSE derived flag (true whenever all stories are done — so it reads `complete` even mid-re-driven-promote); it may ONLY suppress in Rule 5, never ahead of live work. The bug this fixed: the complete-guard sat ahead of Rule 1 → blanked an actively-running `dp-ci`.
+
+### 8A. PLAN lane
+| Card | Lights WHEN | Emitted by | Emitted? |
+|---|---|---|---|
+| `p-intake` Product owner | `[product-owner]` `phase=intake` (or seed `intake.supplied`) | invoke-role PO `mode=intake` → `phase.start` (orch-logging) / seed | ✓ |
+| `p-ux-establish` UX designer | `[ux-designer]` `phase=establish` | invoke-role ux-designer `mode=establish` | ✓ |
+| `p-intake-gate` **Intake gate** | gate key `intake` surfaced/approved | `approve-intake-gate` → surfaced+approved | ✓ |
+| `p-propose` Spec author | `[spec-author]` `phase=propose` | invoke-role spec-author `mode=propose` | ✓ |
+| `p-size` Architect | `[architect-reviewer]` `phase∈{estimate,estimate-committed}` | invoke-role architect `mode=estimate`; `estimate-committed` (architect-estimator manifest) | ✓ |
+| `p-backlog-gate` **Backlog gate** (lane-only, no spine node) | gate key `backlog` | `approve-backlog-gate` → surfaced+approved | ✓ |
+| `p-req` Product owner | `[product-owner]` `phase∈{author-requests,feature}` | invoke-role PO `mode=author-requests` | ✓ |
+| `p-gate` **Plan gate** | gate key `plan` | `approve-plan-gate` → surfaced+approved | ✓ |
+
+### 8B. DESIGN lane
+| Card | Lights WHEN | Emitted by | Emitted? |
+|---|---|---|---|
+| `d-breakdown` Spec author | `[spec-author]` `phase=breakdown` | invoke-role spec-author `mode=breakdown` | ✓ |
+| `d-spec` Spec author | `[spec-author]` `phase∉{propose,estimate,author-requests,breakdown}` (=design) | invoke-role spec-author (design) | ✓ |
+| `d-ux-ia` UX designer | `[ux-designer]` `phase=ia` | invoke-role ux-designer `mode=ia` | ✓ |
+| `d-arch` Architect | `[architect-reviewer]` `phase≠estimate` (=design) | invoke-role architect (design) | ✓ |
+| `d-dba` DBA | any `[dba]` turn | invoke-role dba | ✓ |
+| `d-ts` Test strategist | any `[test-strategist]` turn | invoke-role test-strategist | ✓ |
+| `d-nav` Navigator | `[navigator]` `buildMode/phase∈{reflect,reconcile}` | invoke-role navigator `mode=reflect`/`reconcile` | ✓ |
+| `d-gate` **Spec gate** | gate key `spec` | `surface-gate`→surfaced; `approve-gate`→approved | ✓ |
+| `d-hil` **Raise to HIL** | `escalation.raised` → `activeNode=design` (design-reflect smell) | `raise-to-hil` / drive catch | ✓ |
+
+### 8C. BUILD lane
+| Card | Lights WHEN | Emitted by | Emitted? |
+|---|---|---|---|
+| `b-red` Navigator | `[navigator]` `phase=red`, `buildMode∉{reflect,review,assess,assess-refactor,assess-deploy}` | invoke-role navigator (red) | ✓ |
+| `b-green` Driver | `[driver]` `buildMode∉{refactor,repair,refactor-superseded,refactor-deploy,green-superseded}` | invoke-role driver (green) | ✓ |
+| `b-review` Navigator | `[navigator]` `buildMode∈{review,assess,assess-refactor}` | invoke-role navigator `mode=review`/`assess` | ✓ |
+| `b-refactor` Driver | `[driver]` `buildMode=refactor` | invoke-role driver `buildMode=refactor` | ✓ |
+| `b-repair` Driver | `[driver]` `buildMode=repair` | invoke-role driver `buildMode=repair` | ✓ |
+| `b-perm` Driver | `[driver]` `buildMode∈{green-superseded,refactor-superseded}` | invoke-role driver (supersession) | ✓ |
+| `b-accept` **Acceptance gate** | gate key `acceptance` | `await-acceptance`→surfaced; `experiment.accepted`/`gate.approved acceptance` (mergeAndAcceptStory) | ✓ |
+| `b-hil` **Raise to HIL** | `escalation.raised` source∈{driver-green,driver-refactor,spec-defect,auth-expired,verify.failed} OR `activeNode=build` | `raise-to-hil` / drive catch | ✓ |
+
+### 8D. DEPLOY lane
+| Card | Lights WHEN | Emitted by | Emitted? |
+|---|---|---|---|
+| `dp-deploy` Deploy | event `deploy.start` | `consort-deploy` CLI (deploy effect) | ✓ |
+| `dp-verify` Verify | event `deploy.verified` (also `verify.passed` / `test.result [release-engineer]` via `roleForEvent`) | `consort-deploy` verify | ✓ |
+| `dp-gate` **deploy gate** | gate key `deploy` | `approve-deploy-gate` → surfaced+approved | ✓ |
+| `dp-pr` Prepare PR | `phase=promote`, msg∌`wait-ci`/`merge`, `event≠phase.end` | `phase.start [RE] promote` + `reasoning [RE] prepare-pr` (+span-close) | ✓ (0.4.40) |
+| `dp-ci` Wait CI | `phase=promote`, msg∋`wait-ci` | `reasoning [RE] wait-ci` (+ `… complete`) | ✓ (0.4.40) |
+| `dp-promgate` **promote gate** | gate key `promote` | `approve-promote-gate` → surfaced+approved (LOG) | ⚠ **G1**: logged, NOT persisted to `gates.json`; dashboard unions the LOG (reconciliation, 0.4.40) so it lights. Root fix still open. |
+| `dp-merge` Merge | `phase=promote`, msg∋`merge` | `reasoning [RE] merge` (+ `… complete`) | ✓ (0.4.40) |
+| `dp-assess` Assess-deploy | `[navigator]` `buildMode=assess-deploy` | invoke-role navigator `buildMode=assess-deploy` (deploy-verify-heal) | ✓ |
+| `dp-refactor` Scope-deploy | `[driver]` `buildMode=refactor-deploy` | invoke-role driver `buildMode=refactor-deploy` | ✓ |
+| `dp-hil` **Raise to HIL** | `escalation.raised` source=`deploy-verify` OR `activeNode=deploy` | `raise-to-hil` / drive catch (deploy-verify) | ✓ |
+| `dp-promote-hil` **Raise to HIL** | `escalation.raised` `activeNode=promote` (SCM failure: prepare-pr/wait-ci/merge) OR laneCurrent=deploy in promote | drive top-level catch (SCM `CliEffectError` → resumable escalation) | ✓ |
+
+### 8E. The 7 GATES at a glance (purple) — `gates.ts` is the single source
+| key | lane card | spine node | surfaced+approved emitted by |
+|---|---|---|---|
+| intake | `p-intake-gate` | intakegate | `approve-intake-gate` ✓ |
+| backlog | `p-backlog-gate` | — (lane-only) | `approve-backlog-gate` ✓ |
+| plan | `p-gate` | plangate | `approve-plan-gate` ✓ |
+| spec | `d-gate` | specgate | `surface-gate` + `approve-gate` ✓ |
+| acceptance | `b-accept` | acceptancegate | `await-acceptance` + `experiment.accepted` ✓ |
+| deploy | `dp-gate` | deploygate | `approve-deploy-gate` ✓ |
+| promote | `dp-promgate` | promgate | `approve-promote-gate` ✓ LOG (⚠ G1 not persisted; dashboard log-union) |
+
+### 8F. The 4 HIL cards at a glance (red) — routed by `escalationStepId(source, activeNode)`
+| card | routed WHEN | origin |
+|---|---|---|
+| `d-hil` | `activeNode=design` | a design-reflect smell escalation |
+| `b-hil` | source∈{driver-green,driver-refactor,spec-defect,auth-expired,verify.failed} OR `activeNode=build` | build-cycle GREEN-verify / spec-defect / auth |
+| `dp-hil` | source=`deploy-verify` OR `activeNode=deploy` | deploy-verify assess failure |
+| `dp-promote-hil` | `activeNode=promote` (or laneCurrent=deploy in promote) | SCM ladder failure (PR/CI/merge) |
+
+> Every row's trigger token was grep-verified as emitted in `consort/orchestrator` + `consort/logging`
+> (counts > 0 for every `phase`/`buildMode`; `deploy.*`/`verify.*` by the deploy CLI; gates by the
+> `approve-*`/`surface-gate`/`await-acceptance` cases; escalations by `raise-to-hil` + the drive catch).
+> The ONLY state-not-emitted gap is **G1** (promote → `gates.json`), covered at the dashboard by the log∪snapshot union until the kit persists it.
