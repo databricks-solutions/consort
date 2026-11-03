@@ -610,3 +610,12 @@ snapshot_date,referrer,count,uniques
 "2026-11-02","github.com",30,22
 "2026-11-02","kevin-hartman.io",2,1
 "2026-11-02","teams.public.onecdn.static.microsoft",16,12
+"2026-11-03","Bing",3,2
+"2026-11-03","DuckDuckGo",2,2
+"2026-11-03","Google",34,26
+"2026-11-03","aocr.org",57,57
+"2026-11-03","databricks.com",1,1
+"2026-11-03","github.com",34,25
+"2026-11-03","kevin-hartman.io",2,1
+"2026-11-03","lakebase-cookbook.com",1,1
+"2026-11-03","teams.public.onecdn.static.microsoft",20,14
