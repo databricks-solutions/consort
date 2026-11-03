@@ -79,7 +79,7 @@ the PO authors each `feature-request.md` and sets final priority.
 - **Needs E2E (UI) story:** yes — enter a count, see the variance, reconcile and
   watch the row settle.
 
-## F6-split-tracking-code
+## F6-split-tracking-code-expand
 
 - **Ask:** Expand + verify increment of the tracking-code refactor — add new
   batch and serial columns and backfill them from the combined tracking code by
@@ -166,5 +166,5 @@ the PO authors each `feature-request.md` and sets final priority.
 - **Sprint:** 3
 - **Needs E2E (UI) story:** yes — home table and SKU detail render batch/serial
   only, the combined-code column gone, "not tracked" per empty field.
-- **Dependency:** gated on **F6-split-tracking-code** (expand + verify) being
+- **Dependency:** gated on **F6-split-tracking-code-expand** (expand + verify) being
   deployed and signed off; F6 and F10 are deliberately distinct increments.
