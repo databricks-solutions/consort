@@ -67,14 +67,14 @@ describe("stageFirstProject (first-project example seed stager)", () => {
     const r = stageFirstProject({ projectDir, seedDir: SEED_DIR });
     // Every seed feature-request lands under its own feature dir.
     expect(r.features).toContain("F1-stock-visibility");
-    expect(r.features).toContain("F6-split-tracking-code");
+    expect(r.features).toContain("F6-split-tracking-code-expand");
     for (const f of r.features) {
       const fr = path.join(projectDir, ".consort", "features", f, "feature-request.md");
       expect(fs.existsSync(fr), `${f}/feature-request.md should exist`).toBe(true);
     }
-    // Spot-check that content copied verbatim: F6 is the split-tracking-code request.
+    // Spot-check that content copied verbatim: F6 is the split-tracking-code-expand request.
     const f6 = fs.readFileSync(
-      path.join(projectDir, ".consort", "features", "F6-split-tracking-code", "feature-request.md"),
+      path.join(projectDir, ".consort", "features", "F6-split-tracking-code-expand", "feature-request.md"),
       "utf8",
     );
     expect(f6.toLowerCase()).toContain("tracking");
