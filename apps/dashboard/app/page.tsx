@@ -27,6 +27,12 @@ export default function Home() {
   const [at, setAt] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(5);
+  // Scrub granularity (the Transport toggle). "lines" (default) walks the flattened agent-log —
+  // tool actions + every milestone event as finer steps, turns as checkpoints — the readable view.
+  // "events" walks the RAW event log, one position per recorded event with NO exceptions, so a run
+  // can be replayed event-by-event end to end. Both drive the SAME board fold; the toggle only
+  // changes which index the scrubber steps.
+  const [granularity, setGranularity] = useState<"events" | "lines">("lines");
   // The flattened agent-log timeline (per-turn tool actions + reasoning). The ONE event scrubber picks
   // the active turn; the event-log pane shows THAT turn's lines (see activeTurn below). No separate
   // line scrubber — the event playhead is the single control.
@@ -623,7 +629,8 @@ export default function Home() {
               escalated={state.focus.kind === "escalation"}
               running={state.focus.kind === "step"}
               replay={state.source?.mode === "replay"}
-              granularity="lines"
+              granularity={granularity}
+              onGranularityChange={setGranularity}
               lineTotal={timeline?.total ?? 0}
               lineAt={lineAt}
               onLineChange={onLineChange}

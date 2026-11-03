@@ -10738,7 +10738,23 @@ function orchestratorLogEvents(action, ctx = {}) {
         }
       ];
     case "done":
-      return [{ ...base, event: "phase.end", slots: { phase: "workflow", outcome: "complete" } }];
+      return [
+        { role: "release-engineer", level: "info", feature_id, event: "phase.end", slots: { phase: "promote", outcome: "complete" } },
+        { role: "release-engineer", level: "info", feature_id, event: "phase.start", slots: { phase: "shipped" } },
+        { ...base, event: "phase.end", slots: { phase: "workflow", outcome: "complete" } }
+      ];
+    case "prepare-pr":
+    case "wait-ci":
+    case "merge":
+      return [
+        {
+          role: "release-engineer",
+          level: "info",
+          feature_id,
+          event: "reasoning",
+          slots: { phase: "promote", note: `release-engineer: ${action.kind}` }
+        }
+      ];
     default: {
       const k = action.kind;
       return [{ ...base, event: "reasoning", slots: { note: `orchestrator: ${k}` } }];
@@ -18824,6 +18840,30 @@ function makeConfirmContinue() {
     );
   });
 }
+var PROMOTE_SPAN_STEPS = /* @__PURE__ */ new Set(["prepare-pr", "wait-ci", "merge"]);
+function withPromoteSpanClose(inner, cfg) {
+  return {
+    ...inner,
+    async perform(action) {
+      await inner.perform(action);
+      if (PROMOTE_SPAN_STEPS.has(action.kind)) {
+        try {
+          emitAgentLogEvent(
+            {
+              role: "release-engineer",
+              level: "info",
+              feature_id: cfg.featureId,
+              event: "reasoning",
+              slots: { phase: "promote", note: `release-engineer: ${action.kind} complete` }
+            },
+            { consortDir: cfg.consortDir }
+          );
+        } catch {
+        }
+      }
+    }
+  };
+}
 function withBuildRecording(inner, cfg) {
   const recordBuildDir = consortEnv("RECORD_BUILD_DIR")?.trim();
   if (!recordBuildDir) return inner;
@@ -19196,7 +19236,7 @@ Place each under the project's \`.consort/\`; I will read them as the proposal +
       resetStaleTerminalPhase(cfg.consortDir);
       cfg.runner = execRunner(cfg);
       snapshotRunConfig(cfg, "full", gates);
-      const r = await runDriver(withTelemetry(withTurnRecording(withBuildRecording(buildDriveEffects(cfg), cfg), cfg), telemetry), {
+      const r = await runDriver(withTelemetry(withTurnRecording(withBuildRecording(withPromoteSpanClose(buildDriveEffects(cfg), cfg), cfg), cfg), telemetry), {
         stopWhen: gatedStopWhen(void 0, interactive)
       });
       return stepResultOf(r);
@@ -19587,7 +19627,7 @@ then re-run.
   const exitCode = await (async () => {
     try {
       result = await runDriver(
-        withTelemetry(withTurnRecording(withBuildRecording(buildDriveEffects(cfg), cfg), cfg), telemetry),
+        withTelemetry(withTurnRecording(withBuildRecording(withPromoteSpanClose(buildDriveEffects(cfg), cfg), cfg), cfg), telemetry),
         {
           maxSteps: args.maxSteps,
           transition: boundOpts.transition,

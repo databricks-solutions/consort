@@ -195,7 +195,35 @@ export function orchestratorLogEvents(
         },
       ];
     case "done":
-      return [{ ...base, event: "phase.end", slots: { phase: "workflow", outcome: "complete" } }];
+      // The feature SHIPPED. Emit the Release Engineer's promote-phase CLOSE and a terminal `shipped`
+      // phase.start so the dashboard observes the Shipped milestone as REACHED — moving the run's locus
+      // onto Shipped (the quiet done terminal) instead of leaving it stranded on the approved promote
+      // gate, which then wrongly read as the current/lit gate. The trailing `phase.end workflow` stays
+      // the run-terminal signal (reduceAgents' `runEnded`), and ending the walk keeps Shipped reached
+      // but NOT active — so nothing pulses once done.
+      return [
+        { role: "release-engineer", level: "info", feature_id, event: "phase.end", slots: { phase: "promote", outcome: "complete" } },
+        { role: "release-engineer", level: "info", feature_id, event: "phase.start", slots: { phase: "shipped" } },
+        { ...base, event: "phase.end", slots: { phase: "workflow", outcome: "complete" } },
+      ];
+    case "prepare-pr":
+    case "wait-ci":
+    case "merge":
+      // The promote SCM ladder is the Release Engineer's phase of work: the orchestrator EXECUTES it,
+      // but it is RE-owned (matching `phase.start [release-engineer] promote` above). Emit each as a
+      // release-engineer, phase=promote span so the dashboard lights the Promote lane + RE dot as the
+      // run advances prepare-pr -> wait-ci -> merge (the narration token tells the sub-steps apart).
+      // Previously these fell through to the orchestrator `reasoning` default, so the RE never lit for
+      // promote and the work read as the orchestrator's.
+      return [
+        {
+          role: "release-engineer",
+          level: "info",
+          feature_id,
+          event: "reasoning",
+          slots: { phase: "promote", note: `release-engineer: ${action.kind}` },
+        },
+      ];
     default: {
       // Total over the union: any future action still gets an in-vocabulary event.
       const k = (action as { kind: string }).kind;

@@ -236,6 +236,47 @@ function makeConfirmContinue(): (action: WorkflowAction) => Promise<void> {
  * normal run is unaffected. Only build turns (invoke-role navigator|driver) are
  * recorded; design/deploy turns are not build output.
  */
+/**
+ * Close each promote SCM sub-step (prepare-pr / wait-ci / merge) with a release-engineer
+ * completion marker emitted AFTER its effect lands. The `onAction` hook already emits the
+ * sub-step's START before the effect runs; this emits its DONE after, so each sub-step is a
+ * real SPAN that brackets the actual SCM work (branch push + PR open, CI wait, merge + migrate).
+ *
+ * Without the close, each sub-step was a SINGLE agent-log event — a one-frame flash that the
+ * live board could miss inside one poll interval and the scrub drag could never land on. With
+ * it, the promote lane lights dp-pr / dp-ci / dp-merge for the FULL duration of each step live,
+ * and each occupies a scrub RANGE (start..done) instead of an un-scrubbable instant. The DONE
+ * note carries the SAME sub-step token the START used, so the topology matcher (which keys on
+ * the phase=promote message substring) lights the SAME lane card on both ends of the span.
+ *
+ * Always on (observability-only, best-effort): a logging failure never aborts the drive.
+ */
+const PROMOTE_SPAN_STEPS: ReadonlySet<string> = new Set(["prepare-pr", "wait-ci", "merge"]);
+function withPromoteSpanClose(inner: DriveEffects, cfg: DriveEffectsConfig): DriveEffects {
+  return {
+    ...inner,
+    async perform(action) {
+      await inner.perform(action);
+      if (PROMOTE_SPAN_STEPS.has(action.kind)) {
+        try {
+          emitAgentLogEvent(
+            {
+              role: "release-engineer",
+              level: "info",
+              feature_id: cfg.featureId,
+              event: "reasoning",
+              slots: { phase: "promote", note: `release-engineer: ${action.kind} complete` },
+            },
+            { consortDir: cfg.consortDir },
+          );
+        } catch {
+          /* swallow: observability is not load-bearing for the run */
+        }
+      }
+    },
+  };
+}
+
 function withBuildRecording(inner: DriveEffects, cfg: DriveEffectsConfig): DriveEffects {
   const recordBuildDir = consortEnv("RECORD_BUILD_DIR")?.trim();
   if (!recordBuildDir) return inner;
@@ -885,7 +926,7 @@ async function runSprintMode(args: ParsedArgs): Promise<number> {
       resetStaleTerminalPhase(cfg.consortDir);
       cfg.runner = execRunner(cfg);
       snapshotRunConfig(cfg, "full", gates);
-      const r = await runDriver(withTelemetry(withTurnRecording(withBuildRecording(buildDriveEffects(cfg), cfg), cfg), telemetry), {
+      const r = await runDriver(withTelemetry(withTurnRecording(withBuildRecording(withPromoteSpanClose(buildDriveEffects(cfg), cfg), cfg), cfg), telemetry), {
         stopWhen: gatedStopWhen(undefined, interactive),
       });
       return stepResultOf(r);
@@ -1486,7 +1527,7 @@ async function main(): Promise<number> {
   const exitCode: number = await (async (): Promise<number> => {
   try {
     result = await runDriver(
-      withTelemetry(withTurnRecording(withBuildRecording(buildDriveEffects(cfg), cfg), cfg), telemetry),
+      withTelemetry(withTurnRecording(withBuildRecording(withPromoteSpanClose(buildDriveEffects(cfg), cfg), cfg), cfg), telemetry),
       {
         maxSteps: args.maxSteps,
         transition: boundOpts.transition,

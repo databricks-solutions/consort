@@ -13,6 +13,7 @@ function base(over: Partial<FoldView>): FoldView {
     approvedGates: new Set(),
     atLive: true,
     parkedGateStep: null,
+    complete: false,
     ...over,
   };
 }
