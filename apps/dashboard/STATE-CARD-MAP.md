@@ -187,6 +187,8 @@ Columns: **Lights WHEN** = the variable/event condition (card→state). **Emitte
 | 5 | **SHIPPED terminal** | none of 1–4, `complete && atLive` | **NOTHING** (Shipped rests) |
 | 6 | **Furthest reached** (idle/between-turns/scrubbed history) | otherwise | furthest of `reachedThisPass ∪ approvedGates`, else nothing |
 > ONE-DOORWAY invariant: `liveStep` IS the server's `laneCurrent.step`; Rule 1 lights it unconditionally, so server and client never disagree for a running step. `complete` is a COARSE derived flag (true whenever all stories are done — so it reads `complete` even mid-re-driven-promote); it may ONLY suppress in Rule 5, never ahead of live work. The bug this fixed: the complete-guard sat ahead of Rule 1 → blanked an actively-running `dp-ci`.
+>
+> **`laneCurrent` must be NULL at a HITL boundary** (the counterpart invariant — `deriveTopology`). `current` is derived from the PLAYHEAD event, and a `gate.surfaced`/`gate.approved`/`gate.rejected` OR an **`escalation.raised`** STOPS the run — so none of them is the current running step. Gates were excluded from the start; **`escalation.raised` was NOT**, and because a raised escalation carries the FAILING turn's role (`driver-green` → role=driver), `laneStepForEvent` matched it to `b-green` and left `b-green` lit AS `liveStep` AT the HIL, so Rule 1 beat the escalation (Rule 4). Fix: `escalation.raised` joins the gates in `PLAYHEAD_HITL_BOUNDARY` → `laneCurrent` is null at a HIL → the escalation focus (Rule 4) lights the correct HIL box, nothing else. The HIL/gate glow is OWNED by the parked `focus`, never by `current`.
 
 ### 8A. PLAN lane
 | Card | Lights WHEN | Emitted by | Emitted? |

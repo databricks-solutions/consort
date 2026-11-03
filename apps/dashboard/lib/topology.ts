@@ -924,6 +924,16 @@ const HITL_GATE_STEP_IDS: ReadonlySet<string> = new Set(
   LANE_IDS.flatMap((lane) => WORKFLOW.lanes[lane].steps.filter((s) => s.gate && s.role === null).map((s) => s.id)),
 );
 
+// Event names that are a HITL BOUNDARY (the run stops, the human is in the loop) — never the
+// `current` running step. `escalation.raised` belongs here alongside the gates: it carries the
+// failing turn's role, so it would otherwise match that role's lane step and keep it lit AT the HIL.
+const PLAYHEAD_HITL_BOUNDARY: ReadonlySet<string> = new Set([
+  "gate.surfaced",
+  "gate.approved",
+  "gate.rejected",
+  "escalation.raised",
+]);
+
 // First sub-step (lanes in plan→design→build order, steps in declared order) that this
 // event lights, or null. First match wins.
 export function laneStepForEvent(e: AgentLogEvent | null | undefined): LaneHit | null {
@@ -1251,10 +1261,15 @@ export function laneProgress(events: AgentLogEvent[], upTo?: number, feature?: s
   // step (e.g. the PO's p-intake at intake approval) and would re-light it after the phase is done;
   // (2) a GATE step (e.g. the backlog commit, which lights from author-requests events) is a
   // checkpoint, not work. The gate's glow comes from the run's parked-gate focus, not from `current`.
+  // HITL BOUNDARIES are never `current` work: a `gate.surfaced`/`gate.approved`/`gate.rejected` OR an
+  // `escalation.raised` STOPS the run (the human is now in the loop), so the step that led here is no
+  // longer running. Escalation MUST be excluded for the same reason gates are: a raised escalation
+  // carries the FAILING turn's role (a `driver-green` raise is role=driver), so `laneStepForEvent`
+  // matches it to that role's step (b-green) — leaving b-green lit AS the current step AT the HIL
+  // instead of the HIL box. The HIL/gate glow comes from the run's parked FOCUS (escalation/gate),
+  // not from `current`; `current` is strictly the running agent step.
   const hit =
-    playhead && playhead.event !== "gate.surfaced" && playhead.event !== "gate.approved"
-      ? laneStepForEvent(playhead)
-      : null;
+    playhead && !PLAYHEAD_HITL_BOUNDARY.has(playhead.event) ? laneStepForEvent(playhead) : null;
   // Exclude only HUMAN gates from `current` — an automated verify (dp-verify) is real
   // release-engineer work and SHOULD light as the running step when the playhead is on it.
   const current: LaneHit | null = hit && !HITL_GATE_STEP_IDS.has(hit.step) ? hit : null;

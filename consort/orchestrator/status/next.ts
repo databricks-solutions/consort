@@ -456,7 +456,9 @@ function blockersOf(state: DriveState): NextBlocker[] {
       resolver_hint:
         `Fix the root cause, then run: consort-resolve-escalation --id ${e.id} --resolution "<what you fixed>" ` +
         `(clears this escalation AND any blocking smell, keeps the audit trail), then resume the drive. ` +
-        `Do NOT hand-edit or delete the escalation file or smells.json to move forward – that desyncs on-disk state.`,
+        `Do NOT hand-edit or delete the escalation file or smells.json to move forward – that desyncs on-disk state. ` +
+        `For the PROPORTIONATE remediation (repair vs scoped reopen-from-<role> vs full revise, and the two ` +
+        `migration-reversibility test shapes), see the triage guide: skills/consort/references/escalation-triage.md.`,
     },
   ];
 }

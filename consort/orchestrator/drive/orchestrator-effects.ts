@@ -346,15 +346,30 @@ const STATE_OWNERSHIP_CANON =
  *  `reversible-invariant-round-trip` verify then rejects as a forward-only, un-tied test, dead-locking the
  *  assess/repair loop. This reinforces the rule inline, in lockstep with checkTestlistMigrationRevision. */
 const MIGRATION_REVERSIBILITY_CANON =
-  " MIGRATION-REVERSIBILITY TEST (any `migration_reversible` invariant): downgrade to the migration-under-test's" +
-  " OWN `down_revision` – the explicit revision id named in that migration file (for an initial create-table that" +
-  " id is the base) – then `upgrade head`. NEVER a relative `downgrade -1` and NEVER a blind/dynamic `downgrade" +
-  " base` fallback (both revert the WRONG migration / the whole chain; the deterministic `checkTestlistMigrationRevision`" +
-  " and the honest-GREEN `reversible-invariant-round-trip` verify flag them). Mark it `@pytest.mark.migration` and" +
-  " name the test for BOTH directions (downgrade AND upgrade / a \"round-trip\") so coverage maps to the invariant." +
-  " Assert SCHEMA RECREATION only (table + columns + constraints present again after the round-trip), NEVER" +
-  " data-survival: a create-table downgrade (to base) DROPS the table, so \"seeded rows survive\" is UNSATISFIABLE" +
-  " and no product code can green it – authoring that dead-locks the assess/repair loop into HIL.";
+  " MIGRATION-REVERSIBILITY TEST (any `migration_reversible` invariant): a ROUND-TRIP pinned to the" +
+  " migration-under-test's OWN `down_revision` – the explicit revision id named in that migration file. NEVER a" +
+  " relative `downgrade -1` and NEVER a blind/dynamic `downgrade base` fallback (both revert the WRONG migration /" +
+  " the whole chain; the deterministic `checkTestlistMigrationRevision` and the honest-GREEN" +
+  " `reversible-invariant-round-trip` verify flag them). It MUST carry `@pytest.mark.migration` (NON-NEGOTIABLE): the" +
+  " harness runs a marked test in migration-controlled mode on its OWN ephemeral branch and restores head after –" +
+  " WITHOUT the marker the shared DB stays at head, there is no \"before\" state to downgrade into, and the whole" +
+  " round-trip is UNSATISFIABLE no matter how the downgrade is written (the single most common cause of the" +
+  " forward-only dead-lock). Name the test for BOTH directions (downgrade AND upgrade / a \"round-trip\"). The" +
+  " ASSERTION depends on WHICH of two cases this is –" +
+  " decide by whether the invariant's `table` is one THIS feature's migration creates/alters, or a PRE-EXISTING one:" +
+  " (A) OWN-TABLE reversibility – the invariant's table IS created/altered by this migration (a `create_table` in" +
+  " db-design `schema_changes`, its `down_revision` is the base): the downgrade DROPS the table, so assert SCHEMA" +
+  " RECREATION only (table + columns + constraints present again after `upgrade head`). Data-survival is" +
+  " UNSATISFIABLE here – do NOT assert surviving rows. (B) PRE-EXISTING-TABLE SURVIVAL – the invariant's table is" +
+  " NOT in this feature's `schema_changes` (an existing table from a prior feature that this feature's ADDITIVE" +
+  " migration must leave untouched; the PI8/PI9 class): `downgrade` to the ADDITIVE migration's `down_revision`" +
+  " (the existing table + its rows are STILL present – that migration did not create them), SEED rows into the" +
+  " existing table, `upgrade head` (apply the additive migration), assert the seeded rows are UNCHANGED, then" +
+  " `downgrade` (reverse the additive migration) and assert they are STILL present. Data-survival IS the assertion" +
+  " and IS satisfiable – the additive migration's downgrade does not drop a pre-existing table. Authoring (B) as a" +
+  " forward-only \"seed before the migration\" test is WRONG and UNSATISFIABLE: the harness is already at head, so" +
+  " there is no \"before\" to seed into – you MUST downgrade first to create the before-state, or it dead-locks the" +
+  " assess/repair loop into HIL.";
 
 /** Appended to the architect + test-strategist directives so a REVISE re-run knows its cleared prior
  *  is the self-heal's doing, not data loss. On a reflect-revise the co-heal (revise.ts) clears this
