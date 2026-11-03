@@ -461,6 +461,38 @@ describe("matchesStep", () => {
   });
 });
 
+// The promote SCM ladder (prepare-pr -> wait-ci -> merge) carries no distinct event NAME — each
+// sub-step is told apart by the release-engineer's reasoning narration, scoped to phase=promote.
+// REGRESSION: dp-pr once used a catch-all (phaseAny:["promote"] + messageNotIncludes:["wait-ci",
+// "merge"]), so it swallowed the promote phase BOUNDARIES — a `phase.end promote` ("… END promote")
+// is phase=promote with neither token, so scrubbing onto the END-promote frame wrongly lit Prepare
+// PR. Each sub-step now keys on its OWN narration token; phase boundaries light no sub-step.
+describe("promote lane sub-steps key on their own narration, not phase boundaries", () => {
+  const evm = (event: string, role: string, message: string, metadata: Record<string, unknown> = {}): AgentLogEvent => ({
+    timestamp: "2026-08-05T12:00:00.000Z",
+    level: "info",
+    role,
+    event,
+    message,
+    metadata,
+  });
+  const re = (message: string) => evm("reasoning", "release-engineer", message, { phase: "promote" });
+
+  it("prepare-pr / wait-ci / merge narration (and their span-close) each light their OWN sub-step", () => {
+    expect(laneStepForEvent(re("release-engineer: prepare-pr"))).toEqual({ lane: "deploy", step: "dp-pr" });
+    expect(laneStepForEvent(re("release-engineer: prepare-pr complete"))).toEqual({ lane: "deploy", step: "dp-pr" });
+    expect(laneStepForEvent(re("release-engineer: wait-ci"))).toEqual({ lane: "deploy", step: "dp-ci" });
+    expect(laneStepForEvent(re("release-engineer: wait-ci complete"))).toEqual({ lane: "deploy", step: "dp-ci" });
+    expect(laneStepForEvent(re("release-engineer: merge"))).toEqual({ lane: "deploy", step: "dp-merge" });
+    expect(laneStepForEvent(re("release-engineer: merge complete"))).toEqual({ lane: "deploy", step: "dp-merge" });
+  });
+
+  it("a phase.end promote frame lights NO promote sub-step (regression: was Prepare PR)", () => {
+    const end = evm("phase.end", "release-engineer", "release-engineer END promote (complete)", { phase: "promote" });
+    expect(laneStepForEvent(end)?.step).not.toBe("dp-pr");
+  });
+});
+
 describe("laneStepForEvent", () => {
   it("routes representative events to the expected lane and step", () => {
     expect(laneStepForEvent(ev("phase.start", "spec-author", { phase: "propose" }))).toEqual({

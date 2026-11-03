@@ -43,6 +43,10 @@ export interface FoldView {
   approvedGates: ReadonlySet<string>; //  gate KEYS with an APPROVED record (a reached milestone)
   atLive: boolean; //                     is the playhead at the LIVE frontier (vs scrubbed into history)?
   parkedGateStep: string | null; //       the gate STEP id the current frame sits on (topology.laneGate)
+  complete: boolean; //                    the run has SHIPPED (phase === "complete"): the terminal end —
+  //                                       at the live edge there is NO current locus (the work is done),
+  //                                       so nothing glows. The run's own `shipped`/`phase.end workflow`
+  //                                       emits drive this (see orchestrator-logging.ts `done`).
 }
 
 /** step id -> its lane. Derived once from WORKFLOW so it can never drift from the lane definitions. */
@@ -98,6 +102,14 @@ export function currentLocus(v: FoldView): Locus | null {
     return lane ? { step, kind, lane } : null;
   };
 
+  // The SHIPPED terminal at the live edge has NO current locus: the run is done, nothing is "current",
+  // so no card glows (the promote gate must not linger as the lit locus once the merge completed). A
+  // SCRUBBED-back view of a finished run (atLive false) still replays its historical locus below.
+  // EXCEPTION: a gate ACTIVELY SURFACED (a live human park awaiting approval) must still light (WAITING)
+  // even when the coarse phase already reads "complete" — e.g. a re-driven promote pausing at its gate.
+  // Mirrors the WorkflowGraph `shipDone` guard, which also excludes a surfaced gate.
+  if (v.complete && v.atLive && !(v.focus.kind === "gate" && v.focus.status === "surfaced")) return null;
+
   if (v.liveStep && STEP_LANE[v.liveStep]) return withLane(v.liveStep, "step");
 
   const pg = pendingGateStep(v);
@@ -151,6 +163,7 @@ export function foldViewOf(state: DashboardState): FoldView {
     approvedGates: new Set((state.gates ?? []).filter((g) => g.status === "approved").map((g) => g.name)),
     atLive: state.atLive,
     parkedGateStep: state.topology.laneGate,
+    complete: state.phase === "complete",
   };
 }
 

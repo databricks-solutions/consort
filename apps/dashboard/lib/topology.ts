@@ -59,6 +59,12 @@ export interface StepMatch {
   // AND-constraint (exclusion): reject when the message contains ANY of these. dp-pr uses it to own
   // the promote phase.start + the prepare-pr narration while yielding wait-ci/merge to dp-ci/dp-merge.
   messageNotIncludes?: string[];
+  // AND-constraint (exclusion): reject when the event NAME is one of these. dp-pr uses it to own the
+  // promote phase.start + the prepare-pr narration (the phase=promote catch-all) while REJECTING the
+  // phase CLOSE: a `phase.end promote` is phase=promote with no wait-ci/merge token, so without this
+  // it fell into Prepare PR (scrubbing onto the END-promote frame wrongly lit it). Phase boundaries
+  // belong to the lifecycle node, not a lane work step.
+  eventNot?: string[];
 }
 
 export interface LaneStep {
@@ -652,19 +658,21 @@ const DEPLOY_LANE: Lane = {
       match: { event: "deploy.verified" },
     },
     { id: "dp-gate", role: null, label: "deploy gate", sub: "human check", gate: true, match: null },
-    // The three promote sub-steps emit no distinct event NAME — only the orchestrator's per-action
-    // `reasoning` narration ("orchestrator: prepare-pr" / "wait-ci" / "merge"). They all sit in the
-    // `promote` phase, so each is told apart by that narration (AND-scoped to the phase so a
-    // build-lane "merge" can't light dp-merge). Before this they shared phaseAny:["promote"] and
-    // first-match kept the playhead pinned on dp-pr through wait-ci AND merge (the bug: dp-pr lit
-    // while the run was already merging). dp-pr owns the promote phase.start + the prepare-pr
-    // narration (it EXCLUDES wait-ci/merge); dp-ci/dp-merge claim their own narration.
+    // The three promote sub-steps emit no distinct event NAME — only the release-engineer's per-action
+    // `reasoning` narration ("release-engineer: prepare-pr" / "wait-ci" / "merge", plus the matching
+    // "… complete" span-close). They all sit in the `promote` phase, so each is told apart by that
+    // narration (AND-scoped to the phase so a build-lane "merge" can't light dp-merge). dp-pr owns the
+    // promote phase.start (ENTERING promote, before any narration) + the prepare-pr narration — it
+    // EXCLUDES wait-ci/merge so dp-ci/dp-merge claim their own. The `eventNot:["phase.end"]` REJECTS
+    // the promote phase CLOSE: `phase.end promote` ("… END promote") is phase=promote with neither
+    // wait-ci nor merge, so without it the catch-all swallowed the boundary and the END-promote frame
+    // wrongly lit Prepare PR. The phase CLOSE belongs to the lifecycle node, not this work step.
     {
       id: "dp-pr",
       role: "release-engineer",
       label: "Prepare PR",
       sub: "open PR",
-      match: { phaseAny: ["promote"], messageNotIncludes: ["wait-ci", "merge"] },
+      match: { phaseAny: ["promote"], messageNotIncludes: ["wait-ci", "merge"], eventNot: ["phase.end"] },
     },
     {
       id: "dp-ci",
@@ -860,6 +868,7 @@ export function matchesStep(m: StepMatch | null, e: AgentLogEvent): boolean {
   const msg = typeof e.message === "string" ? e.message : "";
   if (m.messageIncludes && !msg.includes(m.messageIncludes)) return false;
   if (m.messageNotIncludes && m.messageNotIncludes.some((s) => msg.includes(s))) return false;
+  if (m.eventNot && m.eventNot.includes(e.event)) return false;
 
   const phase = phaseOf(e);
   const bm = buildModeOf(e);

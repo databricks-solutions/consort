@@ -9601,7 +9601,23 @@ function orchestratorLogEvents(action, ctx = {}) {
         }
       ];
     case "done":
-      return [{ ...base, event: "phase.end", slots: { phase: "workflow", outcome: "complete" } }];
+      return [
+        { role: "release-engineer", level: "info", feature_id, event: "phase.end", slots: { phase: "promote", outcome: "complete" } },
+        { role: "release-engineer", level: "info", feature_id, event: "phase.start", slots: { phase: "shipped" } },
+        { ...base, event: "phase.end", slots: { phase: "workflow", outcome: "complete" } }
+      ];
+    case "prepare-pr":
+    case "wait-ci":
+    case "merge":
+      return [
+        {
+          role: "release-engineer",
+          level: "info",
+          feature_id,
+          event: "reasoning",
+          slots: { phase: "promote", note: `release-engineer: ${action.kind}` }
+        }
+      ];
     default: {
       const k = action.kind;
       return [{ ...base, event: "reasoning", slots: { note: `orchestrator: ${k}` } }];

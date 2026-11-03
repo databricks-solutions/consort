@@ -427,12 +427,23 @@ export function fold(
   // past one — so derive from the log, scoped to the pinned feature. This is the same honesty
   // rule the test bar obeys, extended to gates: the OTHER feature's open gate must not surface
   // under this one. At the natural playhead behavior is unchanged.
+  //
+  // RECONCILE snapshot vs log: the gates.json snapshot is a CACHE that can lag the event log — the
+  // promote gate's approval is emitted to the log (`gate.approved promote`) but is not always
+  // persisted to gates.json, where it lingers `"open"` (deploy persists; promote does not — a kit
+  // gap, see STATE-CARD-MAP.md §7/G1). The LOG is the authoritative record of what was approved, so a
+  // gate the log shows approved reads approved even when the snapshot still says open. `gatesFromLog`
+  // is last-write-wins per gate (a re-surfaced gate reverts to "open"), so a gate that genuinely
+  // re-opened for a later story is NOT wrongly upgraded. This also heals `spec` (approved per-story in
+  // the log, left `open` in the feature-level gates.json).
+  const loggedGates = gatesFromLog(slice);
+  const logApprovedNames = new Set(loggedGates.filter((g) => g.status === "approved").map((g) => g.name));
   const gates: GateInfo[] =
     pinnedDivergent !== null
       ? gatesFromLog(slice, feature ?? undefined)
       : atLive && snapshotGates.length > 0
-        ? snapshotGates
-        : gatesFromLog(slice);
+        ? snapshotGates.map((g) => (g.status !== "approved" && logApprovedNames.has(g.name) ? { ...g, status: "approved" } : g))
+        : loggedGates;
 
   // Blockers + resolver routing. Prefer the AUTHORITATIVE .handback file (Consort names the
   // exact role that must fix a failed contract); fall back to a keyword guess from the

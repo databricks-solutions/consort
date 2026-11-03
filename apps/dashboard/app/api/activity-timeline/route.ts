@@ -43,10 +43,16 @@ interface ActivityLine {
   eventIndex?: number; // the event-log index this line maps to — so the board folds EXACTLY here when scrubbed onto it
 }
 
-// Turn-internal noise excluded from the scrubber (per the "events minus turn-noise" choice): the
-// per-turn accounting event + raw reasoning, and the turn-boundary handoff/phase.start the turn
-// header already represents. Everything else in the event log earns its own step.
-const NOISE_EVENTS: ReadonlySet<string> = new Set(["turn.usage", "reasoning", "phase.start", "handoff"]);
+// Turn-internal noise excluded from the scrubber: ONLY the per-turn accounting event + the
+// turn-boundary handoff/phase.start the turn header already represents. EVERYTHING else in the
+// event log earns its own scrub step — including `reasoning`, which in this system is NOT agent
+// prose but STRUCTURED code-emitted milestones (the release-engineer promote ladder prepare-pr /
+// wait-ci / merge, orchestrator revise-route, the UX browse notes, the test-strategist per-analyst
+// summaries). Dropping `reasoning` made those events UN-REPLAYABLE — the scrubber skipped straight
+// over the entire promote sequence because it is logged as reasoning. The rule is: every recorded
+// event is reachable on the scrubber, no exceptions; the only things not worth their own step are
+// pure accounting (turn.usage) and the handoff/phase.start that the turn checkpoint already marks.
+const NOISE_EVENTS: ReadonlySet<string> = new Set(["turn.usage", "phase.start", "handoff"]);
 
 const EVENT_LABEL: Record<string, string> = {
   "cycle.red": "Red",
@@ -64,6 +70,7 @@ const EVENT_LABEL: Record<string, string> = {
   "experiment.accepted": "Accepted",
   "artifact.written": "Wrote",
   "escalation.raised": "HIL",
+  reasoning: "Note",
 };
 
 // How ONE event-log entry renders as a scrub step: a test.result becomes a per-test line (so the

@@ -71,10 +71,16 @@ export function WorkflowGraph({
   const focus = locusFocus(foldViewOf(state));
   const liveStep = state.topology.laneCurrent?.step ?? null; // the genuinely-running step (null between turns)
   // The gate DIAMOND the run is parked at also highlights (not just the phase node beside it): find
-  // the gate node whose gate name is the one the focus is awaiting, and treat it as active too, so it
-  // glows in the gate colour (activeColor is the gate colour while focus.kind === "gate").
+  // the gate node whose gate name the focus is awaiting, and treat it as active too, so it glows in
+  // the gate colour. ONLY a SURFACED gate (a live park awaiting a human) — an APPROVED frontier gate
+  // is the DONE locus of a finished phase (reads static/reached, never active/pulsing). Pairs with the
+  // reducer's log/snapshot gate reconciliation: that makes `locusFocus` label an approved gate
+  // "approved" (not a stale "surfaced"), and this guard then leaves it static — so a shipped run rests
+  // on Shipped instead of flashing its approved promote gate. (See STATE-CARD-MAP.md §6.)
   const awaitedGateNode =
-    focus.kind === "gate" ? WORKFLOW.nodes.find((n) => n.type === "gate" && gateForNode(n.id) === focus.gate)?.id ?? null : null;
+    focus.kind === "gate" && focus.status === "surfaced"
+      ? WORKFLOW.nodes.find((n) => n.type === "gate" && gateForNode(n.id) === focus.gate)?.id ?? null
+      : null;
   // ...and the PHASE node feeding that gate (the edge INTO it): the deploy gate gates the Release
   // Engineer's Deploy phase, so its node glows purple too — not only the gate diamond — so the agent
   // whose work is under review reads as parked, matching the lane panel + that role's bubble.
