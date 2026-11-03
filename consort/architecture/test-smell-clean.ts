@@ -18,6 +18,7 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
+import { describesMigrationRoundTrip } from "../orchestrator/validators/conformance/artifact-conformance.js";
 import {
   resolveConsortDir,
   featuresDir,
@@ -425,15 +426,11 @@ function checkReversibleInvariantRoundTrip(projectDir: string): TestSmellViolati
       // apart (e.g. "a single-step downgrade … removes the par_level column …; a
       // subsequent upgrade re-adds …"), flagging it "forward-only" and bouncing a
       // correct test to the HIL. Naming both directions IS the round-trip signal.
-      const hasRoundTrip = covering.some((it) => {
-        const d = it.description ?? "";
-        // Match the verb STEMS, not the exact words, so gerund/past-tense forms count:
-        // "Downgrading to its own down_revision then upgrading head" IS a round-trip even
-        // though the bare words "downgrade"/"upgrade"/"round-trip" never appear. The prior
-        // exact-word regex (\bdowngrade\b / \bupgrade\b) false-negatived that genuine T9
-        // round-trip and bounced a correct test to the HIL.
-        return (/\bround.?trip\b/i.test(d)) || (/\bdowngrad\w*/i.test(d) && /\bupgrad\w*/i.test(d));
-      });
+      // ONE shared detector with the DESIGN-TIME gate (checkMigrationReversibleShape) so design +
+      // build can never disagree on what counts as a round-trip description (verb STEMS, both
+      // directions in any order/distance, or "round-trip"). A forward-only description now fails at
+      // DESIGN (the test_list gate), so a regen can't revert it to forward-only and reach this build smell.
+      const hasRoundTrip = covering.some((it) => describesMigrationRoundTrip(it.description ?? ""));
       // ONLY flag a COVERED-but-forward-only invariant — this smell is about round-trip QUALITY, not
       // coverage. An UNCOVERED reversible invariant (covering.length === 0) is a coverage concern
       // owned by checkPersistenceCoverage, which is story-anchored (an invariant whose migration is a

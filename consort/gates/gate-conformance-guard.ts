@@ -25,6 +25,7 @@ import {
   checkNfrClauseScope,
   checkE2ECoverage,
   checkPersistenceCoverage,
+  checkMigrationReversibleShape,
   checkSchemaChangeCoverage,
   checkApiContractConsistency,
   checkInvariantCoverageDistinct,
@@ -797,6 +798,22 @@ function persistenceCoverageReason(consortDir: string, featureId: string, testLi
   return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
 }
 
+/**
+ * Migration-reversibility SHAPE (the complement to persistenceCoverageReason, which only proves a
+ * covering item EXISTS): every `migration_reversible` persistence_invariant must be covered by a
+ * test-list item whose DESCRIPTION reads as a round-trip (the SAME `describesMigrationRoundTrip`
+ * detector the build-time `reversible-invariant-round-trip` smell uses). Hoisting it to the test_list
+ * gate catches a FORWARD-ONLY covering item at DESIGN and bounces it to the test-strategist, so a
+ * regenerated test-list can never revert the description to forward-only and reach the build smell /
+ * a HIL escalation (the F2/S3 PI8-audit-migration-reversible class). Null when clean / no artifacts yet.
+ */
+function migrationReversibleShapeReason(consortDir: string, featureId: string, testListJson: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  const r = checkMigrationReversibleShape(testListJson, arch);
+  return r.ok ? null : `migration-reversibility shape failed: ${r.violations.join("; ")}`;
+}
+
 /** Schema-change coverage (Gate 3): every db-design.json schema_changes[] entry of a
  *  test-worthy kind (create_table / add_index / add_constraint) must be covered by >=1
  *  test referencing its id (schema_change_id). Closes the gap where a DBA-committed
@@ -1193,6 +1210,12 @@ export function resolveArtifactInputs(
         // schema's own contract, not only incidentally through API behavior tests.
         const persistenceReason = persistenceCoverageReason(consortDir, featureId, tlJson);
         if (persistenceReason !== null) return { reason: persistenceReason };
+        // Migration-reversibility SHAPE (Gate 3): a covered migration_reversible invariant whose
+        // covering item is FORWARD-ONLY fails HERE at design — bounced to the test-strategist to
+        // re-author the description as a round-trip — so a regen can't revert it to forward-only and
+        // escalate at the build-time reversibility smell.
+        const reversibleShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlJson);
+        if (reversibleShapeReason !== null) return { reason: reversibleShapeReason };
         // Schema-change coverage (Gate 3): every DBA-committed test-worthy schema_change
         // (create_table / add_index / add_constraint) must be asserted by >=1 test
         // referencing its schema_change_id — no index/constraint ships untested, and the
@@ -1269,6 +1292,8 @@ export function resolveArtifactInputs(
       if (tlForDeploy !== undefined) {
         const pReason = persistenceCoverageReason(consortDir, featureId, tlForDeploy);
         if (pReason !== null) return { reason: `${pReason} [re-checked at the deploy gate — a persistence invariant was declared/realized after the test_list gate and is still uncovered; add its test (consort-pipeline repair) before accepting]` };
+        const revShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlForDeploy);
+        if (revShapeReason !== null) return { reason: `${revShapeReason} [re-checked at the deploy gate — a migration_reversible invariant's covering test is forward-only; re-author it as a round-trip before accepting]` };
         const dReason = invariantCoverageDistinctReason(consortDir, featureId, tlForDeploy);
         if (dReason !== null) return { reason: `${dReason} [re-checked at the deploy gate]` };
       }

@@ -7194,6 +7194,39 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
   }
   return { ok: true };
 }
+function checkMigrationReversibleShape(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const reversible = (arch.persistence_invariants ?? []).filter(
+    (i) => i && typeof i.id === "string" && i.id.length > 0 && i.type === "migration_reversible"
+  );
+  if (reversible.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const inv of reversible) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) continue;
+    if (covering.some((it) => describesMigrationRoundTrip(it.description ?? ""))) continue;
+    const ids = covering.map((it) => it.id ?? "?").join(", ");
+    violations.push(
+      `migration_reversible invariant ${inv.id} is covered only by FORWARD-ONLY test-list item(s) [${ids}] \u2014 none describes a downgrade round-trip. A migration_reversible invariant MUST be verified by a ROUND-TRIP: downgrade to the migration-under-test's OWN down_revision, then upgrade head, and assert reversibility (own-table \u2192 schema recreated; pre-existing table \u2192 seed before, rows unchanged after). A forward-only "seed then upgrade head" test does not exercise reversibility and is unsatisfiable on an already-migrated branch. Re-author the covering item as an explicit round-trip (carry @pytest.mark.migration), OR retag ${inv.id} onto the round-trip item that performs it. See navigator.md (case A/B) / test-strategy.md.`
+    );
+    for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function clauseRealizedBy(c) {
   return typeof c === "object" && c !== null && Array.isArray(c.realized_by) ? c.realized_by.filter((a) => typeof a === "string" && a.length > 0) : [];
 }
@@ -7572,6 +7605,13 @@ function checkFitnessSingularCoverage(testListJson, architectureJson2, opts = {}
     };
   }
   return { ok: true };
+}
+function describesMigrationRoundTrip(desc) {
+  return /\bround.?trip\b/i.test(desc) || /\bdowngrad\w*/i.test(desc) && /\bupgrad\w*/i.test(desc) || // Directional shorthand for a round-trip — "down->up", "down→up", "down/up", "down-up"
+  // (an arrow/slash/dash BETWEEN the two, never a bare "down up" which could be unrelated prose).
+  // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
+  // as forward-only — the description-fragility that must not bounce a correct test.
+  /\bdown\s*[-/→>]+\s*up\b/i.test(desc);
 }
 var TEST_WORTHY_SCHEMA_CHANGE_KINDS = /* @__PURE__ */ new Set(["create_table", "add_index", "add_constraint"]);
 function idedSchemaChanges(dbDesignJson2) {
@@ -9003,6 +9043,12 @@ function persistenceCoverageReason(consortDir, featureId, testListJson) {
   const r = checkPersistenceCoverage(testListJson, arch);
   return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
 }
+function migrationReversibleShapeReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkMigrationReversibleShape(testListJson, arch);
+  return r.ok ? null : `migration-reversibility shape failed: ${r.violations.join("; ")}`;
+}
 function schemaChangeCoverageReason(consortDir, featureId, testListJson) {
   const dbFile = dbDesignJson(consortDir, featureId);
   const db = existsSync13(dbFile) ? (() => {
@@ -9237,6 +9283,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (kindLayerReason !== null) return { reason: kindLayerReason };
         const persistenceReason = persistenceCoverageReason(consortDir, featureId, tlJson);
         if (persistenceReason !== null) return { reason: persistenceReason };
+        const reversibleShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlJson);
+        if (reversibleShapeReason !== null) return { reason: reversibleShapeReason };
         const schemaCoverageReason = schemaChangeCoverageReason(consortDir, featureId, tlJson);
         if (schemaCoverageReason !== null) return { reason: schemaCoverageReason };
         const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
@@ -9277,6 +9325,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (tlForDeploy !== void 0) {
         const pReason = persistenceCoverageReason(consortDir, featureId, tlForDeploy);
         if (pReason !== null) return { reason: `${pReason} [re-checked at the deploy gate \u2014 a persistence invariant was declared/realized after the test_list gate and is still uncovered; add its test (consort-pipeline repair) before accepting]` };
+        const revShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlForDeploy);
+        if (revShapeReason !== null) return { reason: `${revShapeReason} [re-checked at the deploy gate \u2014 a migration_reversible invariant's covering test is forward-only; re-author it as a round-trip before accepting]` };
         const dReason = invariantCoverageDistinctReason(consortDir, featureId, tlForDeploy);
         if (dReason !== null) return { reason: `${dReason} [re-checked at the deploy gate]` };
       }
