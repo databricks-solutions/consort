@@ -57,6 +57,6 @@ drops it again, landing on the up-migrated end state.
 
 ## Builds on
 
-F6-split-tracking-code — gated on F6 being deployed and signed off first. This
+F6-split-tracking-code-expand — gated on F6 being deployed and signed off first. This
 increment contracts the schema that F6 expanded, dropping the combined tracking
 code that F6 deliberately retained.

@@ -1,6 +1,6 @@
 ---
 author: Product Owner
-feature: F6-split-tracking-code
+feature: F6-split-tracking-code-expand
 sprint: 2
 ---
 
