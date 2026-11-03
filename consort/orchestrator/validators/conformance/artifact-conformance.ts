@@ -979,6 +979,65 @@ export function checkPersistenceCoverage(testListJson: string, architectureJson:
 }
 
 /**
+ * DESIGN-TIME SHAPE gate for `migration_reversible` invariants — the complement to
+ * checkPersistenceCoverage (which only proves a covering item EXISTS, not that it is the right
+ * shape). For every architecture persistence_invariant of type `migration_reversible`, at least
+ * one of its covering test-list items (matched by `invariant_id`) MUST read as a ROUND-TRIP
+ * (`isMigrationReversibilityDescription` — mentions a downgrade in a reversibility context).
+ *
+ * Why this is needed as its own check: `checkTestlistMigrationRevision` only inspects items that
+ * ALREADY mention a downgrade (its `isMigrationReversibilityDescription` prefilter), so a
+ * FORWARD-ONLY item ("Upgrading to the migration leaves rows unchanged" — no downgrade) is not even
+ * recognised as a migration test and sails through design; the forward-only shape is then caught only
+ * by the BUILD-TIME honest-GREEN `reversible-invariant-round-trip` smell, after the fork, where the
+ * autonomous loop escalates/re-authors instead of self-correcting. Keying off the invariant TYPE
+ * (deterministic, from architecture) rather than a keyword the item might omit closes that hole: a
+ * forward-only covering item now fails the test_list/reflect gate and routes back to the test-strategist
+ * BEFORE the build. (This is the F2/S3 PI8-audit-migration-reversible / PI9 class.)
+ */
+export function checkMigrationReversibleShape(testListJson: string, architectureJson: string): ConformanceResult {
+  let arch: { service_backed?: boolean; persistence_invariants?: Array<{ id?: string; type?: string }> };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true }; // invalid architecture reported elsewhere
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const reversible = (arch.persistence_invariants ?? []).filter(
+    (i) => i && typeof i.id === "string" && i.id.length > 0 && i.type === "migration_reversible",
+  );
+  if (reversible.length === 0) return { ok: true };
+  let tl: { items?: Array<{ id?: string; invariant_id?: string; description?: string; ac_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const inv of reversible) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    // Presence is checkPersistenceCoverage's job; this grades the SHAPE of whatever covers it. If
+    // nothing covers it yet, let the coverage check report that instead of double-flagging.
+    if (covering.length === 0) continue;
+    if (covering.some((it) => describesMigrationRoundTrip(it.description ?? ""))) continue;
+    const ids = covering.map((it) => it.id ?? "?").join(", ");
+    violations.push(
+      `migration_reversible invariant ${inv.id} is covered only by FORWARD-ONLY test-list item(s) [${ids}] — none ` +
+        `describes a downgrade round-trip. A migration_reversible invariant MUST be verified by a ROUND-TRIP: downgrade to ` +
+        `the migration-under-test's OWN down_revision, then upgrade head, and assert reversibility (own-table → schema ` +
+        `recreated; pre-existing table → seed before, rows unchanged after). A forward-only "seed then upgrade head" test ` +
+        `does not exercise reversibility and is unsatisfiable on an already-migrated branch. Re-author the covering item ` +
+        `as an explicit round-trip (carry @pytest.mark.migration), OR retag ${inv.id} onto the round-trip item that ` +
+        `performs it. See navigator.md (case A/B) / test-strategy.md.`,
+    );
+    for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
  * Deterministic per-CLAUSE fitness coverage for an NFR declared in the ATOMIC
  * `fitness_functions` array form. For each nfrs[] entry that carries a non-empty
  * `fitness_functions` array (and an `id`), the test-list must hold at least as many
@@ -1907,6 +1966,27 @@ export function checkTestlistComponentScenarioFile(testListJson: string): Confor
  * established, in-production reversibility detector (NOT the migration-MARKER description
  * check that was found to false-positive and was kept code-level).
  */
+/**
+ * A test-list item DESCRIPTION that describes a reversibility ROUND-TRIP — names BOTH directions
+ * (downgrade AND upgrade, any order/distance, verb STEMS so gerund/past-tense count) or says
+ * "round-trip". This is the SINGLE detector shared by the DESIGN-TIME `checkMigrationReversibleShape`
+ * gate and the BUILD-TIME `reversible-invariant-round-trip` smell (test-smell-clean.ts) so the two can
+ * never disagree — a forward-only description fails at design; a round-trip one passes both. (Kept
+ * loose on purpose: a prior proximity-window version false-negatived a genuine round-trip whose two
+ * verbs were >80 chars apart and bounced a correct test to HIL.)
+ */
+export function describesMigrationRoundTrip(desc: string): boolean {
+  return (
+    /\bround.?trip\b/i.test(desc) ||
+    (/\bdowngrad\w*/i.test(desc) && /\bupgrad\w*/i.test(desc)) ||
+    // Directional shorthand for a round-trip — "down->up", "down→up", "down/up", "down-up"
+    // (an arrow/slash/dash BETWEEN the two, never a bare "down up" which could be unrelated prose).
+    // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
+    // as forward-only — the description-fragility that must not bounce a correct test.
+    /\bdown\s*[-/→>]+\s*up\b/i.test(desc)
+  );
+}
+
 export function isMigrationReversibilityDescription(desc: string): boolean {
   // Match verb STEMS, not the bare lemma: the live wording is a GERUND ("Downgrading … then upgrading
   // head recreates …"), which `\bdowngrade\b` misses — the exact 0.4.10 lesson (reversibility detectors

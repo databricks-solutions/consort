@@ -23,6 +23,8 @@ import {
   checkE2ECoverage,
   checkJsdomBrowserAssertion,
   checkPersistenceCoverage,
+  checkMigrationReversibleShape,
+  describesMigrationRoundTrip,
   checkSchemaChangeOrphan,
   checkMigrationTestSchemaChangeTag,
   checkSchemaChangeCoverage,
@@ -872,6 +874,42 @@ describe("checkPersistenceCoverage (Gate 3: DB coverage tied to the schema's dec
   it("EXEMPTS a non-service-backed feature", () => {
     const trivial = JSON.stringify({ feature_id: "F1-x", nfrs: [] });
     expect(checkPersistenceCoverage(tl([{ id: "T1", description: "x", ac_id: "AC1", status: "pending" }]), trivial).ok).toBe(true);
+  });
+});
+
+describe("checkMigrationReversibleShape (Gate 3: a migration_reversible invariant must be covered by a ROUND-TRIP, not forward-only)", () => {
+  const arch = (invariants: object[]) =>
+    JSON.stringify({ feature_id: "F2-x", nfrs: [], service_backed: true, layers: [{ role: "repository", module: "app/repositories" }], persistence_invariants: invariants });
+  const revInv = [{ id: "PI8-audit-migration-reversible", type: "migration_reversible", table: "stock_adjustments", brief: "the audit migration is reversible" }];
+  const tl = (items: object[]) => JSON.stringify({ feature_id: "F2-x", items });
+  const item = (description: string) => ({ id: "T39", description, ac_id: "AC1", status: "pending", kind: "fitness", invariant_id: "PI8-audit-migration-reversible" });
+
+  it("FAILS when a migration_reversible invariant is covered only by a FORWARD-ONLY item (the F2/S3 PI8-audit class)", () => {
+    const r = checkMigrationReversibleShape(
+      tl([item("Upgrading to the S3 migration leaves every pre-existing stock_records row with unchanged count and values")]),
+      arch(revInv),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.join(" ")).toMatch(/PI8-audit-migration-reversible.*FORWARD-ONLY/);
+  });
+  it("passes when the covering item describes a downgrade→upgrade round-trip", () => {
+    expect(
+      checkMigrationReversibleShape(tl([item("downgrade to the migration's own down_revision, then upgrade head, assert the table is recreated")]), arch(revInv)).ok,
+    ).toBe(true);
+  });
+  it("passes on the 'down->up' arrow shorthand (regression: a genuine round-trip must not false-flag as forward-only)", () => {
+    expect(checkMigrationReversibleShape(tl([item("additive migration down->up preserves existing rows")]), arch(revInv)).ok).toBe(true);
+    expect(describesMigrationRoundTrip("additive migration down->up preserves existing rows")).toBe(true);
+    expect(describesMigrationRoundTrip("downgrade … then upgrade head, rows intact")).toBe(true);
+    expect(describesMigrationRoundTrip("Upgrading to the S3 migration leaves rows unchanged")).toBe(false);
+  });
+  it("is vacuous when no declared invariant is migration_reversible", () => {
+    expect(checkMigrationReversibleShape(tl([item("anything")]), arch([{ id: "PI1-unique", type: "unique", table: "x", brief: "u" }]))).toEqual({ ok: true });
+  });
+  it("defers an UNCOVERED reversible invariant to checkPersistenceCoverage (this check grades SHAPE, not presence)", () => {
+    expect(
+      checkMigrationReversibleShape(tl([{ id: "T1", description: "unrelated", ac_id: "AC1", status: "pending", kind: "behavior" }]), arch(revInv)),
+    ).toEqual({ ok: true });
   });
 });
 

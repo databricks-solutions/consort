@@ -7368,6 +7368,13 @@ function checkTestlistComponentScenarioFile(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function describesMigrationRoundTrip(desc) {
+  return /\bround.?trip\b/i.test(desc) || /\bdowngrad\w*/i.test(desc) && /\bupgrad\w*/i.test(desc) || // Directional shorthand for a round-trip — "down->up", "down→up", "down/up", "down-up"
+  // (an arrow/slash/dash BETWEEN the two, never a bare "down up" which could be unrelated prose).
+  // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
+  // as forward-only — the description-fragility that must not bounce a correct test.
+  /\bdown\s*[-/→>]+\s*up\b/i.test(desc);
+}
 function isMigrationReversibilityDescription(desc) {
   const mentionsDowngrade = /\bdowngrad\w*/i;
   const reversibilityContext = /\bdowngrad\w*[\s\S]*?\bupgrad\w*|\breversib|\brecreat|\bdata preservation\b|\bsurvive[sd]?\b/i;
@@ -8471,10 +8478,7 @@ function checkReversibleInvariantRoundTrip(projectDir) {
     }
     for (const pi of reversible) {
       const covering = items.filter((it) => it.invariant_id === pi.id);
-      const hasRoundTrip = covering.some((it) => {
-        const d = it.description ?? "";
-        return /\bround.?trip\b/i.test(d) || /\bdowngrad\w*/i.test(d) && /\bupgrad\w*/i.test(d);
-      });
+      const hasRoundTrip = covering.some((it) => describesMigrationRoundTrip(it.description ?? ""));
       if (covering.length > 0 && !hasRoundTrip) {
         out.push({
           smell: "reversible-invariant-round-trip",
