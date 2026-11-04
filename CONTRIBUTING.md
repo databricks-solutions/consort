@@ -154,7 +154,7 @@ If your network blocks Maven Central (where the Flyway CLI is hosted), install F
 **Cleanup recovery.** Teardown retries delete up to 3 times. If a project still leaks (signal interrupt, crash before `afterAll()`, network blip), clean up manually:
 
 ```bash
-databricks postgres delete-project <projectId>
+databricks postgres delete-project <projectId> --purge
 databricks apps delete <appName>     # if a slice 3 deploy test was interrupted
 gh repo delete <owner>/detect-language-verify-<ts> --yes   # if the self-hosted-runner suite was interrupted
 ```

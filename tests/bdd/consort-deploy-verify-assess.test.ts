@@ -6,6 +6,7 @@ import {
   parseFailedNodeIds,
   classifyDeployVerifyFailure,
   classifyDeployVerifySupersession,
+  classifyDeployVerifyTestSmell,
   writeDeployVerifyAssessMarker,
   readDeployVerifyAssessMarker,
   markDeployVerifyAssessed,
@@ -15,6 +16,7 @@ import {
   deployVerifyNeedsAssess,
 } from "../../consort/smells/deploy-verify-assess";
 import { DEFAULT_MIGRATION_DIRS } from "../../consort/architecture/test-smell-clean";
+import { deployToTarget } from "../../consort/deploy/deploy";
 
 const FEATURE = "F6-split-tracking-code";
 const STORY = "S3-view-batch-and-serial";
@@ -264,5 +266,159 @@ describe("deploy-verify-assess at FEATURE scope (storyId undefined -> feature-sh
     clearDeployVerifyAssessMarker(consortDir, FEATURE, undefined);
     expect(readDeployVerifyAssessMarker(consortDir, FEATURE, undefined)).toBeUndefined();
     expect(readDeployVerifyAssessMarker(consortDir, FEATURE, STORY)?.failing_node_ids).toEqual(["a.py::story"]);
+  });
+});
+
+// Faithful replay of the F2/S3 sprint-2 blocker: the deploy-verify FAILED on S1's fitness
+// test T17 — an over-broad migration-creator finder (`len(owners) == 2` where it asserts 1)
+// after S3's additive index migration ALSO named stock_adjustments. The app was correct; the
+// TEST carried a deterministic, Driver-fixable authoring smell (migration-creator-uniqueness).
+// This drives the REAL deployToTarget over a fixture built from the REAL recorded artifacts
+// (the constant-idiom create migration `TABLE = "stock_adjustments"; op.create_table(TABLE)`,
+// the S3 `op.create_index(..., "stock_adjustments")` migration, and T17's finder), proving the
+// NEW third self-heal kind routes a Driver repair instead of the terminal HIL the live run hit.
+describe("deploy-verify self-heal: test-smell kind (the F2/S3 migration-creator-uniqueness replay)", () => {
+  const F2 = "F2-stock-adjustment";
+  const S3 = "S3-view-adjustment-audit";
+  const NODE = "tests/test_f2s1_stock_adjustments_fitness.py::test_migration_round_trip";
+  const RECORDED_FAILURE = [
+    "=========================== short test summary info ============================",
+    `FAILED ${NODE} - AssertionError: one additive migration must create stock_adjustments`,
+    "assert 2 == 1",
+    "============ 1 failed, 16 passed in 30s ============",
+  ].join("\n");
+
+  // The REAL alembic constant idiom: the create migration references TABLE = "stock_adjustments"
+  // AND calls op.create_table(TABLE) — so it contains BOTH "create_table" and the table name; the
+  // S3 index migration names the table via op.create_index but has NO create_table.
+  const CREATE_MIG = [
+    'revision = "20261103221344"',
+    'down_revision = "20261102200143"',
+    'TABLE = "stock_adjustments"',
+    "def upgrade():",
+    "    op.create_table(TABLE, sa.Column('id', sa.Integer, primary_key=True))",
+    '    op.create_index("ix_stock_adjustments_stock_record_id", TABLE, ["stock_record_id"])',
+    "def downgrade():",
+    "    op.drop_table(TABLE)",
+    "",
+  ].join("\n");
+  const INDEX_MIG = [
+    'revision = "20261103224142"',
+    'down_revision = "20261103221344"',
+    'INDEX = "ix_stock_adjustments_record_created_id"',
+    "def upgrade():",
+    '    op.create_index(INDEX, "stock_adjustments", ["stock_record_id"])',
+    "def downgrade():",
+    '    op.drop_index(INDEX, table_name="stock_adjustments")',
+    "",
+  ].join("\n");
+
+  // T17's migration finder: BARE-name (over-broad) vs the Driver's constant-safe two-token fix.
+  const BARE_FINDER = '    owners = [s for s in script.walk_revisions() if "stock_adjustments" in Path(s.path).read_text()]';
+  const TWO_TOKEN_FINDER =
+    '    owners = [s for s in script.walk_revisions() if "create_table" in (src := Path(s.path).read_text()) and "stock_adjustments" in src]';
+  const t17 = (finder: string): string =>
+    [
+      "import pytest",
+      "from pathlib import Path",
+      "from alembic.script import ScriptDirectory",
+      "from alembic.config import Config",
+      "",
+      "@pytest.mark.migration",
+      "def test_migration_round_trip():",
+      '    script = ScriptDirectory.from_config(Config("alembic.ini"))',
+      finder,
+      '    assert len(owners) == 1, "one additive migration must create stock_adjustments"',
+      "",
+    ].join("\n");
+
+  function seedScaffold(dir: string, finder: string): void {
+    mkdirSync(join(dir, "alembic", "versions"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    mkdirSync(join(dir, ".consort", "features", F2, "stories", S3), { recursive: true });
+    writeFileSync(join(dir, "alembic", "versions", "20261103221344_create_stock_adjustments.py"), CREATE_MIG);
+    writeFileSync(join(dir, "alembic", "versions", "20261103224142_add_index.py"), INDEX_MIG);
+    writeFileSync(join(dir, "tests", "test_f2s1_stock_adjustments_fitness.py"), t17(finder));
+    writeFileSync(
+      join(dir, "deploy-targets.yaml"),
+      ["targets:", "  local:", "    type: local", '    run: "echo run"', "    base_url: http://127.0.0.1:8000", "    health_path: /health", '    verify: "run-verify"', ""].join("\n"),
+    );
+  }
+
+  // Injected: migrate/verify both via run-verify; the FULL verify fails with the recorded output;
+  // the ISOLATION re-run (node-id appended) also fails (GENUINE — the finder is deterministic, not
+  // contamination). No app, no Lakebase fork (EPHEMERAL_VERIFY=0).
+  const runVerify = (cmd: string) =>
+    cmd.includes("::") ? { passed: false, output: RECORDED_FAILURE } : { passed: false, output: RECORDED_FAILURE };
+
+  async function drive(dir: string): Promise<void> {
+    await deployToTarget({
+      projectDir: dir,
+      targetName: "local",
+      featureId: F2,
+      storyId: S3,
+      consortDir: join(dir, ".consort"),
+      lakebaseBranch: "exp-f2-s3",
+      startProcess: () => 4242,
+      reachable: async () => true,
+      servingOk: async () => true,
+      runVerify,
+      stop: () => {},
+      sleep: async () => {},
+      now: () => new Date("2026-11-03T23:13:00Z"),
+    });
+  }
+
+  let prevEphemeral: string | undefined;
+  let proj: string;
+  beforeEach(() => {
+    prevEphemeral = process.env.LAKEBASE_CONSORT_EPHEMERAL_VERIFY;
+    process.env.LAKEBASE_CONSORT_EPHEMERAL_VERIFY = "0"; // skip the real ephemeral-branch fork
+    proj = mkdtempSync(join(tmpdir(), "dv-testsmell-"));
+  });
+  afterEach(() => {
+    if (prevEphemeral === undefined) delete process.env.LAKEBASE_CONSORT_EPHEMERAL_VERIFY;
+    else process.env.LAKEBASE_CONSORT_EPHEMERAL_VERIFY = prevEphemeral;
+    rmSync(proj, { recursive: true, force: true });
+  });
+
+  it("the classifier flags the bare-name finder's node-id (migration-creator-uniqueness), not the two-token fix", () => {
+    seedScaffold(proj, BARE_FINDER);
+    const hits = classifyDeployVerifyTestSmell([NODE], proj, DEFAULT_MIGRATION_DIRS);
+    expect(hits.map((h) => h.smell)).toEqual(["migration-creator-uniqueness"]);
+    expect(hits[0].node_id).toBe(NODE);
+
+    const fixed = mkdtempSync(join(tmpdir(), "dv-testsmell-fixed-"));
+    try {
+      seedScaffold(fixed, TWO_TOKEN_FINDER);
+      expect(classifyDeployVerifyTestSmell([NODE], fixed, DEFAULT_MIGRATION_DIRS)).toEqual([]);
+    } finally {
+      rmSync(fixed, { recursive: true, force: true });
+    }
+  });
+
+  it("drives the REAL deployToTarget: bare-name T17 -> a test-smell marker (Driver repair), NOT a terminal escalation", async () => {
+    seedScaffold(proj, BARE_FINDER);
+    await drive(proj);
+    const consortDir = join(proj, ".consort");
+    const marker = readDeployVerifyAssessMarker(consortDir, F2, S3);
+    expect(marker?.kind).toBe("test-smell");
+    expect(marker?.failing_node_ids).toContain(NODE);
+    expect(marker?.smell_fixes?.[0]?.smell).toBe("migration-creator-uniqueness");
+    expect(marker?.smell_fixes?.[0]?.fix).toMatch(/create_table.*AND|both .*create_table/i);
+    // The one-shot route is live: assess-eligible, and NO terminal escalation was written.
+    expect(deployVerifyNeedsAssess(consortDir, F2, S3)).toBe(true);
+    expect(existsSync(join(consortDir, "escalations"))).toBe(false);
+  });
+
+  it("drives the REAL deployToTarget: the two-token fix still failing -> NO test-smell marker, terminal escalation (the smell is what gates it)", async () => {
+    // With the finder already correct, a still-failing verify is a GENUINE failure: the self-heal
+    // must NOT fire (nothing to narrow), so it escalates — proving the smell classification, not the
+    // mere fact of failure, is what routes the Driver repair.
+    seedScaffold(proj, TWO_TOKEN_FINDER);
+    await drive(proj);
+    const consortDir = join(proj, ".consort");
+    expect(readDeployVerifyAssessMarker(consortDir, F2, S3)).toBeUndefined();
+    expect(existsSync(join(consortDir, "escalations"))).toBe(true);
   });
 });

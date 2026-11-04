@@ -813,7 +813,7 @@ minimal set of invariants; get these right and the framework's behavior follows.
 - **Config has one home:** owner + profile + host live in `.env.local.test.config`
   (`DATABRICKS_CONFIG_PROFILE`), read via `provisioning/test-env.ts` (`resolveTestEnv`). Never inline
   the workspace host in source (a guard enforces this).
-- **Reclaim orphans** after any stopped run: `databricks postgres delete-project projects/<name>
+- **Reclaim orphans** after any stopped run: `databricks postgres delete-project projects/<name> --purge
   --profile "$DATABRICKS_CONFIG_PROFILE"`, one per call; confirm zero left in the capture namespace.
 - Never bypass git hooks (`--no-verify` is blocked). Track a live run by its log path +
   `postgres list-projects`, not an outer stamp (the launcher computes its own).
