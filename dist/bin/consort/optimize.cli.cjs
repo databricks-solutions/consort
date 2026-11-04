@@ -14330,6 +14330,7 @@ var SMELL_FIX = {
   "fixed-key-e2e": "this Playwright e2e spec CREATES a record (fills a form + submits) but seeds no per-run-unique key, so it uses a HARDCODED business key (SKU/code/name). The e2e verify runs against the SHARED feature branch, which already holds the row a prior run/sibling story created with that same key \u2014 so the second run hits a unique-violation (or asserts a stale duplicate) and the row goes perma-red, costing a reflect/assess lap on a correct app. Derive a per-run-unique key (e.g. `const sku = 'SKU-' + crypto.randomUUID().slice(0, 8)`) and use that SAME value in both the create fill and the assertion locator, so each run owns its own row",
   "migration-marker-presence": "a downgrade/upgrade test without @pytest.mark.migration runs on the SHARED verify DB and drops/alters its live schema for every other test. Add @pytest.mark.migration so the verify harness routes it to its OWN ephemeral branch (single-step downgrade -1 + upgrade head, never downgrade base)",
   "relative-migration-revision": "a reversibility test asserts a NAMED column is absent after a RELATIVE `downgrade -1` (and/or restores with `upgrade head`) \u2013 this assumes THAT column's migration is the current head, so the moment a later feature stacks a migration on top, `-1` reverses the WRONG migration and the column-absence assertion can never pass again (the F6/S1-broke-F1/S3 par_level class). Pin the migration's OWN revision instead: downgrade to its down_revision and upgrade to its revision, so the round-trip validates THIS migration independent of any later head",
+  "migration-creator-uniqueness": 'this test LOCATES the migration that creates/owns a table by matching the BARE table name across migration sources (e.g. `owners = [s for s in script.walk_revisions() if "stock_adjustments" in Path(s.path).read_text()]`) and asserts there is exactly ONE such migration (`len(owners) == 1`). That assumes nothing else ever names the table \u2014 but a LATER story that ADDITIVELY evolves it (an index / constraint / FK migration, exactly what an additive migration + a reversible invariant legitimately permit) adds a SECOND migration whose source also names the table, so `len == 1` flips to `2 == 1` and the test goes perma-red on a CORRECT app (the F2/S3 `ix_stock_adjustments_*` class \u2014 the same later-story-moves-the-target time-bomb as the relative `downgrade -1` smell). Key on the CREATE OP: require BOTH the `create_table` operation AND the table name in the migration source \u2014 `src = Path(s.path).read_text(); if "create_table" in src and "stock_adjustments" in src` \u2014 which is unique BY CONSTRUCTION (exactly one migration creates a table) so `len(creators) == 1` stays true no matter how many later migrations touch it. Do NOT use a literal `\'op.create_table("stock_adjustments"\' in src` predicate: it matches ZERO files under the standard alembic CONSTANT idiom (`TABLE = "stock_adjustments"; op.create_table(TABLE)`), because the call site reads `op.create_table(TABLE)`, not the quoted name \u2014 the two-token form is constant-safe. (A finder already referencing `create_table` is the correct shape and is NOT flagged; nor is an alembic single-head check `len(get_heads()) == 1`.)',
   "reversible-invariant-round-trip": "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility \u2013 and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade \u2192 seed/migrate \u2192 upgrade \u2192 assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
   "pytest-bdd-parse-conversion": "a parse()/parsers.parse() step pattern uses a Python str.format conversion flag (!r / !s / !a); the `parse` library backing pytest-bdd supports the format SPEC ({name:type}) but NOT conversions, so the step text never matches the feature and the step raises StepDefinitionNotFoundError \u2013 the app can never green it. Drop the conversion and quote the value in the pattern instead (e.g. parse('\u2026 \"{name}\"') to match a quoted feature value, or parse('\u2026 {name}') for a bare token), matching how the .feature file writes it",
   "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it",
@@ -14627,6 +14628,21 @@ function checkTestSmells(args) {
           1,
           "(file)",
           `asserts ${col ? `'${col[1]}'` : "a named column"} absent after a relative 'downgrade -N' \u2013 pin the migration's own revision (down_revision + revision), not -N/head`
+        );
+      }
+      const scansMigrationSources = /\b(?:walk_revisions|versions|alembic|migrations)\b/.test(body) && /\.read_text\(|\.read\(|\bopen\(|\.glob\(|\.rglob\(|\.iterdir\(|listdir\(/.test(body);
+      const bareNameFinder = /\bif\s+["'`]\w+["'`]\s+in\s+\w/.test(body);
+      const assertsLenOne = /\blen\s*\([^\n]*\)\s*==\s*1\b/.test(body) || /assertEqual\s*\(\s*len\s*\([^\n]*\)\s*,\s*1\s*\)/.test(body);
+      const keysOnCreateOp = /\bcreate_table\b/.test(body);
+      const isSingleHeadCheck = /get_heads\s*\(|\bheads\b|branch_labels/.test(body);
+      if (isPy && scansMigrationSources && bareNameFinder && assertsLenOne && !keysOnCreateOp && !isSingleHeadCheck) {
+        const needle = body.match(/\bif\s+["'`](\w+)["'`]\s+in\s+\w/);
+        push(
+          "migration-creator-uniqueness",
+          rel,
+          1,
+          "(file)",
+          `asserts exactly one migration references ${needle ? `'${needle[1]}'` : "a table"} by BARE name (len == 1) \u2013 a later additive migration naming the same table breaks it; require BOTH "create_table" AND "${needle ? needle[1] : "<table>"}" in the source (constant-safe; a literal op.create_table("${needle ? needle[1] : "<table>"}") predicate matches ZERO files when the table name is a module constant)`
         );
       }
       const invokesSchemaDiff = /lakebase-schema-diff|lakebase_schema_diff/.test(body);
@@ -18945,6 +18961,21 @@ ${marker.failure_output}
 ` : "") + `For EACH test, decide: does it assert on the dropped column (or behavior the contract retired) = genuinely SUPERSEDED, or is it a GENUINE regression unrelated to the drop? For each SUPERSEDED test prescribe HOW to retarget or remove the stale reference (drop the dropped-column assertion / retarget to the surviving column) WITHOUT weakening any still-valid assertion in it.
 Write your directives to ${root}/features/${featureId}/stories/${s}/deploy-verify-scope.json as {"version":1,"story_id":"${s}","directives":[{"node_id":"<path::test>","directive":"<how to retarget it>"}]} \u2013 one entry per test you confirm is superseded. If (rarely) a failure is a GENUINE regression, OMIT it (write no file, or an empty directives array); the orchestration then raises it to a human. Write ONLY that file.`;
         }
+        if (marker?.kind === "test-smell") {
+          const fixes = marker.smell_fixes ?? [];
+          return `ASSESS a failed full-feature DEPLOY-VERIFY for story ${s}. The story's own tests are green, but the full-feature verify FAILED on the tests below. A deterministic test-authoring guard (checkTestSmells) identified EACH as a DRIVER-FIXABLE authoring SMELL \u2014 the APP is NOT the defect; the TEST carries a localized defect with a known fix (it fails EVERYWHERE, not only under shared-state contamination):
+` + fixes.map((f) => `  ${f.node_id}
+    smell: ${f.smell}
+    fix: ${f.fix}`).join("\n") + `
+
+` + (marker.failure_output ? `OBSERVED failure output (the deploy-verify run) \u2014 adjudicate from THIS: a failure shape that matches the smell (e.g. a migration-owner count of 2 where the test asserts len == 1) confirms it; a failure unrelated to the smell is a genuine regression:
+\`\`\`
+${marker.failure_output}
+\`\`\`
+
+` : "") + `For EACH test, decide: is it genuinely the authoring smell above (the app is correct) or a GENUINE regression? For each you confirm is the smell, prescribe the narrow fix (per the smell's fix) WITHOUT weakening the test's real intent or touching product code.
+Write your directives to ${root}/features/${featureId}/stories/${s}/deploy-verify-scope.json as {"version":1,"story_id":"${s}","directives":[{"node_id":"<path::test>","directive":"<the narrow fix>"}]} \u2013 one entry per test you confirm. If (rarely) a failure is a GENUINE regression, OMIT it (write no file, or an empty directives array); the orchestration then raises it to a human. Write ONLY that file.`;
+        }
         return `ASSESS a failed full-feature DEPLOY-VERIFY for story ${s}. The story's own tests are green, but the full-feature verify against the running app FAILED on the tests below. A deterministic classifier RE-RAN each in ISOLATION (a fresh clean DB) and they ALL PASSED alone \u2013 so this is shared-state CONTAMINATION, not broken software: a test that does not OWN its DB state (typically a WHOLE-TABLE AGGREGATE \u2013 a COUNT/SUM integrity probe \u2013 asserting an ABSOLUTE total that holds on the isolated per-cycle branch but breaks once other stories' rows share the table).
 Failing tests:
 ${failing.map((n) => `  ${n}`).join("\n")}
@@ -18987,6 +19018,15 @@ Flag ONLY the genuinely superseded prior tests via \`./scripts/lk consort-cycle 
           return `REFACTOR the SUPERSEDED tests the Navigator flagged for story ${s}. Each FAILED the full-feature deploy-verify because it references a column this feature's CONTRACT migration DROPPED${dropped.length ? ` (${dropped.join(", ")})` : ""} \u2013 the column no longer exists at HEAD, so the test is stale. Refactor EACH per its directive: remove or retarget the stale reference to the dropped column (drop the assertion on it, or point it at the surviving column). Do NOT weaken any still-valid assertion and do NOT change product code.
 ` + directives.map((d) => `  ${d.node_id}
     -> ${d.directive}`).join("\n") + `
+Edit ONLY those test files. The orchestrator re-deploys + re-verifies after your turn.`;
+        }
+        if (deployMarker?.kind === "test-smell") {
+          const fixes = deployMarker.smell_fixes ?? [];
+          return `REFACTOR the test-authoring-smell tests the Navigator flagged for story ${s}. Each FAILED the full-feature deploy-verify because the TEST carries a deterministic authoring defect (the APP is correct). Apply the Navigator's directive to EACH \u2014 a narrow, localized test edit \u2014 WITHOUT weakening the test's real intent and WITHOUT touching product code.
+` + directives.map((d) => `  ${d.node_id}
+    -> ${d.directive}`).join("\n") + (fixes.length ? `
+Smell reference:
+` + fixes.map((f) => `  ${f.node_id}: ${f.smell}`).join("\n") : "") + `
 Edit ONLY those test files. The orchestrator re-deploys + re-verifies after your turn.`;
         }
         return `SCOPE the contamination-fragile tests the Navigator flagged for story ${s}. Each FAILED the full-feature deploy-verify but PASSES in isolation \u2013 it asserts an ABSOLUTE whole-table aggregate (or otherwise does not own its DB state), which breaks once other stories' rows share the table. Refactor EACH per its directive so it OWNS its state: scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA \u2013 NEVER an absolute whole-table total. Keep the invariant; do NOT weaken it, and do NOT change product code.

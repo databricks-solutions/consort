@@ -6679,6 +6679,21 @@ function resolveConsortDir(projectDir = process.cwd()) {
 var featuresDir = (tdd) => join(tdd, "features");
 var escalationsDir = (tdd) => join(tdd, "escalations");
 var escalationFile = (tdd, id) => join(escalationsDir(tdd), `${id}.json`);
+var featureDir = (tdd, featureId) => join(featuresDir(tdd), featureId);
+var featureResolved = (tdd, f) => findFeatureDir(tdd, f) ?? featureDir(tdd, f);
+var architectureJson = (tdd, f) => join(featureResolved(tdd, f), "architecture.json");
+var storiesDir = (tdd, f) => join(featureResolved(tdd, f), "stories");
+var storyDir = (tdd, f, s) => join(storiesDir(tdd, f), s);
+function findStoryDir(tdd, f, s) {
+  const root = storiesDir(tdd, f);
+  if (!fs.existsSync(root)) return void 0;
+  const exact = join(root, s);
+  if (fs.existsSync(exact)) return exact;
+  const matches = fs.readdirSync(root).filter((d) => d === s || d.startsWith(`${s}-`));
+  return matches.length === 1 ? join(root, matches[0]) : void 0;
+}
+var storyResolved = (tdd, f, s) => findStoryDir(tdd, f, s) ?? storyDir(tdd, f, s);
+var storyTestListJson = (tdd, f, s) => join(storyResolved(tdd, f, s), "test-list-per-story.json");
 function findFeatureDir(tdd, featureId) {
   const root = featuresDir(tdd);
   if (!fs.existsSync(root)) return void 0;
@@ -6982,6 +6997,13 @@ var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
 
 // consort/orchestrator/validators/conformance/artifact-conformance.ts
 init_esm_shims();
+function describesMigrationRoundTrip(desc) {
+  return /\bround.?trip\b/i.test(desc) || /\bdowngrad\w*/i.test(desc) && /\bupgrad\w*/i.test(desc) || // Directional shorthand for a round-trip — "down->up", "down→up", "down/up", "down-up"
+  // (an arrow/slash/dash BETWEEN the two, never a bare "down up" which could be unrelated prose).
+  // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
+  // as forward-only — the description-fragility that must not bounce a correct test.
+  /\bdown\s*[-/→>]+\s*up\b/i.test(desc);
+}
 
 // consort/test-list/test-list.ts
 init_esm_shims();
@@ -7182,7 +7204,106 @@ init_esm_shims();
 import { existsSync as existsSync13, readFileSync as readFileSync12, readdirSync as readdirSync8, statSync as statSync7 } from "fs";
 import { join as join15, relative as relative3, extname as extname4 } from "path";
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+var AUTHOR_LAYER_TEST_SMELLS = /* @__PURE__ */ new Set([
+  "relative-migration-revision",
+  "reversible-invariant-round-trip",
+  // A schema-diff assertion that depends on branch topology (no pinned --against baseline) can never
+  // be greened by a code repair — the verify branch's parent is already migrated, so the diff is
+  // empty regardless of the product. It needs the test RE-AUTHORED (pin a fixed baseline, or assert
+  // the migration's own before/after on an isolated branch), so it escalates to the AUTHOR on the
+  // first failure instead of burning assess->repair rounds (the F6/S3 T44 class).
+  "unpinned-schema-diff-baseline"
+]);
+var DEFAULT_TEST_DIRS = ["tests", "client/tests"];
 var DEFAULT_MIGRATION_DIRS2 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
+var EXCLUDE_DIR2 = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist)(\/|$)/;
+var TEST_FILE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs)$|\.py$/;
+function walk2(dir, keep, out = []) {
+  let entries;
+  try {
+    entries = readdirSync8(dir);
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const abs = join15(dir, e);
+    let st;
+    try {
+      st = statSync7(abs);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (!EXCLUDE_DIR2.test(abs)) walk2(abs, keep, out);
+    } else if (st.isFile() && keep(abs)) {
+      out.push(abs);
+    }
+  }
+  return out;
+}
+function collectKnownTables(projectDir, migrationDirs) {
+  const tables = /* @__PURE__ */ new Set();
+  const literalPatterns = [
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?(\w+)/gi,
+    // SQL
+    /ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?["'`]?(\w+)/gi,
+    // SQL
+    /op\.create_table\(\s*["'](\w+)["']/gi,
+    // Alembic literal
+    /createTable\(\s*["'](\w+)["']/gi
+    // Knex literal
+  ];
+  const constPatterns = [
+    /op\.create_table\(\s*([A-Za-z_]\w*)\s*[,)]/g,
+    // Alembic constant
+    /createTable\(\s*([A-Za-z_]\w*)\s*[,)]/g
+    // Knex constant
+  ];
+  for (const md of migrationDirs) {
+    const abs = join15(projectDir, md);
+    if (!existsSync13(abs)) continue;
+    for (const file of walk2(abs, (p) => [".py", ".sql", ".js", ".ts"].includes(extname4(p)))) {
+      let body;
+      try {
+        body = readFileSync12(file, "utf8");
+      } catch {
+        continue;
+      }
+      for (const re of literalPatterns) {
+        for (const m of body.matchAll(re)) tables.add(m[1].toLowerCase());
+      }
+      const consts = moduleConsts(body);
+      for (const re of constPatterns) {
+        for (const m of body.matchAll(re)) {
+          const resolved = consts.get(m[1]);
+          if (resolved) tables.add(resolved.toLowerCase());
+        }
+      }
+    }
+  }
+  return tables;
+}
+var SMELL_FIX = {
+  "loose-locator": "scope the locator to a UNIQUE KEY (a row by its sku/id, e.g. getByRole('row', { name: sku })) and match exactly ({ exact: true } or a word-boundary/anchored regex) \u2013 a bare short literal or broad alternation substring-matches other cells and random-UUID digits, a flaky strict-mode collision that only shows at full-suite verify",
+  "vi-mock-tdz": "vi.mock factories hoist ABOVE top-level consts (TDZ ReferenceError, the suite then reports 0 tests) \u2013 build shared fixture data INSIDE the factory, or wrap it in vi.hoisted(() => {...})",
+  "framenavigated-reload-detector": "framenavigated fires for History-API (React Router) navigation too \u2013 assert the navigation STATE (page.url() / rendered content), never the event",
+  "delete-teardown": "a DELETE-based teardown breaks on append-only triggers and ON DELETE RESTRICT FKs, and can wipe a sibling story's seed \u2013 rely on per-run uuid keys for isolation (no cleanup); only delete rows the test itself created, scoped by those keys",
+  "broad-integrity-except": "a bare `except IntegrityError`/`except Exception` swallow catches the UMBRELLA (unique + check + FK violations) with no discrimination and masks the real failure \u2013 a wrong table/column name then reads as the expected conflict. Catch the specific subclass (UniqueViolation / CheckViolation / NotNullViolation), or discriminate explicitly: assert on the exception's message or isinstance against the subclass (a broad catch WITH a discriminating assert is fine and is not flagged)",
+  "schema-unsatisfiable-ref": "the test references a table NO migration creates, so it is unsatisfiable (UndefinedTable on every run) \u2013 fix the table name (see the known tables below) or add the migration; never paper it over with a broad except",
+  "whole-table-aggregate": "an ABSOLUTE whole-table COUNT/SUM with no seed-scope and no delta passes on the isolated branch but FAILS once other stories' rows share the DB (the aggregate-isolation rule: own the state). Scope BOTH the seed AND the assertion to the test's own rows (filter by the test's SKUs / a marker column), or assert a DELTA (count_after - count_before == seeded), never an absolute whole-table total",
+  "fixed-key-e2e": "this Playwright e2e spec CREATES a record (fills a form + submits) but seeds no per-run-unique key, so it uses a HARDCODED business key (SKU/code/name). The e2e verify runs against the SHARED feature branch, which already holds the row a prior run/sibling story created with that same key \u2014 so the second run hits a unique-violation (or asserts a stale duplicate) and the row goes perma-red, costing a reflect/assess lap on a correct app. Derive a per-run-unique key (e.g. `const sku = 'SKU-' + crypto.randomUUID().slice(0, 8)`) and use that SAME value in both the create fill and the assertion locator, so each run owns its own row",
+  "migration-marker-presence": "a downgrade/upgrade test without @pytest.mark.migration runs on the SHARED verify DB and drops/alters its live schema for every other test. Add @pytest.mark.migration so the verify harness routes it to its OWN ephemeral branch (single-step downgrade -1 + upgrade head, never downgrade base)",
+  "relative-migration-revision": "a reversibility test asserts a NAMED column is absent after a RELATIVE `downgrade -1` (and/or restores with `upgrade head`) \u2013 this assumes THAT column's migration is the current head, so the moment a later feature stacks a migration on top, `-1` reverses the WRONG migration and the column-absence assertion can never pass again (the F6/S1-broke-F1/S3 par_level class). Pin the migration's OWN revision instead: downgrade to its down_revision and upgrade to its revision, so the round-trip validates THIS migration independent of any later head",
+  "migration-creator-uniqueness": 'this test LOCATES the migration that creates/owns a table by matching the BARE table name across migration sources (e.g. `owners = [s for s in script.walk_revisions() if "stock_adjustments" in Path(s.path).read_text()]`) and asserts there is exactly ONE such migration (`len(owners) == 1`). That assumes nothing else ever names the table \u2014 but a LATER story that ADDITIVELY evolves it (an index / constraint / FK migration, exactly what an additive migration + a reversible invariant legitimately permit) adds a SECOND migration whose source also names the table, so `len == 1` flips to `2 == 1` and the test goes perma-red on a CORRECT app (the F2/S3 `ix_stock_adjustments_*` class \u2014 the same later-story-moves-the-target time-bomb as the relative `downgrade -1` smell). Key on the CREATE OP: require BOTH the `create_table` operation AND the table name in the migration source \u2014 `src = Path(s.path).read_text(); if "create_table" in src and "stock_adjustments" in src` \u2014 which is unique BY CONSTRUCTION (exactly one migration creates a table) so `len(creators) == 1` stays true no matter how many later migrations touch it. Do NOT use a literal `\'op.create_table("stock_adjustments"\' in src` predicate: it matches ZERO files under the standard alembic CONSTANT idiom (`TABLE = "stock_adjustments"; op.create_table(TABLE)`), because the call site reads `op.create_table(TABLE)`, not the quoted name \u2014 the two-token form is constant-safe. (A finder already referencing `create_table` is the correct shape and is NOT flagged; nor is an alembic single-head check `len(get_heads()) == 1`.)',
+  "reversible-invariant-round-trip": "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility \u2013 and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade \u2192 seed/migrate \u2192 upgrade \u2192 assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
+  "pytest-bdd-parse-conversion": "a parse()/parsers.parse() step pattern uses a Python str.format conversion flag (!r / !s / !a); the `parse` library backing pytest-bdd supports the format SPEC ({name:type}) but NOT conversions, so the step text never matches the feature and the step raises StepDefinitionNotFoundError \u2013 the app can never green it. Drop the conversion and quote the value in the pattern instead (e.g. parse('\u2026 \"{name}\"') to match a quoted feature value, or parse('\u2026 {name}') for a bare token), matching how the .feature file writes it",
+  "dropped-column-dangling-reference": "a contract migration DROPPED this column, but app/seed code still references it \u2013 the migration succeeds yet the app then emits SQL for a column the DB no longer has and crashes at runtime ('column does not exist'), a path a green test suite can miss (the F6/S2 seed_dev.py class, hard rule 9: contract-incompleteness). Remove or re-point the reference to the surviving columns; NEVER re-add the column to the model or edit the migration/tests to hide it",
+  "component-test-mock": "a client COMPONENT test (client/**/*.test.tsx) MOCKS the data path (a stubbed/spied/assigned global `fetch`, MSW, or a `vi.mock` of the app's api/service/http module). Kit principle: NEVER mock when a real counterpart exists \u2014 a component that talks to the backend in production must talk to the REAL backend in test. The vitest harness boots a real backend (vitest.globalSetup.ts) and the fetch shim (tests/setup.ts) routes `/api` to it, so render the component and let its real `/api` calls hit the live service against the paired-branch DB; assert on what comes back. Remove the mock. (A clock \u2014 vi.useFakeTimers \u2014 or a genuinely third-party module with no real counterpart stays allowed.)",
+  "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example \u2014 a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) \u2014 matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
+  "unpinned-schema-diff-baseline": "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head \u2014 the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged.",
+  "dropped-column-test-reference": "this TEST inserts into / selects / asserts a column that a CONTRACT migration in this feature DROPPED, and the file performs no downgrade \u2014 so it runs against HEAD where the column no longer exists and dies with a ProgrammingError ('column does not exist'), even though the app is correct (the F6/S3 cross-story supersession class: a prior story's test still references tracking_code after S3 drops it). `opt2` scopes the per-cycle backend suite to the current story, so a prior-story test like this is NOT run per-cycle and only fails LATER at the full deploy-verify as a HALT. Refactor the superseded reference: drop the dropped column from the INSERT/SELECT/assertion, or retarget it to the surviving columns (e.g. batch_number/serial_number). Do NOT re-add the column to the model or edit the migration to hide it. (A migration round-trip test that re-adds the column via its own downgrade is legitimate and is not flagged \u2014 this only flags pure-HEAD references.)",
+  "psycopg2-pgcode-attr": "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) \u2014 a psycopg2 attribute \u2014 but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap \u2014 no production/driver shim."
+};
 function collectDroppedColumns(projectDir, migrationDirs) {
   const GENERIC = /* @__PURE__ */ new Set(["id", "name", "type", "value", "data", "status", "key", "code", "text"]);
   const dropped = /* @__PURE__ */ new Set();
@@ -7190,6 +7311,335 @@ function collectDroppedColumns(projectDir, migrationDirs) {
     if (ev === "drop" && col.length >= 4 && !GENERIC.has(col.toLowerCase())) dropped.add(col);
   }
   return dropped;
+}
+function isDbColumnRef(codeLine, col) {
+  if (!new RegExp(`\\b${col}\\b`).test(codeLine)) return false;
+  if (new RegExp(`\\.\\s*${col}\\b`).test(codeLine)) return true;
+  if (/\b(?:Column|mapped_column)\s*\(|\bMapped\s*\[/.test(codeLine)) return true;
+  if (/["'`]/.test(codeLine) && /\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i.test(codeLine)) return true;
+  return false;
+}
+function liveReferenceLines(body, col) {
+  const lines = body.split("\n");
+  const out = [];
+  let inDoc = false;
+  let docQuote = "";
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (inDoc) {
+      if (line.includes(docQuote)) inDoc = false;
+      continue;
+    }
+    const tq = line.match(/"""|'''/);
+    if (tq) {
+      const q = tq[0];
+      const after = line.slice(line.indexOf(q) + 3);
+      if (!after.includes(q)) {
+        line = line.slice(0, line.indexOf(q));
+        inDoc = true;
+        docQuote = q;
+      }
+    }
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const slash = line.indexOf("//");
+    if (slash >= 0) line = line.slice(0, slash);
+    if (isDbColumnRef(line, col)) out.push(i + 1);
+  }
+  return out;
+}
+function blankCommentsAndDocstrings(lines) {
+  const out = [];
+  let inDoc = false;
+  let docQuote = "";
+  for (let line of lines) {
+    if (inDoc) {
+      if (line.includes(docQuote)) {
+        inDoc = false;
+        line = line.slice(line.indexOf(docQuote) + 3);
+      } else {
+        out.push("");
+        continue;
+      }
+    }
+    line = line.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, " ");
+    const tq = line.match(/"""|'''/);
+    if (tq) {
+      const q = tq[0];
+      const after = line.slice(line.indexOf(q) + 3);
+      if (!after.includes(q)) {
+        line = line.slice(0, line.indexOf(q));
+        inDoc = true;
+        docQuote = q;
+      }
+    }
+    const hash = line.indexOf("#");
+    if (hash >= 0) line = line.slice(0, hash);
+    const slash = line.indexOf("//");
+    if (slash >= 0) line = line.slice(0, slash);
+    out.push(line);
+  }
+  return out;
+}
+function checkDroppedColumnDanglingRef(projectDir, migrationDirs) {
+  const dropped = collectDroppedColumns(projectDir, migrationDirs);
+  if (dropped.size === 0) return [];
+  const out = [];
+  const migAbs = migrationDirs.map((d) => join15(projectDir, d));
+  const SRC_EXCLUDE = new RegExp(`(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|dist|build|${ARTIFACT_ROOTS_RE2}|client|tests?|__tests__|e2e)(/|$)`);
+  const isSrc = (p) => /\.(py|sql)$/.test(p) && !migAbs.some((m) => p.startsWith(m));
+  const srcFiles = walk2(projectDir, (p) => isSrc(p) && !SRC_EXCLUDE.test(p));
+  for (const f of srcFiles) {
+    let body;
+    try {
+      body = readFileSync12(f, "utf8");
+    } catch {
+      continue;
+    }
+    const rel = relative3(projectDir, f);
+    for (const col of dropped) {
+      if (!body.includes(col)) continue;
+      for (const line of liveReferenceLines(body, col)) {
+        out.push({
+          smell: "dropped-column-dangling-reference",
+          file: rel,
+          line,
+          text: `live reference to dropped column '${col}'`,
+          detail: SMELL_FIX["dropped-column-dangling-reference"]
+        });
+      }
+    }
+  }
+  return out;
+}
+function checkReversibleInvariantRoundTrip(projectDir) {
+  const tdd = resolveConsortDir(projectDir);
+  const featsDir = featuresDir(tdd);
+  const out = [];
+  if (!existsSync13(featsDir)) return out;
+  for (const feature of readdirSync8(featsDir)) {
+    const archPath = architectureJson(tdd, feature);
+    if (!existsSync13(archPath)) continue;
+    let arch;
+    try {
+      arch = JSON.parse(readFileSync12(archPath, "utf8"));
+    } catch {
+      continue;
+    }
+    const reversible = (arch.persistence_invariants ?? []).filter(
+      (pi) => typeof pi?.id === "string" && typeof pi?.type === "string" && /reversib/i.test(pi.type)
+    );
+    if (reversible.length === 0) continue;
+    const itemSources = [join15(featureDir(tdd, feature), "test-list.json")];
+    const stDir = storiesDir(tdd, feature);
+    if (existsSync13(stDir)) {
+      for (const s of readdirSync8(stDir)) {
+        const p = storyTestListJson(tdd, feature, s);
+        if (existsSync13(p)) itemSources.push(p);
+      }
+    }
+    const items = [];
+    for (const src of itemSources) {
+      try {
+        const tl = JSON.parse(readFileSync12(src, "utf8"));
+        items.push(...tl.items ?? []);
+      } catch {
+      }
+    }
+    for (const pi of reversible) {
+      const covering = items.filter((it) => it.invariant_id === pi.id);
+      const hasRoundTrip = covering.some((it) => describesMigrationRoundTrip(it.description ?? ""));
+      if (covering.length > 0 && !hasRoundTrip) {
+        out.push({
+          smell: "reversible-invariant-round-trip",
+          file: relative3(projectDir, featureDir(tdd, feature)),
+          line: 1,
+          text: `invariant ${pi.id} (migration_reversible) covered only by forward-only test(s)`,
+          detail: SMELL_FIX["reversible-invariant-round-trip"]
+        });
+      }
+    }
+  }
+  return out;
+}
+function projectDeclaresPsycopg2(projectDir) {
+  for (const f of ["pyproject.toml", "requirements.txt", "uv.lock", "setup.cfg", "Pipfile"]) {
+    try {
+      if (/\bpsycopg2\b/.test(readFileSync12(join15(projectDir, f), "utf8"))) return true;
+    } catch {
+    }
+  }
+  return false;
+}
+function checkTestSmells(args) {
+  const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
+  const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
+  const usesPsycopg2 = projectDeclaresPsycopg2(args.projectDir);
+  const droppedCols = collectDroppedColumns(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
+  const violations = [];
+  const push = (smell, file, line, text, extra) => violations.push({ smell, file, line, text: text.trim().slice(0, 200), detail: SMELL_FIX[smell] + (extra ? ` (${extra})` : "") });
+  for (const td of testDirs) {
+    const abs = join15(args.projectDir, td);
+    if (!existsSync13(abs)) continue;
+    for (const file of walk2(abs, (p) => TEST_FILE.test(p))) {
+      let lines;
+      try {
+        lines = readFileSync12(file, "utf8").split("\n");
+      } catch {
+        continue;
+      }
+      const rel = relative3(args.projectDir, file);
+      const body = lines.join("\n");
+      const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
+      const isPy = file.endsWith(".py");
+      const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
+      if (isPy && droppedCols.size > 0 && !/\bdowngrade\b/.test(body)) {
+        for (const col of droppedCols) {
+          for (const ln of liveReferenceLines(body, col)) {
+            push("dropped-column-test-reference", rel, ln, lines[ln - 1] ?? `references dropped column '${col}'`, `dropped column '${col}' referenced at HEAD`);
+          }
+        }
+      }
+      if (isJs && body.includes("vi.mock(") && !body.includes("vi.hoisted")) {
+        const constBefore = body.match(/^const\s+(\w+)\s*=[\s\S]{0,400}?vi\.mock\(/m);
+        if (constBefore && new RegExp(`\\b${constBefore[1]}\\b`).test(body.slice(body.indexOf("vi.mock(")))) {
+          const idx = lines.findIndex((l) => l.includes("vi.mock("));
+          push("vi-mock-tdz", rel, idx + 1, lines[idx] ?? "vi.mock(", `const '${constBefore[1]}' is referenced by the factory`);
+        }
+      }
+      let teardownDepth = 0;
+      const codeLines = blankCommentsAndDocstrings(lines);
+      lines.forEach((text, i) => {
+        const line = i + 1;
+        if (/^\s*(afterEach|afterAll|teardown|tearDown|def\s+tear\w*|def\s+cleanup)\b/.test(text)) teardownDepth = 1;
+        else if (/^\s*(it|test|describe|beforeEach|beforeAll|def\s+\w+)\b/.test(text)) teardownDepth = 0;
+        if (isJs) {
+          const bare = text.match(/getBy(Text|Role)\(\s*["'`]([^"'`]{1,12})["'`]\s*\)/);
+          if (bare && (/^\d[\d.,%$]*$/.test(bare[2]) || bare[2].length <= 3)) {
+            push("loose-locator", rel, line, text, `bare ${bare[1]}("${bare[2]}") with no exact/scoping`);
+          }
+          const broadRe = text.match(/getBy(Text|Role)\(\s*\/([^/]*\|[^/]*)\/[a-z]*\s*\)/);
+          if (broadRe && /not found|error|404|invalid|success|delete|update/i.test(broadRe[2]) && !/\^|\$|\\b/.test(broadRe[2])) {
+            push("loose-locator", rel, line, text, `unanchored alternation /${broadRe[2]}/ substring-matches UUID digits + unrelated cells`);
+          }
+          if (/\.on\(\s*["']framenavigated["']/.test(text)) {
+            push("framenavigated-reload-detector", rel, line, text);
+          }
+        }
+        if (isComponentTest) {
+          if (/vi\.stubGlobal\(\s*["']fetch["']/.test(text) || /vi\.spyOn\([^)]*,\s*["']fetch["']\s*\)/.test(text) || /(?:globalThis|global|window)\.fetch\s*=/.test(text)) {
+            push("component-test-mock", rel, line, text, "stubs the global fetch");
+          } else if (/from\s+["']msw["']/.test(text) || /\bsetupServer\(/.test(text)) {
+            push("component-test-mock", rel, line, text, "MSW network mock");
+          } else if (/vi\.mock\(\s*["'][^"']*(?:\/api\b|\bapi\/|service|\/http\b|repository|fetch)[^"']*["']/i.test(text)) {
+            push("component-test-mock", rel, line, text, "vi.mock of the app's data/API module");
+          }
+        }
+        if (teardownDepth > 0 && /DELETE\s+FROM|deleteMany\(|\.delete\(\s*\{|TRUNCATE/i.test(text)) {
+          push("delete-teardown", rel, line, text);
+        }
+        if (/\b(?:postgres(?:ql)?|mysql|mongodb|redis|amqp)(?:\+\w+)?:\/\/[^\s/@"'`]*:[^\s/@"'`]*@/.test(text)) {
+          push("dsn-inline-credentials", rel, line, text, "inline user:pass@ in a DSN literal");
+        }
+        if (isPy) {
+          if (!usesPsycopg2 && /\.pgcode\b/.test(codeLines[i] ?? "")) {
+            push("psycopg2-pgcode-attr", rel, line, text, "psycopg3 uses .sqlstate, not .pgcode");
+          }
+          const m = text.match(/^\s*except\s*(IntegrityError|Exception)\b(?:\s+as\s+(\w+))?/);
+          if (m) {
+            const varName = m[2];
+            const discriminated = varName !== void 0 && lines.slice(i + 1, i + 8).some((l) => new RegExp(`\\b${varName}\\b`).test(l) && /assert|isinstance|str\(|print|log|raise/.test(l));
+            if (!discriminated) {
+              push("broad-integrity-except", rel, line, text);
+            }
+          }
+        }
+        if (isPy && /\bparse(?:rs)?\.(?:parse|re)\s*\(/.test(text) && /\{[^{}]*![rsa][^{}]*\}/.test(text)) {
+          const conv = text.match(/\{[^{}]*(![rsa])[^{}]*\}/);
+          push("pytest-bdd-parse-conversion", rel, line, text, `${conv ? conv[1] : "!r"} conversion in a parse() step pattern`);
+        }
+        if (/COUNT\s*\(\s*\*\)|SELECT\s+COUNT/i.test(text)) {
+          const region = lines.slice(Math.max(0, i - 40), i + 14).join("\n");
+          const absoluteCount = /==\s*\d+|assert(?:Equals|Equal|That)?\s*\(?\s*\d+\s*\)|toBe\(\s*\d+|equals the (seeded|expected|recorded) count/i.test(region);
+          const scopedOrDelta = /uuid|randomUUID|unique|WHERE|where|filter|delta|count_before|probe_before|before_seed|subtract|minus/i.test(region);
+          if (absoluteCount && !scopedOrDelta) {
+            push("whole-table-aggregate", rel, line, text, "absolute whole-table count with no seed-scope and no delta");
+          }
+        }
+        if (knownTables.size > 0) {
+          for (const m of codeLines[i].matchAll(
+            /\b(?:FROM|JOIN|INTO|UPDATE)\s+["'`]?(\w+)["'`]?|\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?["'`]?(\w+)/g
+          )) {
+            const ref = (m[1] ?? m[2]).toLowerCase();
+            const systemCatalog = ref === "information_schema" || ref.startsWith("pg_");
+            const migrationBookkeeping = ref === "alembic_version";
+            if (!/^(select|where|set|values|lateral|only|unnest|generate_series|dual|on|of)$/.test(ref) && !systemCatalog && !migrationBookkeeping && !knownTables.has(ref)) {
+              push("schema-unsatisfiable-ref", rel, line, text, `table '${ref}' not created by any migration; known: ${[...knownTables].slice(0, 8).join(", ")}`);
+            }
+          }
+        }
+      });
+      if (isPy && /command\.downgrade|alembic\s+downgrade|\.downgrade\(|downgrade\s+-1|run_downgrade/i.test(body) && !/pytest\.mark\.migration|mark\.migration/.test(body)) {
+        push("migration-marker-presence", rel, 1, "(file)", "a downgrade test without @pytest.mark.migration (drops schema on the shared verify DB)");
+      }
+      const relativeDowngrade = /(?:["']downgrade["']\s*,\s*|alembic\s+downgrade\s+|downgrade\s+)["']?-\d+["']?/i.test(body);
+      const namedColumnAbsent = /["'`]\w+["'`]\s+not\s+in\s+\w*col/i.test(body);
+      if (isPy && relativeDowngrade && namedColumnAbsent) {
+        const col = body.match(/["'`](\w+)["'`]\s+not\s+in\s+\w*col/i);
+        push(
+          "relative-migration-revision",
+          rel,
+          1,
+          "(file)",
+          `asserts ${col ? `'${col[1]}'` : "a named column"} absent after a relative 'downgrade -N' \u2013 pin the migration's own revision (down_revision + revision), not -N/head`
+        );
+      }
+      const scansMigrationSources = /\b(?:walk_revisions|versions|alembic|migrations)\b/.test(body) && /\.read_text\(|\.read\(|\bopen\(|\.glob\(|\.rglob\(|\.iterdir\(|listdir\(/.test(body);
+      const bareNameFinder = /\bif\s+["'`]\w+["'`]\s+in\s+\w/.test(body);
+      const assertsLenOne = /\blen\s*\([^\n]*\)\s*==\s*1\b/.test(body) || /assertEqual\s*\(\s*len\s*\([^\n]*\)\s*,\s*1\s*\)/.test(body);
+      const keysOnCreateOp = /\bcreate_table\b/.test(body);
+      const isSingleHeadCheck = /get_heads\s*\(|\bheads\b|branch_labels/.test(body);
+      if (isPy && scansMigrationSources && bareNameFinder && assertsLenOne && !keysOnCreateOp && !isSingleHeadCheck) {
+        const needle = body.match(/\bif\s+["'`](\w+)["'`]\s+in\s+\w/);
+        push(
+          "migration-creator-uniqueness",
+          rel,
+          1,
+          "(file)",
+          `asserts exactly one migration references ${needle ? `'${needle[1]}'` : "a table"} by BARE name (len == 1) \u2013 a later additive migration naming the same table breaks it; require BOTH "create_table" AND "${needle ? needle[1] : "<table>"}" in the source (constant-safe; a literal op.create_table("${needle ? needle[1] : "<table>"}") predicate matches ZERO files when the table name is a module constant)`
+        );
+      }
+      const invokesSchemaDiff = /lakebase-schema-diff|lakebase_schema_diff/.test(body);
+      const pinsSchemaDiffBaseline = /--against\b|--comparison-branch\b|comparisonBranch\b/.test(body);
+      if (invokesSchemaDiff && !pinsSchemaDiffBaseline) {
+        push(
+          "unpinned-schema-diff-baseline",
+          rel,
+          1,
+          "(file)",
+          "runs lakebase-schema-diff with no --against baseline (the verify branch's parent is already migrated \u2192 empty diff)"
+        );
+      }
+      const isE2eSpec = isJs && /(^|\/)e2e\/[^/]*\.spec\.(ts|tsx|js|jsx|mjs)$/.test(file.replace(/\\/g, "/"));
+      if (isE2eSpec) {
+        const hasFill = /\.fill\s*\(/.test(body);
+        const hasSubmit = /getByRole\(\s*["']button["'][\s\S]{0,80}?\b(create|add|new|file|save|submit|register|record)\b/i.test(body) || /getByText\(\s*["'`\/][^)]{0,40}\b(create|add|new|file|save|submit|register)\b/i.test(body);
+        const uniquenessSource = /randomUUID|crypto\b|Date\.now|\buuid\b|performance\.now|Math\.random|nanoid|new Date\(|getTime\(/i.test(body);
+        if (hasFill && hasSubmit && !uniquenessSource) {
+          push("fixed-key-e2e", rel, 1, "(file)", "a create-flow e2e spec with no per-run-unique key seed (crypto.randomUUID)");
+        }
+      }
+    }
+  }
+  violations.push(...checkReversibleInvariantRoundTrip(args.projectDir));
+  violations.push(...checkDroppedColumnDanglingRef(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2));
+  const effective = args.excludeSmells && args.excludeSmells.size > 0 ? violations.filter((v) => !args.excludeSmells.has(v.smell)) : violations;
+  if (effective.length === 0) return { clean: true, violations: [] };
+  const list = effective.map((v) => `  [${v.smell}] ${v.file}:${v.line}  ${v.text}
+      fix: ${v.detail}`).join("\n");
+  const remediation = `TEST-AUTHORING-SMELL: the test file(s) below carry authoring defects from the issue #199 catalog. The APP code is not the defect \u2013 do NOT route a Driver code repair; the test's AUTHOR fixes these in the test (a flaky strict-mode collision / TDZ / unsatisfiable table ref cannot be greened by changing the app):
+${list}`;
+  return { clean: false, violations: effective, remediation };
 }
 
 // consort/pipeline/cycle-record.ts
@@ -7215,6 +7665,27 @@ function parseFailedNodeIds(output) {
   }
   return ids;
 }
+function classifyDeployVerifyTestSmell(failingNodeIds, projectDir, migrationDirs) {
+  if (failingNodeIds.length === 0) return [];
+  let violations;
+  try {
+    violations = checkTestSmells({ projectDir, migrationDirs }).violations;
+  } catch {
+    return [];
+  }
+  const fixableByFile = /* @__PURE__ */ new Map();
+  for (const v of violations) {
+    if (AUTHOR_LAYER_TEST_SMELLS.has(v.smell)) continue;
+    if (!fixableByFile.has(v.file)) fixableByFile.set(v.file, { smell: v.smell, fix: v.detail });
+  }
+  const out = [];
+  for (const nodeId of failingNodeIds) {
+    const file = nodeId.split("::")[0];
+    const hit = file ? fixableByFile.get(file) : void 0;
+    if (hit) out.push({ node_id: nodeId, smell: hit.smell, fix: hit.fix });
+  }
+  return out;
+}
 function markerPath(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
@@ -7234,12 +7705,15 @@ function writeDeployVerifyAssessMarker(consortDir, featureId, storyId, failingNo
   if (!file) return void 0;
   const prior = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
   const supersession = opts?.kind === "supersession";
+  const testSmell = opts?.kind === "test-smell";
   const failureTail = opts?.failureOutput ? opts.failureOutput.slice(-6e3) : void 0;
   const marker = {
     version: 1,
     ...storyId ? { story_id: storyId } : {},
     ...supersession ? { kind: "supersession" } : {},
+    ...testSmell ? { kind: "test-smell" } : {},
     ...supersession && opts?.droppedColumns?.length ? { dropped_columns: opts.droppedColumns } : {},
+    ...testSmell && opts?.smellFixes?.length ? { smell_fixes: opts.smellFixes } : {},
     failing_node_ids: failingNodeIds,
     ...failureTail ? { failure_output: failureTail } : {},
     assessed: false,
@@ -7723,6 +8197,7 @@ async function deployToTarget(args) {
     if (!(reachableNow && verify.passed)) {
       let contamination = false;
       let superseded = false;
+      let testSmell = false;
       if (reachableNow && cfg.verify && args.featureId && args.lakebaseBranch) {
         const failing = parseFailedNodeIds(verifyOutput);
         if (failing.length > 0) {
@@ -7760,10 +8235,24 @@ async function deployToTarget(args) {
                 superseded = true;
               }
             }
+            if (!superseded) {
+              const prior = readDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId);
+              if (!prior?.assessed) {
+                const smellFixes = classifyDeployVerifyTestSmell(failing, args.projectDir, DEFAULT_MIGRATION_DIRS2);
+                if (smellFixes.length > 0) {
+                  writeDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId, failing, {
+                    kind: "test-smell",
+                    smellFixes,
+                    failureOutput: verifyOutput
+                  });
+                  testSmell = true;
+                }
+              }
+            }
           }
         }
       }
-      if (!contamination && !superseded) {
+      if (!contamination && !superseded && !testSmell) {
         writeEscalation(consortDir, {
           source: "deploy-verify",
           reason: `deploy of ${args.featureId}${args.storyId ? `/${args.storyId}` : ""} did not prove working software: ${reachableNow ? verify.summary ?? "verify failed" : `app not reachable at ${url}`}`,

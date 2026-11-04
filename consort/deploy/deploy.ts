@@ -23,6 +23,7 @@ import { writeEscalation } from "../../consort/gates/escalation.js";
 import {
   parseFailedNodeIds,
   classifyDeployVerifyFailure,
+  classifyDeployVerifyTestSmell,
   writeDeployVerifyAssessMarker,
   readDeployVerifyAssessMarker,
   clearDeployVerifyAssessMarker,
@@ -971,6 +972,7 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
       // keeps the terminal deploy-verify HIL, byte-identical to before.
       let contamination = false;
       let superseded = false;
+      let testSmell = false;
       // The self-heal fires whenever we can fork a clean child to isolate on: a
       // bound lakebaseBranch + a feature context. This covers BOTH the per-story
       // deploy (branch = the story's experiment branch, storyId set) AND the
@@ -1041,10 +1043,34 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
                 superseded = true;
               }
             }
+            // THIRD self-heal signal — a DRIVER-FIXABLE TEST-AUTHORING SMELL. A genuine
+            // (fails-in-isolation) failure that is NOT supersession can still be a correct
+            // app blocked by a deterministic test-authoring defect the Driver can narrow in
+            // place (e.g. an over-broad migration-creator finder asserting `len == 1`, the
+            // F2/S3 ix_* class). When a failing node-id's test file carries a non-AUTHOR_LAYER
+            // `checkTestSmells` finding, suppress the terminal HIL into the SAME one-shot
+            // assess -> refactor marker (kind "test-smell") the Navigator adjudicates and the
+            // Driver repairs. AUTHOR_LAYER smells (need re-authoring, not a surgical edit) are
+            // excluded by the classifier and stay on the terminal-HIL path. One-shot: only on
+            // first detection (no prior assessed marker), so a spent attempt escalates.
+            if (!superseded) {
+              const prior = readDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId);
+              if (!prior?.assessed) {
+                const smellFixes = classifyDeployVerifyTestSmell(failing, args.projectDir, DEFAULT_MIGRATION_DIRS);
+                if (smellFixes.length > 0) {
+                  writeDeployVerifyAssessMarker(consortDir, args.featureId, args.storyId, failing, {
+                    kind: "test-smell",
+                    smellFixes,
+                    failureOutput: verifyOutput,
+                  });
+                  testSmell = true;
+                }
+              }
+            }
           }
         }
       }
-      if (!contamination && !superseded) {
+      if (!contamination && !superseded && !testSmell) {
         writeEscalation(consortDir, {
           source: "deploy-verify",
           reason: `deploy of ${args.featureId}${args.storyId ? `/${args.storyId}` : ""} did not prove working software: ${

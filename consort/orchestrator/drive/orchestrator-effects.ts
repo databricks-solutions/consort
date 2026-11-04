@@ -1292,6 +1292,35 @@ function roleTaskBody(
             ` (write no file, or an empty directives array); the orchestration then raises it to a human. Write ONLY that file.`
           );
         }
+        if (marker?.kind === "test-smell") {
+          // Story-level deploy-verify self-heal ASSESS (TEST-SMELL variant): the full-feature
+          // deploy-verify FAILED on tests a deterministic authoring guard (checkTestSmells)
+          // identified as a DRIVER-FIXABLE smell — they fail EVERYWHERE (not contamination, not a
+          // dropped column), but the APP is correct and the fix is a known localized test edit
+          // (e.g. an over-broad migration-creator finder asserting len == 1). Confirm each is
+          // genuinely the smell (not a real regression) + prescribe the narrow fix.
+          const fixes = marker.smell_fixes ?? [];
+          return (
+            `ASSESS a failed full-feature DEPLOY-VERIFY for story ${s}. The story's own tests are green, but the` +
+            ` full-feature verify FAILED on the tests below. A deterministic test-authoring guard (checkTestSmells)` +
+            ` identified EACH as a DRIVER-FIXABLE authoring SMELL — the APP is NOT the defect; the TEST carries a` +
+            ` localized defect with a known fix (it fails EVERYWHERE, not only under shared-state contamination):\n` +
+            fixes.map((f) => `  ${f.node_id}\n    smell: ${f.smell}\n    fix: ${f.fix}`).join("\n") +
+            `\n\n` +
+            (marker.failure_output
+              ? `OBSERVED failure output (the deploy-verify run) — adjudicate from THIS: a failure shape that matches` +
+                ` the smell (e.g. a migration-owner count of 2 where the test asserts len == 1) confirms it; a failure` +
+                ` unrelated to the smell is a genuine regression:\n\`\`\`\n${marker.failure_output}\n\`\`\`\n\n`
+              : "") +
+            `For EACH test, decide: is it genuinely the authoring smell above (the app is correct) or a GENUINE` +
+            ` regression? For each you confirm is the smell, prescribe the narrow fix (per the smell's fix) WITHOUT` +
+            ` weakening the test's real intent or touching product code.\n` +
+            `Write your directives to ${root}/features/${featureId}/stories/${s}/deploy-verify-scope.json as` +
+            ` {"version":1,"story_id":"${s}","directives":[{"node_id":"<path::test>","directive":"<the narrow fix>"}]}` +
+            ` – one entry per test you confirm. If (rarely) a failure is a GENUINE regression, OMIT it (write no file,` +
+            ` or an empty directives array); the orchestration then raises it to a human. Write ONLY that file.`
+          );
+        }
         return (
           `ASSESS a failed full-feature DEPLOY-VERIFY for story ${s}. The story's own tests are green, but the` +
           ` full-feature verify against the running app FAILED on the tests below. A deterministic classifier` +
@@ -1394,6 +1423,22 @@ function roleTaskBody(
             ` (drop the assertion on it, or point it at the surviving column). Do NOT weaken any still-valid assertion` +
             ` and do NOT change product code.\n` +
             directives.map((d) => `  ${d.node_id}\n    -> ${d.directive}`).join("\n") +
+            `\nEdit ONLY those test files. The orchestrator re-deploys + re-verifies after your turn.`
+          );
+        }
+        if (deployMarker?.kind === "test-smell") {
+          // Story-level deploy-verify self-heal SCOPE (TEST-SMELL variant): the Navigator confirmed
+          // tests carrying a deterministic authoring smell (the APP is correct) + prescribed the
+          // narrow fix per test. Apply EXACTLY those localized edits — do NOT touch product code and
+          // do NOT weaken the test's real intent. The re-deploy re-runs the full verify.
+          const fixes = deployMarker.smell_fixes ?? [];
+          return (
+            `REFACTOR the test-authoring-smell tests the Navigator flagged for story ${s}. Each FAILED the` +
+            ` full-feature deploy-verify because the TEST carries a deterministic authoring defect (the APP is` +
+            ` correct). Apply the Navigator's directive to EACH — a narrow, localized test edit — WITHOUT weakening` +
+            ` the test's real intent and WITHOUT touching product code.\n` +
+            directives.map((d) => `  ${d.node_id}\n    -> ${d.directive}`).join("\n") +
+            (fixes.length ? `\nSmell reference:\n` + fixes.map((f) => `  ${f.node_id}: ${f.smell}`).join("\n") : "") +
             `\nEdit ONLY those test files. The orchestrator re-deploys + re-verifies after your turn.`
           );
         }

@@ -41,7 +41,7 @@
 #     the gating env is satisfied. Slow.
 #
 # Manual cleanup if a self-provisioned project leaks:
-#   databricks postgres delete-project <projectId>
+#   databricks postgres delete-project <projectId> --purge
 
 set -euo pipefail
 
@@ -233,7 +233,7 @@ if [[ "$MODE" == "migrate" || "$MODE" == "all" ]]; then
   yellow "      migrate-7099-<timestamp>  (Knex suite, self-provisioned)"
   yellow "      live-fixture-<timestamp>  (globalSetup, shared by all live tests)"
   yellow "    cleanup:      automatic in each suite's afterAll() + globalSetup teardown (3-attempt retry)"
-  yellow "    manual fix:   databricks postgres delete-project <id>  (if cleanup leaks)"
+  yellow "    manual fix:   databricks postgres delete-project <id> --purge  (if cleanup leaks)"
   yellow ""
   yellow "    Press Ctrl-C in the next 5 seconds to abort. Setting LAKEBASE_TEST_NO_PROMPT=1"
   yellow "    in CI skips this pause."

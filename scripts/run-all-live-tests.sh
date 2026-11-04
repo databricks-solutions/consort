@@ -411,18 +411,20 @@ SKIP_COUNT="$(grep -oE 'Tests +[0-9]+ passed.*[0-9]+ skipped' /tmp/run-all-live-
 if [[ "$RUN_STATUS" -eq 0 && "$TEARDOWN_ON_GREEN" -eq 1 && "$PROVISIONED" -eq 1 ]]; then
   yellow ""
   yellow "==> Green run + --teardown specified. Deleting $PROJECT_ID..."
-  if databricks postgres delete-project "projects/$PROJECT_ID" --profile "$PROFILE" 2>&1 | tail -3; then
+  # --purge = HARD delete: never leave a soft-deleted tombstone that keeps the name reserved
+  # (a later scaffold with the same --project-name then hits "a soft-deleted tombstone exists").
+  if databricks postgres delete-project "projects/$PROJECT_ID" --purge --profile "$PROFILE" 2>&1 | tail -3; then
     green "  deleted $PROJECT_ID"
   else
     red "  delete failed; manual cleanup needed:"
-    red "    databricks postgres delete-project projects/$PROJECT_ID --profile $PROFILE"
+    red "    databricks postgres delete-project projects/$PROJECT_ID --purge --profile $PROFILE"
   fi
 elif [[ "$PROVISIONED" -eq 1 ]]; then
   yellow ""
   yellow "==> Project preserved (per never-teardown-on-failure convention):"
   yellow "    project:    $PROJECT_ID"
   yellow "    workspace:  $DATABRICKS_HOST"
-  yellow "    cleanup:    databricks postgres delete-project projects/$PROJECT_ID --profile $PROFILE"
+  yellow "    cleanup:    databricks postgres delete-project projects/$PROJECT_ID --purge --profile $PROFILE"
 fi
 
 exit "$RUN_STATUS"

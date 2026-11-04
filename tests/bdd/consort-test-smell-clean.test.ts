@@ -438,7 +438,7 @@ describe("checkTestSmells: dropped-column-dangling-reference", () => {
   });
 });
 
-describe("checkTestSmells: the three migration/aggregate detectors", () => {
+describe("checkTestSmells: the migration/aggregate detectors", () => {
   it("whole-table-aggregate: flags an ABSOLUTE whole-table count with no scope/delta, not a scoped or delta one", () => {
     const dir = mkProject();
     write(dir, "alembic/versions/0001_create.py", `def upgrade():\n    op.create_table("stock_records")\n`);
@@ -503,6 +503,37 @@ describe("checkTestSmells: the three migration/aggregate detectors", () => {
     write(dir3, "tests/test_reverse.py",
       `import pytest\n\n@pytest.mark.migration\ndef test_reversible():\n    _run_alembic("downgrade", "-1")\n    _run_alembic("upgrade", "head")\n    assert schema_recreated()\n`);
     expect(checkTestSmells({ projectDir: dir3 }).violations.some(v => v.smell === "relative-migration-revision")).toBe(false);
+  });
+
+  it("migration-creator-uniqueness: flags a bare-name migration finder asserting len == 1, not a create-op finder or single-head check", () => {
+    // The F2/S3 ix_stock_adjustments_* class: a reversibility test LOCATES the creating migration
+    // by matching the BARE table name across revisions and asserts exactly one match. A later
+    // story's additive index migration also names the table → len(owners) == 2 → perma-red.
+    const dir = mkProject();
+    write(dir, "tests/test_adjustments_migration.py",
+      `import pytest\nfrom alembic.script import ScriptDirectory\nfrom pathlib import Path\n\n@pytest.mark.migration\ndef test_round_trip():\n    script = ScriptDirectory.from_config(cfg)\n    owners = [s for s in script.walk_revisions() if "stock_adjustments" in Path(s.path).read_text()]\n    assert len(owners) == 1\n    command.downgrade(cfg, owners[0].down_revision)\n    command.upgrade(cfg, "head")\n`);
+    const bad = checkTestSmells({ projectDir: dir });
+    expect(bad.clean).toBe(false);
+    expect(bad.violations.some(v => v.smell === "migration-creator-uniqueness")).toBe(true);
+    expect(bad.violations.find(v => v.smell === "migration-creator-uniqueness")!.detail).toMatch(/op\.create_table/);
+
+    // The fix: key on the CREATE OP via the CONSTANT-SAFE two-token form (require BOTH "create_table"
+    // AND the table name). A literal `op.create_table("stock_adjustments")` predicate would match ZERO
+    // files under the alembic constant idiom (`TABLE = "stock_adjustments"; op.create_table(TABLE)`),
+    // so the exemption keys on the bare `create_table` token, not a `(`-anchored call.
+    const dir2 = mkProject();
+    write(dir2, "tests/test_adjustments_migration.py",
+      `import pytest\nfrom alembic.script import ScriptDirectory\nfrom pathlib import Path\n\n@pytest.mark.migration\ndef test_round_trip():\n    script = ScriptDirectory.from_config(cfg)\n    owners = [s for s in script.walk_revisions() if "create_table" in (src := Path(s.path).read_text()) and "stock_adjustments" in src]\n    assert len(owners) == 1\n    command.downgrade(cfg, owners[0].down_revision)\n`);
+    expect(checkTestSmells({ projectDir: dir2 }).violations.some(v => v.smell === "migration-creator-uniqueness")).toBe(false);
+
+    // A legitimate alembic single-head check (len(get_heads()) == 1) is NOT this smell.
+    const dir3 = mkProject();
+    write(dir3, "tests/test_single_head.py",
+      `from alembic.script import ScriptDirectory\n\ndef test_single_head():\n    script = ScriptDirectory.from_config(cfg)\n    heads = script.get_heads()\n    assert len(heads) == 1\n`);
+    expect(checkTestSmells({ projectDir: dir3 }).violations.some(v => v.smell === "migration-creator-uniqueness")).toBe(false);
+
+    // Driver-fixable (narrow to the create op), so NOT an author-layer re-author class.
+    expect(AUTHOR_LAYER_TEST_SMELLS.has("migration-creator-uniqueness" as never)).toBe(false);
   });
 
   it("pytest-bdd-parse-conversion: flags a parse() step pattern using !r/!s/!a, not a spec-only or quoted pattern", () => {

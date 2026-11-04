@@ -14,7 +14,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { findFeatureDir } from "../../consort/config/consort-paths.js";
-import { collectDroppedColumns, liveReferenceLines } from "../architecture/test-smell-clean.js";
+import { collectDroppedColumns, liveReferenceLines, checkTestSmells, AUTHOR_LAYER_TEST_SMELLS } from "../architecture/test-smell-clean.js";
 
 /**
  * Parse pytest "FAILED <nodeid>" / "ERROR <nodeid>" lines from the combined
@@ -79,6 +79,47 @@ export function classifyDeployVerifySupersession(
   return out;
 }
 
+/**
+ * Classify which of the deploy-verify FAILING node-ids are a DRIVER-FIXABLE TEST-AUTHORING
+ * SMELL: their test file carries a deterministic `checkTestSmells` finding that is NOT an
+ * AUTHOR_LAYER (re-author-only) class — e.g. an over-broad migration-creator finder asserting
+ * `len == 1` (`migration-creator-uniqueness`), a whole-table aggregate, a loose locator. These
+ * fail the full-feature deploy-verify DETERMINISTICALLY (they do NOT pass in isolation, and need
+ * no dropped column), so neither the contamination nor the supersession classifier catches them —
+ * yet the APP is correct and the fix is a known localized test edit the Driver can apply. Returns
+ * one entry per failing node-id whose file carries such a smell, carrying the smell + its fix (the
+ * ground the Navigator's assess turn confirms against and the Driver applies). AUTHOR_LAYER smells
+ * (reversible-invariant-round-trip, relative-migration-revision, unpinned-schema-diff-baseline) are
+ * EXCLUDED: they need re-authoring, not a surgical repair, so they stay on the terminal-HIL path.
+ * Pure: delegates to the single-source `checkTestSmells` (no re-implemented detection here).
+ */
+export function classifyDeployVerifyTestSmell(
+  failingNodeIds: string[],
+  projectDir: string,
+  migrationDirs: string[],
+): { node_id: string; smell: string; fix: string }[] {
+  if (failingNodeIds.length === 0) return [];
+  let violations;
+  try {
+    violations = checkTestSmells({ projectDir, migrationDirs }).violations;
+  } catch {
+    return []; // a guard error is advisory, never a false self-heal (nor a false escalate)
+  }
+  // Map each flagged FILE to its first Driver-fixable (non-author-layer) smell + fix.
+  const fixableByFile = new Map<string, { smell: string; fix: string }>();
+  for (const v of violations) {
+    if (AUTHOR_LAYER_TEST_SMELLS.has(v.smell)) continue;
+    if (!fixableByFile.has(v.file)) fixableByFile.set(v.file, { smell: v.smell, fix: v.detail });
+  }
+  const out: { node_id: string; smell: string; fix: string }[] = [];
+  for (const nodeId of failingNodeIds) {
+    const file = nodeId.split("::")[0];
+    const hit = file ? fixableByFile.get(file) : undefined;
+    if (hit) out.push({ node_id: nodeId, smell: hit.smell, fix: hit.fix });
+  }
+  return out;
+}
+
 export interface DeployVerifyAssessMarker {
   version: 1;
   /** The story this contamination marker belongs to, or absent for a
@@ -89,14 +130,22 @@ export interface DeployVerifyAssessMarker {
    *  `"contamination"` (shared-state: the failing tests PASS in isolation; scope
    *  them to own their DB state). `"supersession"` = the failing tests reference a
    *  column this feature's CONTRACT migration DROPPED, so they fail at HEAD (they
-   *  do NOT pass in isolation) and are stale – refactor the stale reference. Both
-   *  route the same assess -> scope -> refactor machinery; only the directive
-   *  framing + the Driver's edit differ. Absent preserves the pre-supersession
-   *  byte-identical contamination behavior. */
-  kind?: "contamination" | "supersession";
+   *  do NOT pass in isolation) and are stale – refactor the stale reference.
+   *  `"test-smell"` = the failing tests' FILE carries a deterministic, DRIVER-FIXABLE
+   *  authoring smell (a non-AUTHOR_LAYER `checkTestSmells` finding, e.g. an over-broad
+   *  migration-creator finder asserting `len == 1`) — they fail deterministically (NOT
+   *  contamination, NOT a dropped column), but the APP is correct and the fix is a known
+   *  localized test edit. All three route the same assess -> scope -> refactor machinery;
+   *  only the directive framing + the Driver's edit differ. Absent preserves the
+   *  pre-supersession byte-identical contamination behavior. */
+  kind?: "contamination" | "supersession" | "test-smell";
   /** For a `supersession` marker: the contract-dropped columns the failing tests
    *  reference (the ground the Navigator's assess turn confirms against). */
   dropped_columns?: string[];
+  /** For a `test-smell` marker: per failing test file, the deterministic smell the
+   *  `checkTestSmells` guard found + its fix (the ground the Navigator's assess turn
+   *  confirms against, and the Driver applies). */
+  smell_fixes?: { node_id: string; smell: string; fix: string }[];
   /** The pytest node-ids that failed in the full suite – for a contamination
    *  marker the ones the classifier found PASS in isolation; for a supersession
    *  marker the ones referencing a dropped column. The tests to scope/refactor. */
@@ -193,12 +242,18 @@ export function writeDeployVerifyAssessMarker(
   featureId: string,
   storyId: string | undefined,
   failingNodeIds: string[],
-  opts?: { kind?: "contamination" | "supersession"; droppedColumns?: string[]; failureOutput?: string },
+  opts?: {
+    kind?: "contamination" | "supersession" | "test-smell";
+    droppedColumns?: string[];
+    smellFixes?: { node_id: string; smell: string; fix: string }[];
+    failureOutput?: string;
+  },
 ): string | undefined {
   const file = markerPath(consortDir, featureId, storyId);
   if (!file) return undefined;
   const prior = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
   const supersession = opts?.kind === "supersession";
+  const testSmell = opts?.kind === "test-smell";
   // Carry a BOUNDED tail of the observed failure so the marker (and the assess
   // directive built from it) stays readable; the tail holds the pytest short
   // summary + the last FAILURES blocks, which is what names the real cause.
@@ -207,7 +262,9 @@ export function writeDeployVerifyAssessMarker(
     version: 1,
     ...(storyId ? { story_id: storyId } : {}),
     ...(supersession ? { kind: "supersession" as const } : {}),
+    ...(testSmell ? { kind: "test-smell" as const } : {}),
     ...(supersession && opts?.droppedColumns?.length ? { dropped_columns: opts.droppedColumns } : {}),
+    ...(testSmell && opts?.smellFixes?.length ? { smell_fixes: opts.smellFixes } : {}),
     failing_node_ids: failingNodeIds,
     ...(failureTail ? { failure_output: failureTail } : {}),
     assessed: false,

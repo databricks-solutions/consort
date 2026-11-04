@@ -58,6 +58,7 @@ export type TestSmellName =
   | "fixed-key-e2e"
   | "migration-marker-presence"
   | "relative-migration-revision"
+  | "migration-creator-uniqueness"
   | "reversible-invariant-round-trip"
   | "pytest-bdd-parse-conversion"
   | "dropped-column-dangling-reference"
@@ -207,6 +208,8 @@ const SMELL_FIX: Record<TestSmellName, string> = {
     "a downgrade/upgrade test without @pytest.mark.migration runs on the SHARED verify DB and drops/alters its live schema for every other test. Add @pytest.mark.migration so the verify harness routes it to its OWN ephemeral branch (single-step downgrade -1 + upgrade head, never downgrade base)",
   "relative-migration-revision":
     "a reversibility test asserts a NAMED column is absent after a RELATIVE `downgrade -1` (and/or restores with `upgrade head`) – this assumes THAT column's migration is the current head, so the moment a later feature stacks a migration on top, `-1` reverses the WRONG migration and the column-absence assertion can never pass again (the F6/S1-broke-F1/S3 par_level class). Pin the migration's OWN revision instead: downgrade to its down_revision and upgrade to its revision, so the round-trip validates THIS migration independent of any later head",
+    "migration-creator-uniqueness":
+    "this test LOCATES the migration that creates/owns a table by matching the BARE table name across migration sources (e.g. `owners = [s for s in script.walk_revisions() if \"stock_adjustments\" in Path(s.path).read_text()]`) and asserts there is exactly ONE such migration (`len(owners) == 1`). That assumes nothing else ever names the table — but a LATER story that ADDITIVELY evolves it (an index / constraint / FK migration, exactly what an additive migration + a reversible invariant legitimately permit) adds a SECOND migration whose source also names the table, so `len == 1` flips to `2 == 1` and the test goes perma-red on a CORRECT app (the F2/S3 `ix_stock_adjustments_*` class — the same later-story-moves-the-target time-bomb as the relative `downgrade -1` smell). Key on the CREATE OP: require BOTH the `create_table` operation AND the table name in the migration source — `src = Path(s.path).read_text(); if \"create_table\" in src and \"stock_adjustments\" in src` — which is unique BY CONSTRUCTION (exactly one migration creates a table) so `len(creators) == 1` stays true no matter how many later migrations touch it. Do NOT use a literal `'op.create_table(\"stock_adjustments\"' in src` predicate: it matches ZERO files under the standard alembic CONSTANT idiom (`TABLE = \"stock_adjustments\"; op.create_table(TABLE)`), because the call site reads `op.create_table(TABLE)`, not the quoted name — the two-token form is constant-safe. (A finder already referencing `create_table` is the correct shape and is NOT flagged; nor is an alembic single-head check `len(get_heads()) == 1`.)",
   "reversible-invariant-round-trip":
     "a migration_reversible persistence invariant is covered by a FORWARD-ONLY test (no downgrade), which does not exercise reversibility – and on an already-migrated shared branch a forward-only seed-then-migrate is unsatisfiable. Re-author as an explicit round-trip (downgrade → seed/migrate → upgrade → assert), or retag the reversible invariant's coverage to the round-trip test that performs it",
   "pytest-bdd-parse-conversion":
@@ -696,6 +699,42 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
           1,
           "(file)",
           `asserts ${col ? `'${col[1]}'` : "a named column"} absent after a relative 'downgrade -N' – pin the migration's own revision (down_revision + revision), not -N/head`,
+        );
+      }
+
+      // migration-creator-uniqueness (file level, Python): a test that LOCATES the migration creating a
+      // table by matching the BARE table name across migration sources and asserts exactly ONE match
+      // (`len(owners) == 1`). A later story that additively evolves the table (an index/constraint/FK
+      // migration — exactly what an additive migration + a reversible invariant permit) adds a SECOND
+      // migration naming it, so `len == 1` flips to `2 == 1` and goes perma-red on a correct app (the
+      // F2/S3 ix_stock_adjustments_* class — the same later-story-moves-the-target time-bomb as the
+      // relative `downgrade -N` smell above). Requires ALL of: (1) the file SCANS migration sources
+      // (walk_revisions / a versions|alembic|migrations dir + a file read); (2) a BARE string-literal
+      // containment finder (`if "<name>" in …read_text()`); (3) a `len(...) == 1` uniqueness assertion.
+      // EXEMPT: a finder keyed on the create op (`create_table(` anywhere — the correct shape, unique by
+      // construction) and an alembic single-head check (`get_heads()`/`heads` — that uniqueness is real).
+      // Driver-fixable (narrow the finder to the create op via assess-regression --fix), so it stays on
+      // the assess->repair path, NOT in AUTHOR_LAYER_TEST_SMELLS.
+      const scansMigrationSources =
+        /\b(?:walk_revisions|versions|alembic|migrations)\b/.test(body) &&
+        /\.read_text\(|\.read\(|\bopen\(|\.glob\(|\.rglob\(|\.iterdir\(|listdir\(/.test(body);
+      const bareNameFinder = /\bif\s+["'`]\w+["'`]\s+in\s+\w/.test(body);
+      const assertsLenOne =
+        /\blen\s*\([^\n]*\)\s*==\s*1\b/.test(body) || /assertEqual\s*\(\s*len\s*\([^\n]*\)\s*,\s*1\s*\)/.test(body);
+      // EXEMPT any finder that references the create op at all — as a call `op.create_table(TABLE)`
+      // OR as a string token `"create_table" in src`. The bare `\bcreate_table\b` token (NOT
+      // `create_table\s*\(`) is deliberate: the constant-safe fix keys on the STRING `"create_table"`,
+      // which has no `(` after it, so a `\(`-anchored exemption would FALSE-FLAG the correct fix.
+      const keysOnCreateOp = /\bcreate_table\b/.test(body);
+      const isSingleHeadCheck = /get_heads\s*\(|\bheads\b|branch_labels/.test(body);
+      if (isPy && scansMigrationSources && bareNameFinder && assertsLenOne && !keysOnCreateOp && !isSingleHeadCheck) {
+        const needle = body.match(/\bif\s+["'`](\w+)["'`]\s+in\s+\w/);
+        push(
+          "migration-creator-uniqueness",
+          rel,
+          1,
+          "(file)",
+          `asserts exactly one migration references ${needle ? `'${needle[1]}'` : "a table"} by BARE name (len == 1) – a later additive migration naming the same table breaks it; require BOTH "create_table" AND "${needle ? needle[1] : "<table>"}" in the source (constant-safe; a literal op.create_table("${needle ? needle[1] : "<table>"}") predicate matches ZERO files when the table name is a module constant)`,
         );
       }
 
