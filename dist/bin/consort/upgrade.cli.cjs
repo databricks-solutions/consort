@@ -465,8 +465,31 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
       refreshReporter(path4.join("python", "app", "consort_capture.py"), path4.join("app", "consort_capture.py"));
     }
     if (hasClient) {
+      refreshReporter(path4.join("client", "tests", "setup.ts"), path4.join("client", "tests", "setup.ts"));
       refreshReporter(path4.join("client", "consort-vitest-reporter.ts"), path4.join("client", "consort-vitest-reporter.ts"));
       refreshReporter(path4.join("client", "tests", "e2e", "consort-fixtures.ts"), path4.join("client", "tests", "e2e", "consort-fixtures.ts"));
+    }
+  } catch {
+  }
+  let gitignoreMerged = false;
+  try {
+    const basePath = path4.join(commonDir, ".gitignore.base");
+    const projPath = path4.join(projectDir, ".gitignore");
+    if (fs5.existsSync(basePath) && fs5.existsSync(projPath)) {
+      const have = new Set(
+        fs5.readFileSync(projPath, "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"))
+      );
+      const missing = fs5.readFileSync(basePath, "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#") && !have.has(l));
+      if (missing.length > 0) {
+        fs5.appendFileSync(
+          projPath,
+          `
+# Added by consort-upgrade (new .gitignore.base rules @ ${targetVersion}):
+${missing.join("\n")}
+`
+        );
+        gitignoreMerged = true;
+      }
     }
   } catch {
   }
@@ -498,7 +521,7 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
   } catch {
   }
   const count = (files) => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
-  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e, reporterFiles };
+  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e, reporterFiles, gitignoreMerged };
 }
 var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
 function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], removedPaths = [], git = (a) => {
@@ -615,11 +638,16 @@ async function main() {
   }
   const pin = pinBoth(args.projectDir, ref);
   const surf = refreshSurface(args.projectDir, kitRoot(), target);
-  const committed = commitRefreshedSurface(args.projectDir, ref, [...surf.rootFiles, ...surf.reporterFiles], surf.removedRootFiles);
+  const committed = commitRefreshedSurface(
+    args.projectDir,
+    ref,
+    [...surf.rootFiles, ...surf.reporterFiles, ...surf.gitignoreMerged ? [".gitignore"] : []],
+    surf.removedRootFiles
+  );
   process.stdout.write(
     `consort-upgrade: UPGRADED to ${ref}.
   pins: .local ${pin.previousLocal ?? "(unset)"} -> ${ref}; committed ${pin.previousCommitted ?? "(unset)"} -> ${ref} (in lockstep, no drift).
-  surface: ${surf.agents} agent(s) + ${surf.commands} command(s) + ${surf.scripts} script(s) + ${surf.workflows} CI workflow(s) refreshed from ${ref}${surf.e2e ? " + Playwright E2E block re-wired into run-tests.sh (deploy-verify runs the client E2E)" : ""} (the scm-utils scripts/lk shim + project config left as-is).
+  surface: ${surf.agents} agent(s) + ${surf.commands} command(s) + ${surf.scripts} script(s) + ${surf.workflows} CI workflow(s) refreshed from ${ref}${surf.e2e ? " + Playwright E2E block re-wired into run-tests.sh (deploy-verify runs the client E2E)" : ""}${surf.gitignoreMerged ? " + .gitignore merged with new baseline ignore rules" : ""} (the scm-utils scripts/lk shim + project config left as-is).
   committed: ${committed.committed ? `${committed.sha} \u2013 kit surface committed, tree clean for the next fork` : `nothing committed (${committed.reason}) \u2013 if the tree is dirty with kit files, commit them before the next fork`}.
   RESUME: run \`consort-next\` for the exact command, then re-run your drive \u2013 it runs ${ref}, re-derives state from disk, and continues from the gate.
   ROLLBACK (instant undo): \`./scripts/lk consort-upgrade --rollback\` then \`./scripts/lk --refresh\` (re-commit the restored surface if the next fork reports a dirty tree).

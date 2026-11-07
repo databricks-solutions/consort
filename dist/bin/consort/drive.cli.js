@@ -15685,7 +15685,7 @@ async function performTurnViaExecutor(action, state, routerDeps, cfg, deps) {
 init_esm_shims();
 import { spawn as spawn4, execFileSync as execFileSync10 } from "child_process";
 import { join as join55 } from "path";
-import { appendFileSync as appendFileSync3, createWriteStream, mkdirSync as mkdirSync32, writeFileSync as writeFileSync31, existsSync as existsSync56, cpSync as cpSync9, rmSync as rmSync15 } from "fs";
+import { appendFileSync as appendFileSync4, createWriteStream, mkdirSync as mkdirSync32, writeFileSync as writeFileSync31, existsSync as existsSync56, cpSync as cpSync9, rmSync as rmSync15 } from "fs";
 
 // consort/experiment/ac-lane-coordinator.ts
 init_esm_shims();
@@ -16013,7 +16013,7 @@ function defaultDriveScoped(args) {
   const iso = () => (/* @__PURE__ */ new Date()).toISOString();
   const note = (m) => {
     try {
-      appendFileSync3(mainLive, `${m}
+      appendFileSync4(mainLive, `${m}
 `);
     } catch {
     }
@@ -16105,7 +16105,7 @@ function defaultClearSupersession(args) {
     const iso = () => (/* @__PURE__ */ new Date()).toISOString();
     const note = (m) => {
       try {
-        appendFileSync3(liveLog, `${m}
+        appendFileSync4(liveLog, `${m}
 `);
       } catch {
       }
@@ -16203,7 +16203,7 @@ async function runParallelAcLanesLive(args) {
   const mainLive = join55(args.projectDir, ARTIFACT_ROOT, "agent-live.log");
   const coordNote = (m) => {
     try {
-      appendFileSync3(mainLive, `--- ${(/* @__PURE__ */ new Date()).toISOString()} [fan-out] ${m}
+      appendFileSync4(mainLive, `--- ${(/* @__PURE__ */ new Date()).toISOString()} [fan-out] ${m}
 `);
     } catch {
     }

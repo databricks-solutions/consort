@@ -7642,7 +7642,7 @@ function assertReplayBuildVerdictMatch(args) {
 
 // consort/logging/agent-log.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync14, mkdirSync as mkdirSync12, readFileSync as readFileSync13 } from "fs";
+import { appendFileSync as appendFileSync2, existsSync as existsSync14, mkdirSync as mkdirSync12, readFileSync as readFileSync13 } from "fs";
 import { dirname as dirname11, join as join14 } from "path";
 
 // consort/orchestrator/validators/schema-loader.ts
@@ -7786,7 +7786,7 @@ function mirrorToRecordDir(text) {
   try {
     const dst = join14(recordDir, "agent-log.jsonl");
     mkdirSync12(dirname11(dst), { recursive: true });
-    appendFileSync(dst, text, "utf8");
+    appendFileSync2(dst, text, "utf8");
   } catch {
   }
 }
@@ -7830,7 +7830,7 @@ function emitAgentLogEvent(input, opts = {}) {
   const event = buildAgentLogEvent(input, now);
   const line = `${JSON.stringify(event)}
 `;
-  appendFileSync(logFilePath(consortDir), line, "utf8");
+  appendFileSync2(logFilePath(consortDir), line, "utf8");
   mirrorToRecordDir(line);
   return event;
 }
@@ -12640,7 +12640,7 @@ import { join as join27 } from "path";
 init_esm_shims();
 import { createHash } from "crypto";
 import {
-  appendFileSync as appendFileSync2,
+  appendFileSync as appendFileSync3,
   cpSync as cpSync6,
   existsSync as existsSync25,
   mkdirSync as mkdirSync17,
@@ -12665,7 +12665,7 @@ function isRecorderOwned(relUnderConsort) {
 }
 function recordCorrespondence(recordDir, entry) {
   mkdirSync17(recordDir, { recursive: true });
-  appendFileSync2(join25(recordDir, "correspondence.jsonl"), JSON.stringify(entry) + "\n");
+  appendFileSync3(join25(recordDir, "correspondence.jsonl"), JSON.stringify(entry) + "\n");
 }
 function recordReplaySet(args) {
   const { turnDir, projectDir, consortDir, inputs, prompt, guidelines, levers } = args;
@@ -13546,7 +13546,7 @@ function driverPhaseForTdd(tddPhase) {
 init_esm_shims();
 import { spawn as spawn2, execFileSync as execFileSync4 } from "child_process";
 import { join as join34 } from "path";
-import { appendFileSync as appendFileSync3, createWriteStream, mkdirSync as mkdirSync19, writeFileSync as writeFileSync15, existsSync as existsSync32, cpSync as cpSync9, rmSync as rmSync6 } from "fs";
+import { appendFileSync as appendFileSync4, createWriteStream, mkdirSync as mkdirSync19, writeFileSync as writeFileSync15, existsSync as existsSync32, cpSync as cpSync9, rmSync as rmSync6 } from "fs";
 
 // consort/experiment/ac-lane-coordinator.ts
 init_esm_shims();
@@ -14200,7 +14200,7 @@ function defaultDriveScoped(args) {
   const iso = () => (/* @__PURE__ */ new Date()).toISOString();
   const note = (m) => {
     try {
-      appendFileSync3(mainLive, `${m}
+      appendFileSync4(mainLive, `${m}
 `);
     } catch {
     }
@@ -14292,7 +14292,7 @@ function defaultClearSupersession(args) {
     const iso = () => (/* @__PURE__ */ new Date()).toISOString();
     const note = (m) => {
       try {
-        appendFileSync3(liveLog, `${m}
+        appendFileSync4(liveLog, `${m}
 `);
       } catch {
       }
@@ -14390,7 +14390,7 @@ async function runParallelAcLanesLive(args) {
   const mainLive = join34(args.projectDir, ARTIFACT_ROOT, "agent-live.log");
   const coordNote = (m) => {
     try {
-      appendFileSync3(mainLive, `--- ${(/* @__PURE__ */ new Date()).toISOString()} [fan-out] ${m}
+      appendFileSync4(mainLive, `--- ${(/* @__PURE__ */ new Date()).toISOString()} [fan-out] ${m}
 `);
     } catch {
     }

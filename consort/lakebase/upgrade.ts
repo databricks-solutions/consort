@@ -154,7 +154,8 @@ export interface RefreshSurfaceResult {
   scripts: number; // kit-owned scripts copied
   workflows: number; // CI workflow files copied
   e2e: boolean; // whether the Playwright E2E block was (re)wired into run-tests.sh (UI projects)
-  reporterFiles: string[]; // kit-owned per-test INSTRUMENTATION refreshed from the pinned scm-utils: tests/conftest.py, tests/e2e/conftest.py, app/consort_capture.py, client/consort-vitest-reporter.ts, client/tests/e2e/consort-fixtures.ts
+  reporterFiles: string[]; // kit-owned per-test INSTRUMENTATION refreshed from the pinned scm-utils: tests/conftest.py, tests/e2e/conftest.py, app/consort_capture.py, client/tests/setup.ts, client/consort-vitest-reporter.ts, client/tests/e2e/consort-fixtures.ts
+  gitignoreMerged: boolean; // whether new .gitignore.base rules were merged into the project .gitignore (stage it in the commit when true)
 }
 
 /** Count the files (recursively) under `dir`, or 0 if it does not exist. */
@@ -349,18 +350,55 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
       // templates too (force-overwrite, guarded on app/ existing by refreshReporter).
       refreshReporter(path.join("python", "app", "consort_capture.py"), path.join("app", "consort_capture.py"));
     }
-    // Client-side per-test instrumentation — the Vitest reporter (component/hook test liveness) and
-    // the Playwright e2e header fixture (tags browser requests with X-Consort-Test-Id so the backend
-    // capture can attribute e2e reads/writes). Same scm-utils-owned CODE family as the conftests and
-    // app/consort_capture.py, and historically NOT refreshed on upgrade — so a client project on a
-    // newer scm-utils kept running stale reporter/fixture code. Bring them forward too (guarded on
-    // client/ existing by refreshReporter).
+    // Client-side per-test instrumentation — the Vitest SETUP (client/tests/setup.ts: the /api fetch
+    // shim that reroutes to the booted backend, threads X-Consort-Test-Id + the OWNER feature/story
+    // headers, and configures RTL's asyncUtilTimeout for real-backend awaits), the Vitest reporter
+    // (component/hook test liveness), and the Playwright e2e header fixture (tags browser requests with
+    // X-Consort-Test-Id so the backend capture can attribute e2e reads/writes). Same scm-utils-owned
+    // CODE family as the conftests and app/consort_capture.py, and historically NOT refreshed on
+    // upgrade — so a client project on a newer scm-utils kept running stale setup/reporter/fixture code
+    // (setup.ts was the last holdout: it lagged the owner-header threading AND the asyncUtilTimeout
+    // bump even after the reporter/fixture refresh landed). Bring them all forward (guarded on client/
+    // existing by refreshReporter).
     if (hasClient) {
+      refreshReporter(path.join("client", "tests", "setup.ts"), path.join("client", "tests", "setup.ts"));
       refreshReporter(path.join("client", "consort-vitest-reporter.ts"), path.join("client", "consort-vitest-reporter.ts"));
       refreshReporter(path.join("client", "tests", "e2e", "consort-fixtures.ts"), path.join("client", "tests", "e2e", "consort-fixtures.ts"));
     }
   } catch {
     /* scm-utils templates not resolvable from this kit (dev checkout) — skip; fresh scaffolds still carry the fix */
+  }
+  // MERGE new kit ignore rules from .gitignore.base into the project .gitignore. .gitignore.base is the
+  // scaffold SOURCE of the project .gitignore but is project-OWNED once scaffolded (COMMON_ROOT_SKIP
+  // above never copies it), so refreshSurface left .gitignore frozen. When the kit ADDS ignore rules
+  // between versions (e.g. v0.4.45's per-test capture sidecars .consort/{test-run,test-interactions,
+  // table-snapshots}.jsonl), an upgraded project's .gitignore stayed stale, so a rehydrated BUILD
+  // regenerated those files UNtracked and a corpus `git add` grew them past GitHub's 100MB push limit.
+  // MERGE, never clobber: append any baseline PATTERN line (non-blank, non-comment) not already present.
+  // Idempotent (skips rules already there) and preserves project customizations.
+  let gitignoreMerged = false;
+  try {
+    const basePath = path.join(commonDir, ".gitignore.base");
+    const projPath = path.join(projectDir, ".gitignore");
+    if (fs.existsSync(basePath) && fs.existsSync(projPath)) {
+      const have = new Set(
+        fs.readFileSync(projPath, "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#")),
+      );
+      const missing = fs
+        .readFileSync(basePath, "utf8")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith("#") && !have.has(l));
+      if (missing.length > 0) {
+        fs.appendFileSync(
+          projPath,
+          `\n# Added by consort-upgrade (new .gitignore.base rules @ ${targetVersion}):\n${missing.join("\n")}\n`,
+        );
+        gitignoreMerged = true;
+      }
+    }
+  } catch {
+    /* best-effort: a .gitignore merge failure must never abort the surface refresh */
   }
   // Substitute the scaffold-time {{LAKEBASE_SCM_UTILS_VERSION}} placeholder the raw copies above
   // just shipped verbatim – leaving the literal breaks the CI ref's bash expansion (workflows)
@@ -413,7 +451,7 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
     /* best-effort: the drive's resyncAgentsOnKitDrift will refresh again if the marker is stale */
   }
   const count = (files: Array<{ outcome: string }>): number => files.filter((f) => f.outcome === "added" || f.outcome === "updated").length;
-  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e, reporterFiles };
+  return { agents: count(a.files), commands: count(c.files), skills, rootFiles, removedRootFiles, scripts, workflows, e2e, reporterFiles, gitignoreMerged };
 }
 
 /** The kit-owned tracked paths refreshSurface + pinBoth rewrite. Committed by EXACT path so the

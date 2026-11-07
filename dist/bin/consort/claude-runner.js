@@ -7196,7 +7196,7 @@ function replayBuildTurn(args) {
 
 // consort/logging/agent-log.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync14, mkdirSync as mkdirSync12, readFileSync as readFileSync13 } from "fs";
+import { appendFileSync as appendFileSync2, existsSync as existsSync14, mkdirSync as mkdirSync12, readFileSync as readFileSync13 } from "fs";
 import { dirname as dirname11, join as join14 } from "path";
 
 // consort/orchestrator/validators/schema-loader.ts
@@ -7339,7 +7339,7 @@ function mirrorToRecordDir(text) {
   try {
     const dst = join14(recordDir, "agent-log.jsonl");
     mkdirSync12(dirname11(dst), { recursive: true });
-    appendFileSync(dst, text, "utf8");
+    appendFileSync2(dst, text, "utf8");
   } catch {
   }
 }
@@ -7383,7 +7383,7 @@ function emitAgentLogEvent(input, opts = {}) {
   const event = buildAgentLogEvent(input, now);
   const line = `${JSON.stringify(event)}
 `;
-  appendFileSync(logFilePath(consortDir), line, "utf8");
+  appendFileSync2(logFilePath(consortDir), line, "utf8");
   mirrorToRecordDir(line);
   return event;
 }

@@ -389,7 +389,7 @@ Fix: clear the npx cache and retry the version-pinned create from /consort:start
 
 // bin/lakebase/create-project.cli.ts
 import { createRequire } from "module";
-import { readFileSync as readFileSync11, appendFileSync, writeFileSync as writeFileSync9, openSync, closeSync } from "fs";
+import { readFileSync as readFileSync11, appendFileSync as appendFileSync2, writeFileSync as writeFileSync9, openSync, closeSync } from "fs";
 import * as os from "os";
 import * as path8 from "path";
 
@@ -688,7 +688,7 @@ async function main() {
     process.stderr.write(line);
     if (args.progressLog) {
       try {
-        appendFileSync(args.progressLog, line);
+        appendFileSync2(args.progressLog, line);
       } catch {
       }
     }

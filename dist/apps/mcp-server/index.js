@@ -7662,7 +7662,7 @@ function readGateApproved(featureId, consortDir, gate) {
 
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync31, readFileSync as readFileSync32, writeFileSync as writeFileSync21, mkdirSync as mkdirSync20 } from "fs";
+import { appendFileSync as appendFileSync2, existsSync as existsSync31, readFileSync as readFileSync32, writeFileSync as writeFileSync21, mkdirSync as mkdirSync20 } from "fs";
 
 // consort/experiment/spike-carryforward.ts
 init_esm_shims();

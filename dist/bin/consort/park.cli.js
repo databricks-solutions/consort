@@ -10601,7 +10601,7 @@ import { join as join44 } from "path";
 init_esm_shims();
 import { createHash as createHash4 } from "crypto";
 import {
-  appendFileSync,
+  appendFileSync as appendFileSync2,
   cpSync as cpSync5,
   existsSync as existsSync44,
   mkdirSync as mkdirSync26,
@@ -10625,7 +10625,7 @@ import { join as join46 } from "path";
 init_esm_shims();
 import { spawn as spawn3, execFileSync as execFileSync9 } from "child_process";
 import { join as join49 } from "path";
-import { appendFileSync as appendFileSync2, createWriteStream, mkdirSync as mkdirSync27, writeFileSync as writeFileSync28, existsSync as existsSync48, cpSync as cpSync7, rmSync as rmSync14 } from "fs";
+import { appendFileSync as appendFileSync3, createWriteStream, mkdirSync as mkdirSync27, writeFileSync as writeFileSync28, existsSync as existsSync48, cpSync as cpSync7, rmSync as rmSync14 } from "fs";
 
 // consort/experiment/ac-lane-coordinator.ts
 init_esm_shims();

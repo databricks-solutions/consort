@@ -72,6 +72,7 @@ describe("refreshSurface re-wires the E2E block for a UI project (upgrade must n
     writeFileSync(join(dir, "client", "package.json"), JSON.stringify({ name: "client", scripts: {}, devDependencies: {} }));
     writeFileSync(join(dir, "client", "consort-vitest-reporter.ts"), "// STALE reporter\n");
     writeFileSync(join(dir, "client", "tests", "e2e", "consort-fixtures.ts"), "// STALE fixtures\n");
+    writeFileSync(join(dir, "client", "tests", "setup.ts"), "// STALE setup\n");
 
     const r = refreshSurface(dir, KIT_ROOT, "v0.3.52-test");
 
@@ -79,6 +80,7 @@ describe("refreshSurface re-wires the E2E block for a UI project (upgrade must n
     expect(r.reporterFiles).toEqual(
       expect.arrayContaining([
         "app/consort_capture.py",
+        "client/tests/setup.ts",
         "client/consort-vitest-reporter.ts",
         "client/tests/e2e/consort-fixtures.ts",
       ]),
@@ -88,6 +90,32 @@ describe("refreshSurface re-wires the E2E block for a UI project (upgrade must n
     expect(capture).toContain("story_id"); // the feature/story stamp — proof the FIX reached the file
     expect(readFileSync(join(dir, "client", "consort-vitest-reporter.ts"), "utf8")).not.toContain("STALE");
     expect(readFileSync(join(dir, "client", "tests", "e2e", "consort-fixtures.ts"), "utf8")).not.toContain("STALE");
+    const setup = readFileSync(join(dir, "client", "tests", "setup.ts"), "utf8");
+    expect(setup).not.toContain("STALE");
+    expect(setup).toContain("asyncUtilTimeout"); // the real-backend-await bump; proof setup.ts (long the refresh holdout) is brought forward
+  });
+
+  it("merges new .gitignore.base rules into the project .gitignore (never clobbers; idempotent)", () => {
+    const cfg = defaultConsortConfig();
+    cfg.project!.uiTrack = false;
+    cfg.project!.clientFramework = "none";
+    writeConsortConfig(dir, cfg);
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "api", scripts: {}, devDependencies: {} }));
+    // A sparse project .gitignore that LACKS a kit baseline rule but carries a project-custom line.
+    writeFileSync(join(dir, ".gitignore"), "# project\n.env\nmy-custom-ignore/\n");
+
+    const r = refreshSurface(dir, KIT_ROOT, "v0.3.52-test");
+
+    expect(r.gitignoreMerged).toBe(true);
+    const gi = readFileSync(join(dir, ".gitignore"), "utf8");
+    expect(gi).toContain(".consort/test-interactions.jsonl"); // a baseline rule the sparse .gitignore lacked, now merged in
+    expect(gi).toContain("my-custom-ignore/"); // the project's own line is preserved (never clobbered)
+
+    // Idempotent: a second refresh adds nothing and does not duplicate the rule.
+    const r2 = refreshSurface(dir, KIT_ROOT, "v0.3.52-test");
+    expect(r2.gitignoreMerged).toBe(false);
+    const occurrences = readFileSync(join(dir, ".gitignore"), "utf8").split(".consort/test-interactions.jsonl").length - 1;
+    expect(occurrences).toBe(1);
   });
 
   it("refreshes app/consort_capture.py on a backend-only project, but not the client instrumentation", () => {

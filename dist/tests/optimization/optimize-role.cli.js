@@ -10874,7 +10874,7 @@ function assertReplayBuildVerdictMatch(args) {
 
 // consort/logging/agent-log.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync20, mkdirSync as mkdirSync14, readFileSync as readFileSync20 } from "fs";
+import { appendFileSync as appendFileSync2, existsSync as existsSync20, mkdirSync as mkdirSync14, readFileSync as readFileSync20 } from "fs";
 import { dirname as dirname14, join as join20 } from "path";
 
 // consort/logging/agent-log-events.ts
@@ -10976,7 +10976,7 @@ function mirrorToRecordDir(text) {
   try {
     const dst = join20(recordDir, "agent-log.jsonl");
     mkdirSync14(dirname14(dst), { recursive: true });
-    appendFileSync(dst, text, "utf8");
+    appendFileSync2(dst, text, "utf8");
   } catch {
   }
 }
@@ -11020,7 +11020,7 @@ function emitAgentLogEvent(input, opts = {}) {
   const event = buildAgentLogEvent(input, now);
   const line = `${JSON.stringify(event)}
 `;
-  appendFileSync(logFilePath(consortDir), line, "utf8");
+  appendFileSync2(logFilePath(consortDir), line, "utf8");
   mirrorToRecordDir(line);
   return event;
 }
@@ -15949,7 +15949,7 @@ async function execute(step, ctx, deps) {
 
 // consort/orchestrator/turns/agent-report-formatter.ts
 init_esm_shims();
-import { readFileSync as readFileSync52, writeFileSync as writeFileSync30, existsSync as existsSync53, appendFileSync as appendFileSync2, mkdirSync as mkdirSync32 } from "fs";
+import { readFileSync as readFileSync52, writeFileSync as writeFileSync30, existsSync as existsSync53, appendFileSync as appendFileSync3, mkdirSync as mkdirSync32 } from "fs";
 import { join as join51, dirname as dirname27 } from "path";
 function extractReportBlock(text) {
   const labeled = text.match(/```agent-report\s*\n([\s\S]*?)```/);
@@ -16009,7 +16009,7 @@ function formatAgentReport(args) {
   }
   const payload = formatted.join("\n") + "\n";
   if (existsSync53(logPath)) {
-    appendFileSync2(logPath, payload);
+    appendFileSync3(logPath, payload);
   } else {
     mkdirSync32(dirname27(logPath), { recursive: true });
     writeFileSync30(logPath, payload);
@@ -20539,7 +20539,7 @@ import { join as join65 } from "path";
 init_esm_shims();
 import { createHash as createHash5 } from "crypto";
 import {
-  appendFileSync as appendFileSync3,
+  appendFileSync as appendFileSync4,
   cpSync as cpSync8,
   existsSync as existsSync61,
   mkdirSync as mkdirSync37,
@@ -20564,7 +20564,7 @@ function isRecorderOwned(relUnderConsort) {
 }
 function recordCorrespondence(recordDir, entry) {
   mkdirSync37(recordDir, { recursive: true });
-  appendFileSync3(join63(recordDir, "correspondence.jsonl"), JSON.stringify(entry) + "\n");
+  appendFileSync4(join63(recordDir, "correspondence.jsonl"), JSON.stringify(entry) + "\n");
 }
 function recordReplaySet(args) {
   const { turnDir, projectDir, consortDir, inputs, prompt, guidelines, levers } = args;
@@ -21321,7 +21321,7 @@ function assertRouteSatisfiable(action, step, ctx, exists = existsSync64) {
 init_esm_shims();
 import { spawn as spawn3, execFileSync as execFileSync12 } from "child_process";
 import { join as join70 } from "path";
-import { appendFileSync as appendFileSync4, createWriteStream, mkdirSync as mkdirSync39, writeFileSync as writeFileSync36, existsSync as existsSync66, cpSync as cpSync11, rmSync as rmSync19 } from "fs";
+import { appendFileSync as appendFileSync5, createWriteStream, mkdirSync as mkdirSync39, writeFileSync as writeFileSync36, existsSync as existsSync66, cpSync as cpSync11, rmSync as rmSync19 } from "fs";
 
 // consort/experiment/ac-lane-coordinator.ts
 init_esm_shims();
@@ -21596,7 +21596,7 @@ function defaultDriveScoped(args) {
   const iso = () => (/* @__PURE__ */ new Date()).toISOString();
   const note = (m) => {
     try {
-      appendFileSync4(mainLive, `${m}
+      appendFileSync5(mainLive, `${m}
 `);
     } catch {
     }
@@ -21688,7 +21688,7 @@ function defaultClearSupersession(args) {
     const iso = () => (/* @__PURE__ */ new Date()).toISOString();
     const note = (m) => {
       try {
-        appendFileSync4(liveLog, `${m}
+        appendFileSync5(liveLog, `${m}
 `);
       } catch {
       }
@@ -21786,7 +21786,7 @@ async function runParallelAcLanesLive(args) {
   const mainLive = join70(args.projectDir, ARTIFACT_ROOT, "agent-live.log");
   const coordNote = (m) => {
     try {
-      appendFileSync4(mainLive, `--- ${(/* @__PURE__ */ new Date()).toISOString()} [fan-out] ${m}
+      appendFileSync5(mainLive, `--- ${(/* @__PURE__ */ new Date()).toISOString()} [fan-out] ${m}
 `);
     } catch {
     }
