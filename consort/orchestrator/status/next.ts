@@ -508,7 +508,14 @@ export function buildNextSnapshot(
   // An explicit transition (tests) wins; otherwise derive it from the run's durable bound so
   // `next` computes the SAME action the bounded drive would (a design-bound run surfaces the
   // design-only transition, never a build action), falling back to the full nextTransition.
-  const action = (transition ?? boundTransition(ctx.bound) ?? nextTransition)(state);
+  // A sprint whose committed backlog is fully delivered parks at a terminal `done` (a clean stop),
+  // not the stale planning-complete checkpoint — so a FINISHED hands-off sprint reads as at-a-stop
+  // (awaiting_human/done) for clean-stop-gated ops like consort-upgrade. An explicit transition
+  // (tests) still wins; otherwise sprintDelivered short-circuits the planning transition.
+  const action: WorkflowAction =
+    !transition && state.sprintDelivered
+      ? { kind: "done" }
+      : (transition ?? boundTransition(ctx.bound) ?? nextTransition)(state);
   const stories: Record<string, string> = {};
   for (const s of ctx.stories ?? []) stories[s.story_id] = s.status;
   const nextState: NextState = {

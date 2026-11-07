@@ -365,6 +365,12 @@ interface DriveState {
     /** An unresolved blocking escalation (failed-green run, blocking smell, verify
      *  fail). When set, nextTransition pre-empts everything with raise-to-hil. */
     escalation?: DriveEscalation | null;
+    /** SPRINT scope only: every committed backlog feature is delivered (all stories done +
+     *  accepted). Set by deriveSprintPlanningState from the per-feature pipelines. When true,
+     *  buildNextSnapshot emits a terminal `done` action so a FINISHED sprint parks at a clean
+     *  stop (awaiting_human/done) instead of the stale `planning-complete` checkpoint — otherwise
+     *  a completed hands-off sprint reads as mid-flight and blocks clean-stop-gated ops (upgrade). */
+    sprintDelivered?: boolean;
 }
 type WorkflowAction = DriveAction | {
     kind: "invoke-role";

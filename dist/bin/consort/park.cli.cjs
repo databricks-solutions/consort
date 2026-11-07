@@ -10976,7 +10976,7 @@ function summarize(scope, action, state, ctx) {
   return `${who} is mid-flight (${state.derived_phase ?? state.coarse_phase}). The next step is: ${describeAction(action, { featureId: ctx.featureId })}.`;
 }
 function buildNextSnapshot(scope, state, ctx, transition) {
-  const action = (transition ?? boundTransition(ctx.bound) ?? nextTransition)(state);
+  const action = !transition && state.sprintDelivered ? { kind: "done" } : (transition ?? boundTransition(ctx.bound) ?? nextTransition)(state);
   const stories = {};
   for (const s of ctx.stories ?? []) stories[s.story_id] = s.status;
   const nextState = {

@@ -26,6 +26,7 @@ import {
 } from "../../consort/config/consort-paths.js";
 import { resolveConsortSettings } from "../../consort/orchestrator/settings/project-settings.js";
 import { designGuideConformance } from "../../consort/session/response-formatter.js";
+import { summarizeStories, deriveFeaturePhase } from "../../consort/orchestrator/status/feature-status.js";
 import * as fs from "node:fs";
 import { dirname } from "node:path";
 
@@ -104,10 +105,18 @@ export function deriveSprintPlanningState(
   // path passed neither, so state.uiTrack was undefined and the establish never fired on UI projects).
   const uiTrack = resolveConsortSettings({ projectDir: dirname(consortDir) }).project.uiTrack;
   const designGuideReady = designGuideConformance(consortDir).ok;
+  // SPRINT-COMPLETE terminal: every committed backlog feature is delivered (all its stories done +
+  // accepted — the same deliveredFeatures/feature-status signal). A hands-off sprint that ran to
+  // completion lands here, so buildNextSnapshot emits a terminal `done` (a clean stop) instead of the
+  // stale `planning-complete` checkpoint that made a FINISHED sprint read as mid-flight (awaiting_human
+  // false) and blocked a clean-stop-gated upgrade. Empty backlog ⇒ false; a just-authored feature has
+  // no stories ⇒ deriveFeaturePhase null ⇒ not "complete", so planning never mis-reads as done.
+  const sprintDelivered = backlog.length > 0 && backlog.every((f) => deriveFeaturePhase(summarizeStories(consortDir, f.id)) === "complete");
   return {
     phase: "planning",
     uiTrack,
     designGuideReady,
+    sprintDelivered,
     planning: { intakeReady: intakeReadyOnDisk(consortDir), intakeApproved: intakeApprovedOnDisk(consortDir), proposed, estimated, backlogCommitted, requestsAuthored, committedEstimated, gateApproved, skipSizing: opts.skipSizing ?? false },
     breakdownDone: false,
     storyOrder: [],

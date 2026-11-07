@@ -20,6 +20,7 @@ import {
 import { writeEstimates } from "../../consort/config/consort-paths";
 import { writeSprintGates } from "../../consort/gates/sprint-gates";
 import { nextTransition } from "../../consort/orchestrator/drive/orchestrator-drive";
+import { buildNextSnapshot } from "../../consort/orchestrator/status/next";
 
 const SPRINT = "sprint-1";
 
@@ -75,6 +76,41 @@ describe("shippedByClearedClaim – the last-feature / complete-sprint skip fix"
     expect(shippedByClearedClaim(undefined, "build")).toBe(false);
     expect(shippedByClearedClaim(undefined, "design")).toBe(false);
     expect(shippedByClearedClaim(undefined, null)).toBe(false);
+  });
+});
+
+describe("a FINISHED sprint parks at a clean `done` stop (not the stale planning-complete checkpoint)", () => {
+  function completeFeature(id: string): void {
+    mkdirSync(join(tdd, "features", id), { recursive: true });
+    // Minimal pipeline the summarizeStories reader JSON-parses: a story at `done` reads done+accepted,
+    // so deriveFeaturePhase => "complete" (the deliveredFeatures signal).
+    writeFileSync(
+      join(tdd, "features", id, "pipeline.json"),
+      JSON.stringify({ feature_id: id, stories: { S1: { status: "done" } } }),
+    );
+  }
+
+  it("every committed feature delivered => sprintDelivered, and buildNextSnapshot emits `done` (atStop)", () => {
+    writeSprintBacklog(tdd, { sprint: SPRINT, features: [{ id: "F1-x" }, { id: "F2-y" }] });
+    completeFeature("F1-x");
+    completeFeature("F2-y");
+    const state = deriveSprintPlanningState(tdd, SPRINT);
+    expect(state.sprintDelivered).toBe(true);
+    // done => primary_action.kind === "done", which the upgrade quiesce gate treats as a clean stop.
+    expect(buildNextSnapshot("sprint", state, { sprint: SPRINT }).primary_action.kind).toBe("done");
+  });
+
+  it("a sprint still mid-flight (one feature not yet delivered) does NOT read as done", () => {
+    writeSprintBacklog(tdd, { sprint: SPRINT, features: [{ id: "F1-x" }, { id: "F2-y" }] });
+    completeFeature("F1-x"); // F2-y has no pipeline => deriveFeaturePhase null => not complete
+    const state = deriveSprintPlanningState(tdd, SPRINT);
+    expect(state.sprintDelivered).toBe(false);
+    expect(buildNextSnapshot("sprint", state, { sprint: SPRINT }).primary_action.kind).not.toBe("done");
+  });
+
+  it("an empty backlog is NOT delivered (nothing shipped => not a terminal done)", () => {
+    writeSprintBacklog(tdd, { sprint: SPRINT, features: [] });
+    expect(deriveSprintPlanningState(tdd, SPRINT).sprintDelivered).toBe(false);
   });
 });
 
