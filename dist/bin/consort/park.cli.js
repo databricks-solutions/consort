@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path14) {
-      let input = path14;
+    function removeDotSegments(path15) {
+      let input = path15;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path14, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path14 && path14 !== "/" ? path14 : void 0;
+        const [path15, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path15 && path15 !== "/" ? path15 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6648,7 +6648,7 @@ var require_ajv = __commonJS({
 
 // bin/consort/park.cli.ts
 init_esm_shims();
-import * as path13 from "path";
+import * as path14 from "path";
 
 // consort/config/consort-paths.ts
 init_esm_shims();
@@ -6690,6 +6690,7 @@ var featureSpecJson = (tdd, f) => join(featureResolved(tdd, f), "feature-spec.js
 var featureRequestMd = (tdd, f) => join(featureResolved(tdd, f), "feature-request.md");
 var architectureJson = (tdd, f) => join(featureResolved(tdd, f), "architecture.json");
 var dbDesignJson = (tdd, f) => join(featureResolved(tdd, f), "db-design.json");
+var featureTestListJson = (tdd, f) => join(featureResolved(tdd, f), "test-list.json");
 var pipelineJson = (tdd, f) => join(featureResolved(tdd, f), "pipeline.json");
 var featureDeployEvidenceJson = (tdd, f) => join(featureResolved(tdd, f), "deploy-evidence.json");
 var featureDeployReverifyMarkerJson = (tdd, f) => join(featureResolved(tdd, f), "deploy-reverify.json");
@@ -6813,8 +6814,8 @@ var hasEstimates = (tdd) => readEstimates(tdd).length > 0;
 
 // consort/orchestrator/status/next.ts
 init_esm_shims();
-import * as fs19 from "fs";
-import * as path12 from "path";
+import * as fs20 from "fs";
+import * as path13 from "path";
 
 // consort/orchestrator/drive/orchestrator-drive.ts
 init_esm_shims();
@@ -6961,6 +6962,7 @@ function nextBuildAction(story, b) {
       if (b.refactorAc) return { kind: "invoke-role", role: "driver", story, buildMode: "refactor", ac: b.refactorAc };
     }
   }
+  if (b.reauthorResilienceAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "reauthor", ac: b.reauthorResilienceAc };
   if (b.assessGreenAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess", ac: b.assessGreenAc };
   if (b.repairRegressionAc) return { kind: "invoke-role", role: "driver", story, buildMode: "repair", ac: b.repairRegressionAc };
   if (b.greenSupersededAc) return { kind: "invoke-role", role: "driver", story, buildMode: "green-superseded" };
@@ -7464,8 +7466,8 @@ init_esm_shims();
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_esm_shims();
-import * as fs7 from "fs";
-import * as path4 from "path";
+import * as fs8 from "fs";
+import * as path5 from "path";
 
 // consort/pipeline/run-cycle.ts
 init_esm_shims();
@@ -7492,9 +7494,9 @@ function coveredTestIds(c) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync19, readFileSync as readFileSync19, readdirSync as readdirSync13, statSync as statSync9, writeFileSync as writeFileSync11, mkdirSync as mkdirSync9, rmSync as rmSync5 } from "fs";
+import { existsSync as existsSync20, readFileSync as readFileSync20, readdirSync as readdirSync13, statSync as statSync9, writeFileSync as writeFileSync12, mkdirSync as mkdirSync10, rmSync as rmSync6 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
-import { join as join21, dirname as dirname10, basename as basename3 } from "path";
+import { join as join22, dirname as dirname11, basename as basename4 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -7871,6 +7873,28 @@ function checkJsdomBrowserAssertion(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkMockPrescription(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const prescribesMock = /\bmock(s|ed|ing)?\b|\bstub(s|bed|bing)?\b/i;
+  const negatesMock = /\b(no|not|never|without|real)\b[^.]{0,30}\b(mock|stub)/i;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const d = it.description ?? "";
+    if (prescribesMock.test(d) && !negatesMock.test(d)) {
+      violations.push(
+        `test item ${it.id ?? "?"} PRESCRIBES a mock/stub in its description ("${d.slice(0, 90)}\u2026") \u2014 the no-mock policy requires behavior/client/component tests to hit the REAL backend against the paired-branch DB. Re-author a BEHAVIORAL description (assert the observable outcome; the test's /api calls hit the real service), never a mocked/stubbed endpoint. (Only a pure client-unit test of the fetch wrapper itself may mock \u2014 that is NOT a test-list item.)`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkTestlistWholeTableAggregate(testListJson) {
   let tl;
   try {
@@ -7895,13 +7919,13 @@ function checkTestlistWholeTableAggregate(testListJson) {
 }
 function normalizeEndpoint(tok) {
   const [rawPath, rawQuery = ""] = tok.toLowerCase().split("?");
-  const path14 = rawPath.split("/").map((s) => s !== "" && (/\d/.test(s) || /^\{.*\}$/.test(s)) ? "{param}" : s).join("/").replace(/\/+$/, "");
+  const path15 = rawPath.split("/").map((s) => s !== "" && (/\d/.test(s) || /^\{.*\}$/.test(s)) ? "{param}" : s).join("/").replace(/\/+$/, "");
   const keys = /* @__PURE__ */ new Set();
   for (const kv of rawQuery.split("&")) {
     const k = kv.split("=")[0]?.trim();
     if (k) keys.add(k);
   }
-  return { path: path14, keys };
+  return { path: path15, keys };
 }
 var API_ENDPOINT_RE = /\/api\/[A-Za-z0-9_{}/-]+(?:\?[A-Za-z0-9_=&{}%<>-]*)?/g;
 function extractApiEndpoints(text) {
@@ -7918,13 +7942,13 @@ function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
   const keysByPath = /* @__PURE__ */ new Map();
   const resourceSegs = /* @__PURE__ */ new Set();
   for (const d of declaredEndpoints) {
-    const { path: path14, keys } = normalizeEndpoint(d);
-    if (!path14.startsWith("/api/")) continue;
-    declaredPaths.add(path14);
-    const set = keysByPath.get(path14) ?? /* @__PURE__ */ new Set();
+    const { path: path15, keys } = normalizeEndpoint(d);
+    if (!path15.startsWith("/api/")) continue;
+    declaredPaths.add(path15);
+    const set = keysByPath.get(path15) ?? /* @__PURE__ */ new Set();
     for (const k of keys) set.add(k);
-    keysByPath.set(path14, set);
-    const segs = path14.split("/");
+    keysByPath.set(path15, set);
+    const segs = path15.split("/");
     for (let i = 0; i < segs.length - 1; i++) if (segs[i + 1] === "{param}" && segs[i]) resourceSegs.add(segs[i]);
   }
   if (declaredPaths.size === 0) return { ok: true };
@@ -7935,19 +7959,19 @@ function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
     if (it.kind !== "behavior" && it.kind !== "client" && it.kind !== "component") continue;
     const desc = it.description ?? "";
     for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
-      const { path: path14, keys } = normalizeEndpoint(tok);
-      if (!declaredPaths.has(path14)) {
+      const { path: path15, keys } = normalizeEndpoint(tok);
+      if (!declaredPaths.has(path15)) {
         violations.push(
           `test item ${it.id ?? "?"} asserts endpoint "${tok}" whose path is not in the architecture's declared API surface (declared: ${declaredList}). Re-target it to a declared endpoint.`
         );
         if (typeof it.ac_id === "string") acIds.add(it.ac_id);
         break;
       }
-      const declaredKeys = keysByPath.get(path14) ?? /* @__PURE__ */ new Set();
+      const declaredKeys = keysByPath.get(path15) ?? /* @__PURE__ */ new Set();
       const drift = [...keys].find((k) => !declaredKeys.has(k) && (resourceSegs.has(k) || resourceSegs.has(`${k}s`)));
       if (drift) {
         violations.push(
-          `test item ${it.id ?? "?"} queries "${tok}", but "${drift}" has a dedicated endpoint (/api/${drift}s/{${drift}}) \u2014 the architecture declares ${path14} without it. Re-target to the dedicated ${drift} endpoint.`
+          `test item ${it.id ?? "?"} queries "${tok}", but "${drift}" has a dedicated endpoint (/api/${drift}s/{${drift}}) \u2014 the architecture declares ${path15} without it. Re-target to the dedicated ${drift} endpoint.`
         );
         if (typeof it.ac_id === "string") acIds.add(it.ac_id);
         break;
@@ -8009,6 +8033,48 @@ function checkTestlistScenarioFileCoherence(testListJson) {
         if (typeof it.ac_id === "string") acIds.add(it.ac_id);
         break;
       }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkStoryPersistenceCoverage(storyTestListJson2, architectureJson2, ownedInvariantIds) {
+  if (ownedInvariantIds.length === 0) return { ok: true };
+  const owned = new Set(ownedInvariantIds);
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const invariants = (arch.persistence_invariants ?? []).filter(
+    (i) => !!i && typeof i.id === "string" && i.id.length > 0 && owned.has(i.id)
+  );
+  if (invariants.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(storyTestListJson2);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  const shapeOk = (type, desc) => type === "transactional" ? describesAtomicityRollback(desc) : type === "migration_reversible" ? describesMigrationRoundTrip(desc) : true;
+  for (const inv of invariants) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) {
+      violations.push(
+        `persistence_invariant ${inv.id}${inv.table ? ` (${inv.type ?? "?"} on ${inv.table})` : ""} is realized by this story but has NO covering test-list item (invariant_id) in this story's list. Add a covering test \u2014 or TAG the existing test that already verifies it \u2014 with invariant_id=${inv.id}` + (inv.type === "transactional" ? ` (a transactional invariant needs an atomicity/rollback test: force a mid-transaction failure, assert NEITHER write persists)` : inv.type === "migration_reversible" ? ` (a migration_reversible invariant needs a downgrade\u2192upgrade round-trip)` : ``) + `. See test-strategy.md.`
+      );
+      continue;
+    }
+    if (!covering.some((it) => shapeOk(inv.type, it.description ?? ""))) {
+      const ids = covering.map((it) => it.id ?? "?").join(", ");
+      violations.push(
+        `persistence_invariant ${inv.id} (${inv.type ?? "?"}) is covered only by wrong-shaped item(s) [${ids}] for its type \u2014 ` + (inv.type === "transactional" ? `it needs an ATOMICITY/ROLLBACK test (force a mid-transaction failure, assert neither write persists), not a migration round-trip` : `it needs a downgrade\u2192upgrade ROUND-TRIP`) + `. Re-author the covering item for the right shape (or retag ${inv.id} onto the item that performs it). See test-strategy.md.`
+      );
+      for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
     }
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
@@ -8113,9 +8179,41 @@ function checkDbDesign(dbDesignJson2, architectureJson2) {
   }
   return violations.length > 0 ? { ok: false, violations } : { ok: true };
 }
-function canonicalArtifactName(path14) {
-  const base = basename(path14);
-  if (basename(dirname3(path14)) === "acs" && base.endsWith(".json")) return "ac.json";
+function invariantRealizingStory(architectureJson2, dbDesignJson2) {
+  const out = /* @__PURE__ */ new Map();
+  if (!architectureJson2 || !dbDesignJson2) return out;
+  let arch;
+  let db;
+  try {
+    arch = JSON.parse(architectureJson2);
+    db = JSON.parse(dbDesignJson2);
+  } catch {
+    return out;
+  }
+  const changes = (db.schema_changes ?? []).filter(
+    (c) => !!c && typeof c.story_id === "string" && typeof c.kind === "string" && typeof c.table === "string"
+  );
+  const sNum = (s) => {
+    const m = /^S(\d+)/.exec(s);
+    return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+  };
+  const tableRealizer = /* @__PURE__ */ new Map();
+  for (const table of new Set(changes.map((c) => c.table))) {
+    const forTable = changes.filter((c) => c.table === table);
+    const creator = forTable.find((c) => c.kind === "create_table");
+    const realizer = creator ? creator.story_id : [...forTable].sort((a, b) => sNum(a.story_id) - sNum(b.story_id))[0]?.story_id;
+    if (realizer) tableRealizer.set(table, realizer);
+  }
+  for (const inv of arch.persistence_invariants ?? []) {
+    if (!inv || typeof inv.id !== "string" || typeof inv.table !== "string") continue;
+    const realizer = tableRealizer.get(inv.table);
+    if (realizer) out.set(inv.id, realizer);
+  }
+  return out;
+}
+function canonicalArtifactName(path15) {
+  const base = basename(path15);
+  if (basename(dirname3(path15)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
 }
 function checkFitnessSingularCoverage(testListJson, architectureJson2, opts = {}) {
@@ -8191,6 +8289,22 @@ function checkTestlistComponentScenarioFile(testListJson) {
     }
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function describesMigrationRoundTrip(desc) {
+  return /\bround.?trip\b/i.test(desc) || /\bdowngrad\w*/i.test(desc) && /\bupgrad\w*/i.test(desc) || // Directional shorthand for a round-trip — "down->up", "down→up", "down/up", "down-up"
+  // (an arrow/slash/dash BETWEEN the two, never a bare "down up" which could be unrelated prose).
+  // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
+  // as forward-only — the description-fragility that must not bounce a correct test.
+  /\bdown\s*[-/→>]+\s*up\b/i.test(desc);
+}
+function describesAtomicityRollback(desc) {
+  const d = desc.toLowerCase();
+  return /\broll\s*back\b|\brolls?\s*back\b|\brolled\s*back\b/.test(d) || /\bneither\b[^.]*\b(persist|written|writes|commit|row|saved|inserted)\b/.test(d) || /\b(transaction|commit|write|insert|update)\b[^.]*\bfail/.test(d) || /\beither\b[^.]*\bfail/.test(d) || /\batomic/.test(d) && /\b(fail|roll|neither|both)\b/.test(d) || // READ-ONLY flavor of a `transactional` invariant: the operation runs in a read-only unit of work
+  // (it performs NO writes), e.g. F5's PI25-count-read-only. Its correct covering test asserts the
+  // transaction writes nothing / leaves the tables unchanged — a valid transactional shape, not an
+  // atomicity/rollback one. Keyed narrowly (explicit read-only / writes-nothing / no-row-written) so
+  // a mere incidental "unchanged" aside cannot satisfy a genuine atomicity invariant.
+  /\bread[-\s]?only\b/.test(d) || /\bwrites?\s+nothing\b/.test(d) || /\bno\b[^.]*\b(row|write|insert|adjustment)s?\b[^.]*\b(written|inserted|created|persist|made)\b/.test(d);
 }
 function isMigrationReversibilityDescription(desc) {
   const mentionsDowngrade = /\bdowngrad\w*/i;
@@ -8778,7 +8892,7 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
 // consort/architecture/contract-clean.ts
 init_esm_shims();
 import { existsSync as existsSync11, readFileSync as readFileSync11, readdirSync as readdirSync7, statSync as statSync5 } from "fs";
-import { join as join12, relative as relative2, extname as extname3 } from "path";
+import { join as join12, relative as relative2, extname as extname3, basename as basename2 } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -8825,7 +8939,7 @@ function storyDeployVerified(consortDir, featureId, storyId) {
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync13, readFileSync as readFileSync14, readdirSync as readdirSync10, writeFileSync as writeFileSync8, mkdirSync as mkdirSync6, copyFileSync } from "fs";
-import { join as join15, dirname as dirname7, basename as basename2 } from "path";
+import { join as join15, dirname as dirname7, basename as basename3 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
@@ -8994,6 +9108,29 @@ import { execFileSync as execFileSync4 } from "child_process";
 import { existsSync as existsSync18 } from "fs";
 import { join as join20 } from "path";
 
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs6 from "fs";
+import * as path4 from "path";
+function markerPath3(consortDir, featureId, story, ac) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return path4.join(fdir, "stories", story, `reauthor-resilience-${ac}.json`);
+}
+function readReauthorMarker(consortDir, featureId, story, ac) {
+  const file = markerPath3(consortDir, featureId, story, ac);
+  if (!file || !fs6.existsSync(file)) return void 0;
+  try {
+    return JSON.parse(fs6.readFileSync(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function reauthorNeeded(consortDir, featureId, story, ac) {
+  const m = readReauthorMarker(consortDir, featureId, story, ac);
+  return !!m && m.attempts < 1;
+}
+
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -9004,18 +9141,18 @@ init_esm_shims();
 // consort/pipeline/cycle-record.ts
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync19(file)) {
+  if (!existsSync20(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse(readFileSync19(file, "utf8"));
+  const data = JSON.parse(readFileSync20(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyCycles(consortDir, featureId, story) {
-  const base = join21(cyclesRootDir(consortDir), featureId, story);
-  if (!existsSync19(base)) return [];
+  const base = join22(cyclesRootDir(consortDir), featureId, story);
+  if (!existsSync20(base)) return [];
   const out = [];
   for (const acDir of readdirSync13(base)) {
-    const dir = join21(base, acDir);
+    const dir = join22(base, acDir);
     try {
       if (!statSync9(dir).isDirectory()) continue;
     } catch {
@@ -9024,7 +9161,7 @@ function storyCycles(consortDir, featureId, story) {
     for (const f of readdirSync13(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(readFileSync19(join21(dir, f), "utf8")));
+        out.push(JSON.parse(readFileSync20(join22(dir, f), "utf8")));
       } catch {
       }
     }
@@ -9061,9 +9198,9 @@ function pendingItemKind(consortDir, featureId, story) {
 }
 function readReview(consortDir, featureId, story, acId) {
   const f = acReviewJson(consortDir, featureId, story, acId);
-  if (!existsSync19(f)) return {};
+  if (!existsSync20(f)) return {};
   try {
-    return JSON.parse(readFileSync19(f, "utf8"));
+    return JSON.parse(readFileSync20(f, "utf8"));
   } catch {
     return {};
   }
@@ -9113,9 +9250,9 @@ function firstRefactorPendingAc(consortDir, featureId, story) {
 }
 function readStoryReview(consortDir, featureId, story) {
   const f = storyReviewJson(consortDir, featureId, story);
-  if (!existsSync19(f)) return {};
+  if (!existsSync20(f)) return {};
   try {
-    return JSON.parse(readFileSync19(f, "utf8"));
+    return JSON.parse(readFileSync20(f, "utf8"));
   } catch {
     return {};
   }
@@ -9206,6 +9343,7 @@ function storyView(id, e, probe, loop) {
       reviewStoryPending: probe.reviewPending(id),
       refactorStoryPending: probe.refactorPending(id),
       assessGreenAc: probe.assessGreenFailureAc(id),
+      reauthorResilienceAc: probe.reauthorResilienceAc(id),
       repairRegressionAc: probe.repairRegressionFixAc(id),
       greenSupersededAc: probe.greenSupersededFailureAc(id),
       specDefectAc: probe.specDefectAc(id),
@@ -9274,7 +9412,7 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_esm_shims();
 import { createHash as createHash3 } from "crypto";
-import { readFileSync as readFileSync20 } from "fs";
+import { readFileSync as readFileSync21 } from "fs";
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -9293,7 +9431,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = readFileSync20(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = readFileSync21(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });
@@ -9305,7 +9443,7 @@ function storyDesignFingerprint(consortDir, feature, story) {
 
 // consort/gates/workflow-phase.ts
 init_esm_shims();
-import * as fs6 from "fs";
+import * as fs7 from "fs";
 var PHASE_OWNER_KEY = "phase_feature_id";
 
 // consort/orchestrator/state/orchestrator-probe.ts
@@ -9313,7 +9451,7 @@ import { readWorkflowState, SCM_STATES } from "@databricks-solutions/lakebase-sc
 
 // consort/smells/reflection.ts
 init_esm_shims();
-import { existsSync as existsSync21, readFileSync as readFileSync22, writeFileSync as writeFileSync13, mkdirSync as mkdirSync11, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync22, readFileSync as readFileSync23, writeFileSync as writeFileSync14, mkdirSync as mkdirSync12, rmSync as rmSync7 } from "fs";
 var SMELL_FOR_OWNER = {
   "spec-author": "reflect-spec-defect",
   "test-strategist": "reflect-testlist-defect",
@@ -9322,9 +9460,9 @@ var SMELL_FOR_OWNER = {
 };
 function readReflectVerdict(consortDir, feature, story) {
   const p = reflectVerdictJson(consortDir, feature, story);
-  if (!existsSync21(p)) return void 0;
+  if (!existsSync22(p)) return void 0;
   try {
-    return JSON.parse(readFileSync22(p, "utf8"));
+    return JSON.parse(readFileSync23(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -9339,15 +9477,16 @@ var REFLECT_SMELLS = Object.values(SMELL_FOR_OWNER);
 
 // consort/smells/testlist-conformance.ts
 init_esm_shims();
-import { existsSync as existsSync22, readFileSync as readFileSync23, readdirSync as readdirSync14 } from "fs";
+import { existsSync as existsSync23, readFileSync as readFileSync24, readdirSync as readdirSync14, statSync as statSync10 } from "fs";
+import { join as join23 } from "path";
 function storyAcLayers(consortDir, featureId, story) {
   const acLayerById = {};
   const dir = acsDir(consortDir, featureId, story);
-  if (existsSync22(dir)) {
+  if (existsSync23(dir)) {
     for (const f of readdirSync14(dir)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const layer = JSON.parse(readFileSync23(`${dir}/${f}`, "utf8")).layer;
+        const layer = JSON.parse(readFileSync24(`${dir}/${f}`, "utf8")).layer;
         if (typeof layer === "string") acLayerById[f.replace(/\.json$/, "")] = layer;
       } catch {
       }
@@ -9359,14 +9498,14 @@ function declaredApiEndpoints(consortDir, featureId, story) {
   const texts = [];
   for (const p of [architectureJson(consortDir, featureId), featureSpecJson(consortDir, featureId)]) {
     try {
-      if (existsSync22(p)) texts.push(readFileSync23(p, "utf8"));
+      if (existsSync23(p)) texts.push(readFileSync24(p, "utf8"));
     } catch {
     }
   }
   const dir = acsDir(consortDir, featureId, story);
   try {
-    if (existsSync22(dir)) {
-      for (const f of readdirSync14(dir)) if (f.endsWith(".json")) texts.push(readFileSync23(`${dir}/${f}`, "utf8"));
+    if (existsSync23(dir)) {
+      for (const f of readdirSync14(dir)) if (f.endsWith(".json")) texts.push(readFileSync24(`${dir}/${f}`, "utf8"));
     }
   } catch {
   }
@@ -9376,27 +9515,128 @@ function declaredApiEndpoints(consortDir, featureId, story) {
 }
 function testlistConformanceViolations(consortDir, featureId, story) {
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync22(tlPath)) return null;
+  if (!existsSync23(tlPath)) return null;
   let testListJson;
   try {
-    testListJson = readFileSync23(tlPath, "utf8");
+    testListJson = readFileSync24(tlPath, "utf8");
   } catch {
     return null;
   }
   return testlistConformanceForContent(consortDir, featureId, story, testListJson);
+}
+function featureStoryIds(consortDir, featureId) {
+  const dir = storiesDir(consortDir, featureId);
+  if (!existsSync23(dir)) return [];
+  try {
+    return readdirSync14(dir).filter((n) => {
+      try {
+        return statSync10(join23(dir, n)).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+function storyTestListItems(consortDir, featureId, story, current) {
+  let text;
+  if (current && current.story === story) {
+    text = current.json;
+  } else {
+    const p = storyTestListJson(consortDir, featureId, story);
+    if (existsSync23(p)) {
+      try {
+        text = readFileSync24(p, "utf8");
+      } catch {
+      }
+    }
+  }
+  if (!text) return [];
+  try {
+    const d = JSON.parse(text);
+    return Array.isArray(d.items) ? d.items : [];
+  } catch {
+    return [];
+  }
+}
+function invariantOwnerStories(consortDir, featureId, current, opts) {
+  const writePath = opts?.writePath === true;
+  const out = /* @__PURE__ */ new Map();
+  let archText;
+  let dbText;
+  try {
+    const p = architectureJson(consortDir, featureId);
+    if (existsSync23(p)) archText = readFileSync24(p, "utf8");
+  } catch {
+  }
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if (existsSync23(p)) dbText = readFileSync24(p, "utf8");
+  } catch {
+  }
+  if (archText === void 0) return out;
+  let arch;
+  try {
+    arch = JSON.parse(archText);
+  } catch {
+    return out;
+  }
+  const invariants = (arch.persistence_invariants ?? []).filter(
+    (i) => !!i && typeof i.id === "string" && i.id.length > 0
+  );
+  if (invariants.length === 0) return out;
+  const realizing = invariantRealizingStory(archText, dbText);
+  const storyIds = featureStoryIds(consortDir, featureId);
+  const itemsByStory = /* @__PURE__ */ new Map();
+  for (const s of storyIds) itemsByStory.set(s, storyTestListItems(consortDir, featureId, s, current));
+  for (const inv of invariants) {
+    const anchored = realizing.get(inv.id);
+    if (anchored) {
+      out.set(inv.id, anchored);
+      continue;
+    }
+    if (!writePath || !inv.table) {
+      out.set(inv.id, void 0);
+      continue;
+    }
+    let best;
+    let bestN = 0;
+    let tie = false;
+    for (const s of storyIds) {
+      const n = (itemsByStory.get(s) ?? []).filter(
+        (it) => it.invariant_id !== inv.id && (it.description ?? "").includes(inv.table)
+      ).length;
+      if (n > bestN) {
+        bestN = n;
+        best = s;
+        tie = false;
+      } else if (n === bestN && n > 0) {
+        tie = true;
+      }
+    }
+    out.set(inv.id, bestN > 0 && !tie ? best : void 0);
+  }
+  return out;
+}
+function storyOwnedInvariantIds(consortDir, featureId, story, storyTestListText) {
+  const owners = invariantOwnerStories(consortDir, featureId, { story, json: storyTestListText });
+  const ids = [];
+  for (const [id, owner] of owners) if (owner === story) ids.push(id);
+  return ids;
 }
 function testlistConformanceForContent(consortDir, featureId, story, testListJson) {
   const acLayerById = storyAcLayers(consortDir, featureId, story);
   let dbDesign;
   try {
     const p = dbDesignJson(consortDir, featureId);
-    if (existsSync22(p)) dbDesign = readFileSync23(p, "utf8");
+    if (existsSync23(p)) dbDesign = readFileSync24(p, "utf8");
   } catch {
   }
   let archJson;
   try {
     const p = architectureJson(consortDir, featureId);
-    if (existsSync22(p)) archJson = readFileSync23(p, "utf8");
+    if (existsSync23(p)) archJson = readFileSync24(p, "utf8");
   } catch {
   }
   const violations = [];
@@ -9410,6 +9650,12 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
     checkTestlistComponentScenarioFile(testListJson),
+    // No-mock policy, enforced at the SOURCE of the test description: a component/behavior test that
+    // names a mock/stub of a service boundary (and does not negate it — "no mock", "real") is a
+    // design defect, since the policy is to hit the real backend + Lakebase branch. Caught here at the
+    // drive's pre-reflect self-check so the test-strategist re-authors the description BEFORE build —
+    // the gap that let F2/S2's T32 "fetch stubbed" reach the build lane (it was only in the gate guard).
+    checkMockPrescription(testListJson),
     checkTestlistMigrationRevision(testListJson),
     checkSchemaChangeOrphan(testListJson, dbDesign),
     // A migration-reversibility test must carry the schema_change_id it exercises, so the orphan
@@ -9428,7 +9674,15 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     // feature-level or sibling-story NFR from false-flagging before its story is designed.
     ...archJson !== void 0 ? [
       checkFitnessSingularCoverage(testListJson, archJson, { onlyStory: story }),
-      checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story })
+      checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story }),
+      // Story-scoped persistence-invariant coverage (the pre-reflect complement to the feature-wide
+      // checkPersistenceCoverage at the design-complete gate): a persistence invariant THIS story
+      // realizes must have a correctly-shaped covering item in this story's list. Ownership is the
+      // schema-change realizer, else a write-path anchor for an unmigrated table (the F2
+      // stock_records PI1/PI2 case). An owned-but-uncovered invariant flags the reflect-testlist
+      // -defect here so the revise-route self-heals it to the test-strategist BEFORE the build —
+      // instead of the feature-wide design-complete gate catching it late with a hard HIL halt.
+      checkStoryPersistenceCoverage(testListJson, archJson, storyOwnedInvariantIds(consortDir, featureId, story, testListJson))
     ] : []
   ]) {
     if (!r.ok) {
@@ -9439,13 +9693,89 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
   return violations.length === 0 ? null : { reason: violations.join("; "), acIds: [...acIds] };
 }
 function testListConforms(consortDir, featureId, story) {
-  return testlistConformanceViolations(consortDir, featureId, story) === null;
+  if (testlistConformanceViolations(consortDir, featureId, story) !== null) return false;
+  if (isDesignCompletingStory(consortDir, featureId, story) && (featureUncoveredInvariantIds(consortDir, featureId).length > 0 || featureMisshapedInvariants(consortDir, featureId).length > 0))
+    return false;
+  return true;
+}
+function isDesignCompletingStory(consortDir, featureId, story) {
+  let stories = [];
+  try {
+    stories = JSON.parse(readFileSync24(featureSpecJson(consortDir, featureId), "utf8")).stories ?? [];
+  } catch {
+    return false;
+  }
+  if (stories.length === 0) return false;
+  let pipe;
+  try {
+    pipe = JSON.parse(readFileSync24(pipelineJson(consortDir, featureId), "utf8"));
+  } catch {
+    return false;
+  }
+  return stories.every((s) => s === story || pipe.stories?.[s]?.gate?.status === "approved");
+}
+function featureUncoveredInvariantIds(consortDir, featureId) {
+  let archText, tlText;
+  try {
+    archText = readFileSync24(architectureJson(consortDir, featureId), "utf8");
+    tlText = readFileSync24(featureTestListJson(consortDir, featureId), "utf8");
+  } catch {
+    return [];
+  }
+  let dbText;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if (existsSync23(p)) dbText = readFileSync24(p, "utf8");
+  } catch {
+  }
+  let arch;
+  let tl;
+  try {
+    arch = JSON.parse(archText);
+    tl = JSON.parse(tlText);
+  } catch {
+    return [];
+  }
+  if (arch.service_backed !== true) return [];
+  const realizing = dbText ? invariantRealizingStory(archText, dbText) : null;
+  const declared = (arch.persistence_invariants ?? []).filter((i) => !!i && typeof i.id === "string" && i.id.length > 0).filter((i) => realizing === null || i.type === "transactional" || realizing.has(i.id)).map((i) => i.id);
+  const covered = new Set((tl.items ?? []).map((i) => i.invariant_id).filter((x) => typeof x === "string" && x.length > 0));
+  return declared.filter((id) => !covered.has(id));
+}
+function featureMisshapedInvariants(consortDir, featureId) {
+  let archText, tlText;
+  try {
+    archText = readFileSync24(architectureJson(consortDir, featureId), "utf8");
+    tlText = readFileSync24(featureTestListJson(consortDir, featureId), "utf8");
+  } catch {
+    return [];
+  }
+  let arch;
+  let tl;
+  try {
+    arch = JSON.parse(archText);
+    tl = JSON.parse(tlText);
+  } catch {
+    return [];
+  }
+  if (arch.service_backed !== true) return [];
+  const items = tl.items ?? [];
+  const out = [];
+  for (const inv of arch.persistence_invariants ?? []) {
+    if (!inv || typeof inv.id !== "string" || !inv.id) continue;
+    if (inv.type !== "transactional" && inv.type !== "migration_reversible") continue;
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) continue;
+    const shaped = inv.type === "transactional" ? covering.some((it) => describesAtomicityRollback(it.description ?? "")) : covering.some((it) => describesMigrationRoundTrip(it.description ?? ""));
+    if (!shaped) out.push({ id: inv.id, type: inv.type });
+  }
+  return out;
 }
 
 // consort/smells/ia-conformance.ts
 init_esm_shims();
-import { existsSync as existsSync23, readFileSync as readFileSync24, readdirSync as readdirSync15 } from "fs";
-import { join as join22 } from "path";
+import { existsSync as existsSync24, readFileSync as readFileSync25, readdirSync as readdirSync15 } from "fs";
+import { join as join24 } from "path";
 function iaNamesSeam(iaMarkdown, seam) {
   const esc = seam.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(?<![\\w-])${esc}(?![\\w-])`).test(iaMarkdown);
@@ -9453,11 +9783,11 @@ function iaNamesSeam(iaMarkdown, seam) {
 function storyUiSeams(consortDir, featureId, story) {
   const out = [];
   const dir = acsDir(consortDir, featureId, story);
-  if (!existsSync23(dir)) return out;
+  if (!existsSync24(dir)) return out;
   for (const f of readdirSync15(dir)) {
     if (!f.endsWith(".json")) continue;
     try {
-      const ac = JSON.parse(readFileSync24(join22(dir, f), "utf8"));
+      const ac = JSON.parse(readFileSync25(join24(dir, f), "utf8"));
       const seams = Array.isArray(ac.ui_seams) ? ac.ui_seams.filter((s) => typeof s === "string" && s.length > 0) : [];
       if (seams.length > 0) out.push({ id: typeof ac.id === "string" ? ac.id : f.replace(/\.json$/, ""), seams });
     } catch {
@@ -9467,12 +9797,12 @@ function storyUiSeams(consortDir, featureId, story) {
 }
 function iaConformanceViolations(consortDir, featureId, story) {
   const iaPath = iaMd(consortDir);
-  if (!existsSync23(iaPath)) return null;
+  if (!existsSync24(iaPath)) return null;
   const acs = storyUiSeams(consortDir, featureId, story);
   if (acs.length === 0) return null;
   let iaMarkdown;
   try {
-    iaMarkdown = readFileSync24(iaPath, "utf8");
+    iaMarkdown = readFileSync25(iaPath, "utf8");
   } catch {
     return null;
   }
@@ -9495,12 +9825,12 @@ function iaConforms(consortDir, featureId, story) {
 
 // consort/smells/reconcile.ts
 init_esm_shims();
-import { existsSync as existsSync24, readFileSync as readFileSync25, writeFileSync as writeFileSync14, mkdirSync as mkdirSync12, rmSync as rmSync7 } from "fs";
+import { existsSync as existsSync25, readFileSync as readFileSync26, writeFileSync as writeFileSync15, mkdirSync as mkdirSync13, rmSync as rmSync8 } from "fs";
 function readReconcileVerdict(consortDir, feature) {
   const p = reconcileVerdictJson(consortDir, feature);
-  if (!existsSync24(p)) return void 0;
+  if (!existsSync25(p)) return void 0;
   try {
-    return JSON.parse(readFileSync25(p, "utf8"));
+    return JSON.parse(readFileSync26(p, "utf8"));
   } catch {
     return void 0;
   }
@@ -9513,15 +9843,15 @@ function reconcilePassed(consortDir, feature) {
 
 // consort/architecture/architecture-canon.ts
 init_esm_shims();
-import { existsSync as existsSync25, readFileSync as readFileSync26, writeFileSync as writeFileSync15, mkdirSync as mkdirSync13, readdirSync as readdirSync16 } from "fs";
+import { existsSync as existsSync26, readFileSync as readFileSync27, writeFileSync as writeFileSync16, mkdirSync as mkdirSync14, readdirSync as readdirSync16 } from "fs";
 function uniq(xs) {
   return [...new Set(xs.filter((x) => typeof x === "string" && x.length > 0))];
 }
 function readCanon(consortDir) {
   const f = architectureCanonJson(consortDir);
-  if (!existsSync25(f)) return void 0;
+  if (!existsSync26(f)) return void 0;
   try {
-    return JSON.parse(readFileSync26(f, "utf8"));
+    return JSON.parse(readFileSync27(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -9558,7 +9888,7 @@ function architectNovelty(canon, storyAcs, storyArchitectureJsonContent) {
 
 // consort/test-list/fan-out-plan.ts
 init_esm_shims();
-import { join as join23 } from "path";
+import { join as join25 } from "path";
 
 // consort/test-list/test-analyst-catalogue.ts
 init_esm_shims();
@@ -9582,7 +9912,7 @@ var TEST_ANALYST_CATALOGUE = {
     effort: "high",
     toolScope: ["Read"],
     inputs: ["architecture-invariants", "db-design"],
-    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the COMPONENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN `down_revision`, the explicit revision id named in that migration file; for an initial create-table that is the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after the downgrade-to-`down_revision` then `upgrade head` (NOT that data survives). TAG the reversibility item with `schema_change_id` = the EXACT db-design.json `schema_changes[]` id it exercises (e.g. `SC5-add-location-sku-index`): the DBA ledger is the authority. A migration-reversibility item with NO `schema_change_id` is flagged pre-reflect (`checkMigrationTestSchemaChangeTag`), and one naming a change the DBA did NOT plan is an orphan (`checkSchemaChangeOrphan`) \u2014 in either case DROP it rather than assert a migration the design defers (an index the architect only weighed). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` (the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
+    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the COMPONENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). **EXCEPTION \u2014 a `transactional` (ATOMICITY) invariant.** Its test verifies the OPERATION (a multi-write transaction \u2014 e.g. UPDATE one table AND INSERT another, committed together), NOT a table's schema, so anchor it to the story whose ACs PERFORM that operation (the write path), NOT to a `schema_changes` entry \u2014 and EMIT its atomicity item EVEN when this story migrates NEITHER table (both INHERITED from prior features). The tables already exist, so a force-a-mid-transaction-failure test (patch the second write/commit to raise; assert NEITHER write persists) IS buildable here, and the transaction is THIS story's new code. The F5 case: a `reconcile` UPDATEs the inherited `stock_records` and INSERTs the inherited `stock_adjustment_audits` in one transaction \u2014 emit the atomicity `fitness` item (F2 `T19` shape: patch the audit insert/commit to raise, assert the stock-row update AND the audit insert BOTH roll back), tag it `invariant_id`=<the transactional PI>, anchor its `ac_id` to the reconcile/records-adjustment AC \u2014 even though this story's migrations create nothing. A `transactional` invariant is NOT exempted the way an inherited schema-CONSTRAINT (unique/not_null/check/fk) is, so the design-complete gate (`checkTransactionalShape`) HARD-DEMANDS this item; never leave it to a later story that does not own the operation. A migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN `down_revision`, the explicit revision id named in that migration file; for an initial create-table that is the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after the downgrade-to-`down_revision` then `upgrade head` (NOT that data survives). TAG the reversibility item with `schema_change_id` = the EXACT db-design.json `schema_changes[]` id it exercises (e.g. `SC5-add-location-sku-index`): the DBA ledger is the authority. A migration-reversibility item with NO `schema_change_id` is flagged pre-reflect (`checkMigrationTestSchemaChangeTag`), and one naming a change the DBA did NOT plan is an orphan (`checkSchemaChangeOrphan`) \u2014 in either case DROP it rather than assert a migration the design defers (an index the architect only weighed). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` (the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
   },
   client: {
     kind: "client",
@@ -9604,38 +9934,38 @@ var TEST_ANALYST_CATALOGUE = {
     toolScope: ["Read"],
     inputs: ["story-acs", "architecture-invariants", "design-guide"],
     enabledWhen: (ctx) => ctx.uiTrack === true,
-    focusPrompt: "You are the COMPONENT test analyst (this project HAS a frontend). You author ISOLATED, REAL-DB component tests: a SINGLE React component rendered on its own (NOT the whole `<App>`, NOT a full user journey), with its real `/api` calls hitting the REAL backend the vitest harness boots \u2014 NEVER a mock (kit principle: never mock when a real counterpart exists; the deterministic `component-test-mock` gate FAILS a stubbed-fetch / MSW / `vi.mock`-of-the-api component test). Emit a `kind:\"component\"` item with `scenario_file` under `client/tests/` ending `.test.tsx` (e.g. `client/tests/components/<Component>.test.tsx`). WHEN to emit (organically, from the design \u2014 do NOT invent one): for every UI component the architecture / design-guide defines that has NON-TRIVIAL RENDER LOGIC derived from data \u2014 a status badge whose color/label depends on a value, a table/list rendering one row per record, a field that renders differently when null/empty (a 'not tracked' indicator), an empty / loading / error state \u2014 emit a component item that renders JUST that component against the real API and asserts the rendered output: the text AND the design-guide SEAM (the element's design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS. A trivial static element with no data-driven render logic needs NO component test \u2014 do not pad. SCOPE \u2014 you are the peer of the CLIENT (e2e) analyst, split by SCOPE not mock-vs-real: the client analyst owns the FULL browser journey (`client/tests/e2e/*.spec.ts`, Playwright, deployed app); YOU own the SINGLE-component render (`*.test.tsx`, jsdom, real backend). Do NOT author a full-journey flow (that is the client analyst's) and do NOT author an API-contract test (that is behavior's \u2014 a component test renders UI, it does not verify the raw wire contract; `checkClientKindLayerCoherence` flags a component item anchored to an `API`/`service`/`Infra` AC). A component test that CREATES a record keys it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) \u2014 so each run owns its row on the SHARED feature branch. ALSO own NFR CLIENT-RENDER fitness functions (moved here from the client analyst): for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (a row with null/optional fields asserting a 'not tracked' indicator; an empty/loading/error state), emit a `kind:\"component\"` item that performs that render and asserts the stated outcome. A stated client-render NFR with no component item is a reflect-testlist-defect. Do NOT set `invariant_id`. " + SLICE_CONTRACT
+    focusPrompt: "You are the COMPONENT test analyst (this project HAS a frontend). You author ISOLATED, REAL-DB component tests: a SINGLE React component rendered on its own (NOT the whole `<App>`, NOT a full user journey), with its real `/api` calls hitting the REAL backend the vitest harness boots \u2014 NEVER a mock (kit principle: never mock when a real counterpart exists; the deterministic `component-test-mock` gate FAILS a stubbed-fetch / MSW / `vi.mock`-of-the-api component test). Emit a `kind:\"component\"` item with `scenario_file` under `client/tests/` ending `.test.tsx` (e.g. `client/tests/components/<Component>.test.tsx`). WHEN to emit (organically, from the design \u2014 do NOT invent one): for every UI component the architecture / design-guide defines that has NON-TRIVIAL RENDER LOGIC derived from data \u2014 a status badge whose color/label depends on a value, a table/list rendering one row per record, a field that renders differently when null/empty (a 'not tracked' indicator), an empty / loading / error state \u2014 emit a component item that renders JUST that component against the real API and asserts the rendered output: the text AND the design-guide SEAM (the element's design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS. A trivial static element with no data-driven render logic needs NO component test \u2014 do not pad. SCOPE \u2014 you are the peer of the CLIENT (e2e) analyst, split by SCOPE not mock-vs-real: the client analyst owns the FULL browser journey (`client/tests/e2e/*.spec.ts`, Playwright, deployed app); YOU own the SINGLE-component render (`*.test.tsx`, jsdom, real backend). Do NOT author a full-journey flow (that is the client analyst's) and do NOT author an API-contract test (that is behavior's \u2014 a component test renders UI, it does not verify the raw wire contract; `checkClientKindLayerCoherence` flags a component item anchored to an `API`/`service`/`Infra` AC). A component test that CREATES a record keys it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) \u2014 so each run owns its row on the SHARED feature branch. When it ASSERTS on COUNTS it asserts ONLY on its OWN rows: filter the rendered output to its unique key and count THOSE. NEVER assert a whole-table total and NEVER a `before`-minus-`after` delta against the shared branch (sibling rows from other runs and stories pollute both). That is the recurring shared-state-aggregate-assertion defect: filtering by a unique tag hides EVERY non-matching sibling, so `total - visible` is total-minus-mine, not the small count you expect. ALSO own NFR CLIENT-RENDER fitness functions (moved here from the client analyst): for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (a row with null/optional fields asserting a 'not tracked' indicator; an empty/loading/error state), emit a `kind:\"component\"` item that performs that render and asserts the stated outcome. A stated client-render NFR with no component item is a reflect-testlist-defect. Do NOT set `invariant_id`. " + SLICE_CONTRACT
   }
 };
 
 // consort/test-list/fan-out-plan.ts
-var analystOrderedJson = (consortDir, f, s) => join23(storyDir(consortDir, f, s), "analyst-ordered.json");
+var analystOrderedJson = (consortDir, f, s) => join25(storyDir(consortDir, f, s), "analyst-ordered.json");
 
 // consort/orchestrator/state/orchestrator-probe.ts
 function storyRequiresE2e(consortDir, featureId, story) {
   try {
-    return JSON.parse(fs7.readFileSync(storyJson(consortDir, featureId, story), "utf8")).requires_e2e === true;
+    return JSON.parse(fs8.readFileSync(storyJson(consortDir, featureId, story), "utf8")).requires_e2e === true;
   } catch {
     return false;
   }
 }
 function storyCycles2(consortDir, featureId, story) {
-  const base = path4.join(cyclesRootDir(consortDir), featureId, story);
-  if (!fs7.existsSync(base)) return [];
+  const base = path5.join(cyclesRootDir(consortDir), featureId, story);
+  if (!fs8.existsSync(base)) return [];
   const out = [];
-  for (const acDir of fs7.readdirSync(base)) {
-    const dir = path4.join(base, acDir);
+  for (const acDir of fs8.readdirSync(base)) {
+    const dir = path5.join(base, acDir);
     let isDir = false;
     try {
-      isDir = fs7.statSync(dir).isDirectory();
+      isDir = fs8.statSync(dir).isDirectory();
     } catch {
       isDir = false;
     }
     if (!isDir) continue;
-    for (const f of fs7.readdirSync(dir)) {
+    for (const f of fs8.readdirSync(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(fs7.readFileSync(path4.join(dir, f), "utf8")));
+        out.push(JSON.parse(fs8.readFileSync(path5.join(dir, f), "utf8")));
       } catch {
       }
     }
@@ -9643,9 +9973,9 @@ function storyCycles2(consortDir, featureId, story) {
   return out;
 }
 function readJson(file) {
-  if (!fs7.existsSync(file)) return void 0;
+  if (!fs8.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs7.readFileSync(file, "utf8"));
+    return JSON.parse(fs8.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -9660,15 +9990,15 @@ function readDriveContext(consortDir, featureId, projectDir) {
   const proposed = spec !== void 0;
   const intakeReady = intakeReadyOnDisk(consortDir);
   const breakdownDone = Array.isArray(spec?.stories) && spec.stories.length > 0;
-  const requestsAuthored = fs7.existsSync(featureRequestMd(consortDir, featureId));
+  const requestsAuthored = fs8.existsSync(featureRequestMd(consortDir, featureId));
   const backlogCommitted = requestsAuthored;
-  const deployed = fs7.existsSync(featureDeployEvidenceJson(consortDir, featureId));
+  const deployed = fs8.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
   const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
-  const reverifyAttempted = fs7.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
+  const reverifyAttempted = fs8.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   const verifyAssessEligible = deployVerifyNeedsAssess(consortDir, featureId);
   const verifyRefactorPending = deployVerifyRefactorPending(consortDir, featureId);
-  const proj = projectDir ?? path4.dirname(consortDir);
+  const proj = projectDir ?? path5.dirname(consortDir);
   let scmState;
   try {
     scmState = readWorkflowState(proj)?.state;
@@ -9701,7 +10031,7 @@ function readDriveContext(consortDir, featureId, projectDir) {
 }
 function readDeployVerifyPassed(consortDir, featureId) {
   try {
-    const ev = JSON.parse(fs7.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
+    const ev = JSON.parse(fs8.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
     return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : void 0;
   } catch {
     return void 0;
@@ -9719,7 +10049,7 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
     const acs = storyAcIds(consortDir, featureId, story);
     if (acs.length === 0) return false;
     const everyAcNoted = acs.every((ac) => readAcArchitecturalNotes(consortDir, featureId, ac) !== void 0);
-    return everyAcNoted && fs7.existsSync(architectureJson(consortDir, featureId));
+    return everyAcNoted && fs8.existsSync(architectureJson(consortDir, featureId));
   };
   return {
     hasAcs(story) {
@@ -9727,33 +10057,33 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
     },
     specRevisePending(story) {
       const marker = specReviseScopeJson(consortDir, featureId, story);
-      if (!fs7.existsSync(marker)) return false;
+      if (!fs8.existsSync(marker)) return false;
       let ids = [];
       try {
-        ids = JSON.parse(fs7.readFileSync(marker, "utf8")).ac_ids ?? [];
+        ids = JSON.parse(fs8.readFileSync(marker, "utf8")).ac_ids ?? [];
       } catch {
         return false;
       }
       const dir = acsDir(consortDir, featureId, story);
-      return ids.some((ac) => !fs7.existsSync(path4.join(dir, `${ac}.json`)));
+      return ids.some((ac) => !fs8.existsSync(path5.join(dir, `${ac}.json`)));
     },
     iaRefined(story) {
-      if (!fs7.existsSync(iaMd(consortDir))) return false;
-      if (fs7.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return true;
+      if (!fs8.existsSync(iaMd(consortDir))) return false;
+      if (fs8.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return true;
       return isArchitectAnnotated(story);
     },
     iaProjectable(story) {
-      if (!fs7.existsSync(iaMd(consortDir))) return false;
-      if (fs7.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return false;
+      if (!fs8.existsSync(iaMd(consortDir))) return false;
+      if (fs8.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return false;
       if (priorReviseCount(consortDir, "reflect-ia-defect", story) > 0) return false;
       if (storyRequiresE2e(consortDir, featureId, story)) return false;
       const stories = storiesDir(consortDir, featureId);
-      if (!fs7.existsSync(stories)) return false;
+      if (!fs8.existsSync(stories)) return false;
       let siblingCovered = false;
       try {
-        for (const sib of fs7.readdirSync(stories)) {
+        for (const sib of fs8.readdirSync(stories)) {
           if (sib === story) continue;
-          if (fs7.existsSync(storyIaCoverageJson(consortDir, featureId, sib))) {
+          if (fs8.existsSync(storyIaCoverageJson(consortDir, featureId, sib))) {
             siblingCovered = true;
             break;
           }
@@ -9767,18 +10097,18 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
     },
     dbaDesigned() {
       const archFile = architectureJson(consortDir, featureId);
-      if (!fs7.existsSync(archFile)) return false;
+      if (!fs8.existsSync(archFile)) return false;
       let archContent;
       try {
-        archContent = fs7.readFileSync(archFile, "utf8");
+        archContent = fs8.readFileSync(archFile, "utf8");
       } catch {
         return false;
       }
       const dbFile = dbDesignJson(consortDir, featureId);
       let dbContent;
-      if (fs7.existsSync(dbFile)) {
+      if (fs8.existsSync(dbFile)) {
         try {
-          dbContent = fs7.readFileSync(dbFile, "utf8");
+          dbContent = fs8.readFileSync(dbFile, "utf8");
         } catch {
           dbContent = void 0;
         }
@@ -9786,7 +10116,7 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       return checkDbDesign(dbContent, archContent).ok;
     },
     architectProjectable(story) {
-      if (!fs7.existsSync(architectureJson(consortDir, featureId))) return false;
+      if (!fs8.existsSync(architectureJson(consortDir, featureId))) return false;
       const canon = readCanon(consortDir);
       if (!canon) return false;
       if (canon.established_by === featureId) return false;
@@ -9798,11 +10128,11 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       return !architectNovelty(canon, layers.map((l) => ({ layer: l }))).novel;
     },
     testListReady(story) {
-      if (!fs7.existsSync(analystOrderedJson(consortDir, featureId, story))) return false;
+      if (!fs8.existsSync(analystOrderedJson(consortDir, featureId, story))) return false;
       const file = storyTestListJson(consortDir, featureId, story);
-      if (!fs7.existsSync(file)) return false;
+      if (!fs8.existsSync(file)) return false;
       try {
-        const data = JSON.parse(fs7.readFileSync(file, "utf8"));
+        const data = JSON.parse(fs8.readFileSync(file, "utf8"));
         return Array.isArray(data.items) && data.items.length > 0;
       } catch {
         return false;
@@ -9871,6 +10201,16 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       }
       if (!acId) return null;
       return needsGreenAssess(consortDir, featureId, story, acId) ? acId : null;
+    },
+    reauthorResilienceAc(story) {
+      let acId;
+      try {
+        acId = storyTestProgress(consortDir, featureId, story).openRed[0]?.ac_id;
+      } catch {
+        acId = void 0;
+      }
+      if (!acId) return null;
+      return reauthorNeeded(consortDir, featureId, story, acId) ? acId : null;
     },
     repairRegressionFixAc(story) {
       let acId;
@@ -9998,7 +10338,7 @@ init_esm_shims();
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync27, readFileSync as readFileSync28, writeFileSync as writeFileSync16, mkdirSync as mkdirSync14, readdirSync as readdirSync18, statSync as statSync11, rmSync as rmSync8 } from "fs";
+import { existsSync as existsSync28, readFileSync as readFileSync29, writeFileSync as writeFileSync17, mkdirSync as mkdirSync15, readdirSync as readdirSync18, statSync as statSync12, rmSync as rmSync9 } from "fs";
 
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
@@ -10015,8 +10355,8 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!existsSync27(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync28(p, "utf8"));
+  if (!existsSync28(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync29(p, "utf8"));
 }
 
 // consort/orchestrator/status/feature-status.ts
@@ -10044,41 +10384,41 @@ function deriveFeaturePhase(stories) {
 
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_esm_shims();
-import * as fs18 from "fs";
-import { dirname as dirname25, join as join49 } from "path";
+import * as fs19 from "fs";
+import { dirname as dirname26, join as join52 } from "path";
 
 // consort/orchestrator/steps/manifest.ts
 init_esm_shims();
-import { readFileSync as readFileSync29, readdirSync as readdirSync19, existsSync as existsSync28 } from "fs";
-import { join as join25 } from "path";
+import { readFileSync as readFileSync30, readdirSync as readdirSync19, existsSync as existsSync29 } from "fs";
+import { join as join27 } from "path";
 
 // consort/orchestrator/drive/executor-dispatch.ts
 init_esm_shims();
-import * as fs15 from "fs";
-import { join as join42, relative as relative6 } from "path";
+import * as fs16 from "fs";
+import { join as join45, relative as relative6 } from "path";
 
 // consort/orchestrator/turns/step-executor.ts
 init_esm_shims();
-import { existsSync as existsSync29 } from "fs";
-import { join as join26 } from "path";
+import { existsSync as existsSync30 } from "fs";
+import { join as join28 } from "path";
 
 // consort/orchestrator/provisioning/channels.ts
 init_esm_shims();
 
 // consort/orchestrator/steps/step.ts
 init_esm_shims();
-import { join as join28 } from "path";
-import { existsSync as existsSync31 } from "fs";
+import { join as join30 } from "path";
+import { existsSync as existsSync32 } from "fs";
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
 init_esm_shims();
-import { readFileSync as readFileSync30, existsSync as existsSync30, statSync as statSync12, readdirSync as readdirSync20 } from "fs";
-import { join as join27 } from "path";
+import { readFileSync as readFileSync31, existsSync as existsSync31, statSync as statSync13, readdirSync as readdirSync20 } from "fs";
+import { join as join29 } from "path";
 function conformsTo(artifactName) {
   return (producedPath) => {
     let content;
     try {
-      content = readFileSync30(producedPath, "utf8");
+      content = readFileSync31(producedPath, "utf8");
     } catch {
       return { ok: false, violations: [`${artifactName} not readable at ${producedPath}`] };
     }
@@ -10100,8 +10440,8 @@ init_esm_shims();
 
 // consort/orchestrator/agents/agent-catalogue.ts
 init_esm_shims();
-import { join as join40 } from "path";
-import { readFileSync as readFileSync40, writeFileSync as writeFileSync24, existsSync as existsSync42 } from "fs";
+import { join as join42 } from "path";
+import { readFileSync as readFileSync41, writeFileSync as writeFileSync25, existsSync as existsSync43 } from "fs";
 
 // consort/orchestrator/agents/claude-step-agent.ts
 init_esm_shims();
@@ -10113,55 +10453,55 @@ import { spawn as spawn2, execFileSync as execFileSync6 } from "child_process";
 
 // consort/setup/project-consort-setup.ts
 init_esm_shims();
-import * as fs12 from "fs";
-import * as path9 from "path";
+import * as fs13 from "fs";
+import * as path10 from "path";
 import { fileURLToPath as fileURLToPath4 } from "url";
 
 // consort/lakebase/adopt-consort.ts
 init_esm_shims();
-import * as fs8 from "fs";
-import * as path5 from "path";
+import * as fs9 from "fs";
+import * as path6 from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 
 // consort/lakebase/update-agents.ts
 init_esm_shims();
-import * as fs9 from "fs";
-import * as path6 from "path";
+import * as fs10 from "fs";
+import * as path7 from "path";
 
 // consort/lakebase/upgrade.ts
 init_esm_shims();
-import * as fs11 from "fs";
-import * as path8 from "path";
+import * as fs12 from "fs";
+import * as path9 from "path";
 import { spawnSync } from "child_process";
 
 // consort/config/kit-ref.ts
 init_esm_shims();
-import { existsSync as existsSync34, readFileSync as readFileSync33, writeFileSync as writeFileSync18, mkdirSync as mkdirSync17 } from "fs";
-import { dirname as dirname14, join as join31 } from "path";
+import { existsSync as existsSync35, readFileSync as readFileSync34, writeFileSync as writeFileSync19, mkdirSync as mkdirSync18 } from "fs";
+import { dirname as dirname15, join as join33 } from "path";
 
 // consort/lakebase/update-commands.ts
 init_esm_shims();
-import * as fs10 from "fs";
-import * as path7 from "path";
+import * as fs11 from "fs";
+import * as path8 from "path";
 
 // consort/lakebase/kit-ref-pin.ts
 init_esm_shims();
 import { fileURLToPath as fileURLToPath3 } from "url";
-import { dirname as dirname16, join as join33, resolve } from "path";
-import { readFileSync as readFileSync35, existsSync as existsSync36, mkdirSync as mkdirSync19, writeFileSync as writeFileSync20 } from "fs";
+import { dirname as dirname17, join as join35, resolve } from "path";
+import { readFileSync as readFileSync36, existsSync as existsSync37, mkdirSync as mkdirSync20, writeFileSync as writeFileSync21 } from "fs";
 
 // consort/lakebase/upgrade.ts
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
-var AGENT_SYNC_MARKER = path8.join(".claude", "agents", ".kit-version");
+var AGENT_SYNC_MARKER = path9.join(".claude", "agents", ".kit-version");
 
 // consort/setup/project-consort-setup.ts
-var __dirname2 = path9.dirname(fileURLToPath4(import.meta.url));
-var AGENT_SYNC_MARKER2 = path9.join(".claude", "agents", ".kit-version");
+var __dirname2 = path10.dirname(fileURLToPath4(import.meta.url));
+var AGENT_SYNC_MARKER2 = path10.join(".claude", "agents", ".kit-version");
 
 // consort/orchestrator/drive/claude-runner.ts
 import { randomUUID } from "crypto";
-import * as fs14 from "fs";
-import * as path11 from "path";
+import * as fs15 from "fs";
+import * as path12 from "path";
 import * as readline from "readline";
 
 // consort/logging/replay-artifacts.ts
@@ -10194,16 +10534,16 @@ init_esm_shims();
 // consort/config/kit-bin.ts
 init_esm_shims();
 import { spawnSync as spawnSync2 } from "child_process";
-import * as fs13 from "fs";
-import * as path10 from "path";
+import * as fs14 from "fs";
+import * as path11 from "path";
 
 // consort/orchestrator/drive/claude-runner.ts
 import { readWorkflowState as readWorkflowState2 } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // consort/setup/stray-artifact-recovery.ts
 init_esm_shims();
-import { existsSync as existsSync40, mkdirSync as mkdirSync22, cpSync as cpSync3, rmSync as rmSync10, readdirSync as readdirSync26, statSync as statSync14 } from "fs";
-import { join as join37, dirname as dirname20, basename as basename4 } from "path";
+import { existsSync as existsSync41, mkdirSync as mkdirSync23, cpSync as cpSync3, rmSync as rmSync11, readdirSync as readdirSync26, statSync as statSync15 } from "fs";
+import { join as join39, dirname as dirname21, basename as basename5 } from "path";
 
 // consort/orchestrator/turns/turn-monitor.ts
 init_esm_shims();
@@ -10250,11 +10590,12 @@ function spawnCmd(bin, args, cwd) {
 
 // consort/orchestrator/agents/mock-replay-agent.ts
 init_esm_shims();
-import { readFileSync as readFileSync39, writeFileSync as writeFileSync23, existsSync as existsSync41, mkdirSync as mkdirSync24, cpSync as cpSync4, readdirSync as readdirSync28, statSync as statSync16 } from "fs";
-import { join as join39, dirname as dirname21, relative as relative4, sep } from "path";
+import { readFileSync as readFileSync40, writeFileSync as writeFileSync24, existsSync as existsSync42, mkdirSync as mkdirSync25, cpSync as cpSync4, readdirSync as readdirSync28, statSync as statSync17 } from "fs";
+import { join as join41, dirname as dirname22, relative as relative4, sep } from "path";
 
 // consort/orchestrator/agents/replay-recorder-wrapper.ts
 init_esm_shims();
+import { join as join44 } from "path";
 
 // consort/logging/turn-recorder.ts
 init_esm_shims();
@@ -10262,29 +10603,29 @@ import { createHash as createHash4 } from "crypto";
 import {
   appendFileSync,
   cpSync as cpSync5,
-  existsSync as existsSync43,
-  mkdirSync as mkdirSync25,
-  readFileSync as readFileSync41,
+  existsSync as existsSync44,
+  mkdirSync as mkdirSync26,
+  readFileSync as readFileSync42,
   readdirSync as readdirSync29,
-  rmSync as rmSync11,
-  statSync as statSync17,
-  writeFileSync as writeFileSync25
+  rmSync as rmSync12,
+  statSync as statSync18,
+  writeFileSync as writeFileSync26
 } from "fs";
-import { dirname as dirname22, join as join41, relative as relative5 } from "path";
+import { dirname as dirname23, join as join43, relative as relative5 } from "path";
 
 // consort/pipeline/record-build.ts
 init_esm_shims();
 
 // consort/orchestrator/steps/assert-route-satisfiable.ts
 init_esm_shims();
-import { existsSync as existsSync45 } from "fs";
-import { join as join43 } from "path";
+import { existsSync as existsSync46 } from "fs";
+import { join as join46 } from "path";
 
 // consort/experiment/ac-lane-live.ts
 init_esm_shims();
 import { spawn as spawn3, execFileSync as execFileSync9 } from "child_process";
-import { join as join46 } from "path";
-import { appendFileSync as appendFileSync2, createWriteStream, mkdirSync as mkdirSync26, writeFileSync as writeFileSync27, existsSync as existsSync47, cpSync as cpSync7, rmSync as rmSync13 } from "fs";
+import { join as join49 } from "path";
+import { appendFileSync as appendFileSync2, createWriteStream, mkdirSync as mkdirSync27, writeFileSync as writeFileSync28, existsSync as existsSync48, cpSync as cpSync7, rmSync as rmSync14 } from "fs";
 
 // consort/experiment/ac-lane-coordinator.ts
 init_esm_shims();
@@ -10295,38 +10636,38 @@ init_esm_shims();
 // consort/experiment/ac-lane.ts
 init_esm_shims();
 import { execFileSync as execFileSync7 } from "child_process";
-import { mkdtempSync, rmSync as rmSync12, existsSync as existsSync46, cpSync as cpSync6 } from "fs";
+import { mkdtempSync, rmSync as rmSync13, existsSync as existsSync47, cpSync as cpSync6 } from "fs";
 import { tmpdir } from "os";
-import { join as join44 } from "path";
+import { join as join47 } from "path";
 import { createBranch as createBranch2, deleteBranch as deleteBranch2 } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // consort/experiment/ac-lane-merge.ts
 init_esm_shims();
 import { execFileSync as execFileSync8 } from "child_process";
-import { writeFileSync as writeFileSync26 } from "fs";
-import { join as join45 } from "path";
+import { writeFileSync as writeFileSync27 } from "fs";
+import { join as join48 } from "path";
 
 // consort/session/response-formatter.ts
 init_esm_shims();
-import { existsSync as existsSync49, readFileSync as readFileSync44, readdirSync as readdirSync31 } from "fs";
-import { dirname as dirname23 } from "path";
+import { existsSync as existsSync50, readFileSync as readFileSync45, readdirSync as readdirSync31 } from "fs";
+import { dirname as dirname24 } from "path";
 
 // consort/architecture/e2e-route-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync48, readFileSync as readFileSync43, readdirSync as readdirSync30, statSync as statSync19 } from "fs";
-import { join as join47, relative as relative7 } from "path";
-var CLIENT_SRC = join47("client", "src");
-var E2E_DIR = join47("client", "tests", "e2e");
+import { existsSync as existsSync49, readFileSync as readFileSync44, readdirSync as readdirSync30, statSync as statSync20 } from "fs";
+import { join as join50, relative as relative7 } from "path";
+var CLIENT_SRC = join50("client", "src");
+var E2E_DIR = join50("client", "tests", "e2e");
 
 // consort/session/response-formatter.ts
 function designGuideConformance(consortDir) {
   const file = designGuideJson(consortDir);
-  if (!existsSync49(file)) {
+  if (!existsSync50(file)) {
     return { ok: false, problem: "design-guide.json not written (the machine-checkable token source of truth)" };
   }
   let content;
   try {
-    content = readFileSync44(file, "utf8");
+    content = readFileSync45(file, "utf8");
   } catch (e) {
     return { ok: false, problem: `unreadable: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -10337,8 +10678,8 @@ function designGuideConformance(consortDir) {
 // consort/orchestrator/build/build-context.ts
 init_esm_shims();
 import { execSync as execSync2 } from "child_process";
-import * as fs16 from "fs";
-import { dirname as dirname24, join as join48 } from "path";
+import * as fs17 from "fs";
+import { dirname as dirname25, join as join51 } from "path";
 
 // consort/orchestrator/build/preconditions.ts
 init_esm_shims();
@@ -10348,8 +10689,8 @@ init_esm_shims();
 
 // consort/orchestrator/steps/cross-story-context.ts
 init_esm_shims();
-import * as fs17 from "fs";
-import { basename as basename6 } from "path";
+import * as fs18 from "fs";
+import { basename as basename7 } from "path";
 
 // consort/orchestrator/drive/orchestrator-effects.ts
 import { sanitizeBranchName } from "@databricks-solutions/lakebase-scm-utils/util";
@@ -10365,14 +10706,14 @@ function readDriveStateFromDisk(consortDir, featureId, projectDir, opts = {}) {
 
 // consort/session/run-config.ts
 init_esm_shims();
-import { existsSync as existsSync51, mkdirSync as mkdirSync28, readFileSync as readFileSync48, writeFileSync as writeFileSync29 } from "fs";
-import { join as join50 } from "path";
-var RUN_CONFIG_REL = join50(ARTIFACT_ROOT, "run-config.json");
+import { existsSync as existsSync52, mkdirSync as mkdirSync29, readFileSync as readFileSync49, writeFileSync as writeFileSync30 } from "fs";
+import { join as join53 } from "path";
+var RUN_CONFIG_REL = join53(ARTIFACT_ROOT, "run-config.json");
 function readRunConfig(consortDir) {
-  const f = join50(consortDir, "run-config.json");
-  if (!existsSync51(f)) return void 0;
+  const f = join53(consortDir, "run-config.json");
+  if (!existsSync52(f)) return void 0;
   try {
-    return JSON.parse(readFileSync48(f, "utf8"));
+    return JSON.parse(readFileSync49(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -10611,7 +10952,12 @@ function blockersOf(state) {
       // the exact command here (and NOT telling the operator to rm/edit the files) is what stops a session
       // improvising a hand-edit of .consort/escalations/ or smells.json to move the run forward.
       resolver: { bin: "consort-resolve-escalation", args: ["--id", e.id, "--resolution", "<what you fixed>"] },
-      resolver_hint: `Fix the root cause, then run: consort-resolve-escalation --id ${e.id} --resolution "<what you fixed>" (clears this escalation AND any blocking smell, keeps the audit trail), then resume the drive. Do NOT hand-edit or delete the escalation file or smells.json to move forward \u2013 that desyncs on-disk state. For the PROPORTIONATE remediation (repair vs scoped reopen-from-<role> vs full revise, and the two migration-reversibility test shapes), see the triage guide: skills/consort/references/escalation-triage.md.`
+      resolver_hint: (
+        // A feature-conformance halt (an uncovered/mis-shaped persistence invariant at the feature-
+        // complete backstop) has a SPECIFIC fix the generic resolve-escalation hint would hide — name
+        // the `repair` path directly so it is discoverable from `consort-next`, not only in the triage.
+        e.source === "feature-conformance" ? `A declared persistence invariant is UNCOVERED or covered by a WRONG-SHAPED test. Close it on the ACCEPTED story (NOT \`--only design\`, which no-ops on the frozen gate): consort-pipeline repair --feature <F> --story <S> --gap uncovered-invariant --invariant <PIx> --approver <you>, then consort-pipeline complete-repair --feature <F> --story <S> (the exact command is in this escalation's how_to_resolve). A transactional invariant needs an atomicity/rollback test (the F2 T19 shape), NOT a migration round-trip. Then clear: consort-resolve-escalation --id ${e.id} --resolution "<what you fixed>". Full ladder: skills/consort/references/escalation-triage.md.` : `Fix the root cause, then run: consort-resolve-escalation --id ${e.id} --resolution "<what you fixed>" (clears this escalation AND any blocking smell, keeps the audit trail), then resume the drive. Do NOT hand-edit or delete the escalation file or smells.json to move forward \u2013 that desyncs on-disk state. For the PROPORTIONATE remediation (repair vs scoped reopen-from-<role> vs full revise, and the two migration-reversibility test shapes), see the triage guide: skills/consort/references/escalation-triage.md.`
+      )
     }
   ];
 }
@@ -10662,23 +11008,23 @@ var UI_TEST_KINDS = /* @__PURE__ */ new Set(["client", "e2e"]);
 function buildStoryReview(consortDir, featureId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return {};
-  const storiesDir2 = path12.join(fdir, "stories");
+  const storiesDir2 = path13.join(fdir, "stories");
   let ids;
   try {
-    ids = fs19.readdirSync(storiesDir2, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+    ids = fs20.readdirSync(storiesDir2, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
   } catch {
     return {};
   }
   const out = {};
   for (const story of ids) {
-    const sdir = path12.join(storiesDir2, story);
+    const sdir = path13.join(storiesDir2, story);
     let items = [];
     try {
-      items = JSON.parse(fs19.readFileSync(path12.join(sdir, "test-list-per-story.json"), "utf8")).items ?? [];
+      items = JSON.parse(fs20.readFileSync(path13.join(sdir, "test-list-per-story.json"), "utf8")).items ?? [];
     } catch {
     }
     const apiOnly = items.length > 0 && !items.some((i) => typeof i.kind === "string" && UI_TEST_KINDS.has(i.kind));
-    const ev = readDeployEvidence(path12.join(sdir, "deploy-evidence.json"));
+    const ev = readDeployEvidence(path13.join(sdir, "deploy-evidence.json"));
     const docsUrl = apiOnly && ev && deployEvidencePasses(ev) && ev.url ? ev.url.replace(/\/+$/, "") + "/docs" : void 0;
     out[story] = { apiOnly, ...docsUrl ? { docsUrl } : {} };
   }
@@ -10698,15 +11044,15 @@ function readFeatureNextSnapshot(consortDir, featureId, projectDir, ctx = {}) {
 function emitNextJson(consortDir, featureId, projectDir, ctx = {}) {
   try {
     const snap = readFeatureNextSnapshot(consortDir, featureId, projectDir, ctx);
-    fs19.mkdirSync(consortDir, { recursive: true });
-    fs19.writeFileSync(path12.join(consortDir, "next.json"), JSON.stringify(snap, null, 2) + "\n", "utf8");
+    fs20.mkdirSync(consortDir, { recursive: true });
+    fs20.writeFileSync(path13.join(consortDir, "next.json"), JSON.stringify(snap, null, 2) + "\n", "utf8");
   } catch {
   }
 }
 
 // consort/orchestrator/status/park-switch.ts
 init_esm_shims();
-import { basename as basename7 } from "path";
+import { basename as basename8 } from "path";
 var ParkSwitchError = class extends Error {
   constructor(message, code) {
     super(message);
@@ -10723,7 +11069,7 @@ function resolveCanonicalFeature(consortDir, toFeature) {
       "unknown-target-feature"
     );
   }
-  return basename7(dir);
+  return basename8(dir);
 }
 async function parkAndSwitch(args, deps) {
   const canonical = resolveCanonicalFeature(args.consortDir, args.toFeature);
@@ -10800,9 +11146,9 @@ async function runConsortParkCli(argv) {
     process.stderr.write("consort-park: --to <feature> is required (the feature to switch to).\n");
     return 2;
   }
-  const projectDir = path13.resolve(args.projectDir);
+  const projectDir = path14.resolve(args.projectDir);
   const consortDir = args.consortDir ?? resolveConsortDir(projectDir);
-  const lkShim = path13.join(projectDir, "scripts", "lk");
+  const lkShim = path14.join(projectDir, "scripts", "lk");
   try {
     const result = await parkAndSwitch(
       { consortDir, toFeature: args.toFeature },

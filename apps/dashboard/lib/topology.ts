@@ -1343,6 +1343,17 @@ export function reachedThisPass(events: AgentLogEvent[], upTo?: number, feature?
   const reached = new Set<string>();
   for (const { e, feature: f, phase, buildMode } of eventsWithFeature(events, upTo)) {
     if (feature !== undefined && f !== feature) continue;
+    // An experiment.cut opens a NEW per-story/per-AC build pass. The prior pass's build + deploy steps
+    // (including the deploy VERIFY card) belong to the cycle that just ended, so drop them HERE — before
+    // the next navigator-red (`b-red`, the build lane's first step) would otherwise reset build. Without
+    // this they linger "reached" in the gap between the cut and that red, so the furthest-reached
+    // fallback in currentLocus lit verify at a cut frame where nothing is deploying (the user-reported
+    // "verify card lit up at the experiment cut, next step navigator-red"). Upstream plan/design stay.
+    if (e.event === "experiment.cut") {
+      for (const id of LANE_STEP_IDS.build) reached.delete(id);
+      for (const id of LANE_STEP_IDS.deploy) reached.delete(id);
+      continue;
+    }
     const hit = laneStepForEvent(withCarried(e, phase, buildMode));
     if (!hit) continue;
     // A new pass through this lane: its first step is lit AGAIN. Drop everything this lane

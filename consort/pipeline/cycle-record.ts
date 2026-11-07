@@ -56,7 +56,8 @@ import { checkContractClean, supersededTestCandidates } from "../architecture/co
 import { readRefactorVerifyAssessMarker, writeRefactorVerifyAssessMarker, clearRefactorVerifyAssessMarker } from "../smells/refactor-verify-assess.js";
 import { checkMigrationAppClean } from "../architecture/migration-app-clean.js";
 import { checkShippedMigrationImmutable } from "../architecture/migration-history-clean.js";
-import { checkTestSmells, AUTHOR_LAYER_TEST_SMELLS } from "../architecture/test-smell-clean.js";
+import { checkTestSmells, AUTHOR_LAYER_TEST_SMELLS, resilienceViolations } from "../architecture/test-smell-clean.js";
+import { readReauthorMarker, writeReauthorMarker } from "../smells/reauthor-resilience.js";
 import { emitAgentLogEvent, type AgentLogEventInput } from "../../consort/logging/agent-log.js";
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -524,6 +525,10 @@ export interface GreenResult {
    *  green-failure marker is written so the orchestration routes a Navigator
    *  assess turn (supersession vs genuine regression) instead of escalating. */
   needsAssess?: boolean;
+  /** Set when a test-RESILIENCE smell fired (unspent one-shot): the cycle stays RED + a
+   *  reauthor marker is written so the orchestration routes a Navigator RE-AUTHOR turn
+   *  (it edits the flaky test resilient), then re-verifies. */
+  needsReauthor?: boolean;
 }
 
 /** True when a verify failure summary carries a Databricks auth-expiry signature
@@ -840,6 +845,11 @@ export async function greenOpenCycle(
   // Driver code-repair cannot close – escalate to the author on the first failure instead
   // of looping bounded assess->repair rounds (see AUTHOR_LAYER_TEST_SMELLS).
   let authorLayerTestSmell = false;
+  // A fired test-RESILIENCE smell (RESILIENCE_TEST_SMELLS): routes an AUTO Navigator RE-AUTHOR
+  // turn (the Navigator who authored the flaky test edits it resilient), one-shot, before promote
+  // — NOT HIL (author-layer) and NOT a Driver repair. These capture its remediation + flagged files.
+  let resilienceSmellRemediation: string | undefined;
+  let resilienceFlaggedTests: string[] = [];
   // DB-PROVISIONING short-circuit (issue #197): a verify that failed because the
   // E2E app served an UNMIGRATED/unreachable database is an infra fault, not a
   // regression. The harness never reuses a server anymore (CI=1 + free ports in
@@ -928,6 +938,12 @@ export async function greenOpenCycle(
           // ...UNLESS a fired smell is an author-layer (migration-reversibility) class a
           // surgical Driver repair cannot close – those escalate on first failure below.
           authorLayerTestSmell = smells.violations.some((v) => AUTHOR_LAYER_TEST_SMELLS.has(v.smell));
+          // A RESILIENCE smell routes the AUTO Navigator reauthor turn (below), not HIL / Driver.
+          const resil = resilienceViolations(smells);
+          if (resil.length > 0) {
+            resilienceSmellRemediation = smells.remediation;
+            resilienceFlaggedTests = [...new Set(resil.map((v) => v.file))];
+          }
         }
       } catch {
         /* advisory scan: a gate error must never fail the cycle */
@@ -1006,6 +1022,11 @@ export async function greenOpenCycle(
         if (!failSmells.clean && failSmells.remediation) {
           testSmellRemediation = failSmells.remediation;
           authorLayerTestSmell = failSmells.violations.some((v) => AUTHOR_LAYER_TEST_SMELLS.has(v.smell));
+          const resil = resilienceViolations(failSmells);
+          if (resil.length > 0) {
+            resilienceSmellRemediation = failSmells.remediation;
+            resilienceFlaggedTests = [...new Set(resil.map((v) => v.file))];
+          }
         }
       } catch {
         /* advisory scan: a gate error must never fail the cycle */
@@ -1018,6 +1039,29 @@ export async function greenOpenCycle(
     // test the Driver cannot green, then escalates anyway (the observed churn). The scan already
     // deterministically diagnosed it with the exact per-occurrence fix, so escalate on the FIRST
     // failure with that remediation – same posture as auth-expired.
+    // TEST-RESILIENCE RE-AUTHOR routing: a flaky-by-construction test (a re-read with no
+    // confirmed signal, a fixed-duration wait) the Navigator authored. Route an AUTO Navigator
+    // RE-AUTHOR turn (it edits the test resilient), bounded to ONE attempt. On a repeat smell
+    // after the one reauthor ran (marker attempts>=1), escalate — the one-shot is spent. This
+    // sits BEFORE the author-layer HIL (resilience smells are NOT author-layer) and before the
+    // Driver assess/repair (the Navigator owns authoring, not the Driver).
+    if (resilienceSmellRemediation && open.ac_id) {
+      const prior = readReauthorMarker(consortDir, featureId, story, open.ac_id);
+      if ((prior?.attempts ?? 0) >= 1) {
+        const escalation = writeEscalation(consortDir, {
+          source: "test-authoring-smell",
+          reason:
+            `A test-RESILIENCE smell for ${open.test_id} (${open.ac_id}) in ${featureId}/${story} PERSISTS after ` +
+            `one Navigator re-author – raising to HIL with the remediation instead of looping.\n${resilienceSmellRemediation}`,
+          feature_id: featureId,
+          story_id: story,
+          ac_id: open.ac_id,
+        });
+        return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, escalated: true, escalation, summary: result.summary };
+      }
+      writeReauthorMarker(consortDir, featureId, story, open.ac_id, resilienceFlaggedTests, resilienceSmellRemediation);
+      return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, needsReauthor: true, summary: result.summary };
+    }
     if (authorLayerTestSmell && testSmellRemediation) {
       const escalation = writeEscalation(consortDir, {
         source: "test-authoring-smell",

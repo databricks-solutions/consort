@@ -13,7 +13,7 @@ import {
   featureSpecJson,
   featureSpecMd,
 } from "../../consort/config/consort-paths.js";
-import { featureDir, storyAcsConformanceReason, storyIndependenceForStoryReason, storyRequiresE2eReason, registeredBreakdownReason } from "../../consort/gates/gate-conformance-guard.js";
+import { featureDir, storyAcsConformanceReason, storyIndependenceForStoryReason, storyRequiresE2eReason, registeredBreakdownReason, featureCoverageReason } from "../../consort/gates/gate-conformance-guard.js";
 import { logGateApproved } from "../../consort/logging/gate-decision-log.js";
 import { withPipelineLock } from "../../consort/gates/gates-lock.js";
 
@@ -480,6 +480,26 @@ export interface ApproveStoryGateOutcome {
  * outcome (never throws for a known-story miss) so each caller formats its own
  * message + exit code.
  */
+/** True when approving `approvingStory` leaves EVERY feature-spec `stories[]` entry gated — i.e. this
+ *  approval completes the feature's design. (This story is counted as about-to-be-approved; all others
+ *  must already be gate `approved`.) Used to fire the feature-wide coverage check at design-complete.
+ *  False when feature-spec is missing/empty or any sibling is not yet approved (so it never fires early). */
+function featureDesignCompletedBy(
+  consortDir: string,
+  feature: string,
+  approvingStory: string,
+  pipeline: StoryPipeline,
+): boolean {
+  let stories: string[] = [];
+  try {
+    stories = (JSON.parse(readFileSync(featureSpecJson(consortDir, feature), "utf8")) as { stories?: string[] }).stories ?? [];
+  } catch {
+    return false;
+  }
+  if (stories.length === 0) return false;
+  return stories.every((s) => s === approvingStory || pipeline.stories[s]?.gate?.status === "approved");
+}
+
 export function approveStoryGateFromDisk(
   consortDir: string,
   feature: string,
@@ -517,6 +537,18 @@ export function approveStoryGateFromDisk(
   // Fails at ITS OWN spec gate (fail-closed) rather than opening on a flattened backend-only spec.
   const e2eReason = storyRequiresE2eReason(featureDir(consortDir, feature), story);
   if (e2eReason) return { ok: false, error: e2eReason };
+  // F5/PI1 class: enforce FEATURE-WIDE persistence coverage + SHAPE (persistence/migration-reversible/
+  // transactional/distinct) at the gate that COMPLETES the feature's design — so an uncovered or
+  // mis-shaped invariant is caught HERE, at design, BEFORE build, not only at the post-build
+  // feature-complete backstop. Fires only when approving THIS story leaves every feature-spec story
+  // gated (all others already approved), so an early story is never blocked by a later story's
+  // not-yet-authored invariant; the feature-complete conformance guard still backstops anything that
+  // slips (e.g. stories approved out of order). Same "run the feature-wide check on the per-story
+  // approve path" fix the kit already applied to AC-conformance/independence/requires-e2e above.
+  if (featureDesignCompletedBy(consortDir, feature, story, pipeline)) {
+    const coverageReason = featureCoverageReason(consortDir, feature);
+    if (coverageReason) return { ok: false, error: coverageReason };
+  }
   // The mutation runs under the pipeline lock, re-reading the pipeline FRESH inside the critical
   // section (not the copy read above for validation): a plain write here races a concurrent writer
   // holding a stale whole-pipeline copy, whose write would drop this just-landed approval — the lost

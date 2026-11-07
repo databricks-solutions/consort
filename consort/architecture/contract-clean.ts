@@ -17,7 +17,7 @@
 // the live database (the migration's own drop/add statements ARE the contract delta).
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, extname } from "node:path";
+import { join, relative, extname, basename } from "node:path";
 import { splitPyBlocks, blockDefName } from "../experiment/py-source.js";
 
 import { artifactRootsRegexAlternation } from "../../consort/config/consort-paths.js";
@@ -249,6 +249,67 @@ export function supersededTestCandidates(args: ContractCleanArgs): SupersededTes
     ` superseded (path (a)) so the Driver may permissively refactor them in the SAME repair turn as the code fix.` +
     ` Do NOT hand-edit them to force green:\n${list}`;
   return { droppedSymbols: dropped, candidates, advisory };
+}
+
+/**
+ * Deterministic supersession candidates for a REQUEST-FIELD RECONCILIATION (the complement to the
+ * dropped-column sweep above). When a story makes a field REQUIRED on a shared mutation endpoint
+ * (`api_contracts[].request_fields` with `required:true` + `since_story === <this story>` + a non-empty
+ * `reconciled_stories`), every PRIOR-story test that POSTs to that endpoint WITHOUT the field now 422s at
+ * the full-feature verify (the actor-required-on-EP4-broke-S1 class). The Navigator, reading the test-list,
+ * flags only the tests the LIST enumerates by `scenario_file` — which omits the backend API tests that call
+ * the endpoint directly (they carry the path as a `URL = "…"` literal, not a scenario_file entry). So this
+ * pre-localizes them DETERMINISTICALLY: scan the test tree for the endpoint PATH literal, EXCLUDING the
+ * current story's own tests (its `scenario_file`s + its `test_s<N>_…` backend files — only prior + current
+ * stories' test files exist at this story's build time, so excluding the current leaves exactly the prior
+ * writers). The result is UNIONED into the superseded-tests directive so the Driver updates them in the
+ * same pass. Empty when no field was made required by this story / no prior test references the endpoint.
+ */
+export function requestFieldSupersededTestFiles(args: {
+  projectDir: string;
+  architectureJson: string;
+  currentStory: string;
+  excludeScenarioFiles?: readonly string[];
+}): string[] {
+  const { projectDir, architectureJson, currentStory } = args;
+  let arch: { api_contracts?: Array<{ path?: string; request_fields?: Array<{ required?: boolean; since_story?: string; reconciled_stories?: unknown }> }> };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return [];
+  }
+  const paths = new Set<string>();
+  for (const c of arch.api_contracts ?? []) {
+    if (!c || typeof c.path !== "string" || !c.path) continue;
+    for (const f of c.request_fields ?? []) {
+      if (f && f.required === true && f.since_story === currentStory && Array.isArray(f.reconciled_stories) && f.reconciled_stories.length > 0) {
+        paths.add(c.path);
+      }
+    }
+  }
+  if (paths.size === 0) return [];
+  const exclude = new Set(args.excludeScenarioFiles ?? []);
+  const m = /^S(\d+)/.exec(currentStory);
+  const currentBackendRe = m ? new RegExp(`^test_s${m[1]}[._]`) : null;
+  const pathList = [...paths];
+  const results = new Set<string>();
+  for (const td of [...DEFAULT_TEST_DIRS, ...CLIENT_TEST_DIRS]) {
+    const abs = join(projectDir, td);
+    if (!existsSync(abs)) continue;
+    for (const file of walk(abs, (p) => CODE_EXTS.has(extname(p)), [], EXCLUDE_DIR_JUNK)) {
+      const rel = relative(projectDir, file);
+      if (exclude.has(rel)) continue; // the current story's own (client) tests
+      if (currentBackendRe && currentBackendRe.test(basename(file))) continue; // the current story's own backend tests
+      let content: string;
+      try {
+        content = readFileSync(file, "utf8");
+      } catch {
+        continue;
+      }
+      if (pathList.some((p) => content.includes(p))) results.add(rel);
+    }
+  }
+  return [...results].sort();
 }
 
 export interface SupersededPartition {

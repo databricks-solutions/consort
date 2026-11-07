@@ -29,6 +29,9 @@ export function turnKeyForAction(action: WorkflowAction): TurnKey | undefined {
         return "reconcile"; // feature-complete symmetric cross-story reconciliation — its OWN step key (NOT red)
       case "review":
         return "review";
+      case "reauthor":
+        return "reauthor"; // test-RESILIENCE re-author (navigator edits the flaky test) — its OWN step key, NOT red
+
       case "refactor":
       case "refactor-deploy":
       case "refactor-superseded": // BUGFIX: previously fell through to undefined

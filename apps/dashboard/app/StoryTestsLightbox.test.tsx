@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TestBubbles, summarizeTests, testTailForStory, testType, type StoryTest } from "./StoryTestsLightbox";
+import { TestBubbles, summarizeTests, testTailForStory, resolveTestDisplayStatus, testType, branchChipLabel, type StoryTest } from "./StoryTestsLightbox";
 import type { ActivityLine } from "./AgentLogReplay";
 
 const items: StoryTest[] = [
@@ -15,12 +15,60 @@ describe("summarizeTests", () => {
     const s = summarizeTests(items);
     expect(s.total).toBe(4);
     expect(s.passing).toBe(2); // green + refactored both read as passing
+    expect(s.superseded).toBe(0);
     expect(s.pct).toBe(50);
     expect(s.by).toEqual({ green: 1, red: 1, pending: 1, refactored: 1 });
   });
 
+  it("counts both superseded variants apart from passing", () => {
+    const s = summarizeTests([
+      { id: "A", description: "", ac_id: "AC1", status: "green" },
+      { id: "B", description: "", ac_id: "AC1", status: "superseded" },
+      { id: "C", description: "", ac_id: "AC1", status: "supersededGreen" },
+    ]);
+    expect(s.passing).toBe(1); // only the live green
+    expect(s.superseded).toBe(2); // never-greened + was-green-then-regressed
+    expect(s.total).toBe(3);
+  });
+
   it("is 0% / empty for no items (no divide-by-zero)", () => {
-    expect(summarizeTests([])).toEqual({ by: {}, passing: 0, total: 0, pct: 0 });
+    expect(summarizeTests([])).toEqual({ by: {}, passing: 0, superseded: 0, total: 0, pct: 0 });
+  });
+});
+
+describe("resolveTestDisplayStatus — authoritative, never inferred from the lossy trail", () => {
+  const t = (over: Partial<StoryTest> = {}): StoryTest => ({ id: "T1", description: "d", ac_id: "AC1", status: "green", ...over });
+  const base = { supersededIds: new Set<string>(), featureShipped: false, trail: new Map<string, string>(), haveTestLines: false, atLive: true };
+
+  it("supersession wins ONLY from the real set, struck green or red by the authored status", () => {
+    expect(resolveTestDisplayStatus({ ...base, test: t({ status: "green" }), supersededIds: new Set(["T1"]) })).toBe("supersededGreen");
+    expect(resolveTestDisplayStatus({ ...base, test: t({ status: "red" }), supersededIds: new Set(["T1"]) })).toBe("superseded");
+  });
+
+  it("a SHIPPED story trusts the authoritative per-story status, ignoring the trail", () => {
+    // Even if the (lossy) trail only ever saw red, a shipped story reads its authoritative green.
+    const trail = new Map([["T1", "red"]]);
+    expect(resolveTestDisplayStatus({ ...base, test: t({ status: "green" }), featureShipped: true, trail, haveTestLines: true, atLive: false })).toBe("green");
+  });
+
+  it("an ACTIVE story reveals the recorded red→green progression from the trail", () => {
+    const trail = new Map([["T1", "red"]]);
+    expect(resolveTestDisplayStatus({ ...base, test: t(), trail, haveTestLines: true, atLive: false })).toBe("red");
+    const greened = new Map([["T1", "green"]]);
+    expect(resolveTestDisplayStatus({ ...base, test: t(), trail: greened, haveTestLines: true, atLive: false })).toBe("green");
+  });
+
+  it("an ACTIVE story with a test not yet reached is pending when scrubbed, HEAD status at the live edge", () => {
+    expect(resolveTestDisplayStatus({ ...base, test: t({ status: "green" }), trail: new Map(), haveTestLines: true, atLive: false })).toBe("pending");
+    expect(resolveTestDisplayStatus({ ...base, test: t({ status: "green" }), trail: new Map(), haveTestLines: true, atLive: true })).toBe("green");
+  });
+
+  it("never fabricates supersession from a red-only trail (the corrected behavior)", () => {
+    // A test red in the trail, NOT in the superseded set, NOT shipped → red (being worked), never superseded.
+    const trail = new Map([["T1", "red"]]);
+    const out = resolveTestDisplayStatus({ ...base, test: t({ status: "red" }), trail, haveTestLines: true, atLive: false });
+    expect(out).toBe("red");
+    expect(out).not.toBe("superseded");
   });
 });
 
@@ -140,5 +188,17 @@ describe("testType — a client test is E2E, never a bare CLIENT", () => {
     expect(html).toContain(">E2E<");
     expect(html).toContain(">COMP<");
     expect(html).not.toContain(">CLIENT<");
+  });
+});
+
+describe("branchChipLabel (live-vs-viewed hard label)", () => {
+  it("is a plain label when the viewed story IS the live one", () => {
+    expect(branchChipLabel(true, "F9-stock-search")).toBe("lakebase branch");
+  });
+  it("hard-labels the live run's feature when viewing a non-live story", () => {
+    expect(branchChipLabel(false, "F9-stock-search")).toBe("live · F9-stock-search · branch");
+  });
+  it("falls back to 'run' when the live feature is unknown", () => {
+    expect(branchChipLabel(false, null)).toBe("live · run · branch");
   });
 });

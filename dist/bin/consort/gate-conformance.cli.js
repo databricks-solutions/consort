@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path2) {
-      let input = path2;
+    function removeDotSegments(path5) {
+      let input = path5;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path2, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path2 && path2 !== "/" ? path2 : void 0;
+        const [path5, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -3680,49 +3680,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse(serialize(base, options), options);
-        relative = parse(serialize(relative, options), options);
+        relative4 = parse(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3730,7 +3730,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -6657,6 +6657,7 @@ import { join } from "path";
 var ARTIFACT_ROOT = ".consort";
 var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
 var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
+var artifactRootsRegexAlternation = () => ALL_ARTIFACT_ROOTS.map((r) => r.replace(/[.]/g, "\\.")).join("|");
 function resolveConsortDir(projectDir = process.cwd()) {
   const next = join(projectDir, ARTIFACT_ROOT);
   if (fs.existsSync(next)) return next;
@@ -6667,6 +6668,8 @@ function resolveConsortDir(projectDir = process.cwd()) {
   return next;
 }
 var featuresDir = (tdd) => join(tdd, "features");
+var escalationsDir = (tdd) => join(tdd, "escalations");
+var escalationFile = (tdd, id) => join(escalationsDir(tdd), `${id}.json`);
 var featureDir = (tdd, featureId) => join(featuresDir(tdd), featureId);
 var featureResolved = (tdd, f) => findFeatureDir(tdd, f) ?? featureDir(tdd, f);
 var storiesDir = (tdd, f) => join(featureResolved(tdd, f), "stories");
@@ -6905,8 +6908,8 @@ function checkTestListMd(content) {
 }
 var REQUIRED_NFR_ITEM_RE = /^\s*[-*]\s+\*{0,2}(R\d+)\*{0,2}\s*[:.)\-]?\s*(.*)$/;
 var PLAIN_LIST_ITEM_RE = /^\s*[-*]\s+(.*\S)\s*$/;
-function parseRequiredNfrs(nfrsMd) {
-  const lines = nfrsMd.split("\n");
+function parseRequiredNfrs(nfrsMd2) {
+  const lines = nfrsMd2.split("\n");
   const out = [];
   let inRequired = false;
   for (const line of lines) {
@@ -6926,12 +6929,12 @@ function parseRequiredNfrs(nfrsMd) {
   }
   return out;
 }
-function checkNfrCoverage(nfrsMd, architectureJson, otherFeatureBriefRefs = /* @__PURE__ */ new Set()) {
-  const required = parseRequiredNfrs(nfrsMd);
+function checkNfrCoverage(nfrsMd2, architectureJson2, otherFeatureBriefRefs = /* @__PURE__ */ new Set()) {
+  const required = parseRequiredNfrs(nfrsMd2);
   if (required.length === 0) return { ok: true };
   let parsed;
   try {
-    parsed = JSON.parse(architectureJson);
+    parsed = JSON.parse(architectureJson2);
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     return { ok: false, violations: [`architecture.json is not valid JSON: ${cause}`] };
@@ -6975,10 +6978,10 @@ function projectBriefRefs(consortDir) {
   }
   return refs;
 }
-function checkLayeringDeclared(architectureJson) {
+function checkLayeringDeclared(architectureJson2) {
   let parsed;
   try {
-    parsed = JSON.parse(architectureJson);
+    parsed = JSON.parse(architectureJson2);
   } catch (err) {
     return { ok: false, violations: [`architecture.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
@@ -6997,10 +7000,10 @@ function checkLayeringDeclared(architectureJson) {
   }
   return { ok: true };
 }
-function checkFitnessCoverage(testListJson, architectureJson) {
+function checkFitnessCoverage(testListJson, architectureJson2) {
   let arch;
   try {
-    arch = JSON.parse(architectureJson);
+    arch = JSON.parse(architectureJson2);
   } catch {
     return { ok: true };
   }
@@ -7023,15 +7026,15 @@ function checkFitnessCoverage(testListJson, architectureJson) {
   }
   return { ok: true };
 }
-function checkPersistenceCoverage(testListJson, architectureJson) {
+function checkPersistenceCoverage(testListJson, architectureJson2, dbDesignJson2) {
   let arch;
   try {
-    arch = JSON.parse(architectureJson);
+    arch = JSON.parse(architectureJson2);
   } catch {
     return { ok: true };
   }
   if (arch.service_backed !== true) return { ok: true };
-  const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0);
+  const invariants = (arch.persistence_invariants ?? []).filter((i) => !!i && typeof i.id === "string" && i.id.length > 0);
   if (invariants.length === 0) return { ok: true };
   let tl;
   try {
@@ -7040,7 +7043,9 @@ function checkPersistenceCoverage(testListJson, architectureJson) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
   const covered = new Set((tl.items ?? []).map((i) => i.invariant_id).filter((x) => typeof x === "string" && x.length > 0));
-  const uncovered = invariants.map((i) => i.id).filter((id) => !covered.has(id));
+  const realizing = dbDesignJson2 ? invariantRealizingStory(architectureJson2, dbDesignJson2) : null;
+  const demanded = invariants.filter((i) => realizing === null || i.type === "transactional" || realizing.has(i.id));
+  const uncovered = demanded.map((i) => i.id).filter((id) => !covered.has(id));
   if (uncovered.length > 0) {
     return {
       ok: false,
@@ -7051,17 +7056,83 @@ function checkPersistenceCoverage(testListJson, architectureJson) {
   }
   return { ok: true };
 }
-function checkDbDesign(dbDesignJson, architectureJson) {
+function checkMigrationReversibleShape(testListJson, architectureJson2) {
   let arch;
   try {
-    arch = JSON.parse(architectureJson);
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const reversible = (arch.persistence_invariants ?? []).filter(
+    (i) => i && typeof i.id === "string" && i.id.length > 0 && i.type === "migration_reversible"
+  );
+  if (reversible.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const inv of reversible) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) continue;
+    if (covering.some((it) => describesMigrationRoundTrip(it.description ?? ""))) continue;
+    const ids = covering.map((it) => it.id ?? "?").join(", ");
+    violations.push(
+      `migration_reversible invariant ${inv.id} is covered only by FORWARD-ONLY test-list item(s) [${ids}] \u2014 none describes a downgrade round-trip. A migration_reversible invariant MUST be verified by a ROUND-TRIP: downgrade to the migration-under-test's OWN down_revision, then upgrade head, and assert reversibility (own-table \u2192 schema recreated; pre-existing table \u2192 seed before, rows unchanged after). A forward-only "seed then upgrade head" test does not exercise reversibility and is unsatisfiable on an already-migrated branch. Re-author the covering item as an explicit round-trip (carry @pytest.mark.migration), OR retag ${inv.id} onto the round-trip item that performs it. See navigator.md (case A/B) / test-strategy.md.`
+    );
+    for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkTransactionalShape(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const transactional = (arch.persistence_invariants ?? []).filter(
+    (i) => i && typeof i.id === "string" && i.id.length > 0 && i.type === "transactional"
+  );
+  if (transactional.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const inv of transactional) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) continue;
+    if (covering.some((it) => describesAtomicityRollback(it.description ?? ""))) continue;
+    const ids = covering.map((it) => it.id ?? "?").join(", ");
+    violations.push(
+      `transactional invariant ${inv.id} is covered only by item(s) [${ids}] that do NOT describe an ATOMICITY/ROLLBACK test \u2014 a transactional invariant MUST be verified by FORCING a mid-transaction failure and asserting NEITHER write persists (e.g. patch the commit/second write to raise, then assert the row-update AND the audit row both rolled back \u2014 the F2 T19 shape), NOT a migration downgrade/upgrade round-trip. Re-author the covering item as an atomicity test, OR retag ${inv.id} onto the item that performs it. See test-strategy.md / navigator.md.`
+    );
+    for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkDbDesign(dbDesignJson2, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
   } catch {
     return { ok: true };
   }
   if (arch.service_backed !== true) return { ok: true };
   const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0).map((i) => i.id);
   if (invariants.length === 0) return { ok: true };
-  if (dbDesignJson === void 0) {
+  if (dbDesignJson2 === void 0) {
     return {
       ok: false,
       violations: [
@@ -7071,7 +7142,7 @@ function checkDbDesign(dbDesignJson, architectureJson) {
   }
   let db;
   try {
-    db = JSON.parse(dbDesignJson);
+    db = JSON.parse(dbDesignJson2);
   } catch (err) {
     return { ok: false, violations: [`db-design.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
@@ -7169,9 +7240,41 @@ function checkAcIndependence(acs) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
-function canonicalArtifactName(path2) {
-  const base = basename(path2);
-  if (basename(dirname(path2)) === "acs" && base.endsWith(".json")) return "ac.json";
+function invariantRealizingStory(architectureJson2, dbDesignJson2) {
+  const out = /* @__PURE__ */ new Map();
+  if (!architectureJson2 || !dbDesignJson2) return out;
+  let arch;
+  let db;
+  try {
+    arch = JSON.parse(architectureJson2);
+    db = JSON.parse(dbDesignJson2);
+  } catch {
+    return out;
+  }
+  const changes = (db.schema_changes ?? []).filter(
+    (c) => !!c && typeof c.story_id === "string" && typeof c.kind === "string" && typeof c.table === "string"
+  );
+  const sNum = (s) => {
+    const m = /^S(\d+)/.exec(s);
+    return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+  };
+  const tableRealizer = /* @__PURE__ */ new Map();
+  for (const table of new Set(changes.map((c) => c.table))) {
+    const forTable = changes.filter((c) => c.table === table);
+    const creator = forTable.find((c) => c.kind === "create_table");
+    const realizer = creator ? creator.story_id : [...forTable].sort((a, b) => sNum(a.story_id) - sNum(b.story_id))[0]?.story_id;
+    if (realizer) tableRealizer.set(table, realizer);
+  }
+  for (const inv of arch.persistence_invariants ?? []) {
+    if (!inv || typeof inv.id !== "string" || typeof inv.table !== "string") continue;
+    const realizer = tableRealizer.get(inv.table);
+    if (realizer) out.set(inv.id, realizer);
+  }
+  return out;
+}
+function canonicalArtifactName(path5) {
+  const base = basename(path5);
+  if (basename(dirname(path5)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
 }
 function scanFeatureConformance(consortDir, featureId) {
@@ -7208,11 +7311,11 @@ function scanFeatureConformance(consortDir, featureId) {
         } catch {
         }
       }
-      const acsDir = join3(storyDir, "acs");
-      if (existsSync3(acsDir)) {
+      const acsDir2 = join3(storyDir, "acs");
+      if (existsSync3(acsDir2)) {
         const acs = [];
-        for (const acFile of readdirSync2(acsDir).filter((f) => f.endsWith(".json"))) {
-          const acPath = join3(acsDir, acFile);
+        for (const acFile of readdirSync2(acsDir2).filter((f) => f.endsWith(".json"))) {
+          const acPath = join3(acsDir2, acFile);
           paths.push(acPath);
           try {
             acs.push({ name: acFile.replace(/\.json$/, ""), content: readFileSync3(acPath, "utf8") });
@@ -7292,9 +7395,37 @@ function scanFeatureConformance(consortDir, featureId) {
         ok: persist.ok,
         violations: persist.ok ? [] : persist.violations
       });
+      const revShape = checkMigrationReversibleShape(testListContent, archContent);
+      entries.push({
+        artifact: "test-list.json -> architecture.json (migration_reversible shape)",
+        ok: revShape.ok,
+        violations: revShape.ok ? [] : revShape.violations
+      });
+      const txnShape = checkTransactionalShape(testListContent, archContent);
+      entries.push({
+        artifact: "test-list.json -> architecture.json (transactional atomicity shape)",
+        ok: txnShape.ok,
+        violations: txnShape.ok ? [] : txnShape.violations
+      });
     }
   }
   return { featureId, ok: entries.every((e) => e.ok), entries };
+}
+function describesMigrationRoundTrip(desc) {
+  return /\bround.?trip\b/i.test(desc) || /\bdowngrad\w*/i.test(desc) && /\bupgrad\w*/i.test(desc) || // Directional shorthand for a round-trip — "down->up", "down→up", "down/up", "down-up"
+  // (an arrow/slash/dash BETWEEN the two, never a bare "down up" which could be unrelated prose).
+  // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
+  // as forward-only — the description-fragility that must not bounce a correct test.
+  /\bdown\s*[-/→>]+\s*up\b/i.test(desc);
+}
+function describesAtomicityRollback(desc) {
+  const d = desc.toLowerCase();
+  return /\broll\s*back\b|\brolls?\s*back\b|\brolled\s*back\b/.test(d) || /\bneither\b[^.]*\b(persist|written|writes|commit|row|saved|inserted)\b/.test(d) || /\b(transaction|commit|write|insert|update)\b[^.]*\bfail/.test(d) || /\beither\b[^.]*\bfail/.test(d) || /\batomic/.test(d) && /\b(fail|roll|neither|both)\b/.test(d) || // READ-ONLY flavor of a `transactional` invariant: the operation runs in a read-only unit of work
+  // (it performs NO writes), e.g. F5's PI25-count-read-only. Its correct covering test asserts the
+  // transaction writes nothing / leaves the tables unchanged — a valid transactional shape, not an
+  // atomicity/rollback one. Keyed narrowly (explicit read-only / writes-nothing / no-row-written) so
+  // a mere incidental "unchanged" aside cannot satisfy a genuine atomicity invariant.
+  /\bread[-\s]?only\b/.test(d) || /\bwrites?\s+nothing\b/.test(d) || /\bno\b[^.]*\b(row|write|insert|adjustment)s?\b[^.]*\b(written|inserted|created|persist|made)\b/.test(d);
 }
 
 // consort/intake/spec-sync.ts
@@ -7364,6 +7495,327 @@ function normalizeStoryJson(consortDir, featureId) {
   return changed;
 }
 
+// consort/gates/escalation.ts
+init_esm_shims();
+import * as fs6 from "fs";
+
+// consort/smells/smells.ts
+init_esm_shims();
+
+// consort/pipeline/run-cycle.ts
+init_esm_shims();
+import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/experiment/experiment.ts
+init_esm_shims();
+import { execFileSync } from "child_process";
+import { createPairedBranch, deletePairedBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+var RUNTIME_ARTIFACT_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/"
+];
+
+// consort/logging/agent-log.ts
+init_esm_shims();
+
+// consort/config/consort-env.ts
+init_esm_shims();
+var ENV_PREFIXES = ["LAKEBASE_CONSORT_", "LAKEBASE_SFTDD_", "LAKEBASE_TDD_"];
+var ENV_PREFIX = ENV_PREFIXES[0];
+
+// consort/logging/agent-log-events.ts
+init_esm_shims();
+var EVENT_TEMPLATES = {
+  // Orchestration lifecycle (code-emitted)
+  "handoff": { template: "dispatch {{to_role}} for {{phase}}" },
+  "phase.start": { template: "{{role}} START {{phase}}" },
+  "phase.end": { template: "{{role}} END {{phase}} ({{outcome}})" },
+  "escalation.raised": { template: "RAISED TO HIL [{{source}}]: {{reason}}" },
+  // Gates (code surfaces; HIL / Human Proxy decides)
+  "gate.surfaced": { template: "GATE {{gate}} awaiting decision \u2013 {{subject}}" },
+  "gate.approved": { template: "GATE {{gate}} APPROVED" },
+  "gate.rejected": { template: "GATE {{gate}} REJECTED: {{reason}}" },
+  "gate.modified": { template: "GATE {{gate}} MODIFIED: {{change}}" },
+  // Intake & planning
+  "intake.supplied": { template: "INTAKE supplied {{artifact}}" },
+  "intake.refused": { template: "INTAKE refused {{artifact}}: {{reason}}" },
+  // Artifacts & design (agent-emitted)
+  "artifact.written": { template: "{{role}} wrote {{artifact}} \u2013 {{summary}}" },
+  "open.question": { template: "OPEN Q [{{scope}}]: {{question}}" },
+  "concern.flagged": { template: "CONCERN {{concern}} \u2013 owner {{owner_layer}}" },
+  // Build cycle (cycle.* family: RED -> GREEN -> REVIEW -> REFACTOR)
+  "cycle.red": { template: "RED {{batch}} test(s) in {{cycle_id}} [{{layer}}], lead {{test_id}} ({{ac}}): {{asserts}}" },
+  "cycle.green": { template: "GREEN {{test_id}} [{{ac}}]: {{change}}" },
+  "cycle.verified": { template: "VERIFY [{{ac}}] on {{branch}} {{outcome}}: {{summary}}" },
+  "cycle.review": { template: "REVIEW [{{ac}}] refactor={{refactor}}: {{rationale}}" },
+  "cycle.refactored": { template: "REFACTOR [{{ac}}]: {{change}}" },
+  // Per-TEST status transition within a cycle (code-emitted by the runner as it parses the test
+  // runner's machine-readable output). Unlike cycle.green (one event per cycle, lead test only),
+  // this fires once per test id so the dashboard can reconstruct each test's status as-of any
+  // event index — the historical per-test trail the cycle.* family does not carry. story_id /
+  // ac_id / cycle_id ride in metadata (not template slots), like the other cycle.* events.
+  "test.result": { template: "TEST {{test_id}} {{status}}" },
+  "smell.flagged": { template: "SMELL {{smell}} ({{severity}}): {{detail}}" },
+  "runner.missing": { template: "NO RUNNER for layer {{layer}} (test {{test_id}})" },
+  // Experiment lifecycle (code-emitted)
+  "experiment.cut": { template: "EXPERIMENT cut for {{story}}" },
+  "experiment.accepted": { template: "EXPERIMENT accepted (merged) for {{story}}" },
+  "experiment.discarded": { template: "EXPERIMENT discarded for {{story}}: {{reason}}" },
+  "experiment.revised": { template: "EXPERIMENT revised for {{story}}: {{reason}}" },
+  // Deploy / verify (code-emitted from the deploy CLI)
+  "deploy.start": { template: "DEPLOY start {{scope}} -> {{target}}" },
+  "deploy.reachable": { template: "DEPLOY reachable {{url}} (pid {{pid}})" },
+  "deploy.unreachable": { template: "DEPLOY unreachable {{url}}: {{reason}}" },
+  "deploy.verified": { template: "DEPLOY verified {{scope}} @ {{url}} \u2013 verify {{verify_status}}" },
+  "deploy.failed": { template: "DEPLOY failed {{scope}}: {{reason}}" },
+  "verify.passed": { template: "VERIFY passed {{scope}} ({{command}})" },
+  "verify.failed": { template: "VERIFY failed {{scope}} ({{command}}): {{summary}}" },
+  // Deterministic per-pass verify wall-clock (code-emitted at each per-cycle GREEN).
+  // reversibility_ran is the tiered-verify signal: did the slow isolated-branch
+  // migration pass run this cycle, or did a non-migration cycle skip it. migration_ms
+  // / client_ms ride in metadata (present only when that pass ran).
+  "verify.timing": { template: "VERIFY timing {{total_ms}}ms (main {{main_ms}}ms, reversibility {{reversibility_ran}})" },
+  // Per-turn wall-clock attributed by TURN-KIND (+ story/ac in metadata) — the signal
+  // the timing report rolls up to find WHERE a story's wall-clock goes (e.g. supersession
+  // assess/green-superseded churn vs productive red/green). Code-emitted at dispatch.
+  "turn.timing": { template: "{{role}} {{turn_kind}} turn {{duration_ms}}ms ({{model}})" },
+  // UX adherence
+  "adherence.passed": { template: "ADHERENCE passed {{scope}}" },
+  "adherence.failed": { template: "ADHERENCE failed {{scope}}: {{diffs}}" },
+  // Per-turn model usage (code-emitted by the runner from the claude -p result).
+  // input_tokens is the turn's CONTEXT SIZE (prompt the model processed); the
+  // cache_* + cost_usd ride in metadata (not template slots, so not required).
+  "turn.usage": { template: "{{role}} turn used {{input_tokens}} input + {{output_tokens}} output tokens" },
+  // Generic (agent-emitted; debug / interim)
+  "reasoning": { template: "{{note}}" },
+  "progress": { template: "{{note}} \u2013 {{step}}" }
+};
+var AGENT_LOG_EVENT_NAMES = Object.keys(EVENT_TEMPLATES);
+
+// consort/pipeline/cycle-record.ts
+init_esm_shims();
+import { execFileSync as execFileSync5 } from "child_process";
+
+// consort/gates/verify-gate-integrity.ts
+init_esm_shims();
+
+// consort/gates/gate-hash.ts
+init_esm_shims();
+
+// consort/gates/gates.ts
+init_esm_shims();
+
+// consort/gates/gate-conformance-guard.ts
+init_esm_shims();
+import { existsSync as existsSync5, readFileSync as readFileSync5, readdirSync as readdirSync4, statSync as statSync4 } from "fs";
+import { join as join7, dirname as dirname4 } from "path";
+
+// consort/config/consort-config-file.ts
+init_esm_shims();
+import { dirname as dirname3, join as join6 } from "path";
+
+// consort/config/agent-models.ts
+init_esm_shims();
+import { dirname as dirname2, join as join5 } from "path";
+var RECOMMENDED_MODELS = {
+  "spec-author": "opus",
+  "architect-reviewer": "opus",
+  dba: "opus",
+  "test-strategist": "sonnet",
+  "ux-designer": "sonnet",
+  navigator: "sonnet",
+  driver: "sonnet",
+  "product-owner": "opus"
+};
+var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
+var AGENT_CONFIG_REL = join5(".lakebase", "agent-config.json");
+
+// consort/config/consort-config-file.ts
+var CONSORT_CONFIG_REL = join6(".lakebase", "consort-config.json");
+var LEGACY_CONFIG_RELS = [
+  join6(".lakebase", "sftdd-config.json"),
+  join6(".lakebase", "tdd-config.json")
+];
+var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
+
+// consort/test-list/test-list.ts
+init_esm_shims();
+
+// consort/architecture/architecture-conventions.ts
+init_esm_shims();
+
+// consort/gates/registered-breakdown.ts
+init_esm_shims();
+
+// consort/deploy/deploy.ts
+init_esm_shims();
+import { execSync, execFileSync as execFileSync2, spawn } from "child_process";
+import { randomBytes } from "crypto";
+import { existsSync as existsSync10, mkdirSync as mkdirSync3, readFileSync as readFileSync11, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "fs";
+import { dirname as dirname6, join as join13 } from "path";
+import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
+
+// consort/smells/deploy-verify-assess.ts
+init_esm_shims();
+import * as fs2 from "fs";
+import * as path2 from "path";
+
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync7, readFileSync as readFileSync7, readdirSync as readdirSync6, statSync as statSync6 } from "fs";
+import { join as join9, relative, extname as extname2 } from "path";
+
+// consort/architecture/migration-columns.ts
+init_esm_shims();
+import { existsSync as existsSync6, readFileSync as readFileSync6, readdirSync as readdirSync5, statSync as statSync5 } from "fs";
+import { join as join8, extname } from "path";
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+
+// consort/architecture/test-smell-clean.ts
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+
+// consort/architecture/contract-clean.ts
+init_esm_shims();
+import { existsSync as existsSync9, readFileSync as readFileSync9, readdirSync as readdirSync7, statSync as statSync7 } from "fs";
+import { join as join11, relative as relative2, extname as extname3, basename as basename3 } from "path";
+
+// consort/experiment/py-source.ts
+init_esm_shims();
+
+// consort/architecture/contract-clean.ts
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+var EXCLUDE_DIR = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE2}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
+);
+var EXCLUDE_DIR_JUNK = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE2}|\\.lakebase|dist|build)(/|$)`
+);
+
+// consort/architecture/e2e-regex-clean.ts
+init_esm_shims();
+import { readdirSync as readdirSync8, readFileSync as readFileSync10, statSync as statSync8 } from "fs";
+import { join as join12 } from "path";
+
+// consort/smells/ephemeral-verify.ts
+init_esm_shims();
+import { LAKEBASE_BRANCH_NAME_MAX } from "@databricks-solutions/lakebase-scm-utils/util";
+import { createBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { deleteBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { getConnection as getConnection2, waitForBranchAuthReady } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/architecture/design-adherence.ts
+init_esm_shims();
+import { existsSync as existsSync11, readFileSync as readFileSync12, readdirSync as readdirSync10, writeFileSync as writeFileSync5, mkdirSync as mkdirSync4, copyFileSync } from "fs";
+import { join as join14, dirname as dirname7, basename as basename4 } from "path";
+
+// consort/architecture/layering-clean.ts
+init_esm_shims();
+import { existsSync as existsSync12, readFileSync as readFileSync13, readdirSync as readdirSync11, statSync as statSync9 } from "fs";
+import { join as join15 } from "path";
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
+// consort/smells/supersession.ts
+init_esm_shims();
+import * as fs3 from "fs";
+import { execFileSync as execFileSync3 } from "child_process";
+import { createHash } from "crypto";
+import { dirname as dirname8, join as join16 } from "path";
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+
+// consort/smells/refactor-verify-assess.ts
+init_esm_shims();
+import * as fs4 from "fs";
+import * as path3 from "path";
+
+// consort/architecture/migration-app-clean.ts
+init_esm_shims();
+import { existsSync as existsSync15, readFileSync as readFileSync16, readdirSync as readdirSync12, statSync as statSync10 } from "fs";
+import { join as join18, relative as relative3, extname as extname4 } from "path";
+
+// consort/architecture/migration-history-clean.ts
+init_esm_shims();
+import { execFileSync as execFileSync4 } from "child_process";
+import { existsSync as existsSync16 } from "fs";
+import { join as join19 } from "path";
+
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs5 from "fs";
+import * as path4 from "path";
+
+// consort/pipeline/cycle-record.ts
+import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
+import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/pipeline/batch-decompose.ts
+init_esm_shims();
+
+// consort/gates/escalation.ts
+function escalationId(parts) {
+  return [parts.source, parts.feature_id, parts.story_id, parts.ac_id].filter(Boolean).join("__").replace(/[^A-Za-z0-9_.-]/g, "-");
+}
+function writeEscalation(consortDir, esc) {
+  const id = esc.id ?? escalationId(esc);
+  const file = escalationFile(consortDir, id);
+  const existing = readEscalationFile(file);
+  if (existing && !existing.resolved_at) return existing;
+  const full = {
+    id,
+    source: esc.source,
+    reason: esc.reason,
+    ...esc.feature_id ? { feature_id: esc.feature_id } : {},
+    ...esc.story_id ? { story_id: esc.story_id } : {},
+    ...esc.ac_id ? { ac_id: esc.ac_id } : {},
+    raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
+    // A caller MAY supply a source-specific resolution (e.g. feature-conformance names the exact
+    // `consort-pipeline repair` command); otherwise the generic clear-with-resolve-escalation default.
+    how_to_resolve: esc.how_to_resolve ?? `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
+  };
+  fs6.mkdirSync(escalationsDir(consortDir), { recursive: true });
+  fs6.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
+  return full;
+}
+function readEscalationFile(file) {
+  if (!fs6.existsSync(file)) return void 0;
+  try {
+    return JSON.parse(fs6.readFileSync(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+
 // bin/consort/gate-conformance.cli.ts
 function parseArgs(argv) {
   const out = {};
@@ -7380,6 +7832,9 @@ function parseArgs(argv) {
         break;
       case "--pretty":
         out.pretty = true;
+        break;
+      case "--escalate-on-fail":
+        out.escalateOnFail = true;
         break;
       case "--help":
       case "-h":
@@ -7403,6 +7858,10 @@ Flags:
   --tdd-dir <path>        artifact root (default: ./${ARTIFACT_ROOT}, honors legacy roots)
   --json                  Machine-readable JSON output
   --pretty                Pretty-print JSON
+  --escalate-on-fail      On non-conformance, write a surfaced \`feature-conformance\` escalation
+                          (resumable, with a repair resolution) before exiting 1 \u2014 so the drive
+                          halts with a HITL surface instead of a bare non-zero. Used by the
+                          feature-complete drive step.
   -h, --help              Show this help
 `;
 function runGateConformanceCli(argv) {
@@ -7449,6 +7908,15 @@ ${HELP}
 ` : `gate-conformance: ${report.entries.filter((e) => !e.ok).length} of ${report.entries.length} artifact(s) non-conformant
 `
     );
+  }
+  if (!report.ok && args.escalateOnFail && args.feature) {
+    const violations = report.entries.filter((e) => !e.ok).flatMap((e) => e.violations);
+    writeEscalation(consortDir, {
+      source: "feature-conformance",
+      reason: `feature-complete conformance failed for ${args.feature}: ${violations.join("; ")}`,
+      feature_id: args.feature,
+      how_to_resolve: `A declared persistence invariant is uncovered or covered by a wrong-shaped test. Close it on the ACCEPTED story via: consort-pipeline repair --feature ${args.feature} --story <the invariant's realizing/owning story> --gap uncovered-invariant --invariant <PIx> --approver <you>, then consort-pipeline complete-repair --feature ${args.feature} --story <S>. (A transactional invariant needs an atomicity/rollback test \u2014 the F2 T19 shape \u2014 NOT a migration round-trip.) Do NOT use \`--only design\` (it no-ops on the frozen test_list gate) and do NOT hand-edit test-list.json. Full ladder: skills/consort/references/escalation-triage.md.`
+    });
   }
   return report.ok ? 0 : 1;
 }

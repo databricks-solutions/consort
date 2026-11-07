@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path10) {
-      let input = path10;
+    function removeDotSegments(path11) {
+      let input = path11;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path10, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path10 && path10 !== "/" ? path10 : void 0;
+        const [path11, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path11 && path11 !== "/" ? path11 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -7018,13 +7018,13 @@ import {
 
 // consort/orchestrator/status/feature-status.ts
 init_esm_shims();
-import { existsSync as existsSync32, readFileSync as readFileSync33, readdirSync as readdirSync22, statSync as statSync14 } from "fs";
-import { dirname as dirname17, join as join30 } from "path";
+import { existsSync as existsSync33, readFileSync as readFileSync34, readdirSync as readdirSync22, statSync as statSync14 } from "fs";
+import { dirname as dirname18, join as join31 } from "path";
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_esm_shims();
-import * as fs12 from "fs";
-import * as path9 from "path";
+import * as fs13 from "fs";
+import * as path10 from "path";
 
 // consort/pipeline/run-cycle.ts
 init_esm_shims();
@@ -7383,7 +7383,7 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
 // consort/architecture/contract-clean.ts
 init_esm_shims();
 import { existsSync as existsSync20, readFileSync as readFileSync20, readdirSync as readdirSync14, statSync as statSync8 } from "fs";
-import { join as join19, relative as relative2, extname as extname3 } from "path";
+import { join as join19, relative as relative2, extname as extname3, basename } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -7412,7 +7412,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync22, readFileSync as readFileSync23, readdirSync as readdirSync17, writeFileSync as writeFileSync16, mkdirSync as mkdirSync15, copyFileSync as copyFileSync4 } from "fs";
-import { join as join22, dirname as dirname13, basename } from "path";
+import { join as join22, dirname as dirname13, basename as basename2 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
@@ -7469,6 +7469,11 @@ import { execFileSync as execFileSync4 } from "child_process";
 import { existsSync as existsSync27 } from "fs";
 import { join as join27 } from "path";
 
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs11 from "fs";
+import * as path9 from "path";
+
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -7497,11 +7502,11 @@ function driverPhaseForTdd(tddPhase) {
 // consort/pipeline/design-fingerprint.ts
 init_esm_shims();
 import { createHash as createHash2 } from "crypto";
-import { readFileSync as readFileSync28 } from "fs";
+import { readFileSync as readFileSync29 } from "fs";
 
 // consort/gates/workflow-phase.ts
 init_esm_shims();
-import * as fs11 from "fs";
+import * as fs12 from "fs";
 var PHASE_OWNER_KEY = "phase_feature_id";
 
 // consort/orchestrator/state/orchestrator-probe.ts
@@ -7531,7 +7536,7 @@ init_esm_shims();
 
 // consort/test-list/fan-out-plan.ts
 init_esm_shims();
-import { join as join28 } from "path";
+import { join as join29 } from "path";
 
 // consort/test-list/test-analyst-catalogue.ts
 init_esm_shims();
@@ -7555,7 +7560,7 @@ var TEST_ANALYST_CATALOGUE = {
     effort: "high",
     toolScope: ["Read"],
     inputs: ["architecture-invariants", "db-design"],
-    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the COMPONENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN `down_revision`, the explicit revision id named in that migration file; for an initial create-table that is the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after the downgrade-to-`down_revision` then `upgrade head` (NOT that data survives). TAG the reversibility item with `schema_change_id` = the EXACT db-design.json `schema_changes[]` id it exercises (e.g. `SC5-add-location-sku-index`): the DBA ledger is the authority. A migration-reversibility item with NO `schema_change_id` is flagged pre-reflect (`checkMigrationTestSchemaChangeTag`), and one naming a change the DBA did NOT plan is an orphan (`checkSchemaChangeOrphan`) \u2014 in either case DROP it rather than assert a migration the design defers (an index the architect only weighed). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` (the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
+    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the COMPONENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). **EXCEPTION \u2014 a `transactional` (ATOMICITY) invariant.** Its test verifies the OPERATION (a multi-write transaction \u2014 e.g. UPDATE one table AND INSERT another, committed together), NOT a table's schema, so anchor it to the story whose ACs PERFORM that operation (the write path), NOT to a `schema_changes` entry \u2014 and EMIT its atomicity item EVEN when this story migrates NEITHER table (both INHERITED from prior features). The tables already exist, so a force-a-mid-transaction-failure test (patch the second write/commit to raise; assert NEITHER write persists) IS buildable here, and the transaction is THIS story's new code. The F5 case: a `reconcile` UPDATEs the inherited `stock_records` and INSERTs the inherited `stock_adjustment_audits` in one transaction \u2014 emit the atomicity `fitness` item (F2 `T19` shape: patch the audit insert/commit to raise, assert the stock-row update AND the audit insert BOTH roll back), tag it `invariant_id`=<the transactional PI>, anchor its `ac_id` to the reconcile/records-adjustment AC \u2014 even though this story's migrations create nothing. A `transactional` invariant is NOT exempted the way an inherited schema-CONSTRAINT (unique/not_null/check/fk) is, so the design-complete gate (`checkTransactionalShape`) HARD-DEMANDS this item; never leave it to a later story that does not own the operation. A migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN `down_revision`, the explicit revision id named in that migration file; for an initial create-table that is the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after the downgrade-to-`down_revision` then `upgrade head` (NOT that data survives). TAG the reversibility item with `schema_change_id` = the EXACT db-design.json `schema_changes[]` id it exercises (e.g. `SC5-add-location-sku-index`): the DBA ledger is the authority. A migration-reversibility item with NO `schema_change_id` is flagged pre-reflect (`checkMigrationTestSchemaChangeTag`), and one naming a change the DBA did NOT plan is an orphan (`checkSchemaChangeOrphan`) \u2014 in either case DROP it rather than assert a migration the design defers (an index the architect only weighed). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` (the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
   },
   client: {
     kind: "client",
@@ -7577,15 +7582,15 @@ var TEST_ANALYST_CATALOGUE = {
     toolScope: ["Read"],
     inputs: ["story-acs", "architecture-invariants", "design-guide"],
     enabledWhen: (ctx) => ctx.uiTrack === true,
-    focusPrompt: "You are the COMPONENT test analyst (this project HAS a frontend). You author ISOLATED, REAL-DB component tests: a SINGLE React component rendered on its own (NOT the whole `<App>`, NOT a full user journey), with its real `/api` calls hitting the REAL backend the vitest harness boots \u2014 NEVER a mock (kit principle: never mock when a real counterpart exists; the deterministic `component-test-mock` gate FAILS a stubbed-fetch / MSW / `vi.mock`-of-the-api component test). Emit a `kind:\"component\"` item with `scenario_file` under `client/tests/` ending `.test.tsx` (e.g. `client/tests/components/<Component>.test.tsx`). WHEN to emit (organically, from the design \u2014 do NOT invent one): for every UI component the architecture / design-guide defines that has NON-TRIVIAL RENDER LOGIC derived from data \u2014 a status badge whose color/label depends on a value, a table/list rendering one row per record, a field that renders differently when null/empty (a 'not tracked' indicator), an empty / loading / error state \u2014 emit a component item that renders JUST that component against the real API and asserts the rendered output: the text AND the design-guide SEAM (the element's design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS. A trivial static element with no data-driven render logic needs NO component test \u2014 do not pad. SCOPE \u2014 you are the peer of the CLIENT (e2e) analyst, split by SCOPE not mock-vs-real: the client analyst owns the FULL browser journey (`client/tests/e2e/*.spec.ts`, Playwright, deployed app); YOU own the SINGLE-component render (`*.test.tsx`, jsdom, real backend). Do NOT author a full-journey flow (that is the client analyst's) and do NOT author an API-contract test (that is behavior's \u2014 a component test renders UI, it does not verify the raw wire contract; `checkClientKindLayerCoherence` flags a component item anchored to an `API`/`service`/`Infra` AC). A component test that CREATES a record keys it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) \u2014 so each run owns its row on the SHARED feature branch. ALSO own NFR CLIENT-RENDER fitness functions (moved here from the client analyst): for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (a row with null/optional fields asserting a 'not tracked' indicator; an empty/loading/error state), emit a `kind:\"component\"` item that performs that render and asserts the stated outcome. A stated client-render NFR with no component item is a reflect-testlist-defect. Do NOT set `invariant_id`. " + SLICE_CONTRACT
+    focusPrompt: "You are the COMPONENT test analyst (this project HAS a frontend). You author ISOLATED, REAL-DB component tests: a SINGLE React component rendered on its own (NOT the whole `<App>`, NOT a full user journey), with its real `/api` calls hitting the REAL backend the vitest harness boots \u2014 NEVER a mock (kit principle: never mock when a real counterpart exists; the deterministic `component-test-mock` gate FAILS a stubbed-fetch / MSW / `vi.mock`-of-the-api component test). Emit a `kind:\"component\"` item with `scenario_file` under `client/tests/` ending `.test.tsx` (e.g. `client/tests/components/<Component>.test.tsx`). WHEN to emit (organically, from the design \u2014 do NOT invent one): for every UI component the architecture / design-guide defines that has NON-TRIVIAL RENDER LOGIC derived from data \u2014 a status badge whose color/label depends on a value, a table/list rendering one row per record, a field that renders differently when null/empty (a 'not tracked' indicator), an empty / loading / error state \u2014 emit a component item that renders JUST that component against the real API and asserts the rendered output: the text AND the design-guide SEAM (the element's design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS. A trivial static element with no data-driven render logic needs NO component test \u2014 do not pad. SCOPE \u2014 you are the peer of the CLIENT (e2e) analyst, split by SCOPE not mock-vs-real: the client analyst owns the FULL browser journey (`client/tests/e2e/*.spec.ts`, Playwright, deployed app); YOU own the SINGLE-component render (`*.test.tsx`, jsdom, real backend). Do NOT author a full-journey flow (that is the client analyst's) and do NOT author an API-contract test (that is behavior's \u2014 a component test renders UI, it does not verify the raw wire contract; `checkClientKindLayerCoherence` flags a component item anchored to an `API`/`service`/`Infra` AC). A component test that CREATES a record keys it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) \u2014 so each run owns its row on the SHARED feature branch. When it ASSERTS on COUNTS it asserts ONLY on its OWN rows: filter the rendered output to its unique key and count THOSE. NEVER assert a whole-table total and NEVER a `before`-minus-`after` delta against the shared branch (sibling rows from other runs and stories pollute both). That is the recurring shared-state-aggregate-assertion defect: filtering by a unique tag hides EVERY non-matching sibling, so `total - visible` is total-minus-mine, not the small count you expect. ALSO own NFR CLIENT-RENDER fitness functions (moved here from the client analyst): for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (a row with null/optional fields asserting a 'not tracked' indicator; an empty/loading/error state), emit a `kind:\"component\"` item that performs that render and asserts the stated outcome. A stated client-render NFR with no component item is a reflect-testlist-defect. Do NOT set `invariant_id`. " + SLICE_CONTRACT
   }
 };
 
 // consort/orchestrator/state/orchestrator-probe.ts
 function readJson(file) {
-  if (!fs12.existsSync(file)) return void 0;
+  if (!fs13.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs12.readFileSync(file, "utf8"));
+    return JSON.parse(fs13.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -7600,15 +7605,15 @@ function readDriveContext(consortDir, featureId, projectDir) {
   const proposed = spec !== void 0;
   const intakeReady = intakeReadyOnDisk(consortDir);
   const breakdownDone = Array.isArray(spec?.stories) && spec.stories.length > 0;
-  const requestsAuthored = fs12.existsSync(featureRequestMd(consortDir, featureId));
+  const requestsAuthored = fs13.existsSync(featureRequestMd(consortDir, featureId));
   const backlogCommitted = requestsAuthored;
-  const deployed = fs12.existsSync(featureDeployEvidenceJson(consortDir, featureId));
+  const deployed = fs13.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
   const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
-  const reverifyAttempted = fs12.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
+  const reverifyAttempted = fs13.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   const verifyAssessEligible = deployVerifyNeedsAssess(consortDir, featureId);
   const verifyRefactorPending = deployVerifyRefactorPending(consortDir, featureId);
-  const proj = projectDir ?? path9.dirname(consortDir);
+  const proj = projectDir ?? path10.dirname(consortDir);
   let scmState;
   try {
     scmState = readWorkflowState(proj)?.state;
@@ -7641,7 +7646,7 @@ function readDriveContext(consortDir, featureId, projectDir) {
 }
 function readDeployVerifyPassed(consortDir, featureId) {
   try {
-    const ev = JSON.parse(fs12.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
+    const ev = JSON.parse(fs13.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
     return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : void 0;
   } catch {
     return void 0;
@@ -7657,7 +7662,7 @@ function readGateApproved(featureId, consortDir, gate) {
 
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync30, readFileSync as readFileSync31, writeFileSync as writeFileSync20, mkdirSync as mkdirSync19 } from "fs";
+import { appendFileSync, existsSync as existsSync31, readFileSync as readFileSync32, writeFileSync as writeFileSync21, mkdirSync as mkdirSync20 } from "fs";
 
 // consort/experiment/spike-carryforward.ts
 init_esm_shims();
@@ -7665,13 +7670,13 @@ init_esm_shims();
 // consort/gates/design-spec-gate.ts
 function readPlan(consortDir, featureId, storyId) {
   const planPath = storyPlanJson(consortDir, featureId, storyId);
-  if (!existsSync30(planPath)) return null;
-  return JSON.parse(readFileSync31(planPath, "utf8"));
+  if (!existsSync31(planPath)) return null;
+  return JSON.parse(readFileSync32(planPath, "utf8"));
 }
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync31, readFileSync as readFileSync32, writeFileSync as writeFileSync21, mkdirSync as mkdirSync20, readdirSync as readdirSync21, statSync as statSync13, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync32, readFileSync as readFileSync33, writeFileSync as writeFileSync22, mkdirSync as mkdirSync21, readdirSync as readdirSync21, statSync as statSync13, rmSync as rmSync7 } from "fs";
 
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
@@ -7688,24 +7693,24 @@ function pipelinePath(consortDir, featureId) {
 }
 function readPipeline(consortDir, featureId) {
   const p = pipelinePath(consortDir, featureId);
-  if (!existsSync31(p)) return initPipeline(featureId);
-  return JSON.parse(readFileSync32(p, "utf8"));
+  if (!existsSync32(p)) return initPipeline(featureId);
+  return JSON.parse(readFileSync33(p, "utf8"));
 }
 
 // consort/orchestrator/status/feature-status.ts
 var MAX_RECENT_LOG_ENTRIES = 5;
-function readJsonIfExists(path10) {
-  if (!existsSync32(path10)) return null;
-  return JSON.parse(readFileSync33(path10, "utf8"));
+function readJsonIfExists(path11) {
+  if (!existsSync33(path11)) return null;
+  return JSON.parse(readFileSync34(path11, "utf8"));
 }
 function listFeatureStories(consortDir, featureId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
-  if (!existsSync32(storiesDir2)) return [];
-  return readdirSync22(storiesDir2).filter((d) => statSync14(join30(storiesDir2, d)).isDirectory()).sort();
+  if (!existsSync33(storiesDir2)) return [];
+  return readdirSync22(storiesDir2).filter((d) => statSync14(join31(storiesDir2, d)).isDirectory()).sort();
 }
 function timelineCycleCount(experimentDir2) {
   const timeline = readJsonIfExists(
-    join30(experimentDir2, "timeline.json")
+    join31(experimentDir2, "timeline.json")
   );
   return timeline?.entries?.length ?? 0;
 }
@@ -7732,9 +7737,9 @@ function summarizeTestList(consortDir, featureId) {
   }
 }
 function readSelectionLogRecent(consortDir, limit) {
-  const path10 = join30(consortDir, "selection-log.md");
-  if (!existsSync32(path10)) return [];
-  const text = readFileSync33(path10, "utf8");
+  const path11 = join31(consortDir, "selection-log.md");
+  if (!existsSync33(path11)) return [];
+  const text = readFileSync34(path11, "utf8");
   const entries = [];
   const headingRe = /^##\s+(\S+T\S+?)\s+–\s+(.+?)$/gm;
   let match;
@@ -7761,7 +7766,7 @@ function readGatesSummary(consortDir, featureId) {
   }
 }
 function readWorkflowState2(consortDir) {
-  const state = readJsonIfExists(join30(consortDir, "workflow-state.json"));
+  const state = readJsonIfExists(join31(consortDir, "workflow-state.json"));
   if (!state) return { phase: null, pointer: null };
   return {
     phase: state.phase ?? null,
@@ -7808,7 +7813,7 @@ function readProgression(consortDir, featureId, projectDir) {
     return null;
   }
 }
-function getFeatureStatus(consortDir, featureId, projectDir = dirname17(consortDir)) {
+function getFeatureStatus(consortDir, featureId, projectDir = dirname18(consortDir)) {
   const plans = [];
   for (const storyId of listFeatureStories(consortDir, featureId)) {
     const p = readPlan(consortDir, featureId, storyId);

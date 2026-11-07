@@ -22,13 +22,18 @@ import {
   checkPlatformNfrDefended,
   checkE2ECoverage,
   checkJsdomBrowserAssertion,
+  checkMockPrescription,
   checkPersistenceCoverage,
   checkMigrationReversibleShape,
+  checkTransactionalShape,
+  checkStoryPersistenceCoverage,
+  describesAtomicityRollback,
   describesMigrationRoundTrip,
   checkSchemaChangeOrphan,
   checkMigrationTestSchemaChangeTag,
   checkSchemaChangeCoverage,
   checkApiContractConsistency,
+  checkRequestFieldReconciliation,
   checkInvariantCoverageDistinct,
   invariantRealizingStory,
   checkSchemaChangeStoryRealizes,
@@ -913,6 +918,98 @@ describe("checkMigrationReversibleShape (Gate 3: a migration_reversible invarian
   });
 });
 
+describe("checkTransactionalShape (Gate 3: a transactional invariant must be covered by an ATOMICITY/ROLLBACK test, not a migration round-trip)", () => {
+  const arch = (invariants: object[]) =>
+    JSON.stringify({ feature_id: "F5-x", nfrs: [], service_backed: true, persistence_invariants: invariants });
+  const txnInv = [{ id: "PI1-reconcile-atomic", type: "transactional", table: "stock_adjustments", brief: "row + audit land together or neither persists" }];
+  const tl = (items: object[]) => JSON.stringify({ feature_id: "F5-x", items });
+  const item = (description: string) => ({ id: "T49", description, ac_id: "AC1", status: "pending", kind: "fitness", invariant_id: "PI1-reconcile-atomic" });
+
+  it("FAILS when a transactional invariant is covered only by a MIGRATION ROUND-TRIP (the F5/PI1 false-green)", () => {
+    const r = checkTransactionalShape(
+      tl([item("additive migration down->up preserves existing stock_adjustments rows (PI1-reconcile-atomic migration-survival round-trip)")]),
+      arch(txnInv),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.join(" ")).toMatch(/PI1-reconcile-atomic.*ATOMICITY\/ROLLBACK/);
+  });
+  it("passes when the covering item describes a forced-failure rollback (the F2 T19 shape)", () => {
+    expect(
+      checkTransactionalShape(tl([item("force the commit to fail mid-transaction and assert NEITHER the stock_records update NOR the audit row persists — both roll back")]), arch(txnInv)).ok,
+    ).toBe(true);
+  });
+  it("describesAtomicityRollback: true for rollback/neither-persists/forced-failure wording, false for a migration round-trip", () => {
+    expect(describesAtomicityRollback("assert neither write persists; both roll back")).toBe(true);
+    expect(describesAtomicityRollback("patch commit to raise so the transaction fails")).toBe(true);
+    expect(describesAtomicityRollback("if either write fails the row is not stored")).toBe(true);
+    expect(describesAtomicityRollback("additive migration down->up preserves existing rows")).toBe(false);
+    expect(describesAtomicityRollback("downgrade to down_revision then upgrade head, rows intact")).toBe(false);
+  });
+
+  it("describesAtomicityRollback: accepts the READ-ONLY flavor of a transactional invariant (F5 PI25-count-read-only)", () => {
+    expect(describesAtomicityRollback("submitting a count runs in a read-only unit of work")).toBe(true);
+    expect(describesAtomicityRollback("after a count the transaction writes nothing")).toBe(true);
+    expect(describesAtomicityRollback("assert no stock_adjustments row is written by a count")).toBe(true);
+    // Not over-broad: a mere incidental "unchanged" without a read-only / writes-nothing statement
+    // must not satisfy a genuine atomicity invariant.
+    expect(describesAtomicityRollback("the UI label is unchanged after a reload")).toBe(false);
+  });
+  it("is vacuous when no declared invariant is transactional, and defers an UNCOVERED one to checkPersistenceCoverage", () => {
+    expect(checkTransactionalShape(tl([item("anything")]), arch([{ id: "PI2-unique", type: "unique", table: "x", brief: "u" }]))).toEqual({ ok: true });
+    expect(checkTransactionalShape(tl([]), arch(txnInv))).toEqual({ ok: true }); // uncovered → coverage check's job
+  });
+});
+
+describe("checkStoryPersistenceCoverage (pre-reflect, story-scoped: an invariant THIS story owns needs a correctly-shaped covering item)", () => {
+  const arch = (invariants: object[]) =>
+    JSON.stringify({ feature_id: "F2-x", nfrs: [], service_backed: true, persistence_invariants: invariants });
+  const tl = (items: object[]) => JSON.stringify({ feature_id: "F2-x", items });
+  const uniqueInv = { id: "PI1-adjust-keeps-unique-pair", type: "unique", table: "stock_records", brief: "one row per pair after adjust" };
+  const txnInv = { id: "PI2-adjust-transactional", type: "transactional", table: "stock_records", brief: "adjust commits atomically or rolls back" };
+
+  it("FLAGS an owned invariant with NO covering item (the F2 PI1/PI2 case)", () => {
+    const r = checkStoryPersistenceCoverage(
+      tl([{ id: "T87", description: "after adjust, exactly one stock_records row exists for the pair", ac_id: "AC1", status: "pending", kind: "fitness" }]),
+      arch([uniqueInv, txnInv]),
+      ["PI1-adjust-keeps-unique-pair", "PI2-adjust-transactional"],
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/PI1-adjust-keeps-unique-pair/);
+      expect(r.violations.join(" ")).toMatch(/PI2-adjust-transactional/);
+    }
+  });
+
+  it("PASSES when each owned invariant has a correctly-shaped covering item (PI1 tagged; PI2 an atomicity test)", () => {
+    const r = checkStoryPersistenceCoverage(
+      tl([
+        { id: "T87", description: "after adjust, exactly one stock_records row exists for the pair", ac_id: "AC1", status: "pending", kind: "fitness", invariant_id: "PI1-adjust-keeps-unique-pair" },
+        { id: "T88", description: "force the adjust transaction to fail mid-commit and assert NEITHER the stock_records update persists — it rolls back", ac_id: "AC1", status: "pending", kind: "fitness", invariant_id: "PI2-adjust-transactional" },
+      ]),
+      arch([uniqueInv, txnInv]),
+      ["PI1-adjust-keeps-unique-pair", "PI2-adjust-transactional"],
+    );
+    expect(r).toEqual({ ok: true });
+  });
+
+  it("FLAGS a transactional invariant covered only by a WRONG-SHAPED (migration round-trip) item", () => {
+    const r = checkStoryPersistenceCoverage(
+      tl([{ id: "T90", description: "additive migration down->up preserves existing stock_records rows", ac_id: "AC2", status: "pending", kind: "fitness", invariant_id: "PI2-adjust-transactional" }]),
+      arch([txnInv]),
+      ["PI2-adjust-transactional"],
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/PI2-adjust-transactional.*ATOMICITY\/ROLLBACK|atomicity\/rollback/i);
+      expect(r.acIds).toContain("AC2");
+    }
+  });
+
+  it("does NOT flag an invariant this story does NOT own (empty ownedInvariantIds is vacuous)", () => {
+    expect(checkStoryPersistenceCoverage(tl([]), arch([uniqueInv, txnInv]), [])).toEqual({ ok: true });
+  });
+});
+
 describe("checkSchemaChangeOrphan (F1 pre-reflect: a test may only assert a schema_change the DBA planned)", () => {
   const db = (changes: object[]) => JSON.stringify({ feature_id: "F1-x", tables: [], schema_changes: changes });
   const tl = (items: object[]) => JSON.stringify({ feature_id: "F1-x", items });
@@ -1096,6 +1193,75 @@ describe("checkApiContractConsistency (F2: single-source each endpoint's respons
       [],
     );
     expect(r).toEqual({ ok: true });
+  });
+});
+
+describe("checkRequestFieldReconciliation (cross-story: a later story makes a request field required on a shared endpoint)", () => {
+  // The real F2 shape: EP4 is a PATCH written by S1 + S2; S3 makes `actor` required on it (S3 has no EP4 AC).
+  const ORDER = ["S1-adjust-stock-inline", "S2-reject-negative-adjustment", "S3-audit-adjustment-history"];
+  const ep4 = (requestFields: object[]) => ({
+    id: "EP4-adjust-stock-record", method: "PATCH", path: "/api/stock-records/{sku}", shape: "object", request_fields: requestFields,
+  });
+  const arch = (contracts: object[]) => JSON.stringify({ feature_id: "F2-x", service_backed: true, nfrs: [], api_contracts: contracts });
+  // S1 + S2 each write EP4; S3's AC targets EP5 (not EP4) — exactly the F2 topology.
+  const writersS1S2 = [
+    { story: "S1-adjust-stock-inline", acJson: JSON.stringify({ id: "AC1-inline-adjust-persists", api_contract_id: "EP4-adjust-stock-record" }) },
+    { story: "S2-reject-negative-adjustment", acJson: JSON.stringify({ id: "AC1-negative-rejected-at-write", api_contract_id: "EP4-adjust-stock-record" }) },
+    { story: "S3-audit-adjustment-history", acJson: JSON.stringify({ id: "AC1-recorded-with-actor", api_contract_id: "EP5-list-adjustment-history" }) },
+  ];
+
+  it("FLAGS prior writer stories S1+S2 when S3 makes `actor` required and neither is reconciled (the real defect)", () => {
+    const r = checkRequestFieldReconciliation(
+      arch([ep4([{ name: "actor", required: true, since_story: "S3-audit-adjustment-history" }])]),
+      writersS1S2,
+      ORDER,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations.join(" ")).toMatch(/S1-adjust-stock-inline/);
+      expect(r.violations.join(" ")).toMatch(/S2-reject-negative-adjustment/);
+      expect(r.violations.join(" ")).toMatch(/actor/);
+      expect(r.acIds).toContain("AC1-inline-adjust-persists");
+    }
+  });
+
+  it("PASSES once both prior writers are reconciled", () => {
+    const r = checkRequestFieldReconciliation(
+      arch([ep4([{ name: "actor", required: true, since_story: "S3-audit-adjustment-history", reconciled_stories: ["S1-adjust-stock-inline", "S2-reject-negative-adjustment"] }])]),
+      writersS1S2, ORDER,
+    );
+    expect(r).toEqual({ ok: true });
+  });
+
+  it("does NOT flag the since_story itself (the introducer knows), nor a LATER writer", () => {
+    // S1 introduces a required field; S2 writes EP4 AFTER S1, so it is not a prior writer → not flagged.
+    const r = checkRequestFieldReconciliation(
+      arch([ep4([{ name: "quantity", required: true, since_story: "S1-adjust-stock-inline" }])]),
+      writersS1S2, ORDER,
+    );
+    expect(r).toEqual({ ok: true });
+  });
+
+  it("does NOT flag a GET endpoint with a required field (mutation-method scope kills the read false-positive)", () => {
+    const getEp = { id: "EP5-list-adjustment-history", method: "GET", path: "/api/adjustments", shape: "list", request_fields: [{ name: "actor", required: true, since_story: "S3-audit-adjustment-history" }] };
+    expect(checkRequestFieldReconciliation(arch([getEp]), writersS1S2, ORDER)).toEqual({ ok: true });
+  });
+
+  it("does NOT flag a required:false field", () => {
+    expect(
+      checkRequestFieldReconciliation(arch([ep4([{ name: "actor", required: false, since_story: "S3-audit-adjustment-history" }])]), writersS1S2, ORDER),
+    ).toEqual({ ok: true });
+  });
+
+  it("FLAGS a required:true field that omits since_story (forces the machine-readable provenance)", () => {
+    const r = checkRequestFieldReconciliation(arch([ep4([{ name: "actor", required: true }])]), writersS1S2, ORDER);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.join(" ")).toMatch(/since_story/);
+  });
+
+  it("is VACUOUS when no contract declares request_fields (back-compat)", () => {
+    expect(checkRequestFieldReconciliation(arch([{ id: "EP4-adjust-stock-record", method: "PATCH", path: "/api/stock-records/{sku}", shape: "object" }]), writersS1S2, ORDER)).toEqual({ ok: true });
+    expect(checkRequestFieldReconciliation(JSON.stringify({ feature_id: "F2-x" }), writersS1S2, ORDER)).toEqual({ ok: true });
   });
 });
 
@@ -1360,6 +1526,42 @@ describe("checkJsdomBrowserAssertion: a real-browser assertion in the jsdom harn
   it("is vacuously ok with no items, and reports invalid JSON rather than throwing", () => {
     expect(checkJsdomBrowserAssertion(tl([])).ok).toBe(true);
     expect(checkJsdomBrowserAssertion("{not json").ok).toBe(false);
+  });
+});
+
+describe("checkMockPrescription: a test-list description must not prescribe a mock/stub (no-mock at authoring)", () => {
+  const tl = (items: Array<{ id?: string; description: string; kind?: string; ac_id?: string }>): string => JSON.stringify({ items });
+
+  it("HARD-BLOCKS the T4 defect: a description prescribing a mocked/stubbed endpoint", () => {
+    const list = tl([
+      { id: "T4", ac_id: "AC1-x", kind: "component", description: "CountForm rendered alone with the EP11 response stubbed (fetch mocked at the /api/counts/variance pathname) shows system quantity 12" },
+    ]);
+    const r = checkMockPrescription(list);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.violations[0]).toContain("T4");
+      expect(r.violations[0]).toContain("no-mock");
+      expect(r.acIds).toContain("AC1-x");
+    }
+  });
+
+  it("flags a bare 'mock'/'stub' prescription on any kind", () => {
+    expect(checkMockPrescription(tl([{ id: "T1", description: "mocks the /api/stock fetch to return two rows", kind: "behavior" }])).ok).toBe(false);
+    expect(checkMockPrescription(tl([{ id: "T2", description: "stubs the health endpoint response", kind: "client" }])).ok).toBe(false);
+  });
+
+  it("does NOT flag a NEGATED mention (the policy restated, not prescribed)", () => {
+    expect(checkMockPrescription(tl([{ id: "T3", description: "renders the variance panel against the real backend, never a mock", kind: "component" }])).ok).toBe(true);
+    expect(checkMockPrescription(tl([{ id: "T5", description: "the real /api/counts/variance call (not stubbed) returns system quantity 12", kind: "component" }])).ok).toBe(true);
+  });
+
+  it("does NOT flag a clean behavioral description", () => {
+    expect(checkMockPrescription(tl([{ id: "T6", description: "submitting a valid count shows the stored system quantity 12 in the variance seam", kind: "component" }])).ok).toBe(true);
+  });
+
+  it("is vacuously ok with no items, and reports invalid JSON rather than throwing", () => {
+    expect(checkMockPrescription(tl([])).ok).toBe(true);
+    expect(checkMockPrescription("{not json").ok).toBe(false);
   });
 });
 

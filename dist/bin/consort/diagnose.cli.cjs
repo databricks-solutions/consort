@@ -3254,8 +3254,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path6) {
-      let input = path6;
+    function removeDotSegments(path7) {
+      let input = path7;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3508,8 +3508,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path6, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path6 && path6 !== "/" ? path6 : void 0;
+        const [path7, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path7 && path7 !== "/" ? path7 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6643,8 +6643,8 @@ var require_ajv = __commonJS({
 
 // bin/consort/diagnose.cli.ts
 init_cjs_shims();
-var fs8 = __toESM(require("fs"), 1);
-var path5 = __toESM(require("path"), 1);
+var fs9 = __toESM(require("fs"), 1);
+var path6 = __toESM(require("path"), 1);
 
 // consort/config/consort-paths.ts
 init_cjs_shims();
@@ -6712,12 +6712,12 @@ function collectDiagnosticSources(consortDir) {
 
 // consort/orchestrator/diagnose/analyze-failure.ts
 init_cjs_shims();
-var fs7 = __toESM(require("fs"), 1);
-var path4 = __toESM(require("path"), 1);
+var fs8 = __toESM(require("fs"), 1);
+var path5 = __toESM(require("path"), 1);
 
 // consort/gates/escalation.ts
 init_cjs_shims();
-var fs6 = __toESM(require("fs"), 1);
+var fs7 = __toESM(require("fs"), 1);
 
 // consort/smells/smells.ts
 init_cjs_shims();
@@ -7015,6 +7015,11 @@ var import_node_child_process4 = require("child_process");
 var import_node_fs10 = require("fs");
 var import_node_path12 = require("path");
 
+// consort/smells/reauthor-resilience.ts
+init_cjs_shims();
+var fs6 = __toESM(require("fs"), 1);
+var path4 = __toESM(require("path"), 1);
+
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
@@ -7024,18 +7029,18 @@ init_cjs_shims();
 
 // consort/gates/escalation.ts
 function readEscalationFile(file) {
-  if (!fs6.existsSync(file)) return void 0;
+  if (!fs7.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs6.readFileSync(file, "utf8"));
+    return JSON.parse(fs7.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
 }
 function readEscalations(consortDir) {
   const dir = escalationsDir(consortDir);
-  if (!fs6.existsSync(dir)) return [];
+  if (!fs7.existsSync(dir)) return [];
   const out = [];
-  for (const f of fs6.readdirSync(dir)) {
+  for (const f of fs7.readdirSync(dir)) {
     if (!f.endsWith(".json")) continue;
     const e = readEscalationFile(`${dir}/${f}`);
     if (e) out.push(e);
@@ -7072,18 +7077,18 @@ function readGreenFailures(consortDir) {
   const walk = (dir) => {
     let entries;
     try {
-      entries = fs7.readdirSync(dir, { withFileTypes: true });
+      entries = fs8.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const e of entries) {
-      const p = path4.join(dir, e.name);
+      const p = path5.join(dir, e.name);
       if (e.isDirectory()) walk(p);
       else if (e.name === "green-failure.json") {
         try {
-          const gf = JSON.parse(fs7.readFileSync(p, "utf8"));
+          const gf = JSON.parse(fs8.readFileSync(p, "utf8"));
           out.push({
-            location: path4.relative(root, path4.dirname(p)),
+            location: path5.relative(root, path5.dirname(p)),
             summary: gf.summary ?? "",
             ...gf.failureOutput ? { failureOutput: gf.failureOutput } : {}
           });
@@ -7184,16 +7189,16 @@ function parseArgs(argv) {
   return out;
 }
 function redactedCopy(src, dst, tailLines) {
-  let content = fs8.readFileSync(src, "utf8");
+  let content = fs9.readFileSync(src, "utf8");
   if (tailLines) {
     const lines = content.split("\n");
     content = (lines.length > tailLines ? lines.slice(-tailLines) : lines).join("\n");
   }
-  fs8.writeFileSync(dst, redactSecrets(content));
+  fs9.writeFileSync(dst, redactSecrets(content));
 }
 function bundleName(consortDir, s) {
-  const rel = path5.relative(consortDir, s.path).replace(/[\\/]/g, "__");
-  return rel || path5.basename(s.path);
+  const rel = path6.relative(consortDir, s.path).replace(/[\\/]/g, "__");
+  return rel || path6.basename(s.path);
 }
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -7212,14 +7217,14 @@ ${renderAnalysis(analysis)}
 
 `);
   const ts = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-  const outDir = args.out ?? path5.join(consortDir, "diagnostics", ts);
-  fs8.mkdirSync(outDir, { recursive: true });
+  const outDir = args.out ?? path6.join(consortDir, "diagnostics", ts);
+  fs9.mkdirSync(outDir, { recursive: true });
   const collected = [];
   for (const s of present) {
     const name = bundleName(consortDir, s);
-    const dst = path5.join(outDir, name);
+    const dst = path6.join(outDir, name);
     redactedCopy(s.path, dst, s.tailLines);
-    collected.push({ kind: s.kind, from: path5.relative(consortDir, s.path), file: name, ...s.tailLines ? { tailed: s.tailLines } : {} });
+    collected.push({ kind: s.kind, from: path6.relative(consortDir, s.path), file: name, ...s.tailLines ? { tailed: s.tailLines } : {} });
   }
   const manifest = {
     created_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -7230,10 +7235,10 @@ ${renderAnalysis(analysis)}
     },
     items: collected
   };
-  fs8.writeFileSync(path5.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
-  fs8.writeFileSync(path5.join(outDir, "analysis.json"), redactSecrets(JSON.stringify(analysis, null, 2)) + "\n");
-  fs8.writeFileSync(
-    path5.join(outDir, "README.md"),
+  fs9.writeFileSync(path6.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
+  fs9.writeFileSync(path6.join(outDir, "analysis.json"), redactSecrets(JSON.stringify(analysis, null, 2)) + "\n");
+  fs9.writeFileSync(
+    path6.join(outDir, "README.md"),
     "# Consort diagnostic bundle\n\nThe local forensic record of a failed run \u2013 what actually troubleshoots the error.\n\n- `analysis.json` \u2013 the classified failure + suggested remediation (start here).\n- `*escalations__*.json` \u2013 the raise-to-HIL reason + source.\n- `*green-failure.json` \u2013 the verify-failure pre-localization (what failed, where).\n- `workflow-state.json` \u2013 the phase/feature/story the run was at.\n- `agent-log.jsonl` \u2013 tail of the structured event trail.\n- `drive-live.log` \u2013 tail of the live narration.\n\nTelemetry does NOT contain any of this (it is allowlisted enums/counts/durations only); this bundle is the content, for you to inspect or share with the maintainers.\n\n## Redaction\n\nThis bundle is auto-REDACTED before it is written: DSN passwords (`postgres://user:***@host`), `dapi\u2026` tokens, `Bearer \u2026` headers, known secret assignments (DB_PASSWORD / *_TOKEN / *_SECRET / password), and absolute home paths (`/Users/<user>/\u2026`) are masked. Redaction is best-effort \u2013 **still review the files before sharing**; a novel secret shape may not be caught.\n"
   );
   process.stdout.write(

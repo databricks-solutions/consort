@@ -190,6 +190,10 @@ export interface StoryBuild {
    *  supersedes (-> Driver permissive green) or confirm a genuine regression
    *  (-> escalate). */
   assessGreenAc?: string | null;
+  /** An AC the GREEN smell gate flagged with an UNSPENT test-RESILIENCE reauthor marker,
+   *  or null. Drives the Navigator RE-AUTHOR turn (it edits the flaky test resilient),
+   *  then re-verify. One-shot. */
+  reauthorResilienceAc?: string | null;
   /** An AC whose green-failure the Navigator assessed as a DRIVER-FIXABLE genuine
    *  regression (it recorded a fix directive), with its one repair not yet
    *  consumed, or null. Drives a bounded Driver REPAIR turn (the diagnosis +
@@ -417,7 +421,7 @@ export type WorkflowAction =
       kind: "invoke-role";
       role: "navigator" | "driver";
       story: string;
-      buildMode?: "review" | "refactor" | "assess" | "repair" | "assess-deploy" | "refactor-deploy" | "assess-refactor" | "refactor-superseded" | "green-superseded";
+      buildMode?: "review" | "refactor" | "assess" | "repair" | "assess-deploy" | "refactor-deploy" | "assess-refactor" | "refactor-superseded" | "green-superseded" | "reauthor";
       ac?: string;
     }
   // FEATURE-ship deploy-verify self-heal: the assess (navigator) / scope (driver)

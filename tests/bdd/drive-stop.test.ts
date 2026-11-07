@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { drivePidPath, stopDrive, writeDrivePid } from "../../bin/consort/drive.cli.js";
+import { drivePidPath, stopDrive, writeDrivePid, readDrivePid, assertSingleDrive } from "../../bin/consort/drive.cli.js";
 
 const tmpDirs: string[] = [];
 function mkConsort(): string {
@@ -85,5 +85,51 @@ describe("stopDrive", () => {
 
   it("no pid file at all -> exit 1 (nothing to stop)", async () => {
     expect(await stopDrive(mkConsort())).toBe(1);
+  });
+});
+
+describe("readDrivePid", () => {
+  it("returns null when absent, the pid when present, null when unparseable", () => {
+    const consortDir = mkConsort();
+    expect(readDrivePid(consortDir)).toBeNull();
+    plantPid(consortDir, 4242);
+    expect(readDrivePid(consortDir)).toBe(4242);
+    fs.writeFileSync(drivePidPath(consortDir), "not json");
+    expect(readDrivePid(consortDir)).toBeNull();
+  });
+});
+
+describe("assertSingleDrive (single-drive mutex)", () => {
+  it("allows start when there is NO drive.pid (absent)", () => {
+    expect(assertSingleDrive(mkConsort())).toBe(true);
+  });
+
+  it("allows start when drive.pid is a DEAD pid (crash leftover -> take over)", async () => {
+    const consortDir = mkConsort();
+    const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    const deadPid = sleeper.pid!;
+    sleeper.kill("SIGKILL");
+    await new Promise((r) => setTimeout(r, 100));
+    plantPid(consortDir, deadPid);
+    expect(assertSingleDrive(consortDir)).toBe(true);
+  });
+
+  it("allows start when drive.pid is THIS process's own pid (the real orchestrator never refuses itself)", () => {
+    const consortDir = mkConsort();
+    plantPid(consortDir, process.pid);
+    expect(assertSingleDrive(consortDir)).toBe(true);
+  });
+
+  it("REFUSES start when another drive's recorded pid is still ALIVE", async () => {
+    const consortDir = mkConsort();
+    const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    expect(sleeper.pid).toBeDefined();
+    plantPid(consortDir, sleeper.pid!);
+    await new Promise((r) => setTimeout(r, 100));
+    try {
+      expect(assertSingleDrive(consortDir)).toBe(false);
+    } finally {
+      sleeper.kill("SIGKILL");
+    }
   });
 });

@@ -396,6 +396,20 @@ describe("buildNextSnapshot: reconciled state, blockers, truthful summary", () =
     expect(snap.summary).toMatch(/BLOCKED/);
   });
 
+  it("a feature-conformance escalation names the repair path in its resolver_hint (the F5/PI1 discoverability fix)", () => {
+    const snap = buildNextSnapshot(
+      "feature",
+      baseState({ escalation: { id: "fc1", source: "feature-conformance", reason: "PI1-reconcile-atomic uncovered" } }),
+      CTX,
+    );
+    expect(snap.state.blockers).toHaveLength(1);
+    const hint = snap.state.blockers[0].resolver_hint ?? "";
+    expect(hint).toMatch(/consort-pipeline repair .*--gap uncovered-invariant/);
+    expect(hint).toMatch(/atomicity\/rollback|F2 T19/); // steers transactional invariants away from a migration round-trip
+    expect(hint).toMatch(/--only design.*no-ops|no-ops on the frozen/); // the dead-end the drive hit
+    expect(hint).toMatch(/escalation-triage\.md/);
+  });
+
   it("stamps scope, version, and generated_at; feature id echoes", () => {
     const snap = buildNextSnapshot("feature", baseState(), CTX, fixed({ kind: "done" }));
     expect(snap.scope).toBe("feature");

@@ -34,6 +34,7 @@ import { join } from "path";
 import { architectureJson, featureResolved, featureTestListMd, findStoryDir } from "../config/consort-paths.js";
 import { readMasterTestList, writeMasterTestList, renderTestListMarkdown, writeStoryTestList, type TestList, type TestListItem } from "../test-list/test-list.js";
 import { resolveArtifactInputs } from "../gates/gate-conformance-guard.js";
+import { describesMigrationRoundTrip, describesAtomicityRollback } from "../orchestrator/validators/conformance/artifact-conformance.js";
 import { hashArtifact } from "../gates/gate-hash.js";
 import { readGates, writeGates } from "../gates/gates.js";
 
@@ -134,11 +135,26 @@ export function coverInvariant(
   opts: { retagTestId?: string } = {},
 ): { itemId: string; mode: "present" | "retag" | "author" } {
   const list = readMasterTestList(consortDir, featureId);
+  const inv = readPersistenceInvariants(consortDir, featureId).find((i) => i.id === invariantId);
 
+  // A tagged item is valid coverage only if its SHAPE matches the invariant's TYPE: a `transactional`
+  // invariant needs an atomicity/rollback item, a `migration_reversible` one a round-trip item. A
+  // migration-survival round-trip tagged to a transactional invariant is NOT valid coverage (the
+  // F5/PI1 repair false-green) — untag it here and author the right shape below. Other types carry no
+  // shape requirement, so any tag counts as present.
   const tagged = list.items.find((it) => it.invariant_id === invariantId);
   if (tagged) {
-    persistToStory(consortDir, featureId, storyId, list);
-    return { itemId: tagged.id, mode: "present" };
+    const shapeOk =
+      inv?.type === "transactional"
+        ? describesAtomicityRollback(tagged.description ?? "")
+        : inv?.type === "migration_reversible"
+          ? describesMigrationRoundTrip(tagged.description ?? "")
+          : true;
+    if (shapeOk) {
+      persistToStory(consortDir, featureId, storyId, list);
+      return { itemId: tagged.id, mode: "present" };
+    }
+    delete tagged.invariant_id; // wrong shape for the type → not coverage; re-author the right shape below
   }
 
   // Explicit operator override: retag exactly the named test (the ambiguity resolution path).
@@ -149,8 +165,6 @@ export function coverInvariant(
     persistToStory(consortDir, featureId, storyId, list);
     return { itemId: t.id, mode: "retag" };
   }
-
-  const inv = readPersistenceInvariants(consortDir, featureId).find((i) => i.id === invariantId);
 
   // RETAG-FIRST for migration_reversible: an existing untagged round-trip test for the table is
   // the real coverage; the gap was a missing tag, not a missing test.
@@ -173,9 +187,15 @@ export function coverInvariant(
     );
   }
   const table = inv?.table ?? "the table";
+  // Author the RIGHT SHAPE for the invariant's TYPE — a transactional invariant gets an atomicity/
+  // rollback item (the F2 T19 shape), NOT the migration-survival round-trip (the F5/PI1 mis-author).
+  const description =
+    inv?.type === "transactional"
+      ? `force a mid-transaction failure on the ${table} write path and assert NEITHER write persists — the row write AND its paired audit/insert both roll back (${invariantId} atomicity/rollback)`
+      : `additive migration down->up preserves existing ${table} rows (${invariantId} migration-survival round-trip)`;
   const item: TestListItem = {
     id: nextTestId(list.items),
-    description: `additive migration down->up preserves existing ${table} rows (${invariantId} migration-survival round-trip)`,
+    description,
     ac_id: acId,
     status: "pending",
     kind: "fitness",

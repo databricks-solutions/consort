@@ -20,6 +20,7 @@ function turnDirs(recordDirRoot: string): string[] {
   return existsSync(t) ? readdirSync(t).filter((n) => statSync(join(t, n)).isDirectory()) : [];
 }
 import { wrapWithRecorder } from "../../consort/orchestrator/agents/replay-recorder-wrapper";
+import { recordTurn } from "../../consort/logging/turn-recorder";
 import { makeStepReplayAgent, resetStepReplayCursor } from "../../consort/orchestrator/agents/mock-replay-agent";
 import type { StepAgent, AgentInvocation } from "../../consort/orchestrator/agents/agent-types";
 import type { WorkflowAction } from "../../consort/orchestrator/workflow/workflow-vocabulary";
@@ -117,6 +118,45 @@ describe("wrapWithRecorder: records the inner agent's turn into the corpus", () 
     } finally {
       rmSync(original, { recursive: true, force: true });
     }
+  });
+});
+
+// Hardening: the per-turn record audit must check the dir recordTurn ACTUALLY wrote, not the
+// turnDir the wrapper computed BEFORE inner.invoke(). recordTurn re-reads turns/index.json at write
+// time, so if the index grows during the invoke (the ux-designer establish+ia split appended an
+// intervening turn; a too-fast kill+relaunch raced two writers) the two ordinals diverge and the old
+// audit false-failed on a stale dir name that was never written.
+describe("wrapWithRecorder: audits the dir recordTurn ACTUALLY wrote when the index grows mid-invoke", () => {
+  it("does NOT false-fail the record audit when an intervening turn bumps the ordinal during inner.invoke", async () => {
+    // An inner agent that records an INTERVENING turn during its own invoke (mimicking the perform-path
+    // recording a dispatch turn, i.e. the live ux-designer straddle) so turns/index.json grows between
+    // the wrapper's pre-invoke turnDirFor (ordinal 0) and recordTurn's write (ordinal 1).
+    const inner: StepAgent = {
+      async invoke(invocation: AgentInvocation): Promise<void> {
+        const p = join(invocation.workspaceDir, ".consort", "features", "F1", "stories", "S1-file-stock", "acs", "AC1.json");
+        mkdirSync(join(p, ".."), { recursive: true });
+        writeFileSync(p, '{"id":"AC1"}');
+        // intervening index append -> 0000-dispatch; the agent turn then lands at 0001-spec-author
+        recordTurn({ recordDir: consortDir, projectDir: project, consortDir, action: { kind: "dispatch" } as WorkflowAction, step: 0, snapshotContent: false });
+      },
+    };
+    const agent = wrapWithRecorder(inner, {
+      recordDir: consortDir,
+      projectDir: project,
+      consortDir,
+      featureId: "F1",
+      takeTranscript: () => ({ role: "spec-author", model: "sonnet", prompt: "p", finalText: "x", tools: [] }),
+      liveIndex: true,
+    });
+    // The pre-invoke turnDir was 0000-spec-author, but 0000 is now the dispatch turn and the agent
+    // turn is 0001-spec-author. Auditing the stale 0000-spec-author would throw RECORD AUDIT FAILED;
+    // auditing the real write dir passes.
+    await expect(agent.invoke(inv())).resolves.toBeUndefined();
+    const agentTurn = turnDirs(consortDir).find((d) => /spec-author/.test(d))!;
+    expect(agentTurn).toMatch(/^0001-spec-author/);
+    expect(existsSync(join(consortDir, "turns", agentTurn, "transcript.md"))).toBe(true);
+    // The stale pre-invoke dir name was never written.
+    expect(existsSync(join(consortDir, "turns", "0000-spec-author"))).toBe(false);
   });
 });
 

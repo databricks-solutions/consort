@@ -26,8 +26,10 @@ import {
   checkE2ECoverage,
   checkPersistenceCoverage,
   checkMigrationReversibleShape,
+  checkTransactionalShape,
   checkSchemaChangeCoverage,
   checkApiContractConsistency,
+  checkRequestFieldReconciliation,
   checkInvariantCoverageDistinct,
   invariantRealizingStory,
   checkSchemaChangeStoryRealizes,
@@ -38,6 +40,7 @@ import {
   checkFitnessSingularCoverage,
   checkClientKindLayerCoherence,
   checkJsdomBrowserAssertion,
+  checkMockPrescription,
   checkSchemaDiffCrossStoryColumnsInAcs,
 } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
 import { acsForStory } from "../test-list/test-list.js";
@@ -349,6 +352,43 @@ function apiContractConsistencyReason(consortDir: string, featureId: string): st
   }
   const r = checkApiContractConsistency(arch, acJsons);
   return r.ok ? null : `api-contract consistency failed: ${r.violations.join("; ")}`;
+}
+
+/** Cross-story REQUEST-CONTRACT reconciliation: when a later story makes a request field required
+ *  on a shared MUTATION endpoint (api_contracts[].request_fields[].{required,since_story}), every
+ *  EARLIER story whose AC writes that endpoint must be in the field's reconciled_stories (its
+ *  fixtures now supply the field) — else those prior tests 422 at the full-feature verify (the
+ *  actor-required-on-EP4-broke-S1/S2 class). Reads architecture.json + every AC WITH its owning
+ *  story + feature-spec.json `stories[]` for order. Vacuous until the architect declares
+ *  request_fields (back-compat). */
+function requestFieldReconciliationReason(consortDir: string, featureId: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  const fdir = featureResolved(consortDir, featureId);
+  const acsByStory: Array<{ story: string; acJson: string }> = [];
+  const storiesDir = join(fdir, "stories");
+  if (existsSync(storiesDir)) {
+    for (const s of readdirSync(storiesDir)) {
+      const acsDir = join(storiesDir, s, "acs");
+      if (!existsSync(acsDir)) continue;
+      for (const f of readdirSync(acsDir)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          acsByStory.push({ story: s, acJson: readFileSync(join(acsDir, f), "utf8") });
+        } catch {
+          /* a malformed AC is reported by storyAcProblems */
+        }
+      }
+    }
+  }
+  let storyOrder: string[] = [];
+  try {
+    storyOrder = (JSON.parse(readFileSync(join(fdir, "feature-spec.json"), "utf8")) as { stories?: string[] }).stories ?? [];
+  } catch {
+    /* no feature-spec yet — order unknown; the check treats unordered stories conservatively (not-prior) */
+  }
+  const r = checkRequestFieldReconciliation(arch, acsByStory, storyOrder);
+  return r.ok ? null : `request-contract reconciliation failed: ${r.violations.join("; ")}`;
 }
 
 /** HTTP methods that MUTATE state. An api_contract with one of these is a backend WRITE whose domain
@@ -754,6 +794,18 @@ function jsdomBrowserAssertionReason(testListJson: string): string | null {
 }
 
 /**
+ * no-mock-prescription test_list-gate condition: a test-list DESCRIPTION that PRESCRIBES a mock/stub of
+ * a service endpoint (the T4 "fetch mocked at /api/counts/variance" defect) violates the no-mock policy
+ * AND, once the driver implements the test REAL (or the build-time smell strips the mock), leaves the
+ * description stale. Deterministic form of the test-strategist's "Mocks never for the database" brief,
+ * caught at authoring so description + implementation agree from the start. Null when clean / no list.
+ */
+function mockPrescriptionReason(testListJson: string): string | null {
+  const r = checkMockPrescription(testListJson);
+  return r.ok ? null : `mock-prescription: ${r.violations.join("; ")}`;
+}
+
+/**
  * E2E-coverage test_list-gate condition: every AC tagged `layer:"E2E"` (a client<->server
  * contract – the client rendering a REAL server response) MUST have a real Playwright e2e in the
  * test-list (scenario_file under an `e2e/` path), never only a mocked component test whose
@@ -794,7 +846,12 @@ function e2eCoverageReason(consortDir: string, featureId: string, testListJson: 
 function persistenceCoverageReason(consortDir: string, featureId: string, testListJson: string): string | null {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === undefined) return null;
-  const r = checkPersistenceCoverage(testListJson, arch);
+  // Thread db-design so checkPersistenceCoverage can EXEMPT inherited schema-constraints (invariants on
+  // a table this feature does not migrate — tested where created, not re-tested here). Absent/unreadable
+  // db-design falls back to the prior demand-all behavior.
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = existsSync(dbFile) ? (() => { try { return readFileSync(dbFile, "utf8"); } catch { return undefined; } })() : undefined;
+  const r = checkPersistenceCoverage(testListJson, arch, db);
   return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
 }
 
@@ -812,6 +869,20 @@ function migrationReversibleShapeReason(consortDir: string, featureId: string, t
   if (arch === undefined) return null;
   const r = checkMigrationReversibleShape(testListJson, arch);
   return r.ok ? null : `migration-reversibility shape failed: ${r.violations.join("; ")}`;
+}
+
+/**
+ * Transactional SHAPE (the atomicity complement to migrationReversibleShapeReason): every
+ * `transactional` persistence_invariant covered by a test-list item must have >=1 covering item whose
+ * DESCRIPTION reads as an ATOMICITY/ROLLBACK test (force a mid-transaction failure, assert neither write
+ * persists — the F2 T19 shape), NOT a migration round-trip. Closes the F5/PI1 repair false-green where a
+ * transactional invariant was "covered" by a migration-survival round-trip. Null when clean / no artifacts yet.
+ */
+function transactionalShapeReason(consortDir: string, featureId: string, testListJson: string): string | null {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === undefined) return null;
+  const r = checkTransactionalShape(testListJson, arch);
+  return r.ok ? null : `transactional shape failed: ${r.violations.join("; ")}`;
 }
 
 /** Schema-change coverage (Gate 3): every db-design.json schema_changes[] entry of a
@@ -874,6 +945,32 @@ function invariantCoverageDistinctReason(consortDir: string, featureId: string, 
   );
   const r = checkInvariantCoverageDistinct(perStory, owner);
   return r.ok ? null : `invariant coverage not distinct across stories: ${r.violations.join("; ")}`;
+}
+
+/**
+ * The ONE feature-wide persistence coverage-teeth definition, reading the FEATURE master test-list +
+ * architecture itself (no caller plumbing). Runs the four checks a feature must satisfy before it ships:
+ * persistence coverage (every invariant tagged), migration-reversibility shape, transactional shape
+ * (atomicity), and cross-story invariant distinctness. Returns the first failing reason, or null when
+ * clean / no master test-list yet. Shared by the feature-complete backstop AND the per-story
+ * design-complete gate (approveStoryGate), so an uncovered/mis-shaped invariant is caught at DESIGN
+ * (before build), not only after all stories build + ship — with no second definition to drift.
+ */
+export function featureCoverageReason(consortDir: string, featureId: string): string | null {
+  const tlFile = join(featureDir(consortDir, featureId), "test-list.json");
+  if (!existsSync(tlFile)) return null; // no master test-list yet — nothing to cover
+  let tlJson: string;
+  try {
+    tlJson = readFileSync(tlFile, "utf8");
+  } catch {
+    return null;
+  }
+  return (
+    persistenceCoverageReason(consortDir, featureId, tlJson) ??
+    migrationReversibleShapeReason(consortDir, featureId, tlJson) ??
+    transactionalShapeReason(consortDir, featureId, tlJson) ??
+    invariantCoverageDistinctReason(consortDir, featureId, tlJson)
+  );
 }
 
 /**
@@ -1095,6 +1192,12 @@ export function resolveArtifactInputs(
       // endpoint may be declared with conflicting shapes (the S3 par_level contradiction).
       const apiContractReason = apiContractConsistencyReason(consortDir, featureId);
       if (apiContractReason !== null) return { reason: apiContractReason };
+      // F2/S3 actor class: a later story makes a request field required on a shared MUTATION endpoint;
+      // every prior writer story (whose AC references that endpoint) must reconcile — supply the field
+      // in its fixtures + list it in request_fields[].reconciled_stories — or the field be required:false.
+      // Else those prior actor-less fixtures 422 only at the full-feature deploy-verify (the silent cross-story HIL).
+      const requestContractReason = requestFieldReconciliationReason(consortDir, featureId);
+      if (requestContractReason !== null) return { reason: requestContractReason };
       // BDD coverage: a backend WRITE rule (a mutating endpoint) must carry an API-layer AC so the
       // BEHAVIOR analyst authors a backend test for it — else the rule ships with 0 behavior tests
       // (every AC tagged E2E). Runs here, in the LIVE spec-gate home (NOT the legacy analyzeForGate).
@@ -1216,6 +1319,11 @@ export function resolveArtifactInputs(
         // escalate at the build-time reversibility smell.
         const reversibleShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlJson);
         if (reversibleShapeReason !== null) return { reason: reversibleShapeReason };
+        // Transactional SHAPE (Gate 3): a `transactional` invariant covered only by a non-atomicity
+        // item (e.g. a migration round-trip) fails HERE at design — the F5/PI1 repair false-green —
+        // so the covering item must be an atomicity/rollback test (the F2 T19 shape).
+        const txnShapeReason = transactionalShapeReason(consortDir, featureId, tlJson);
+        if (txnShapeReason !== null) return { reason: txnShapeReason };
         // Schema-change coverage (Gate 3): every DBA-committed test-worthy schema_change
         // (create_table / add_index / add_constraint) must be asserted by >=1 test
         // referencing its schema_change_id — no index/constraint ships untested, and the
@@ -1242,6 +1350,11 @@ export function resolveArtifactInputs(
         // born-vacuous — route it to a Playwright e2e spec (the stockflow-3-100 T19 class).
         const jsdomReason = jsdomBrowserAssertionReason(tlJson);
         if (jsdomReason !== null) return { reason: jsdomReason };
+        // no-mock-prescription: a test-list description that prescribes mocking a service endpoint
+        // (the T4 "fetch mocked at /api/counts/variance" defect) — re-author it behavioral + real-
+        // backend so the description never drifts from the mock-free implementation.
+        const mockReason = mockPrescriptionReason(tlJson);
+        if (mockReason !== null) return { reason: mockReason };
         // (The test-strategist fan-out provenance gate was removed — see the note above its former
         // definition. It false-blocked legitimate fan-outs whose dispatch log was permission-denied.)
       }
@@ -1294,8 +1407,14 @@ export function resolveArtifactInputs(
         if (pReason !== null) return { reason: `${pReason} [re-checked at the deploy gate — a persistence invariant was declared/realized after the test_list gate and is still uncovered; add its test (consort-pipeline repair) before accepting]` };
         const revShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlForDeploy);
         if (revShapeReason !== null) return { reason: `${revShapeReason} [re-checked at the deploy gate — a migration_reversible invariant's covering test is forward-only; re-author it as a round-trip before accepting]` };
+        const txnShapeReasonDeploy = transactionalShapeReason(consortDir, featureId, tlForDeploy);
+        if (txnShapeReasonDeploy !== null) return { reason: `${txnShapeReasonDeploy} [re-checked at the deploy gate — a transactional invariant's covering test is not an atomicity/rollback test; re-author it (F2 T19 shape) before accepting]` };
         const dReason = invariantCoverageDistinctReason(consortDir, featureId, tlForDeploy);
         if (dReason !== null) return { reason: `${dReason} [re-checked at the deploy gate]` };
+        // Request-contract reconciliation re-check: catch a request field made required on a shared
+        // MUTATION endpoint AFTER the spec gate passed, with a prior writer story still unreconciled.
+        const rcReason = requestFieldReconciliationReason(consortDir, featureId);
+        if (rcReason !== null) return { reason: `${rcReason} [re-checked at the deploy gate — a request field was made required after the spec gate and a prior writer story is unreconciled; reconcile it before accepting]` };
       }
       return withConformance({ "deploy-evidence.json": evidence });
     }

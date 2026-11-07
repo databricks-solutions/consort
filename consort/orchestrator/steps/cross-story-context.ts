@@ -43,6 +43,17 @@ export interface RequiredField {
   /** The invariant brief – names the mandated field + why (e.g. "actor is NOT NULL: every pick records who made it"). */
   brief?: string;
 }
+export interface RequiredRequestField {
+  /** The endpoint this field is required on (api_contracts[].id, e.g. EP4-adjust-stock-record). */
+  contract_id: string;
+  /** The required request-field name (e.g. "actor"). */
+  field: string;
+  /** The story that made it required. A prior writer story of this endpoint whose fixtures don't
+   *  yet supply the field must reconcile (the test-side mirror of the not-null field-contract gap). */
+  since_story?: string;
+  /** Prior writer stories already reconciled (their fixtures supply it) — those still missing are the ones to flag. */
+  reconciled_stories?: string[];
+}
 export interface CrossStoryContext {
   current_story: string;
   /** Every OTHER story's ACs in this feature (status carried so the reviewer weighs a
@@ -57,6 +68,11 @@ export interface CrossStoryContext {
    *  field-CONTRACT gap (missing supply), NOT a contradiction, so check #8's opposite-outcome test
    *  misses it (the actor-not-sent defect: a required column with no client path to fill it). */
   required_persistence_fields: RequiredField[];
+  /** The feature's newly-required REQUEST fields — api_contracts[].request_fields with required:true +
+   *  a since_story. Surfaced so the reviewer catches a prior writer story whose fixtures don't yet
+   *  supply a field a later story made required on a shared endpoint (the actor-required-on-EP4 class;
+   *  the request-side mirror of required_persistence_fields). */
+  required_request_fields: RequiredRequestField[];
 }
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
@@ -65,7 +81,7 @@ const str = (v: unknown): string | undefined => (typeof v === "string" && v.leng
  *  stories' ACs + the architecture's open decisions. Never throws; missing pieces yield
  *  empty arrays. */
 export function buildCrossStoryContext(consortDir: string, feature: string, currentStory: string): CrossStoryContext {
-  const ctx: CrossStoryContext = { current_story: currentStory, sibling_stories: [], open_decisions: [], required_persistence_fields: [] };
+  const ctx: CrossStoryContext = { current_story: currentStory, sibling_stories: [], open_decisions: [], required_persistence_fields: [], required_request_fields: [] };
 
   const currentDir = (() => {
     try {
@@ -107,6 +123,7 @@ export function buildCrossStoryContext(consortDir: string, feature: string, curr
     const arch = JSON.parse(fs.readFileSync(architectureJson(consortDir, feature), "utf8")) as {
       open_decisions?: unknown;
       persistence_invariants?: unknown;
+      api_contracts?: unknown;
     };
     if (Array.isArray(arch.open_decisions)) {
       ctx.open_decisions = arch.open_decisions
@@ -130,6 +147,25 @@ export function buildCrossStoryContext(consortDir: string, feature: string, curr
         )
         .map((p) => ({ invariant_id: String(p.id), table: str(p.table), brief: str(p.brief) }));
     }
+    // Newly-required REQUEST fields: api_contracts[].request_fields with required:true. The reviewer
+    // uses these (with the sibling ACs' api_contract_id) to catch a prior writer story whose fixtures
+    // don't yet supply a field a later story made required on a shared endpoint.
+    if (Array.isArray(arch.api_contracts)) {
+      ctx.required_request_fields = (arch.api_contracts as Array<Record<string, unknown>>)
+        .filter((c): c is Record<string, unknown> => !!c && typeof c.id === "string" && Array.isArray(c.request_fields))
+        .flatMap((c) =>
+          (c.request_fields as Array<Record<string, unknown>>)
+            .filter((f) => !!f && f.required === true && typeof f.name === "string")
+            .map((f) => ({
+              contract_id: String(c.id),
+              field: String(f.name),
+              since_story: str(f.since_story),
+              reconciled_stories: Array.isArray(f.reconciled_stories)
+                ? (f.reconciled_stories as unknown[]).filter((x): x is string => typeof x === "string")
+                : undefined,
+            })),
+        );
+    }
   } catch {
     /* no architecture.json yet (early design) */
   }
@@ -151,15 +187,18 @@ export function renderCrossStoryContextBlock(consortDir: string, feature: string
   if (
     ctx.sibling_stories.length === 0 &&
     ctx.open_decisions.length === 0 &&
-    ctx.required_persistence_fields.length === 0
+    ctx.required_persistence_fields.length === 0 &&
+    ctx.required_request_fields.length === 0
   ) {
     return "";
   }
   return (
     "CROSS-STORY CONTEXT — this story is NOT reviewed in isolation. The feature's OTHER stories' ACs, " +
-    "the architecture's open_decisions, and its mandated (not-null) persistence fields are below; use them for " +
-    "the cross-story checks (an AC contradicting a gated sibling AC; a mandated field no sibling submit AC supplies). " +
-    "This IS that context — do not run `consort-cross-story-context` yourself.\n\n" +
+    "the architecture's open_decisions, its mandated (not-null) persistence fields, and its newly-required " +
+    "REQUEST fields are below; use them for the cross-story checks (an AC contradicting a gated sibling AC; a " +
+    "mandated field no sibling submit AC supplies; a prior writer story whose fixtures don't supply a field a " +
+    "later story made required on a shared endpoint — match required_request_fields.contract_id to a sibling " +
+    "AC's api_contract_id). This IS that context — do not run `consort-cross-story-context` yourself.\n\n" +
     JSON.stringify(ctx, null, 2)
   );
 }
@@ -172,9 +211,14 @@ export function renderCrossStoryContextBlock(consortDir: string, feature: string
 export function buildFeatureReconcileContext(
   consortDir: string,
   feature: string,
-): { stories: SiblingStory[]; open_decisions: OpenDecision[]; required_persistence_fields: RequiredField[] } {
+): { stories: SiblingStory[]; open_decisions: OpenDecision[]; required_persistence_fields: RequiredField[]; required_request_fields: RequiredRequestField[] } {
   const ctx = buildCrossStoryContext(consortDir, feature, "__reconcile_all__");
-  return { stories: ctx.sibling_stories, open_decisions: ctx.open_decisions, required_persistence_fields: ctx.required_persistence_fields };
+  return {
+    stories: ctx.sibling_stories,
+    open_decisions: ctx.open_decisions,
+    required_persistence_fields: ctx.required_persistence_fields,
+    required_request_fields: ctx.required_request_fields,
+  };
 }
 
 /** The feature-complete reconciliation context as a prompt BLOCK for the Navigator's reconcile turn.
@@ -187,6 +231,8 @@ export function renderFeatureReconcileBlock(consortDir: string, feature: string)
     "FEATURE-COMPLETE CROSS-STORY RECONCILIATION — every story below is now designed + gated. Check the " +
     "WHOLE set against ITSELF, symmetrically (every story vs every other, including the first-designed one): " +
     "an AC that contradicts another story's gated AC; a mandated (not-null) field no story's submit AC supplies; " +
+    "a prior writer story whose fixtures don't supply a field a later story made required on a shared endpoint " +
+    "(required_request_fields.contract_id vs a story's AC api_contract_id); " +
     "two stories' ACs that overlap on the same observable behavior; an invariant anchored to the wrong story. " +
     "For each defect, name the OWNING story (the one to change) + its author (owner). This IS the context — do " +
     "not run `consort-cross-story-context` yourself.\n\n" +

@@ -121,10 +121,13 @@ export function writeEscalation(
     ...(esc.story_id ? { story_id: esc.story_id } : {}),
     ...(esc.ac_id ? { ac_id: esc.ac_id } : {}),
     raised_at: esc.raised_at ?? new Date().toISOString(),
+    // A caller MAY supply a source-specific resolution (e.g. feature-conformance names the exact
+    // `consort-pipeline repair` command); otherwise the generic clear-with-resolve-escalation default.
     how_to_resolve:
+      esc.how_to_resolve ??
       `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". ` +
-      `That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this ` +
-      `file, and do NOT edit smells.json, to move the run forward – that desyncs on-disk state from the drive.`,
+        `That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this ` +
+        `file, and do NOT edit smells.json, to move the run forward – that desyncs on-disk state from the drive.`,
   };
   fs.mkdirSync(escalationsDir(consortDir), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");

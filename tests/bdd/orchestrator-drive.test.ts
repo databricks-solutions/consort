@@ -517,6 +517,17 @@ describe("nextTransition: build lane (after a story is gated)", () => {
     expect(nextTransition(st)).toEqual({ kind: "invoke-role", role: "navigator", story: "S1", buildMode: "assess", ac: "AC1" });
   });
 
+  it("a test-RESILIENCE smell routes the Navigator RE-AUTHOR turn, BEFORE the generic assess", () => {
+    const v = gatedUnbuilt();
+    v.build.experimentCut = true;
+    v.build.testsWritten = true;
+    v.build.codeWritten = false;
+    v.build.reauthorResilienceAc = "AC1";
+    v.build.assessGreenAc = "AC1"; // reauthor must WIN over the generic assess
+    const st = ws({ stories: { S1: v }, buildActive: "S1" });
+    expect(nextTransition(st)).toEqual({ kind: "invoke-role", role: "navigator", story: "S1", buildMode: "reauthor", ac: "AC1" });
+  });
+
   it("builds a gated story before designing the next (per-story flow on a single lane)", () => {
     // S1 gated+unbuilt, S2 fresh, lane idle -> dispatch S1 (build precedes designing S2).
     const st = ws({ storyOrder: ["S1", "S2"], stories: { S1: gatedUnbuilt(), S2: freshStory() }, buildActive: null });

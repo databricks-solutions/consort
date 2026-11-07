@@ -802,6 +802,14 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
     }
   }
 
+  // The branch the run + the pre-serve migrate bind to. For the migrate to resolve a Lakebase DSN,
+  // `flyway-migrate.sh` needs BOTH LAKEBASE_PROJECT_ID and LAKEBASE_BRANCH_ID (its `lk` resolver mints
+  // a fresh, correctly-scoped credential from the pair). The drive's process.env carries neither
+  // reliably across features, so binding only LAKEBASE_BRANCH_ID left PROJECT_ID unset → the resolver
+  // no-op'd → DATABASE_URL stayed unset → alembic/SQLAlchemy fell back to its localhost:5432 default
+  // and the migrate died "connection refused" on a branch that was in fact healthy. Resolve the
+  // instance from the project here and bind it too, so the pre-serve migrate always mints its DSN.
+  const migrateInstance = args.lakebaseBranch ? readProjectInstance(args.projectDir) : undefined;
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     // Serve + verify on ONE port (bumped off a foreign :8000 above). The run command binds
@@ -814,6 +822,7 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
     // Per-story deploy: bind the run command to the experiment branch's Lakebase DB so the PO
     // reviews the story on its own branch. Unset = the ambient env (the per-sprint deploy).
     ...(args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {}),
+    ...(migrateInstance ? { LAKEBASE_PROJECT_ID: migrateInstance } : {}),
   };
 
   // Migrate the DEPLOYED branch to head BEFORE serving it. Honest-GREEN verify

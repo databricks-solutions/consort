@@ -93,44 +93,37 @@ function buildOwnerIndex(consortDir: string): Map<string, TestOwner[]> {
   return index;
 }
 
-/** The feature currently on the build lane, from `.consort/next.json` — the disambiguator of last
- *  resort when a reused T-id's file does not pin a single owner (e.g. a fitness/behavior test whose
- *  test-list item carries no scenario_file). Null when unreadable. */
-function activeFeature(consortDir: string): string | null {
-  try {
-    const next = JSON.parse(readFileSync(join(consortDir, "next.json"), "utf8")) as { feature?: unknown };
-    return typeof next.feature === "string" ? next.feature : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Resolve a (test id, file) to its single owning story. One owner -> it. Several (a T-id reused across
- *  features — ids are unique only WITHIN a story) -> (1) the owner whose scenario_file basename matches
- *  the running file (a client/e2e spec pins ITSELF, so a sibling feature's same-id spec resolves to its
- *  own story); then (2) the owner in the feature currently on the build lane (next.json) — a
- *  fitness/behavior test carries no scenario_file, so during THIS feature's build its reused id belongs
- *  to the active feature's story, while another feature's same-id test already resolved via (1). Else
- *  null (skip, never mis-attribute). */
-function resolveOwner(consortDir: string, id: string, file: string): TestOwner | null {
+/** Resolve a (test id, file) to its single owning story — a property of the TEST, read from the
+ *  authoritative per-story test-list, NEVER from which feature happens to be building now. One owner
+ *  -> it. Several (a T-id reused across features — ids are unique only WITHIN a story) -> the owner
+ *  whose scenario_file basename matches the running file (a client/e2e spec, and now every test, pins
+ *  ITSELF). If the running file still can't disambiguate, return null (leave it UNSCOPED) rather than
+ *  attribute by the active feature — a full-suite re-run under a LATER feature's lane would otherwise
+ *  mis-stamp this test's rows with that feature, and the dashboard would scope them out. `next.json`
+ *  is deliberately NOT consulted: attribution follows the test's identity, not the run that executed it. */
+export function resolveOwner(consortDir: string, id: string, file: string): TestOwner | null {
   const base = /^(T\d+)/.exec(id)?.[1] ?? id;
   const index = buildOwnerIndex(consortDir);
   const owners = index.get(id) ?? index.get(base) ?? [];
   if (owners.length === 0) return null;
   if (owners.length === 1) return owners[0];
-  // (1) The owner whose scenario_file matches the running file (unique match).
+  // The owner whose scenario_file matches the running file (unique match). No active-feature fallback.
   const fileBase = basename(file || "");
   if (fileBase) {
     const byFile = owners.filter((o) => o.scenario_file && basename(o.scenario_file) === fileBase);
     if (byFile.length === 1) return byFile[0];
   }
-  // (2) Fall back to the owner in the currently-building feature (one match only).
-  const active = activeFeature(consortDir);
-  if (active) {
-    const byFeature = owners.filter((o) => o.feature_id === active);
-    if (byFeature.length === 1) return byFeature[0];
-  }
   return null;
+}
+
+/** The owner-identity request headers a test harness sends on every `/api` call so the backend's
+ *  capture stamps each read/write with the test's OWNING feature/story (app/consort_capture.py reads
+ *  these, never next.json). Empty when the owner can't be resolved — the backend then leaves the line
+ *  unscoped (kept by test id, back-compat) rather than mis-stamped. */
+export function consortOwnerHeaders(consortDir: string, id: string, file: string): Record<string, string> {
+  const owner = resolveOwner(consortDir, id, file);
+  if (!owner) return {};
+  return { "X-Consort-Feature": owner.feature_id, "X-Consort-Story": owner.story_id };
 }
 
 /** The role that RAN this suite, for per-test attribution. The deploy/promote lane re-runs the suite

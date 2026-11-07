@@ -168,6 +168,39 @@ export async function GET(req: NextRequest) {
         t.eventIndex = eventOf.get(t.ordinal) ?? null;
         t.tsStart = t.eventIndex != null ? (evs[t.eventIndex]?.timestamp ?? null) : null;
       }
+      // RESILIENT SCRUB-FOLLOW: correlate() is a per-role cursor, so it can leave a RUN of turns
+      // UNPAIRED — a mid-log gap, or (commonly) the live-edge tail where the log runs ahead of the
+      // recorded turns (a role-exhausted tail). Those turns' lines then carry NO eventIndex, so the
+      // board stops following the scrubber there and snaps to live — the "only the agent steps move"
+      // bug. Turns tile the event log in ORDINAL order, so fill every unpaired turn's eventIndex by
+      // MONOTONIC interpolation between the surrounding PAIRED anchors (the tail extends toward the live
+      // edge, a mid-gap splits its anchors). Then every line maps to an event and the scrub always
+      // folds to the playhead. No-op when every turn is already paired (the healthy case stays
+      // byte-identical): the snapshot `anchored` skips them.
+      const anchored = turns.map((t) => t.eventIndex);
+      for (let i = 0; i < turns.length; i++) {
+        if (anchored[i] != null) continue;
+        let lo = i - 1;
+        while (lo >= 0 && anchored[lo] == null) lo--;
+        let hi = i + 1;
+        while (hi < turns.length && anchored[hi] == null) hi++;
+        const a = lo >= 0 ? anchored[lo]! : 0;
+        const b = hi < turns.length ? anchored[hi]! : evs.length;
+        const run = hi - (lo + 1); // unpaired turns in this gap
+        const j = i - (lo + 1); // this turn's position within the gap (0-based)
+        turns[i].eventIndex = Math.min(evs.length - 1, Math.round(a + ((b - a) * (j + 1)) / (run + 1)));
+      }
+      // Enforce a MONOTONIC non-decreasing eventIndex across ordinals: turns tile the event log in
+      // order, so a later turn's event is never earlier. correlate()'s per-role cursor can still pair a
+      // few anchors slightly out of order; left as-is the scrubber would jitter BACKWARD on those. Clamp
+      // each to the running max so scrubbing forward only advances and scrubbing back only rewinds.
+      let maxEv = -1;
+      for (const t of turns) {
+        if (t.eventIndex == null) continue;
+        if (t.eventIndex < maxEv) t.eventIndex = maxEv;
+        else maxEv = t.eventIndex;
+        t.tsStart = evs[t.eventIndex]?.timestamp ?? null;
+      }
       for (let i = 0; i < turns.length; i++) turns[i].tsEnd = turns[i + 1]?.tsStart ?? turns[i].tsStart;
     } catch {
       /* correlation is best-effort; leave eventIndex/ts null so the board just doesn't follow */

@@ -3,15 +3,24 @@
 
 /**
  * Scope a capture line (snapshot or interaction) to the viewed feature+story. Test ids repeat across
- * features (F1 and F2 may both have a `T40`), so:
- *  - A FULLY-UNSTAMPED line (an older corpus, before the capture stamped feature/story) is kept, scoped
- *    by test id alone — back-compat.
+ * features AND stories (F1/S1 and F2/S2 may both have a `T32`), so:
  *  - A STAMPED line must match the viewed feature; it matches the story ONLY when it carries one. A
  *    whole-feature capture (e.g. a deploy run) stamps the feature but no story, so it belongs to ANY
  *    story of that feature — requiring story equality there wrongly dropped those lines.
+ *  - A FULLY-UNSTAMPED line is kept scoped by test id alone — BUT ONLY when the viewed feature's
+ *    captures are NOT attribution-stamped (`attributionActive=false`): a pre-attribution corpus, where
+ *    by-id is the best signal there is. Once this feature stamps its captures (post the scm-utils
+ *    attribution fix), an unstamped line is a LEGACY/FOREIGN leftover — e.g. F1/S1's `(None,None)` T32
+ *    rows — and must NOT leak into this feature's same-id test (the reused-id table-record leak: a RED
+ *    F2/S2 T32 showing F1's inserted rows). Dropping it there shows nothing, which is correct.
  */
-export function inScope(e: { featureId?: string; storyId?: string }, feature: string, story: string): boolean {
-  if (!e.featureId && !e.storyId) return true;
+export function inScope(
+  e: { featureId?: string; storyId?: string },
+  feature: string,
+  story: string,
+  attributionActive = false,
+): boolean {
+  if (!e.featureId && !e.storyId) return !attributionActive;
   if (e.featureId && e.featureId !== feature) return false;
   if (e.storyId && e.storyId !== story) return false;
   return true;

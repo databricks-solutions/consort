@@ -2,7 +2,7 @@
 
 // consort/architecture/contract-clean.ts
 import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
-import { join as join3, relative, extname as extname2 } from "path";
+import { join as join3, relative, extname as extname2, basename } from "path";
 
 // consort/config/consort-paths.ts
 import * as fs from "fs";

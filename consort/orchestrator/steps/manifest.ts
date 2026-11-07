@@ -38,6 +38,7 @@ import uxIaManifest from "./manifests/ux-ia.json" with { type: "json" };
 // delegates to buildCycleCommand – the ONE derivation the legacy commandsForAction also calls.
 import navigatorRedManifest from "./manifests/navigator-red.json" with { type: "json" };
 import navigatorReviewManifest from "./manifests/navigator-review.json" with { type: "json" };
+import navigatorReauthorManifest from "./manifests/navigator-reauthor.json" with { type: "json" };
 import navigatorReflectManifest from "./manifests/navigator-reflect.json" with { type: "json" };
 import navigatorReconcileManifest from "./manifests/navigator-reconcile.json" with { type: "json" };
 import navigatorAssessManifest from "./manifests/navigator-assess.json" with { type: "json" };
@@ -204,6 +205,7 @@ export const SHIPPED_MANIFESTS: StepManifest[] = [
   uxIaManifest as StepManifest,
   navigatorRedManifest as StepManifest,
   navigatorReviewManifest as StepManifest,
+  navigatorReauthorManifest as StepManifest,
   navigatorReflectManifest as StepManifest,
   navigatorReconcileManifest as StepManifest,
   navigatorAssessManifest as StepManifest,

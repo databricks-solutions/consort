@@ -50,7 +50,8 @@ export function OrchestratorLane({ state }: { state: DashboardState }) {
   // it's driving), its status, and the lifecycle gate bubbles. The run tally (turns / stories / cost)
   // lives in the run-vitals card beside it, not here.
   const activity = state.orchestratorActivity;
-  const story = activity?.story ?? state.stories.find((s) => s.active)?.id ?? null;
+  // The ONE run-position story (authoritative); no re-derivation from active flags / recentEvents.
+  const story = state.runPosition.story;
   // The card carries the orchestrator's SLATE identity (its role colour), and turns PURPLE only when
   // it's WAITING on a human (an open gate/escalation). It pulses while active or waiting and goes
   // quiet once the run completes. `softpulse` glows in `currentColor`, so `accent` (set as the card
@@ -69,23 +70,11 @@ export function OrchestratorLane({ state }: { state: DashboardState }) {
   // completed phase at rest, not a pending decision — it reads as idle, not waiting.
   const waiting = focus.kind === "gate" && focus.status === "surfaced";
   const running = focus.kind === "step";
-  // The gate bubbles: the five HIL gates in lifecycle order, scoped to (and resetting with) the
-  // current story. When PARKED at a gate, scope to THAT gate's story — `activity.story` can lag onto
-  // a later story that began designing while this one awaits its gate, which would hide the parked
-  // story's own passed gates. Otherwise use the active step's story.
-  const bubbleStory =
-    focus.kind === "gate"
-      ? (() => {
-          for (let i = state.recentEvents.length - 1; i >= 0; i--) {
-            const e = state.recentEvents[i];
-            if (e.event !== "gate.surfaced") continue;
-            const md = (e.metadata ?? {}) as Record<string, unknown>;
-            if (md.gate === focus.gate) return typeof md.story === "string" ? md.story : story;
-          }
-          return story;
-        })()
-      : story;
-  const gateStatus = storyGateStatus(state.recentEvents, bubbleStory);
+  // The gate bubbles: the five HIL gates in lifecycle order, scoped to the run-position story. (The
+  // old recentEvents rescan existed because activity.story could lag; runPosition.story is now the
+  // authoritative current story — a gate.surfaced is itself a drive-position event, so when parked at
+  // a gate rp.story already IS that gate's story.)
+  const gateStatus = storyGateStatus(state.recentEvents, story);
   const flashing = issue || waiting || running;
   const accent = issue ? "var(--status-critical)" : waiting ? "var(--status-gate)" : "var(--role-orchestrator)";
   const status = issue ? "issue" : waiting ? "waiting on you" : running ? "coordinating" : "idle";

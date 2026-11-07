@@ -156,6 +156,10 @@ export function executorDispatched(action: WorkflowAction): boolean {
     // inline, byte-identical via omit=∅) and REPAIR carries no pack. REVIEW is lean; REFACTOR +
     // REPAIR edit code + their @build-cycle verify needs a live branch (cloud-gated).
     if (action.role === "navigator" && action.buildMode === "review") return true;
+    // The navigator REAUTHOR turn (test-RESILIENCE self-heal): the Navigator edits the flaky test(s)
+    // it authored; verified by its @build-cycle record (the reauthor-green re-verify), no static
+    // artifact. Edits tests + re-runs the GREEN verify, so cloud-gated like refactor.
+    if (action.role === "navigator" && action.buildMode === "reauthor") return true;
     if (action.role === "driver" && (action.buildMode === "refactor" || action.buildMode === "repair")) return true;
     // ── THE TAIL (Stage I): reflect + the deploy/superseded driver variants ────────────────────
     // navigator REFLECT (design-gate turn: contextRubric inline, no pack precondition) and the

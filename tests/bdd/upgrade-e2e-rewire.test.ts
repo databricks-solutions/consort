@@ -85,7 +85,7 @@ describe("refreshSurface re-wires the E2E block for a UI project (upgrade must n
     );
     const capture = readFileSync(join(dir, "app", "consort_capture.py"), "utf8");
     expect(capture).not.toContain("STALE");
-    expect(capture).toContain("_consort_scope"); // the feature/story stamp — proof the FIX reached the file
+    expect(capture).toContain("story_id"); // the feature/story stamp — proof the FIX reached the file
     expect(readFileSync(join(dir, "client", "consort-vitest-reporter.ts"), "utf8")).not.toContain("STALE");
     expect(readFileSync(join(dir, "client", "tests", "e2e", "consort-fixtures.ts"), "utf8")).not.toContain("STALE");
   });
@@ -106,7 +106,7 @@ describe("refreshSurface re-wires the E2E block for a UI project (upgrade must n
     // No client/ dir → refreshReporter's dest-dir guard skips the client files (no stray files).
     expect(r.reporterFiles).not.toContain("client/consort-vitest-reporter.ts");
     expect(existsSync(join(dir, "client"))).toBe(false);
-    expect(readFileSync(join(dir, "app", "consort_capture.py"), "utf8")).toContain("_consort_scope");
+    expect(readFileSync(join(dir, "app", "consort_capture.py"), "utf8")).toContain("story_id");
   });
 
   it("substitutes {{LAKEBASE_SCM_UTILS_VERSION}} in the refreshed CI workflows (no literal placeholder ships)", () => {

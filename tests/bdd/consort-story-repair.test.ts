@@ -94,6 +94,50 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(tdd, { recursive: true, force: true }));
 
+describe("coverInvariant: TYPE-AWARE — a transactional invariant needs an atomicity test, not a migration round-trip (the F5/PI1 false-green)", () => {
+  const TXN = "PI1-reconcile-atomic";
+  const writeTxnArch = (): void =>
+    writeFileSync(
+      join(tdd, "features", F, "architecture.json"),
+      JSON.stringify({
+        feature_id: F,
+        nfrs: [],
+        service_backed: true,
+        persistence_invariants: [{ id: TXN, type: "transactional", table: "stock_adjustments", brief: "row + audit land together or neither persists" }],
+      }),
+    );
+  const writeList = (items: TestListItem[]): void =>
+    writeMasterTestList(tdd, { feature_id: F, ordered_for: "design-momentum", items: [{ id: "T1", description: "POST returns 201", ac_id: "AC1", status: "green", kind: "behavior" }, ...items] });
+  const MIGRATION_SHAPE = /down\s*[-/→>]+\s*up|round.?trip|downgrad|upgrad/i;
+  const ATOMICITY_SHAPE = /roll\s*back|neither\b[^.]*\b(persist|writ)|\bfail/i;
+
+  it("AUTHORS an atomicity/rollback item (not a migration round-trip) when the transactional invariant is uncovered", () => {
+    writeTxnArch();
+    writeList([]);
+    const { mode, itemId } = coverInvariant(tdd, F, "S3", TXN);
+    expect(mode).toBe("author");
+    const authored = readMasterTestList(tdd, F).items.find((i) => i.id === itemId)!;
+    expect(authored.invariant_id).toBe(TXN);
+    expect(authored.description).toMatch(ATOMICITY_SHAPE);
+    expect(authored.description).not.toMatch(MIGRATION_SHAPE);
+  });
+
+  it("does NOT accept a migration-round-trip item as coverage — re-authors the atomicity test and untags the wrong item (the T49 fix)", () => {
+    writeTxnArch();
+    // T49: the real false-green — a migration-survival round-trip tagged to the transactional invariant.
+    writeList([{ id: "T49", description: "additive migration down->up preserves existing stock_adjustments rows (PI1-reconcile-atomic migration-survival round-trip)", ac_id: "AC1", status: "green", kind: "fitness", invariant_id: TXN }]);
+    const { mode, itemId } = coverInvariant(tdd, F, "S3", TXN);
+    expect(mode).toBe("author"); // NOT "present" — the tagged item is the wrong shape
+    const after = readMasterTestList(tdd, F);
+    // T49 was untagged (it covers no valid transactional invariant); the new item is atomicity-shaped.
+    expect(after.items.find((i) => i.id === "T49")!.invariant_id).toBeUndefined();
+    const authored = after.items.find((i) => i.id === itemId)!;
+    expect(authored.invariant_id).toBe(TXN);
+    expect(authored.description).toMatch(ATOMICITY_SHAPE);
+    expect(after.items.filter((i) => i.invariant_id === TXN)).toHaveLength(1);
+  });
+});
+
 describe("coverInvariant: RETAG an existing round-trip test when one covers the invariant's table (the F3/T28 close)", () => {
   beforeEach(() => seedFeature([UNTAGGED_ROUNDTRIP]));
 

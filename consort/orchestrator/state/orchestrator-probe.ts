@@ -40,6 +40,7 @@ import { readWorkflowState, SCM_STATES } from "@databricks-solutions/lakebase-sc
 import { firstPendingEscalation } from "../../gates/escalation.js";
 import { specLevelSmell, priorReviseCount, isBuildRefactorRoutableSmell, isReflectSmell, priorReflectReviseCount, REFLECT_REVISE_CAP, storyTestListFingerprint, lastReflectReviseFingerprint, lastReflectReviseSmell } from "../../smells/smells.js";
 import { reflectionPassed, reflectionVerdictWritten } from "../../smells/reflection.js";
+import { reauthorNeeded } from "../../smells/reauthor-resilience.js";
 import { testListConforms as testListConformsFor } from "../../smells/testlist-conformance.js";
 import { iaConforms as iaConformsFor } from "../../smells/ia-conformance.js";
 import { reconcilePassed as reconcilePassedFor } from "../../smells/reconcile.js";
@@ -539,6 +540,19 @@ export function diskArtifactProbe(
       }
       if (!acId) return null;
       return needsGreenAssess(consortDir, featureId, story, acId) ? acId : null;
+    },
+
+    reauthorResilienceAc(story) {
+      // The open RED cycle's AC, when the GREEN smell gate flagged a test-RESILIENCE smell
+      // (a reauthor marker with an UNSPENT one-shot): routes the Navigator RE-AUTHOR turn.
+      let acId: string | undefined;
+      try {
+        acId = storyTestProgress(consortDir, featureId, story).openRed[0]?.ac_id;
+      } catch {
+        acId = undefined;
+      }
+      if (!acId) return null;
+      return reauthorNeeded(consortDir, featureId, story, acId) ? acId : null;
     },
 
     repairRegressionFixAc(story) {

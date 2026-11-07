@@ -11,7 +11,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { checkTestSmells, AUTHOR_LAYER_TEST_SMELLS } from "../../consort/architecture/test-smell-clean.js";
+import { checkTestSmells, AUTHOR_LAYER_TEST_SMELLS, RESILIENCE_TEST_SMELLS, resilienceViolations, e2eRereadWithoutConfirmation, e2eTimingDependentWait } from "../../consort/architecture/test-smell-clean.js";
 import { beginNextPendingCycle, greenOpenCycle, type GreenVerifier } from "../../consort/pipeline/cycle-record.js";
 
 const tmpDirs: string[] = [];
@@ -716,6 +716,112 @@ describe("greenOpenCycle: a smell-laden test is caught proactively at GREEN", ()
     expect(r.needsAssess).toBeFalsy(); // deterministic — NOT routed to the Navigator assess
     expect(r.escalation?.source).toBe("test-authoring-smell");
     expect(r.escalation?.reason).toMatch(/--against|RE-AUTHOR/);
+  });
+});
+
+describe("e2e-reread-without-confirmation (resilience family — the F5 -> F2 @T78 shape, verbatim from the bed)", () => {
+  // T78: assert the (optimistic) value, reload, re-assert — with NO confirmed signal before the reload.
+  const T78 = [
+    `test("inline adjust persists across reload @T78", async ({ page }) => {`,
+    `  const row = await adjustInline(page, sku);`,
+    `  await expect(row.getByTestId("stock-cell-quantity")).toHaveText("7");`,
+    `  await page.reload();`,
+    `  await expect(rowFor(page, sku).getByTestId("stock-cell-quantity")).toHaveText("7");`,
+    `});`,
+  ];
+  it("FLAGS T78: a persistence round-trip (assert -> reload -> re-assert) with no confirmed signal before the reload", () => {
+    expect(e2eRereadWithoutConfirmation(T78)).toEqual([4]); // the `await page.reload();` line
+  });
+
+  it("also flags the goto-back variant (re-read via navigation, not only reload)", () => {
+    const gotoVariant = [
+      `test("adjust persists when you navigate back", async ({ page }) => {`,
+      `  await adjustInline(page, sku);`,
+      `  await expect(row.getByTestId("stock-cell-quantity")).toHaveText("7");`,
+      `  await page.goto("/");`,
+      `  await expect(rowFor(page, sku).getByTestId("stock-cell-quantity")).toHaveText("7");`,
+      `});`,
+    ];
+    expect(e2eRereadWithoutConfirmation(gotoVariant)).toEqual([4]);
+  });
+
+  it("does NOT flag the resilient sibling that awaits the success flash before trusting the value (T76 shape, no reload)", () => {
+    const T76 = [
+      `test("inline adjust settles to the server-confirmed quantity @T76", async ({ page }) => {`,
+      `  const row = await adjustInline(page, sku);`,
+      `  await expect(row.getByTestId("stock-cell-quantity")).toHaveText("7");`,
+      `  await expect(row).toHaveAttribute("data-flash", "success");`,
+      `});`,
+    ];
+    expect(e2eRereadWithoutConfirmation(T76)).toEqual([]);
+  });
+
+  it("does NOT flag a reload that FOLLOWS a confirmed signal (T91: awaits the *-error status before reloading)", () => {
+    const T91 = [
+      `test("inline adjust rejected inline and rolls back @T91", async ({ page }) => {`,
+      `  await row.getByTestId("stock-adjust-submit").click();`,
+      `  await expect(row.getByTestId("stock-adjust-error")).toHaveText("Quantity would go below zero");`,
+      `  await expect(row.getByTestId("stock-cell-quantity")).toHaveText("10");`,
+      `  await page.reload();`,
+      `  await expect(rowFor(page, sku).getByTestId("stock-cell-quantity")).toHaveText("10");`,
+      `});`,
+    ];
+    expect(e2eRereadWithoutConfirmation(T91)).toEqual([]);
+  });
+
+  it("does NOT flag a setup goto / read-only reload with no optimistic pre-assertion (a reachability check)", () => {
+    const readOnly = [
+      `test("about page survives a reload", async ({ page }) => {`,
+      `  await page.goto("/about");`,
+      `  await page.reload();`,
+      `  await expect(page.getByRole("heading")).toHaveText("About");`,
+      `});`,
+    ];
+    expect(e2eRereadWithoutConfirmation(readOnly)).toEqual([]);
+  });
+});
+
+describe("e2e-timing-dependent-wait (resilience family — sleep-and-hope)", () => {
+  it("FLAGS a fixed-duration waitForTimeout and a bare sleep()", () => {
+    const flaky = [
+      `test("eventually shows the toast", async ({ page }) => {`,
+      `  await submit(page);`,
+      `  await page.waitForTimeout(1000);`,
+      `  await expect(page.getByTestId("toast")).toBeVisible();`,
+      `  await sleep(500);`,
+      `});`,
+    ];
+    expect(e2eTimingDependentWait(flaky)).toEqual([3, 5]);
+  });
+
+  it("does NOT flag a condition wait (waitForResponse / auto-waiting expect)", () => {
+    const resilient = [
+      `test("shows the toast", async ({ page }) => {`,
+      `  await Promise.all([page.waitForResponse("**/api/x"), submit(page)]);`,
+      `  await expect(page.getByTestId("toast")).toBeVisible();`,
+      `});`,
+    ];
+    expect(e2eTimingDependentWait(resilient)).toEqual([]);
+  });
+});
+
+describe("the test-RESILIENCE family routes the AUTO Navigator reauthor turn (NOT HIL / author-layer, NOT Driver)", () => {
+  it("the resilience smells are in RESILIENCE_TEST_SMELLS and NOT in AUTHOR_LAYER_TEST_SMELLS", () => {
+    expect(RESILIENCE_TEST_SMELLS.has("e2e-reread-without-confirmation")).toBe(true);
+    expect(RESILIENCE_TEST_SMELLS.has("e2e-timing-dependent-wait")).toBe(true);
+    // NOT author-layer: author-layer HIL-escalates; resilience smells auto-route the Navigator reauthor turn.
+    expect(AUTHOR_LAYER_TEST_SMELLS.has("e2e-reread-without-confirmation")).toBe(false);
+    expect(AUTHOR_LAYER_TEST_SMELLS.has("e2e-timing-dependent-wait")).toBe(false);
+  });
+  it("resilienceViolations filters a scan to just the resilience smells", () => {
+    const result = {
+      clean: false,
+      violations: [
+        { smell: "e2e-reread-without-confirmation" as const, file: "a.spec.ts", line: 1, text: "", detail: "" },
+        { smell: "loose-locator" as const, file: "a.spec.ts", line: 2, text: "", detail: "" },
+      ],
+    };
+    expect(resilienceViolations(result).map((v) => v.smell)).toEqual(["e2e-reread-without-confirmation"]);
   });
 });
 

@@ -233,6 +233,10 @@ function nextBuildAction(story: string, b: StoryBuild): WorkflowAction {
   // the AC supersedes -> the Driver then permissively greens them, OR confirm a
   // genuine regression -> escalate). Pre-empts the Driver's plain green re-attempt
   // below so the same failing verify is not blindly re-run.
+  // Test-RESILIENCE RE-AUTHOR (the flaky-test authoring self-heal): the GREEN smell gate flagged a
+  // non-resilient test the Navigator authored. Route the Navigator to RE-AUTHOR it (edit it resilient)
+  // BEFORE the generic assess — it is the author's own defect, bounded one-shot, then re-verify.
+  if (b.reauthorResilienceAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "reauthor", ac: b.reauthorResilienceAc };
   if (b.assessGreenAc) return { kind: "invoke-role", role: "navigator", story, buildMode: "assess", ac: b.assessGreenAc };
   // The Navigator assessed a driver-fixable regression + recorded a fix directive:
   // route a bounded Driver REPAIR turn (diagnosis + directive injected). One shot,

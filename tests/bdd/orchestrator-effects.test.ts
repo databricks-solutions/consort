@@ -750,9 +750,10 @@ describe("commandsForAction: coarse phase transitions -> set-phase", () => {
   it("planning-complete -> discovery, feature-complete -> deploy, done -> shipped", () => {
     expect(commandsForAction({ kind: "planning-complete" }, cfg())).toEqual([{ kind: "set-phase", phase: "discovery" }]);
     // feature-complete runs the feature-design-complete conformance gate (a
-    // deterministic feature-wide backstop) before advancing to the deploy phase.
+    // deterministic feature-wide backstop) before advancing to the deploy phase;
+    // --escalate-on-fail makes a non-conformance a surfaced escalation, not a bare halt.
     expect(commandsForAction({ kind: "feature-complete" }, cfg())).toEqual([
-      { kind: "cli", bin: "consort-gate-conformance", args: ["--feature", "F1", "--tdd-dir", "/p/.tdd"] },
+      { kind: "cli", bin: "consort-gate-conformance", args: ["--feature", "F1", "--tdd-dir", "/p/.tdd", "--escalate-on-fail"] },
       { kind: "set-phase", phase: "deploy" },
     ]);
     expect(commandsForAction({ kind: "done" }, cfg())).toEqual([{ kind: "set-phase", phase: "shipped" }]);

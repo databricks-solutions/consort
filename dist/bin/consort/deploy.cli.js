@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path4) {
-      let input = path4;
+    function removeDotSegments(path5) {
+      let input = path5;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path4, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path4 && path4 !== "/" ? path4 : void 0;
+        const [path5, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6654,8 +6654,8 @@ import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
 init_esm_shims();
 import { execSync, execFileSync as execFileSync5, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync16, mkdirSync as mkdirSync8, readFileSync as readFileSync16, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "fs";
-import { dirname as dirname9, join as join18 } from "path";
+import { existsSync as existsSync17, mkdirSync as mkdirSync9, readFileSync as readFileSync17, rmSync as rmSync5, writeFileSync as writeFileSync8 } from "fs";
+import { dirname as dirname10, join as join19 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -6705,7 +6705,7 @@ function findFeatureDir(tdd, featureId) {
 
 // consort/gates/escalation.ts
 init_esm_shims();
-import * as fs5 from "fs";
+import * as fs6 from "fs";
 
 // consort/smells/smells.ts
 init_esm_shims();
@@ -7061,7 +7061,7 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 // consort/architecture/contract-clean.ts
 init_esm_shims();
 import { existsSync as existsSync9, readFileSync as readFileSync9, readdirSync as readdirSync6, statSync as statSync5 } from "fs";
-import { join as join11, relative, extname as extname2 } from "path";
+import { join as join11, relative, extname as extname2, basename as basename2 } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -7302,6 +7302,8 @@ var SMELL_FIX = {
   "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example \u2014 a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) \u2014 matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
   "unpinned-schema-diff-baseline": "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head \u2014 the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged.",
   "dropped-column-test-reference": "this TEST inserts into / selects / asserts a column that a CONTRACT migration in this feature DROPPED, and the file performs no downgrade \u2014 so it runs against HEAD where the column no longer exists and dies with a ProgrammingError ('column does not exist'), even though the app is correct (the F6/S3 cross-story supersession class: a prior story's test still references tracking_code after S3 drops it). `opt2` scopes the per-cycle backend suite to the current story, so a prior-story test like this is NOT run per-cycle and only fails LATER at the full deploy-verify as a HALT. Refactor the superseded reference: drop the dropped column from the INSERT/SELECT/assertion, or retarget it to the surviving columns (e.g. batch_number/serial_number). Do NOT re-add the column to the model or edit the migration to hide it. (A migration round-trip test that re-adds the column via its own downgrade is legitimate and is not flagged \u2014 this only flags pure-HEAD references.)",
+  "e2e-reread-without-confirmation": "this Playwright e2e asserts a value, RE-READS it (page.reload() or a page.goto() back to the view), then re-asserts the same value to prove PERSISTENCE \u2014 but it never awaits a SERVER-CONFIRMED signal before the re-read, so it races the still-in-flight write. The pre-re-read assertion is satisfied by the OPTIMISTIC UI (the row shows the new value before the write resolves), then the reload/goto fetches from the DB; when the re-read beats the commit the DB still has the OLD value and the test fails \u2014 intermittently in isolation (the write is fast), DETERMINISTICALLY under full-suite/CI load (the write is slow). A test that only passes on a retry is not resilient and gives the gate no signal (the F5 -> F2 @T78 class). Make it RESILIENT: before the re-read, await the server-CONFIRMED signal the app emits on a durable write \u2014 the success flash / a `*-success` (or `*-error`) status element / `page.waitForResponse(<the write endpoint>)` \u2014 exactly as the resilient sibling test does; THEN reload and re-assert. Never assert on an optimistic value and immediately re-read.",
+  "e2e-timing-dependent-wait": "this test waits a FIXED DURATION (page.waitForTimeout(n) / a bare setTimeout/sleep) instead of awaiting a CONDITION. A hardcoded sleep is flaky by construction: too short under load (the thing never happened yet -> fails) and wasteful otherwise \u2014 'sleep and hope'. It passes on a fast/idle machine and fails under full-suite/CI load, the same non-deterministic signal as a flaky test. Replace the fixed wait with an await of the actual condition: `await expect(locator).toBeVisible()` / `toHaveText(...)` (Playwright auto-waits with a timeout), `page.waitForResponse(<endpoint>)`, `page.waitForURL(...)`, or `page.waitForLoadState('networkidle')`. Never gate a test on wall-clock time.",
   "psycopg2-pgcode-attr": "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) \u2014 a psycopg2 attribute \u2014 but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap \u2014 no production/driver shim."
 };
 function collectDroppedColumns(projectDir, migrationDirs) {
@@ -7471,6 +7473,45 @@ function projectDeclaresPsycopg2(projectDir) {
   }
   return false;
 }
+function testBlockRanges(lines) {
+  const BLOCK_START = /^\s*(?:test|it)\s*\(/;
+  const starts = [];
+  lines.forEach((l, i) => {
+    if (BLOCK_START.test(l)) starts.push(i);
+  });
+  return starts.map((from, k) => [from, k + 1 < starts.length ? starts[k + 1] : lines.length]);
+}
+function e2eRereadWithoutConfirmation(lines) {
+  const out = [];
+  const REREAD = /\bpage\s*\.\s*(?:reload|goto)\s*\(/;
+  const VALUE_ASSERT = /\b(?:toHaveText|toHaveValue|toContainText)\s*\(/;
+  const CONFIRM = /data-flash|getByTestId\(\s*["'`][^"'`]*(?:success|error|confirm|saved|toast|status)[^"'`]*["'`]|waitForResponse|waitForLoadState/i;
+  for (const [from, to] of testBlockRanges(lines)) {
+    for (let i = from; i < to; i++) {
+      if (!REREAD.test(lines[i])) continue;
+      let confirmedBefore = false;
+      let valueBefore = false;
+      for (let j = from; j < i; j++) {
+        if (CONFIRM.test(lines[j])) confirmedBefore = true;
+        if (VALUE_ASSERT.test(lines[j])) valueBefore = true;
+      }
+      if (confirmedBefore) continue;
+      if (!valueBefore) continue;
+      let valueAfter = false;
+      for (let j = i + 1; j < to; j++) if (VALUE_ASSERT.test(lines[j])) valueAfter = true;
+      if (valueAfter) out.push(i + 1);
+    }
+  }
+  return out;
+}
+function e2eTimingDependentWait(lines) {
+  const out = [];
+  const TIMING = /\b(?:waitForTimeout|setTimeout)\s*\(|\bawait\s+sleep\s*\(/;
+  lines.forEach((l, i) => {
+    if (TIMING.test(l)) out.push(i + 1);
+  });
+  return out;
+}
 function checkTestSmells(args) {
   const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
   const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
@@ -7493,6 +7534,14 @@ function checkTestSmells(args) {
       const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
       const isPy = file.endsWith(".py");
       const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
+      if (isJs && /\.spec\.(ts|tsx|js|jsx|mjs)$/.test(file)) {
+        for (const ln of e2eRereadWithoutConfirmation(lines)) {
+          push("e2e-reread-without-confirmation", rel, ln, lines[ln - 1] ?? "page.reload()");
+        }
+        for (const ln of e2eTimingDependentWait(lines)) {
+          push("e2e-timing-dependent-wait", rel, ln, lines[ln - 1] ?? "waitForTimeout(...)");
+        }
+      }
       if (isPy && droppedCols.size > 0 && !/\bdowngrade\b/.test(body)) {
         for (const col of droppedCols) {
           for (const ln of liveReferenceLines(body, col)) {
@@ -7642,6 +7691,11 @@ ${list}`;
   return { clean: false, violations: effective, remediation };
 }
 
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs4 from "fs";
+import * as path3 from "path";
+
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -7651,8 +7705,8 @@ init_esm_shims();
 
 // consort/smells/deploy-verify-assess.ts
 init_esm_shims();
-import * as fs4 from "fs";
-import * as path3 from "path";
+import * as fs5 from "fs";
+import * as path4 from "path";
 function parseFailedNodeIds(output) {
   const ids = [];
   const seen = /* @__PURE__ */ new Set();
@@ -7689,13 +7743,13 @@ function classifyDeployVerifyTestSmell(failingNodeIds, projectDir, migrationDirs
 function markerPath(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
-  return storyId ? path3.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path3.join(fdir, "deploy-verify-assess.json");
+  return storyId ? path4.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path4.join(fdir, "deploy-verify-assess.json");
 }
 function readDeployVerifyAssessMarker(consortDir, featureId, storyId) {
   const file = markerPath(consortDir, featureId, storyId);
-  if (!file || !fs4.existsSync(file)) return void 0;
+  if (!file || !fs5.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs4.readFileSync(file, "utf8"));
+    return JSON.parse(fs5.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -7719,13 +7773,13 @@ function writeDeployVerifyAssessMarker(consortDir, featureId, storyId, failingNo
     assessed: false,
     attempts: prior?.attempts ?? 0
   };
-  fs4.mkdirSync(path3.dirname(file), { recursive: true });
-  fs4.writeFileSync(file, JSON.stringify(marker, null, 2) + "\n", "utf8");
+  fs5.mkdirSync(path4.dirname(file), { recursive: true });
+  fs5.writeFileSync(file, JSON.stringify(marker, null, 2) + "\n", "utf8");
   return file;
 }
 function clearDeployVerifyAssessMarker(consortDir, featureId, storyId) {
   const file = markerPath(consortDir, featureId, storyId);
-  if (file && fs4.existsSync(file)) fs4.rmSync(file);
+  if (file && fs5.existsSync(file)) fs5.rmSync(file);
 }
 async function classifyDeployVerifyFailure(failingNodeIds, runIsolated) {
   if (failingNodeIds.length === 0) return "genuine";
@@ -7750,16 +7804,18 @@ function writeEscalation(consortDir, esc) {
     ...esc.story_id ? { story_id: esc.story_id } : {},
     ...esc.ac_id ? { ac_id: esc.ac_id } : {},
     raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
-    how_to_resolve: `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
+    // A caller MAY supply a source-specific resolution (e.g. feature-conformance names the exact
+    // `consort-pipeline repair` command); otherwise the generic clear-with-resolve-escalation default.
+    how_to_resolve: esc.how_to_resolve ?? `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
   };
-  fs5.mkdirSync(escalationsDir(consortDir), { recursive: true });
-  fs5.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
+  fs6.mkdirSync(escalationsDir(consortDir), { recursive: true });
+  fs6.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
   return full;
 }
 function readEscalationFile(file) {
-  if (!fs5.existsSync(file)) return void 0;
+  if (!fs6.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs5.readFileSync(file, "utf8"));
+    return JSON.parse(fs6.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -7767,8 +7823,8 @@ function readEscalationFile(file) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync10, readFileSync as readFileSync15, statSync as statSync8 } from "fs";
-import { join as join17 } from "path";
+import { readdirSync as readdirSync10, readFileSync as readFileSync16, statSync as statSync8 } from "fs";
+import { join as join18 } from "path";
 
 // consort/smells/ephemeral-verify.ts
 init_esm_shims();
@@ -7812,7 +7868,7 @@ function ephemeralVerifyBranchName(experimentBranch, nonce) {
 // consort/deploy/deploy.ts
 function readProjectInstance(projectDir) {
   try {
-    const m = readFileSync16(join18(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
+    const m = readFileSync17(join19(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
     return m ? m[1].replace(/^["']|["']$/g, "").trim() : void 0;
   } catch {
     return void 0;
@@ -7821,7 +7877,7 @@ function readProjectInstance(projectDir) {
 function readAppDatabaseName(projectDir) {
   let env;
   try {
-    env = readFileSync16(join18(projectDir, ".env"), "utf8");
+    env = readFileSync17(join19(projectDir, ".env"), "utf8");
   } catch {
     return void 0;
   }
@@ -7964,7 +8020,7 @@ function logReleaseEngineerDeployOutcome(ctx, result) {
   }
 }
 function pidFile(projectDir, target) {
-  return join18(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
+  return join19(resolveConsortDir(projectDir), "deploy", `${target}.pid`);
 }
 function normalizeVerifyRun(raw) {
   return typeof raw === "boolean" ? { passed: raw, output: "" } : { passed: raw.passed, output: raw.output ?? "" };
@@ -7993,10 +8049,10 @@ ${tail}
 function writeDeployEvidence(consortDir, evidence) {
   const fdir = findFeatureDir(consortDir, evidence.feature_id);
   if (!fdir) return void 0;
-  const dir = evidence.story_id ? join18(fdir, "stories", evidence.story_id) : fdir;
-  mkdirSync8(dir, { recursive: true });
-  const file = join18(dir, "deploy-evidence.json");
-  writeFileSync7(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
+  const dir = evidence.story_id ? join19(fdir, "stories", evidence.story_id) : fdir;
+  mkdirSync9(dir, { recursive: true });
+  const file = join19(dir, "deploy-evidence.json");
+  writeFileSync8(file, JSON.stringify(evidence, null, 2) + "\n", "utf8");
   return file;
 }
 function defaultStart(cmd, cwd, env) {
@@ -8081,6 +8137,7 @@ async function deployToTarget(args) {
       url = serveBaseUrl + cfg.healthPath;
     }
   }
+  const migrateInstance = args.lakebaseBranch ? readProjectInstance(args.projectDir) : void 0;
   const env = {
     ...process.env,
     // Serve + verify on ONE port (bumped off a foreign :8000 above). The run command binds
@@ -8092,7 +8149,8 @@ async function deployToTarget(args) {
     E2E_BACKEND_PORT: String(servePort),
     // Per-story deploy: bind the run command to the experiment branch's Lakebase DB so the PO
     // reviews the story on its own branch. Unset = the ambient env (the per-sprint deploy).
-    ...args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {}
+    ...args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {},
+    ...migrateInstance ? { LAKEBASE_PROJECT_ID: migrateInstance } : {}
   };
   if (args.rejectForeignPort && args.lakebaseBranch && cfg.migrate) {
     const runVerify = args.runVerify ?? defaultRunVerify;
@@ -8127,8 +8185,8 @@ async function deployToTarget(args) {
   }
   const pid = start(cfg.run, args.projectDir, env);
   const pf = pidFile(args.projectDir, args.targetName);
-  mkdirSync8(dirname9(pf), { recursive: true });
-  writeFileSync7(pf, String(pid));
+  mkdirSync9(dirname10(pf), { recursive: true });
+  writeFileSync8(pf, String(pid));
   const servingOk = args.servingOk ?? args.reachable ?? probeServingOk;
   const readyProbe = args.rejectForeignPort ? servingOk : reachable;
   const poll = await pollUntil({
@@ -8277,8 +8335,8 @@ async function deployToTarget(args) {
 }
 function stopLocal(projectDir, targetName) {
   const pf = pidFile(projectDir, targetName);
-  if (!existsSync16(pf)) return { stopped: false };
-  const pid = Number(readFileSync16(pf, "utf8").trim());
+  if (!existsSync17(pf)) return { stopped: false };
+  const pid = Number(readFileSync17(pf, "utf8").trim());
   if (Number.isFinite(pid) && pid > 0) {
     try {
       process.kill(-pid);
@@ -8289,7 +8347,7 @@ function stopLocal(projectDir, targetName) {
       }
     }
   }
-  rmSync4(pf, { force: true });
+  rmSync5(pf, { force: true });
   return { stopped: true };
 }
 

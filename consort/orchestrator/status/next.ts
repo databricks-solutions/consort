@@ -454,11 +454,22 @@ function blockersOf(state: DriveState): NextBlocker[] {
       // improvising a hand-edit of .consort/escalations/ or smells.json to move the run forward.
       resolver: { bin: "consort-resolve-escalation", args: ["--id", e.id, "--resolution", "<what you fixed>"] },
       resolver_hint:
-        `Fix the root cause, then run: consort-resolve-escalation --id ${e.id} --resolution "<what you fixed>" ` +
-        `(clears this escalation AND any blocking smell, keeps the audit trail), then resume the drive. ` +
-        `Do NOT hand-edit or delete the escalation file or smells.json to move forward – that desyncs on-disk state. ` +
-        `For the PROPORTIONATE remediation (repair vs scoped reopen-from-<role> vs full revise, and the two ` +
-        `migration-reversibility test shapes), see the triage guide: skills/consort/references/escalation-triage.md.`,
+        // A feature-conformance halt (an uncovered/mis-shaped persistence invariant at the feature-
+        // complete backstop) has a SPECIFIC fix the generic resolve-escalation hint would hide — name
+        // the `repair` path directly so it is discoverable from `consort-next`, not only in the triage.
+        e.source === "feature-conformance"
+          ? `A declared persistence invariant is UNCOVERED or covered by a WRONG-SHAPED test. Close it on the ` +
+            `ACCEPTED story (NOT \`--only design\`, which no-ops on the frozen gate): ` +
+            `consort-pipeline repair --feature <F> --story <S> --gap uncovered-invariant --invariant <PIx> --approver <you>, ` +
+            `then consort-pipeline complete-repair --feature <F> --story <S> (the exact command is in this escalation's ` +
+            `how_to_resolve). A transactional invariant needs an atomicity/rollback test (the F2 T19 shape), NOT a migration ` +
+            `round-trip. Then clear: consort-resolve-escalation --id ${e.id} --resolution "<what you fixed>". ` +
+            `Full ladder: skills/consort/references/escalation-triage.md.`
+          : `Fix the root cause, then run: consort-resolve-escalation --id ${e.id} --resolution "<what you fixed>" ` +
+            `(clears this escalation AND any blocking smell, keeps the audit trail), then resume the drive. ` +
+            `Do NOT hand-edit or delete the escalation file or smells.json to move forward – that desyncs on-disk state. ` +
+            `For the PROPORTIONATE remediation (repair vs scoped reopen-from-<role> vs full revise, and the two ` +
+            `migration-reversibility test shapes), see the triage guide: skills/consort/references/escalation-triage.md.`,
     },
   ];
 }

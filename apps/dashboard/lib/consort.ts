@@ -19,7 +19,7 @@ import {
   Role,
   SnapshotInputs,
 } from "./types";
-import { ROLE_SET } from "./derive";
+import { ROLE_SET, runPositionOf } from "./derive";
 import { classify, readTextFile } from "./filekind";
 import { resolveContained } from "./safepath";
 import { emptyState, fold, ENABLE_PERMISSION_BANNER } from "./reducer";
@@ -373,9 +373,27 @@ function findPendingPermission(): PendingPermission | null {
   return null;
 }
 
+// Parsed-events cache. The agent-log grows to thousands of lines over a sprint, and EVERY
+// `/api/state` fetch re-read + re-JSON-parsed the whole file — the dominant cost, and a refocused
+// tab bursts those fetches, so the board took seconds to "catch up". The log is append-only, so its
+// (size, mtime) is an exact content signature: unchanged ⇒ return the SAME parsed array (the fold
+// only reads/slices it, never mutates, so sharing is safe). A new event changes the signature and
+// re-parses once. The live fold still runs fresh over the cached array, so driveAlive / gates /
+// playhead stay current — this caches the PARSE, not the derived state.
+let _eventsCache: { size: number; mtimeMs: number; events: AgentLogEvent[] } | null = null;
+
 export function readEvents(): AgentLogEvent[] {
   const path = join(sftddDir(), "agent-log.jsonl");
   if (!existsSync(path)) return [];
+  let st: { size: number; mtimeMs: number };
+  try {
+    st = statSync(path);
+  } catch {
+    return [];
+  }
+  if (_eventsCache && _eventsCache.size === st.size && _eventsCache.mtimeMs === st.mtimeMs) {
+    return _eventsCache.events;
+  }
   const raw = readFileSync(path, "utf8");
   const out: AgentLogEvent[] = [];
   for (const line of raw.split("\n")) {
@@ -386,6 +404,7 @@ export function readEvents(): AgentLogEvent[] {
       // tolerate a torn final line while Consort is mid-append
     }
   }
+  _eventsCache = { size: st.size, mtimeMs: st.mtimeMs, events: out };
   return out;
 }
 
@@ -452,18 +471,18 @@ function readFeatureStatus(feature: string): FeatureStatus | null {
 export function readSnapshot(events: AgentLogEvent[], generatedAt: string): SnapshotInputs {
   const next = readJsonSafe<NextJson>(join(sftddDir(), "next.json"));
 
-  // Active feature: prefer next.json, else the newest event carrying one. Needed here
-  // (ahead of the fold) because the status CLI and handbacks are keyed by feature.
-  let feature = next?.feature ?? null;
-  if (!feature) {
-    for (let i = events.length - 1; i >= 0; i--) {
-      const f = (events[i].metadata as Record<string, unknown> | undefined)?.feature_id;
-      if (f) {
-        feature = String(f);
-        break;
-      }
-    }
-  }
+  // Active feature. The newest agent-log event carrying a feature_id is the live truth about what
+  // the drive is working RIGHT NOW; `next.json` is only rewritten by the drive on a STOP, so in a
+  // headless sprint (proxy auto-continue, no gate stops) it stays frozen at the last stop's feature
+  // while the run moves on to the next feature. So: while a drive is ALIVE prefer the live log
+  // feature; when idle/parked `next.json` is authoritative (consort-park repoints it) with the log
+  // as the fallback. Keyed here (ahead of the fold) because the status CLI + handbacks need it.
+  const driveAlive = driveIsAlive();
+  // Drive-position feature only (runPositionOf skips test.result/merged-suite/reasoning). The old
+  // raw-feature_id scan here picked whatever event was newest — including a merged-suite test.result
+  // for an earlier feature — so the CLI/handbacks were read for the wrong feature.
+  const logFeature = runPositionOf(events).feature;
+  const feature = driveAlive && logFeature ? logFeature : (next?.feature ?? logFeature);
 
   const status = feature ? readFeatureStatus(feature) : null;
   const handbacks = feature ? readHandbacks(feature) : [];
@@ -475,7 +494,7 @@ export function readSnapshot(events: AgentLogEvent[], generatedAt: string): Snap
   const sessionAgeMs = needsLiveness ? sessionActivityAgeMs() : Infinity;
   const pendingPermission = ENABLE_PERMISSION_BANNER ? findPendingPermission() : null;
 
-  return { projectDir: projectDir(), next, status, handbacks, sessionAgeMs, driveAlive: driveIsAlive(), pendingPermission, generatedAt };
+  return { projectDir: projectDir(), next, status, handbacks, sessionAgeMs, driveAlive, pendingPermission, generatedAt };
 }
 
 /**

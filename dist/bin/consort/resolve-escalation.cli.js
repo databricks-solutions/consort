@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path4) {
-      let input = path4;
+    function removeDotSegments(path5) {
+      let input = path5;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path4, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path4 && path4 !== "/" ? path4 : void 0;
+        const [path5, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6695,7 +6695,7 @@ function findFeatureDir(tdd, featureId) {
 
 // consort/gates/escalation.ts
 init_esm_shims();
-import * as fs5 from "fs";
+import * as fs6 from "fs";
 
 // consort/smells/smells.ts
 init_esm_shims();
@@ -6850,9 +6850,9 @@ function resolveOpenSmells(consortDir, smell, opts) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync16, readFileSync as readFileSync16, readdirSync as readdirSync11, statSync as statSync9, writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, rmSync as rmSync5 } from "fs";
+import { existsSync as existsSync17, readFileSync as readFileSync17, readdirSync as readdirSync11, statSync as statSync9, writeFileSync as writeFileSync9, mkdirSync as mkdirSync8, rmSync as rmSync6 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
-import { join as join19, dirname as dirname9, basename as basename2 } from "path";
+import { join as join20, dirname as dirname10, basename as basename3 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -6944,7 +6944,7 @@ var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 // consort/architecture/contract-clean.ts
 init_esm_shims();
 import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync5, statSync as statSync5 } from "fs";
-import { join as join10, relative as relative2, extname as extname3 } from "path";
+import { join as join10, relative as relative2, extname as extname3, basename } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -6973,7 +6973,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync10, readFileSync as readFileSync11, readdirSync as readdirSync8, writeFileSync as writeFileSync5, mkdirSync as mkdirSync4, copyFileSync } from "fs";
-import { join as join13, dirname as dirname6, basename } from "path";
+import { join as join13, dirname as dirname6, basename as basename2 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
@@ -7030,6 +7030,11 @@ import { execFileSync as execFileSync4 } from "child_process";
 import { existsSync as existsSync15 } from "fs";
 import { join as join18 } from "path";
 
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs5 from "fs";
+import * as path4 from "path";
+
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -7040,18 +7045,18 @@ init_esm_shims();
 // consort/pipeline/cycle-record.ts
 function readStoryItems(consortDir, featureId, story) {
   const file = storyTestListJson(consortDir, featureId, story);
-  if (!existsSync16(file)) {
+  if (!existsSync17(file)) {
     throw new Error(`per-story test-list not found for ${featureId}/${story} at ${file}`);
   }
-  const data = JSON.parse(readFileSync16(file, "utf8"));
+  const data = JSON.parse(readFileSync17(file, "utf8"));
   return Array.isArray(data.items) ? data.items : [];
 }
 function storyCycles(consortDir, featureId, story) {
-  const base = join19(cyclesRootDir(consortDir), featureId, story);
-  if (!existsSync16(base)) return [];
+  const base = join20(cyclesRootDir(consortDir), featureId, story);
+  if (!existsSync17(base)) return [];
   const out = [];
   for (const acDir of readdirSync11(base)) {
-    const dir = join19(base, acDir);
+    const dir = join20(base, acDir);
     try {
       if (!statSync9(dir).isDirectory()) continue;
     } catch {
@@ -7060,7 +7065,7 @@ function storyCycles(consortDir, featureId, story) {
     for (const f of readdirSync11(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(readFileSync16(join19(dir, f), "utf8")));
+        out.push(JSON.parse(readFileSync17(join20(dir, f), "utf8")));
       } catch {
       }
     }
@@ -7149,18 +7154,18 @@ function escalationId(parts) {
   return [parts.source, parts.feature_id, parts.story_id, parts.ac_id].filter(Boolean).join("__").replace(/[^A-Za-z0-9_.-]/g, "-");
 }
 function readEscalationFile(file) {
-  if (!fs5.existsSync(file)) return void 0;
+  if (!fs6.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs5.readFileSync(file, "utf8"));
+    return JSON.parse(fs6.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
 }
 function readEscalations(consortDir) {
   const dir = escalationsDir(consortDir);
-  if (!fs5.existsSync(dir)) return [];
+  if (!fs6.existsSync(dir)) return [];
   const out = [];
-  for (const f of fs5.readdirSync(dir)) {
+  for (const f of fs6.readdirSync(dir)) {
     if (!f.endsWith(".json")) continue;
     const e = readEscalationFile(`${dir}/${f}`);
     if (e) out.push(e);
@@ -7175,7 +7180,7 @@ function resolveEscalations(consortDir, opts = {}) {
     if (opts.id && e.id !== opts.id) continue;
     if (opts.featureId && e.feature_id !== void 0 && e.feature_id !== opts.featureId) continue;
     if (opts.story && e.story_id !== opts.story) continue;
-    fs5.writeFileSync(
+    fs6.writeFileSync(
       escalationFile(consortDir, e.id),
       JSON.stringify({ ...e, resolved_at: at, ...opts.resolution ? { resolution: opts.resolution } : {} }, null, 2) + "\n",
       "utf8"

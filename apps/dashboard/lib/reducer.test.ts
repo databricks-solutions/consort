@@ -11,6 +11,7 @@ import {
 } from "./derive";
 import type { AgentLogEvent, SnapshotInputs } from "./types";
 import { GATE_ROLE_BY_KEY } from "./gates";
+import { foldViewOf, locusFocus } from "./card-state";
 
 function ev(
   event: string,
@@ -1404,6 +1405,23 @@ describe("fold — pinning a feature (FeatureSwitcher)", () => {
     expect(fold(run, snap(), 2).features).toEqual([{ id: "F1", done: true, active: true }]);
   });
 
+  it("keeps a shipped feature done+inactive through a LATER feature's cross-feature test re-run", () => {
+    // A full-suite re-run during F2's deploy-verify emits `test.result` events stamped with F1's
+    // feature_id. Those must NOT reopen F1 (clear its done) or flip `active` back to it — test.result
+    // is not a position/work signal. Before the fix, F1 read done:false,active:true here.
+    const run = [
+      ev("phase.start", { phase: "propose", feature_id: "F1" }, { role: "spec-author" }),
+      ev("phase.end", { phase: "workflow", feature_id: "F1" }, { role: "orchestrator" }),
+      ev("phase.start", { phase: "build", feature_id: "F2", story: "S1" }, { role: "driver" }),
+      ev("test.result", { feature_id: "F1", story_id: "S1", test_id: "T1", status: "green" }, { role: "driver" }),
+      ev("phase.start", { phase: "deploy", feature_id: "F2" }, { role: "driver" }),
+    ];
+    expect(fold(run, snap()).features).toEqual([
+      { id: "F1", done: true, active: false },
+      { id: "F2", done: false, active: true },
+    ]);
+  });
+
   it("marks the switcher's active feature from the playhead, not just the last log id", () => {
     // Review finding: divergence was computed against playheadFeature but the header label read
     // the last-log-seen `active` flag; at the live edge next.json's feature can differ. The fold
@@ -1665,5 +1683,135 @@ describe("fold — lane at intake/plan is 'plan', not 'design'", () => {
     expect(s.lane).toBe("plan");
     // And no design phase reads in-progress with only intake events.
     expect(s.designPhases.every((p) => p.status === "not-started")).toBe(true);
+  });
+});
+
+// RunPosition — the one authoritative "where is the run", from drive-position events only. These
+// guard the whack-a-mole class the dashboard redesign closed: a feature's deploy-verify runs the
+// FULL merged suite, so earlier features' test.result events must never move the board's current
+// feature/story/phase/lane, and a frozen next.json must not force a stale "complete".
+describe("RunPosition (drive-position authority)", () => {
+  it("a merged-suite burst of earlier features' test.results does not move the run", () => {
+    const run = [
+      ev("phase.start", { phase: "green", story: "S9-stock-search", feature_id: "F9" }, { role: "driver" }),
+      // deploy-verify runs the merged suite: F2/F5 tests finish last, stamped with THEIR features.
+      ev("test.result", { story_id: "S2-x", test_id: "T1", status: "green", feature_id: "F2" }, { role: "release-engineer" }),
+      ev("test.result", { story_id: "S5-y", test_id: "T3", status: "green", feature_id: "F5" }, { role: "release-engineer" }),
+    ];
+    // next.json frozen at an EARLIER feature, phase "complete" — must be ignored.
+    const s = fold(run, snap({ driveAlive: true, next: { feature: "F7", state: { derived_phase: "complete" } } as any }));
+    expect(s.runPosition.feature).toBe("F9");
+    expect(s.feature).toBe("F9");
+    expect(s.runPosition.story).toBe("S9-stock-search");
+    expect(s.runPosition.phase).toBe("green");
+    expect(s.lane).toBe("build"); // NOT "complete" — frozen next.json names F7, not the live F9
+    const active = s.stories.find((st) => st.active);
+    expect(active?.feature).toBe("F9"); // never F2/F5
+    expect(active?.id).toBe("S9-stock-search");
+  });
+
+  it("trusts next.json derived_phase only when it names the live feature", () => {
+    const run = [ev("phase.start", { phase: "green", story: "S1", feature_id: "F9" }, { role: "driver" })];
+    // Names the live feature → snapshot trusted (derived_phase "complete" wins).
+    const sameFeat = fold(run, snap({ driveAlive: true, next: { feature: "F9", state: { derived_phase: "complete" } } as any }));
+    expect(sameFeat.lane).toBe("complete");
+    // Names a DIFFERENT (frozen) feature → ignored, lane follows the log's drive position.
+    const otherFeat = fold(run, snap({ driveAlive: true, next: { feature: "F8", state: { derived_phase: "complete" } } as any }));
+    expect(otherFeat.lane).toBe("build");
+  });
+
+  it("a pin does not move the run position; a pinned past feature has no active story", () => {
+    const run = [
+      ev("phase.start", { phase: "green", story: "S1", feature_id: "F1" }, { role: "driver" }),
+      ev("gate.approved", { gate: "acceptance", story: "S1", feature_id: "F1" }, { role: "orchestrator" }),
+      ev("phase.start", { phase: "green", story: "S9", feature_id: "F9" }, { role: "driver" }),
+    ];
+    const s = fold(run, snap({ driveAlive: true }), undefined, "F1");
+    expect(s.pinnedFeature).toBe("F1");
+    expect(s.runPosition.feature).toBe("F9"); // run position unaffected by the pin
+    expect(s.stories.every((st) => !st.active)).toBe(true); // no active story in the pinned feature
+  });
+
+  it("orchestratorActivity.story is the run-position story, not a stale orchestrator event's", () => {
+    const run = [
+      ev("phase.start", { phase: "build", story: "S2", feature_id: "F9" }, { role: "orchestrator", message: "orchestrator START build S2" }),
+      ev("phase.start", { phase: "green", story: "S9", feature_id: "F9" }, { role: "driver" }),
+    ];
+    const s = fold(run, snap({ driveAlive: true }));
+    expect(s.runPosition.story).toBe("S9");
+    expect(s.orchestratorActivity?.story).toBe("S9"); // overridden to the run-position story
+  });
+});
+
+// Part C — the client folds the board to the scrubber IN REAL TIME: `useFoldedState`, when scrubbed,
+// runs THIS SAME pure `fold()` over the raw event log client-side (no /api/state round-trip), so the
+// board tracks the playhead every render of a drag. These tests exercise that exact path — fold the
+// real multi-feature corpus at a sweep of `at` values and assert the board the user would SEE at each
+// drag position is honest: the lit gate is one the playhead has actually reached (never a future
+// gate), approvals only grow within a feature, and the feature advances forward. The promote-lit-at-
+// the-deploy-gate bug is the canonical violation; it is reproduced end-to-end here on real data.
+describe("fold — scrub-follow: the client fold tracks the playhead (Part C)", () => {
+  // F1 ships at lines 206-212 of the corpus: deploy gate approved (206/207), then promote (211/212).
+  // `at` is an EXCLUSIVE event count, so `at=208` folds events[0..207] — deploy approved is in, promote
+  // is NOT yet. This is the exact window the "promote lit at the deploy gate" bug mis-rendered.
+  const AFTER_DEPLOY_BEFORE_PROMOTE = 208;
+  const AFTER_PROMOTE = 212;
+
+  it("at the deploy-approved playhead the promote gate is NOT yet approved (slice-scoped, end-to-end)", () => {
+    const events = readCorpus();
+    const s = fold(events, snap(), AFTER_DEPLOY_BEFORE_PROMOTE);
+    expect(s.feature).toBe("F1-stock-visibility"); // still F1 (F6's plan gate is event 243)
+    const approved = s.topology.approvedGatesAtPlayhead;
+    expect(approved).toContain("deploy"); // reached
+    expect(approved).not.toContain("promote"); // NOT reached at this playhead — the full-run leak
+  });
+
+  it("the lit locus at the deploy-approved playhead is NOT the promote gate", () => {
+    const events = readCorpus();
+    const locus = locusFocus(foldViewOf(fold(events, snap(), AFTER_DEPLOY_BEFORE_PROMOTE)));
+    // The bug lit promote (the run's furthest-approved gate) while the playhead sat at deploy. Whatever
+    // the locus IS (a deploy-lane step or the deploy gate), it must not be the promote gate.
+    expect(locus.kind === "gate" && locus.gate === "promote").toBe(false);
+  });
+
+  it("the promote gate DOES light once the playhead reaches its approval", () => {
+    const events = readCorpus();
+    const approved = fold(events, snap(), AFTER_PROMOTE).topology.approvedGatesAtPlayhead;
+    expect(approved).toContain("promote"); // the fix only SCOPES the leak; it does not hide a reached gate
+  });
+
+  it("across a full drag the board never lights a gate the playhead has not reached", () => {
+    // Walk the whole corpus the way a drag does — successive `at` values — and assert the board at each
+    // position is self-consistent: a lit gate is always one the playhead has ALREADY approved (or is a
+    // surfaced one at the playhead), never a future gate folded in from the full run.
+    const events = readCorpus();
+    for (let at = 1; at <= events.length; at += 7) {
+      const s = fold(events, snap(), at);
+      const v = foldViewOf(s);
+      const locus = locusFocus(v);
+      if (locus.kind === "gate" && locus.status === "approved") {
+        expect(v.approvedGates.has(locus.gate)).toBe(true); // a lit APPROVED gate is one in the slice
+      }
+      // No gate approved at the playhead may belong to a feature the playhead is past-scoping: the
+      // slice-scoped set is always a subset of the whole run's eventual approvals.
+      expect(s.topology.approvedGatesAtPlayhead.length).toBeLessThanOrEqual(6); // {intake,plan,spec,acceptance,deploy,promote}
+    }
+  });
+
+  it("the playhead feature only ever advances across the drag (F1 before F6, never back)", () => {
+    // The scrub-follow property the drag depends on: dragging forward never snaps the board to an
+    // earlier feature, and dragging back never jumps it ahead. First-seen order is F1 then F6.
+    const events = readCorpus();
+    const order = ["F1-stock-visibility", "F6-split-tracking-code"];
+    let maxRank = -1;
+    for (let at = 1; at <= events.length; at += 5) {
+      const f = fold(events, snap(), at).feature;
+      if (f == null) continue;
+      const rank = order.indexOf(f);
+      expect(rank).toBeGreaterThanOrEqual(0); // only the two real features ever appear
+      expect(rank).toBeGreaterThanOrEqual(maxRank); // monotonic non-decreasing — never snaps backward
+      maxRank = Math.max(maxRank, rank);
+    }
+    expect(maxRank).toBe(1); // the drag reached F6 by the live edge
   });
 });

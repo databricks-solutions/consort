@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePolledState } from "./usePolledState";
+import { useFoldedState } from "./useFoldedState";
 import { Transport } from "./Transport";
 import type { ActivityTimeline } from "./AgentLogReplay";
 import { WorkflowGraph } from "./WorkflowGraph";
@@ -15,6 +15,7 @@ import { DriftBanner, SidePane, modeFromUrl } from "./board-parts";
 import { ActivityDock } from "./ActivityDock";
 import { useTheme } from "./useTheme";
 import type { DashboardState } from "@/lib/types";
+import { cardState, viewCtxOf } from "@/lib/card-inputs";
 import { colorForRole, font, radius } from "@/lib/theme";
 import { isOuterLoopStep } from "@/lib/topology";
 
@@ -59,7 +60,10 @@ export default function Home() {
   // which feature the board shows.
   const [pinned, setPinned] = useState<string | null>(null);
 
-  const { state, connected, lastUpdatedAt } = usePolledState(1000, at, mode, pinned);
+  // The board folds to the scrubber in REAL TIME: at the live edge this is the server `/api/state`
+  // fold; when scrubbed (`at !== null`) it folds the raw event log on the CLIENT each render, so the
+  // board moves WITH the agent-steps during a drag instead of only repainting when the drag stops.
+  const { state, connected, lastUpdatedAt } = useFoldedState(1000, at, mode, pinned);
 
   // POLL the flattened agent-step timeline (not a one-shot) so a LIVE run's new turns/steps keep
   // appearing and the scrubber's total grows — otherwise the line scrubber freezes at the empty/stale
@@ -74,10 +78,15 @@ export default function Home() {
         .then((d: { available?: boolean } & ActivityTimeline) => {
           if (!alive) return;
           if (d.available) {
-            setTimeline(d);
+            // Only swap the timeline object when it ACTUALLY GREW/CHANGED. The poll fires every 2s and
+            // a fresh object reference re-renders the whole board (15k+ lines) — pure jank while the
+            // user is scrubbing a run that isn't growing. Keep the prior reference when total + line
+            // count are unchanged so a STATIC run never re-renders on the poll (smooth scrub); a LIVE
+            // run still updates the instant new turns/steps arrive.
+            setTimeline((prev) => (prev && prev.total === d.total && prev.lines.length === d.lines.length ? prev : d));
             if (followLineEdge.current) setLineAt(d.total); // pinned to the newest step
           } else {
-            setTimeline(null);
+            setTimeline((prev) => (prev === null ? prev : null));
           }
         })
         .catch(() => {
@@ -360,7 +369,7 @@ export default function Home() {
       `}</style>
 
       <Header
-        state={state}
+        state={state ? cardState(state, "header", viewCtxOf(state)) : null}
         connected={connected}
         lastUpdatedAt={lastUpdatedAt}
         costMode={costMode}
@@ -402,7 +411,7 @@ export default function Home() {
                       board to a feature (or follow the run) from here — moved off the header. */}
                   <div style={{ borderTop: `1px solid var(--border-default)`, paddingTop: 16 }}>
                     <FeatureStatusSection
-                      state={state}
+                      state={cardState(state, "featureStatusSection", viewCtxOf(state))}
                       pinned={pinned}
                       onPin={setPinned}
                       openStory={openStory}
@@ -423,20 +432,27 @@ export default function Home() {
           {/* Two-card row in a fixed 2-column space: the orchestrator (left) and the run vitals —
               active tests + completed stories + turns (right). Grid stretch keeps both cards level. */}
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.5fr) minmax(0, 1fr)", gap: 12, marginBottom: 12 }}>
-            <OrchestratorLane state={state} />
+            <OrchestratorLane state={cardState(state, "orchestrator", viewCtxOf(state))} />
+            {(() => {
+              // The run-vitals card consumes ONE `vitals` projection (BuildLane + the inline metrics +
+              // the mount's lane test), so the whole card gets its data through the map.
+              const v = cardState(state, "vitals", viewCtxOf(state));
+              return (
             <div style={{ background: "var(--surface-card)", borderRadius: radius.card, padding: "16px 20px", border: `1px solid var(--border-default)`, display: "flex", flexDirection: "column", gap: 16, justifyContent: "center", containerType: "inline-size", minWidth: 0 }}>
               {/* Active tests (red vs green) — the run's live test health. */}
-              <BuildLane state={state} active={state.lane === "build"} complete={state.lane === "complete"} />
+              <BuildLane state={v} active={v.lane === "build"} complete={v.lane === "complete"} />
               {/* Completed · Turns · Tokens vitals. The row wraps + each metric shrinks (minWidth:0),
                   and the fonts are container-reactive (cqi off the card above) so they never spill out
                   of the card when the window narrows. */}
               <div style={{ display: "flex", flexWrap: "wrap", gap: "clamp(8px, 2cqi, 28px)", borderTop: `1px solid var(--border-default)`, paddingTop: 12, minWidth: 0 }}>
-                <Metric label="Completed" value={`${state.progress.storiesDone}/${state.progress.storiesTotal}`} />
-                <Metric label="Turns" value={`${state.agents.reduce((sum, a) => sum + a.turns, 0)}`} />
+                <Metric label="Completed" value={`${v.progress.storiesDone}/${v.progress.storiesTotal}`} />
+                <Metric label="Turns" value={`${v.agents.reduce((sum, a) => sum + a.turns, 0)}`} />
                 {/* Compute usage next to turns: token count (default) or $ cost, per the usage toggle. */}
-                <Metric label={costMode === "cost" ? "Cost" : "Tokens"} value={costMode === "cost" ? `$${state.totalCost.toFixed(2)}` : fmtTokens(state.totalTokens)} />
+                <Metric label={costMode === "cost" ? "Cost" : "Tokens"} value={costMode === "cost" ? `$${v.totalCost.toFixed(2)}` : fmtTokens(v.totalTokens)} />
               </div>
             </div>
+              );
+            })()}
           </div>
 
           {/* Agent steps is a first-class section at the top of the event-log pane (AgentLogReplay in
@@ -445,14 +461,14 @@ export default function Home() {
 
           {/* Per-agent contribution bar — tokens (default) or $ cost, matching the usage toggle. */}
           <div style={{ background: "var(--surface-card)", border: `1px solid var(--border-default)`, borderRadius: radius.card, padding: "12px 16px", marginBottom: 12 }}>
-            <CostBar state={state} mode={costMode} />
+            <CostBar state={cardState(state, "costBar", viewCtxOf(state))} mode={costMode} />
           </div>
 
           <SectionHeader>Current sprint</SectionHeader>
           {/* The lifecycle graph now carries the sprint's feature + current state in its own header
               band (see WorkflowGraph), mirroring the lane panels below. */}
           <WorkflowGraph
-            state={state}
+            state={cardState(state, "workflowGraph", viewCtxOf(state))}
             // Clicking a node opens its step deliverables in the ONE drill-down panel (below the
             // event stream, scrolled into view). Same-node click closes it. Scoped to the board's
             // current feature so the outputs match the rest of the board's context.
@@ -468,7 +484,7 @@ export default function Home() {
           />
 
           <SectionHeader>Lanes</SectionHeader>
-          <LaneGraph state={state} onOpenRole={onOpenRole} />
+          <LaneGraph state={cardState(state, "laneGraph", viewCtxOf(state))} onOpenRole={onOpenRole} />
 
           {/* Planning / backlog moved to the LEFT-side pull-out pane (see the flex row above). */}
           {/* The "Current State" role-card grid was removed: the lanes + lifecycle graph already show
@@ -482,18 +498,28 @@ export default function Home() {
                 width matches the left Backlog/planning/status pane so the two side columns read as a pair. */}
             {openStory
               ? (() => {
-                  const st = state.stories.find((s) => s.feature === openStory.feature && s.id === openStory.story);
-                  const foldStatus = Object.fromEntries((st?.testItems ?? []).map((t) => [t.id, t.status]));
+                  // The live run's feature (the ONE run position) vs the story being viewed. When they
+                  // differ (pinned / scrubbed / a past feature), the lightbox hard-labels its live-only
+                  // bits — the lakebase-branch chip and live pass/fail — as the LIVE run's, not this story's.
+                  const liveFeature = state.runPosition.feature;
+                  const viewedIsLive = state.atLive && openStory.feature === liveFeature;
+                  // Has the viewed story's feature shipped as of the playhead? `features[].done` is folded
+                  // to the playhead (set by the workflow/shipped events in the slice), so scrubbing before
+                  // the ship clears it. Drives the "shipped" chip + the done reading of the test panel
+                  // (a shipped story trusts the authoritative per-story list, not the lossy test.result trail).
+                  const featureShipped = state.features.find((f) => f.id === openStory.feature)?.done ?? false;
                   return (
                     <StoryTestsLightbox
                       feature={openStory.feature}
                       story={openStory.story}
+                      liveFeature={liveFeature}
+                      viewedIsLive={viewedIsLive}
+                      featureShipped={featureShipped}
                       mode={state.source?.mode ?? null}
                       atLive={state.atLive}
                       atEventIndex={state.atEventIndex}
                       timeline={timeline}
                       lineAt={lineAt}
-                      foldStatus={foldStatus}
                       state={state}
                       selectedTestId={selectedTestId}
                       onSelectTest={setSelectedTestId}
@@ -640,7 +666,7 @@ export default function Home() {
           {/* PROTOTYPE: live-activity bottom dock (event timeline + active-event steps side-by-side),
               pinned just above the transport so the board + left pane + test-list all stay visible. */}
           <ActivityDock
-            state={state}
+            state={cardState(state, "activityDock", viewCtxOf(state))}
             timeline={timeline}
             lineAt={lineAt}
             onOpenTurn={canDrillDown ? (ord) => setDrilldown((cur) => (cur && cur.kind === "turn" && cur.ord === ord ? null : { kind: "turn", ord })) : undefined}

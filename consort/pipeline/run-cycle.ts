@@ -47,19 +47,21 @@ function logTestResults(
   status: "red" | "green" | "refactored",
   role: "navigator" | "driver",
 ): void {
-  // A STREAMED test (one the per-stack reporter tags `@T<id>` and appends to `.consort/test-run.jsonl`)
-  // now RECORDS its own `test.result` into the agent-log AT RUN TIME (consort-capture.ts) — the moment
-  // it passes/fails — so the dashboard lights it live, scrubbing lights it AT its real run position,
-  // and a replay does the same. Re-emitting it here at the cycle-marking instant would append a LATER,
-  // clustered duplicate that the last-wins fold would prefer, collapsing the per-test trail back into a
-  // burst. So for green/refactored, emit ONLY the tests the reporter did NOT stream (architectural
-  // `fitness` runs are not `@T`-tagged) — the streamed ones are already recorded per-test. RED is
-  // declarative (the Navigator just WROTE the failing test; it has not run yet, so nothing streamed),
-  // so RED still emits every covered test.
-  const streamed = status === "red" ? new Set<string>() : streamedTestIds(consortDir);
+  // The per-stack reporter (consort-capture.ts) tries to RECORD each test's `test.result` into the
+  // agent-log AT RUN TIME — so the dashboard lights it live, scrubbing lights it AT its real run
+  // position, and a replay does the same. But it can ONLY do so when it can ATTRIBUTE the test to a
+  // story (resolveOwner): a reused `fitness`/`behavior` id with no `scenario_file` is ambiguous, so the
+  // reporter streams it to `test-run.jsonl` but writes NO agent-log event — leaving that test red-only
+  // in the trail forever even though it passed. So this cycle-scoped emit dedups against the AGENT-LOG
+  // itself (not `test-run.jsonl`): skip a covered test ONLY when a passing `test.result` for it ALREADY
+  // exists for this feature+story (the reporter got it, keep its live position); otherwise BACKFILL it
+  // here with the cycle's AUTHORITATIVE feature/story — at the test's real `test-run.jsonl` timestamp so
+  // it still sits at its run position, not a cycle-end burst. RED is declarative (the Navigator just
+  // WROTE the failing test; nothing has run), so RED emits every covered test.
+  const alreadyLogged = status === "red" ? new Set<string>() : agentLoggedTestIds(consortDir, cycle.feature_id, cycle.story_id, status);
   const realTs = realTestTimestamps(consortDir, status);
   for (const testId of coveredTestIds(cycle)) {
-    if (streamed.has(testId)) continue; // the reporter recorded this one per-test at run time
+    if (alreadyLogged.has(testId)) continue; // the reporter already recorded a passing result for this test
     const ts = realTs.get(testId);
     try {
       emitAgentLogEvent(
@@ -79,21 +81,35 @@ function logTestResults(
   }
 }
 
-/** Every test id the reporter STREAMED (any status) in `.consort/test-run.jsonl` — i.e. the tests that
- *  record their own per-test `test.result` at run time, so the cycle-scoped emit must skip them. Empty
- *  when the tail is absent (no streamed tests / replay), so the cycle-scoped emit covers everything. */
-function streamedTestIds(consortDir: string): Set<string> {
+/** Test ids that ALREADY carry a `test.result` of EXACTLY `status` in the agent-log for this
+ *  feature+story — i.e. the per-stack reporter (consort-capture) attributed + recorded that transition
+ *  live. The cycle-scoped emit skips these (keep their real run position, no duplicate) and BACKFILLS
+ *  every other covered test, so a streamed-but-unattributed test (a reused fitness/behavior id with no
+ *  scenario_file, which resolveOwner can't pin) still lands its result in the trail instead of showing
+ *  red-only. Dedup is per-EXACT-status so a later cycle transition the reporter never emits (the
+ *  reporter only knows green/red, not the cycle's `refactored`) is still backfilled, not swallowed by an
+ *  existing green. Scoped by feature+story because test ids recur across stories. Empty on any read
+ *  error (no log yet) → the cycle-scoped emit backfills everything. */
+function agentLoggedTestIds(consortDir: string, featureId: string, storyId: string, status: string): Set<string> {
   const out = new Set<string>();
   try {
-    const text = readFileSync(join(consortDir, "test-run.jsonl"), "utf8");
+    const text = readFileSync(join(consortDir, "agent-log.jsonl"), "utf8");
     for (const line of text.split("\n")) {
       const s = line.trim();
       if (!s) continue;
-      const o = JSON.parse(s) as { test_id?: string };
-      if (typeof o.test_id === "string") out.add(o.test_id);
+      let o: { event?: string; metadata?: { feature_id?: string; story_id?: string; test_id?: string; status?: string } };
+      try {
+        o = JSON.parse(s);
+      } catch {
+        continue;
+      }
+      if (o.event !== "test.result") continue;
+      const md = o.metadata ?? {};
+      if (md.feature_id !== featureId || md.story_id !== storyId) continue;
+      if (md.status === status && typeof md.test_id === "string") out.add(md.test_id);
     }
   } catch {
-    /* no reporter tail — nothing streamed, so the cycle-scoped emit covers all covered tests */
+    /* no agent-log yet — backfill every covered test */
   }
   return out;
 }

@@ -6738,6 +6738,7 @@ var architectureConventionsJson = (tdd) => join2(architectureDir(tdd), "conventi
 var featureProposalsMd = (tdd) => join2(planningDir(tdd), "feature-proposals.md");
 var featureDir = (tdd, featureId) => join2(featuresDir(tdd), featureId);
 var featureResolved = (tdd, f) => findFeatureDir(tdd, f) ?? featureDir(tdd, f);
+var featureSpecJson = (tdd, f) => join2(featureResolved(tdd, f), "feature-spec.json");
 var architectureJson = (tdd, f) => join2(featureResolved(tdd, f), "architecture.json");
 var dbDesignJson = (tdd, f) => join2(featureResolved(tdd, f), "db-design.json");
 var pipelineJson = (tdd, f) => join2(featureResolved(tdd, f), "pipeline.json");
@@ -7166,7 +7167,29 @@ function checkJsdomBrowserAssertion(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
-function checkPersistenceCoverage(testListJson, architectureJson2) {
+function checkMockPrescription(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const prescribesMock = /\bmock(s|ed|ing)?\b|\bstub(s|bed|bing)?\b/i;
+  const negatesMock = /\b(no|not|never|without|real)\b[^.]{0,30}\b(mock|stub)/i;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const d = it.description ?? "";
+    if (prescribesMock.test(d) && !negatesMock.test(d)) {
+      violations.push(
+        `test item ${it.id ?? "?"} PRESCRIBES a mock/stub in its description ("${d.slice(0, 90)}\u2026") \u2014 the no-mock policy requires behavior/client/component tests to hit the REAL backend against the paired-branch DB. Re-author a BEHAVIORAL description (assert the observable outcome; the test's /api calls hit the real service), never a mocked/stubbed endpoint. (Only a pure client-unit test of the fetch wrapper itself may mock \u2014 that is NOT a test-list item.)`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkPersistenceCoverage(testListJson, architectureJson2, dbDesignJson2) {
   let arch;
   try {
     arch = JSON.parse(architectureJson2);
@@ -7174,7 +7197,7 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
     return { ok: true };
   }
   if (arch.service_backed !== true) return { ok: true };
-  const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0);
+  const invariants = (arch.persistence_invariants ?? []).filter((i) => !!i && typeof i.id === "string" && i.id.length > 0);
   if (invariants.length === 0) return { ok: true };
   let tl;
   try {
@@ -7183,7 +7206,9 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
   const covered = new Set((tl.items ?? []).map((i) => i.invariant_id).filter((x) => typeof x === "string" && x.length > 0));
-  const uncovered = invariants.map((i) => i.id).filter((id) => !covered.has(id));
+  const realizing = dbDesignJson2 ? invariantRealizingStory(architectureJson2, dbDesignJson2) : null;
+  const demanded = invariants.filter((i) => realizing === null || i.type === "transactional" || realizing.has(i.id));
+  const uncovered = demanded.map((i) => i.id).filter((id) => !covered.has(id));
   if (uncovered.length > 0) {
     return {
       ok: false,
@@ -7222,6 +7247,39 @@ function checkMigrationReversibleShape(testListJson, architectureJson2) {
     const ids = covering.map((it) => it.id ?? "?").join(", ");
     violations.push(
       `migration_reversible invariant ${inv.id} is covered only by FORWARD-ONLY test-list item(s) [${ids}] \u2014 none describes a downgrade round-trip. A migration_reversible invariant MUST be verified by a ROUND-TRIP: downgrade to the migration-under-test's OWN down_revision, then upgrade head, and assert reversibility (own-table \u2192 schema recreated; pre-existing table \u2192 seed before, rows unchanged after). A forward-only "seed then upgrade head" test does not exercise reversibility and is unsatisfiable on an already-migrated branch. Re-author the covering item as an explicit round-trip (carry @pytest.mark.migration), OR retag ${inv.id} onto the round-trip item that performs it. See navigator.md (case A/B) / test-strategy.md.`
+    );
+    for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkTransactionalShape(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const transactional = (arch.persistence_invariants ?? []).filter(
+    (i) => i && typeof i.id === "string" && i.id.length > 0 && i.type === "transactional"
+  );
+  if (transactional.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const inv of transactional) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) continue;
+    if (covering.some((it) => describesAtomicityRollback(it.description ?? ""))) continue;
+    const ids = covering.map((it) => it.id ?? "?").join(", ");
+    violations.push(
+      `transactional invariant ${inv.id} is covered only by item(s) [${ids}] that do NOT describe an ATOMICITY/ROLLBACK test \u2014 a transactional invariant MUST be verified by FORCING a mid-transaction failure and asserting NEITHER write persists (e.g. patch the commit/second write to raise, then assert the row-update AND the audit row both rolled back \u2014 the F2 T19 shape), NOT a migration downgrade/upgrade round-trip. Re-author the covering item as an atomicity test, OR retag ${inv.id} onto the item that performs it. See test-strategy.md / navigator.md.`
     );
     for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
   }
@@ -7613,6 +7671,15 @@ function describesMigrationRoundTrip(desc) {
   // as forward-only — the description-fragility that must not bounce a correct test.
   /\bdown\s*[-/→>]+\s*up\b/i.test(desc);
 }
+function describesAtomicityRollback(desc) {
+  const d = desc.toLowerCase();
+  return /\broll\s*back\b|\brolls?\s*back\b|\brolled\s*back\b/.test(d) || /\bneither\b[^.]*\b(persist|written|writes|commit|row|saved|inserted)\b/.test(d) || /\b(transaction|commit|write|insert|update)\b[^.]*\bfail/.test(d) || /\beither\b[^.]*\bfail/.test(d) || /\batomic/.test(d) && /\b(fail|roll|neither|both)\b/.test(d) || // READ-ONLY flavor of a `transactional` invariant: the operation runs in a read-only unit of work
+  // (it performs NO writes), e.g. F5's PI25-count-read-only. Its correct covering test asserts the
+  // transaction writes nothing / leaves the tables unchanged — a valid transactional shape, not an
+  // atomicity/rollback one. Keyed narrowly (explicit read-only / writes-nothing / no-row-written) so
+  // a mere incidental "unchanged" aside cannot satisfy a genuine atomicity invariant.
+  /\bread[-\s]?only\b/.test(d) || /\bwrites?\s+nothing\b/.test(d) || /\bno\b[^.]*\b(row|write|insert|adjustment)s?\b[^.]*\b(written|inserted|created|persist|made)\b/.test(d);
+}
 var TEST_WORTHY_SCHEMA_CHANGE_KINDS = /* @__PURE__ */ new Set(["create_table", "add_index", "add_constraint"]);
 function idedSchemaChanges(dbDesignJson2) {
   const out = /* @__PURE__ */ new Map();
@@ -7748,6 +7815,67 @@ function checkApiContractConsistency(architectureJson2, acJsons) {
     }
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+var REQUEST_MUTATION_METHODS = /* @__PURE__ */ new Set(["POST", "PUT", "PATCH", "DELETE"]);
+function checkRequestFieldReconciliation(architectureJson2, acsByStory, storyOrder) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const contracts = (arch.api_contracts ?? []).filter(
+    (c) => c && typeof c.id === "string" && Array.isArray(c.request_fields) && c.request_fields.length > 0
+  );
+  if (contracts.length === 0) return { ok: true };
+  const writersByContract = /* @__PURE__ */ new Map();
+  const acIdsByContractWriter = /* @__PURE__ */ new Map();
+  for (const { story, acJson: acJson2 } of acsByStory) {
+    let ac;
+    try {
+      ac = JSON.parse(acJson2);
+    } catch {
+      continue;
+    }
+    const ref = ac.api_contract_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    const set = writersByContract.get(ref) ?? /* @__PURE__ */ new Set();
+    set.add(story);
+    writersByContract.set(ref, set);
+    const key = `${ref}|${story}`;
+    if (!acIdsByContractWriter.has(key) && typeof ac.id === "string") acIdsByContractWriter.set(key, ac.id);
+  }
+  const orderIdx = (s) => {
+    const i = storyOrder.indexOf(s);
+    return i < 0 ? Number.POSITIVE_INFINITY : i;
+  };
+  const violations = [];
+  const flaggedAcIds = /* @__PURE__ */ new Set();
+  for (const c of contracts) {
+    if (!REQUEST_MUTATION_METHODS.has(String(c.method ?? "").toUpperCase())) continue;
+    const writers = writersByContract.get(c.id) ?? /* @__PURE__ */ new Set();
+    for (const f of c.request_fields ?? []) {
+      if (f?.required !== true || typeof f.name !== "string" || f.name.length === 0) continue;
+      const since = f.since_story;
+      if (typeof since !== "string" || since.length === 0) {
+        violations.push(
+          `${c.id}.request_fields "${f.name}" is required:true but declares no since_story \u2014 set since_story to the story that made it required (its ORIGIN story if required from the start), so prior writer stories can be reconciled (checkRequestFieldReconciliation).`
+        );
+        continue;
+      }
+      const sinceIdx = orderIdx(since);
+      const reconciled = new Set(Array.isArray(f.reconciled_stories) ? f.reconciled_stories : []);
+      const unreconciled = [...writers].filter((w) => w !== since && orderIdx(w) < sinceIdx && !reconciled.has(w)).sort();
+      for (const w of unreconciled) {
+        const acId = acIdsByContractWriter.get(`${c.id}|${w}`);
+        violations.push(
+          `${c.id} requires request field "${f.name}" from ${since} on, but prior writer story ${w}${acId ? ` (AC ${acId})` : ""} writes this endpoint without reconciling it \u2014 supply "${f.name}" in ${w}'s fixtures and add ${w} to ${c.id}.request_fields "${f.name}".reconciled_stories, or make the field required:false.`
+        );
+        if (acId) flaggedAcIds.add(acId);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, ...flaggedAcIds.size ? { acIds: [...flaggedAcIds] } : {} };
 }
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
@@ -8801,6 +8929,33 @@ function apiContractConsistencyReason(consortDir, featureId) {
   const r = checkApiContractConsistency(arch, acJsons);
   return r.ok ? null : `api-contract consistency failed: ${r.violations.join("; ")}`;
 }
+function requestFieldReconciliationReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const fdir = featureResolved(consortDir, featureId);
+  const acsByStory = [];
+  const storiesDir2 = join12(fdir, "stories");
+  if (existsSync13(storiesDir2)) {
+    for (const s of readdirSync7(storiesDir2)) {
+      const acsDir2 = join12(storiesDir2, s, "acs");
+      if (!existsSync13(acsDir2)) continue;
+      for (const f of readdirSync7(acsDir2)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          acsByStory.push({ story: s, acJson: readFileSync13(join12(acsDir2, f), "utf8") });
+        } catch {
+        }
+      }
+    }
+  }
+  let storyOrder = [];
+  try {
+    storyOrder = JSON.parse(readFileSync13(join12(fdir, "feature-spec.json"), "utf8")).stories ?? [];
+  } catch {
+  }
+  const r = checkRequestFieldReconciliation(arch, acsByStory, storyOrder);
+  return r.ok ? null : `request-contract reconciliation failed: ${r.violations.join("; ")}`;
+}
 var MUTATION_METHODS = /* @__PURE__ */ new Set(["POST", "PUT", "PATCH", "DELETE"]);
 function serviceRuleTaggedE2eReason(consortDir, featureId) {
   const arch = readArchitecture(consortDir, featureId);
@@ -9018,6 +9173,10 @@ function jsdomBrowserAssertionReason(testListJson) {
   const r = checkJsdomBrowserAssertion(testListJson);
   return r.ok ? null : `jsdom-vacuous-browser-assertion: ${r.violations.join("; ")}`;
 }
+function mockPrescriptionReason(testListJson) {
+  const r = checkMockPrescription(testListJson);
+  return r.ok ? null : `mock-prescription: ${r.violations.join("; ")}`;
+}
 function e2eCoverageReason(consortDir, featureId, testListJson) {
   const storiesDir2 = join12(featureDir2(consortDir, featureId), "stories");
   if (!existsSync13(storiesDir2)) return null;
@@ -9040,7 +9199,15 @@ function e2eCoverageReason(consortDir, featureId, testListJson) {
 function persistenceCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
-  const r = checkPersistenceCoverage(testListJson, arch);
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = existsSync13(dbFile) ? (() => {
+    try {
+      return readFileSync13(dbFile, "utf8");
+    } catch {
+      return void 0;
+    }
+  })() : void 0;
+  const r = checkPersistenceCoverage(testListJson, arch, db);
   return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
 }
 function migrationReversibleShapeReason(consortDir, featureId, testListJson) {
@@ -9048,6 +9215,12 @@ function migrationReversibleShapeReason(consortDir, featureId, testListJson) {
   if (arch === void 0) return null;
   const r = checkMigrationReversibleShape(testListJson, arch);
   return r.ok ? null : `migration-reversibility shape failed: ${r.violations.join("; ")}`;
+}
+function transactionalShapeReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkTransactionalShape(testListJson, arch);
+  return r.ok ? null : `transactional shape failed: ${r.violations.join("; ")}`;
 }
 function schemaChangeCoverageReason(consortDir, featureId, testListJson) {
   const dbFile = dbDesignJson(consortDir, featureId);
@@ -9090,6 +9263,17 @@ function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
   );
   const r = checkInvariantCoverageDistinct(perStory, owner);
   return r.ok ? null : `invariant coverage not distinct across stories: ${r.violations.join("; ")}`;
+}
+function featureCoverageReason(consortDir, featureId) {
+  const tlFile = join12(featureDir2(consortDir, featureId), "test-list.json");
+  if (!existsSync13(tlFile)) return null;
+  let tlJson;
+  try {
+    tlJson = readFileSync13(tlFile, "utf8");
+  } catch {
+    return null;
+  }
+  return persistenceCoverageReason(consortDir, featureId, tlJson) ?? migrationReversibleShapeReason(consortDir, featureId, tlJson) ?? transactionalShapeReason(consortDir, featureId, tlJson) ?? invariantCoverageDistinctReason(consortDir, featureId, tlJson);
 }
 function serviceBackedReason(consortDir, featureId) {
   const arch = readArchitecture(consortDir, featureId);
@@ -9225,6 +9409,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (conventionsReason !== null) return { reason: conventionsReason };
       const apiContractReason = apiContractConsistencyReason(consortDir, featureId);
       if (apiContractReason !== null) return { reason: apiContractReason };
+      const requestContractReason = requestFieldReconciliationReason(consortDir, featureId);
+      if (requestContractReason !== null) return { reason: requestContractReason };
       const serviceRuleReason = serviceRuleTaggedE2eReason(consortDir, featureId);
       if (serviceRuleReason !== null) return { reason: serviceRuleReason };
       const serviceBacked = serviceBackedReason(consortDir, featureId);
@@ -9285,6 +9471,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (persistenceReason !== null) return { reason: persistenceReason };
         const reversibleShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlJson);
         if (reversibleShapeReason !== null) return { reason: reversibleShapeReason };
+        const txnShapeReason = transactionalShapeReason(consortDir, featureId, tlJson);
+        if (txnShapeReason !== null) return { reason: txnShapeReason };
         const schemaCoverageReason = schemaChangeCoverageReason(consortDir, featureId, tlJson);
         if (schemaCoverageReason !== null) return { reason: schemaCoverageReason };
         const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
@@ -9293,6 +9481,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (e2eReason !== null) return { reason: e2eReason };
         const jsdomReason = jsdomBrowserAssertionReason(tlJson);
         if (jsdomReason !== null) return { reason: jsdomReason };
+        const mockReason = mockPrescriptionReason(tlJson);
+        if (mockReason !== null) return { reason: mockReason };
       }
       return conf;
     }
@@ -9327,8 +9517,12 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (pReason !== null) return { reason: `${pReason} [re-checked at the deploy gate \u2014 a persistence invariant was declared/realized after the test_list gate and is still uncovered; add its test (consort-pipeline repair) before accepting]` };
         const revShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlForDeploy);
         if (revShapeReason !== null) return { reason: `${revShapeReason} [re-checked at the deploy gate \u2014 a migration_reversible invariant's covering test is forward-only; re-author it as a round-trip before accepting]` };
+        const txnShapeReasonDeploy = transactionalShapeReason(consortDir, featureId, tlForDeploy);
+        if (txnShapeReasonDeploy !== null) return { reason: `${txnShapeReasonDeploy} [re-checked at the deploy gate \u2014 a transactional invariant's covering test is not an atomicity/rollback test; re-author it (F2 T19 shape) before accepting]` };
         const dReason = invariantCoverageDistinctReason(consortDir, featureId, tlForDeploy);
         if (dReason !== null) return { reason: `${dReason} [re-checked at the deploy gate]` };
+        const rcReason = requestFieldReconciliationReason(consortDir, featureId);
+        if (rcReason !== null) return { reason: `${rcReason} [re-checked at the deploy gate \u2014 a request field was made required after the spec gate and a prior writer story is unreconciled; reconcile it before accepting]` };
       }
       return withConformance({ "deploy-evidence.json": evidence });
     }
@@ -9469,6 +9663,16 @@ function batchedDraftMessage(story, batched) {
 The design lane drafts ONE story's acceptance criteria at a time (draft -> surface -> approve), then moves to the next story. Drafting every story's ACs in one pass defeats the streaming pipeline.
 Remove the out-of-turn ACs (keep only ${story}'s), invoke the Spec Author once per story, and retry.`;
 }
+function featureDesignCompletedBy(consortDir, feature, approvingStory, pipeline) {
+  let stories = [];
+  try {
+    stories = JSON.parse(readFileSync15(featureSpecJson(consortDir, feature), "utf8")).stories ?? [];
+  } catch {
+    return false;
+  }
+  if (stories.length === 0) return false;
+  return stories.every((s) => s === approvingStory || pipeline.stories[s]?.gate?.status === "approved");
+}
 function approveStoryGateFromDisk(consortDir, feature, story, opts) {
   const pipeline = readPipeline(consortDir, feature);
   const batched = findBatchedDraftStories(consortDir, feature, pipeline, story);
@@ -9481,6 +9685,10 @@ function approveStoryGateFromDisk(consortDir, feature, story, opts) {
   if (indepReason) return { ok: false, error: indepReason };
   const e2eReason = storyRequiresE2eReason(featureDir2(consortDir, feature), story);
   if (e2eReason) return { ok: false, error: e2eReason };
+  if (featureDesignCompletedBy(consortDir, feature, story, pipeline)) {
+    const coverageReason = featureCoverageReason(consortDir, feature);
+    if (coverageReason) return { ok: false, error: coverageReason };
+  }
   let mutated;
   try {
     mutated = updatePipeline(

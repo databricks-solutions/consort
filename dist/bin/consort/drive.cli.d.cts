@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { W as WorkflowAction } from '../../workflow-vocabulary-D1uovERm.cjs';
+import { W as WorkflowAction } from '../../workflow-vocabulary-DhJ3Gyzj.cjs';
 
 /** Compose the interactive pause message for the planning `author-requests` step.
  *  NOTHING has been approved/committed, so this must never read as "complete".
@@ -34,6 +34,18 @@ declare function drivePidPath(consortDir: string): string;
 /** Record THIS drive process's own pid. Written by the process that actually
  *  runs the loop (after the --detach re-launch), never by a launcher. */
 declare function writeDrivePid(consortDir: string): void;
+/** The pid the running drive recorded for itself in .consort/drive.pid, or null when the file is
+ *  absent/unparseable. Shared by stopDrive and the single-drive mutex (assertSingleDrive). */
+declare function readDrivePid(consortDir: string): number | null;
+/** SINGLE-DRIVE MUTEX. A project has exactly ONE orchestrator: the drive dispatches role agents
+ *  sequentially and each agent turn appends one entry to the SINGLE-WRITER turns/index.json ledger.
+ *  Two drives racing that ledger straddle ordinals + corrupt the per-turn record audit (the exact
+ *  failure a kill-and-relaunch-too-fast produces). Refuse to start when another drive's recorded pid
+ *  is still ALIVE. A clean `consort-drive --stop` removes drive.pid; a crash leaves a DEAD pid
+ *  (pidAlive=false) which we silently take over. Returns true when it is safe to proceed. Called by
+ *  the REAL in-process orchestrator only (after the --detach re-launch), so its own pid is not yet
+ *  in the file and never false-refuses itself. */
+declare function assertSingleDrive(consortDir: string): boolean;
 /** Halt the running drive + its whole process tree (the executor's claude -p
  *  children included), reading the pid the drive recorded for itself. */
 declare function stopDrive(consortDir: string): Promise<number>;
@@ -49,4 +61,4 @@ declare function claimActiveForSnapshot(ws: {
     state?: string;
 } | null | undefined): string | undefined;
 
-export { claimActiveForSnapshot, composeInputPause, drivePidPath, stopDrive, writeDrivePid };
+export { assertSingleDrive, claimActiveForSnapshot, composeInputPause, drivePidPath, readDrivePid, stopDrive, writeDrivePid };
