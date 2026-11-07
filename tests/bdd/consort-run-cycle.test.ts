@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, appendFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -99,19 +99,42 @@ describe("run-cycle (hermetic)", () => {
     expect(refs.map((e) => e.message)).toEqual(["TEST T1 refactored", "TEST T2 refactored", "TEST T3 refactored"]);
   });
 
-  it("SKIPS a streamed test at green/refactored (the reporter records it per-test at run time), still emits non-streamed", () => {
-    // T2 is streamed by the per-stack reporter (appears in test-run.jsonl) and records its OWN
-    // run-time test.result (consort-capture.ts), so the cycle-scoped GREEN must NOT re-emit it — a
-    // later clustered duplicate would collapse the per-test trail back into a burst. T1/T3 are
-    // non-streamed (fitness) and still get the cycle-scoped emit. RED is declarative (pre-run) so it
-    // emits ALL covered regardless.
+  it("BACKFILLS a covered green that is in test-run.jsonl but NOT in the agent-log (the reporter couldn't attribute it)", () => {
+    // The bug this fixes: T2 is streamed to test-run.jsonl, but the per-stack reporter (consort-capture)
+    // could NOT attribute it to a story (a reused fitness id with no scenario_file → resolveOwner null),
+    // so it wrote NO agent-log test.result. The cycle-scoped GREEN must STILL emit T2 — dedup is against
+    // the AGENT-LOG, never test-run.jsonl — else T2 shows red-only forever though it passed.
     writeFileSync(join(tdd, "test-run.jsonl"), JSON.stringify({ ts: "2026-10-23T00:00:00Z", test_id: "T2", status: "green", file: "tests/t.py", kind: "behavior" }) + "\n");
     const a = beginCycle({ ...scope, test_id: "T1", test_ids: ["T1", "T2", "T3"], test_description: "batch" });
     const reds = readAgentLog({ consortDir: tdd }).filter((e) => e.event === "test.result");
     expect(reds.map((e) => e.message)).toEqual(["TEST T1 red", "TEST T2 red", "TEST T3 red"]); // RED emits all (pre-run)
     markGreen(scope, a.cycle_id);
     const greens = readAgentLog({ consortDir: tdd }).filter((e) => e.event === "test.result" && e.message.includes("green"));
-    expect(greens.map((e) => e.message)).toEqual(["TEST T1 green", "TEST T3 green"]); // T2 skipped (reporter owns it)
+    expect(greens.map((e) => e.message)).toEqual(["TEST T1 green", "TEST T2 green", "TEST T3 green"]); // T2 backfilled
+  });
+
+  it("DEDUPS a green the reporter already recorded in the agent-log (no duplicate, keep its live position)", () => {
+    // When the reporter DID attribute + log T2's green live, the cycle-scoped GREEN must NOT re-emit it
+    // (a later clustered duplicate would collapse the per-test trail into a burst). T1/T3 still backfill.
+    const a = beginCycle({ ...scope, test_id: "T1", test_ids: ["T1", "T2", "T3"], test_description: "batch" });
+    appendFileSync(
+      join(tdd, "agent-log.jsonl"),
+      JSON.stringify({ timestamp: "2026-10-23T00:00:00Z", level: "info", role: "driver", event: "test.result", message: "TEST T2 green", metadata: { feature_id: "F1", test_id: "T2", status: "green", story_id: "S1", ac_id: "AC1" } }) + "\n",
+    );
+    markGreen(scope, a.cycle_id);
+    const greens = readAgentLog({ consortDir: tdd }).filter((e) => e.event === "test.result" && e.message.includes("green"));
+    expect(greens.filter((e) => e.message === "TEST T2 green").length).toBe(1); // not re-emitted
+    expect(greens.map((e) => e.message)).toEqual(["TEST T2 green", "TEST T1 green", "TEST T3 green"]); // reporter's T2, then cycle backfills T1/T3
+  });
+
+  it("still BACKFILLS `refactored` even when a green already exists (dedup is per-exact-status)", () => {
+    // The reporter only ever emits green/red, never the cycle's `refactored`. So a green already in the
+    // log must NOT swallow the refactored transition — each test must flip to refactored.
+    const a = beginCycle({ ...scope, test_id: "T1", test_ids: ["T1", "T2"], test_description: "batch" });
+    markGreen(scope, a.cycle_id); // log now has T1/T2 green
+    markRefactored(scope, a.cycle_id);
+    const refs = readAgentLog({ consortDir: tdd }).filter((e) => e.event === "test.result" && e.message.includes("refactored"));
+    expect(refs.map((e) => e.message)).toEqual(["TEST T1 refactored", "TEST T2 refactored"]);
   });
 
   it("markRefactored sets refactored_at and notes", () => {

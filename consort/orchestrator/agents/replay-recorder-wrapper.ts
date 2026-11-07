@@ -14,6 +14,7 @@
 // Baseline: recordTurn diffs the workspace against a delta baseline seeded once per corpus. The
 // wrapper seeds it lazily on the first wrapped invoke (guarded), mirroring withTurnRecording.
 
+import { join } from "node:path";
 import { seedRecorderBaseline, recordTurn, recordReplaySet, turnDirFor, assertTurnComplete, type RecordedTranscript } from "../../logging/turn-recorder.js";
 import { recordBuildTurn, nextBuildTurnNumber } from "../../pipeline/record-build.js";
 import type { StepAgent, AgentInvocation } from "./agent-types.js";
@@ -101,7 +102,7 @@ export function wrapWithRecorder(inner: StepAgent, ctx: RecorderContext): StepAg
 
       // 1) The per-turn timeline slice (turns/NNNN-<label>/): the artifact + meta delta this turn
       //    produced, plus the transcript. This is exactly what makeStepReplayAgent reads back.
-      recordTurn({
+      const rec = recordTurn({
         recordDir: ctx.recordDir,
         projectDir: ctx.projectDir,
         consortDir: ctx.consortDir,
@@ -139,7 +140,15 @@ export function wrapWithRecorder(inner: StepAgent, ctx: RecorderContext): StepAg
       //    for a live capture is ctx.takeTranscript being supplied (the live drive supplies it;
       //    replay/migration/tests do not). So enforce the FULL bundle only for a live capture; for a
       //    non-live record still require the base set (turn.json + files/).
-      assertTurnComplete(turnDir, action, ctx.liveIndex ? { liveIndex: true } : { liveCapture: ctx.takeTranscript !== undefined });
+      //    AUDIT THE DIR recordTurn ACTUALLY WROTE (rec.dir), not the pre-invoke turnDir: recordTurn
+      //    re-reads turns/index.json at write time, so if the index grew during inner.invoke() the two
+      //    diverge and auditing the stale turnDir false-fails on a dir that was never written. Under
+      //    the single-drive invariant (no concurrent writer – enforced by the drive's pid mutex) they
+      //    normally agree, but auditing the real write target is correct regardless. (In capture mode
+      //    recordReplaySet wrote the pre-state into the pre-invoke turnDir; that invariant is what keeps
+      //    it in the same dir, so the mutex is what makes capture-mode replay-set placement sound.)
+      const writtenDir = join(ctx.recordDir, "turns", rec.dir);
+      assertTurnComplete(writtenDir, action, ctx.liveIndex ? { liveIndex: true } : { liveCapture: ctx.takeTranscript !== undefined });
   };
 
   // Return a TRUE PASS-THROUGH: every property/method of the inner agent is visible unchanged

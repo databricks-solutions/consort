@@ -47,6 +47,7 @@ import {
   markDeployVerifyAssessed,
   markDeployVerifyRefactored,
 } from "../../consort/smells/deploy-verify-assess.js";
+import { markReauthored, clearReauthorMarker } from "../../consort/smells/reauthor-resilience.js";
 import {
   readRefactorVerifyAssessMarker,
   markRefactorVerifyAssessed,
@@ -169,6 +170,21 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       } else {
         process.stdout.write(`cycle: GREEN ${r.cycleId} for ${r.testId}\n`);
       }
+      return 0;
+    }
+    case "reauthor-green": {
+      // Finalize a Navigator RE-AUTHOR turn (test-RESILIENCE self-heal). The Navigator edited the
+      // flagged test(s) to be resilient; COUNT the one-shot (markReauthored) BEFORE re-verifying, then
+      // re-run the honest-GREEN verify. greenOpenCycle re-runs the smell gate too: if the edit made the
+      // test resilient it GREENS (and we clear the marker); if the smell PERSISTS the gate now sees the
+      // spent one-shot (attempts>=1) and escalates to the HIL.
+      if (!a.ac) return usage("reauthor-green: --ac is required.");
+      markReauthored(consortDir, a.feature, a.story, a.ac);
+      const r = await greenOpenCycle({ ...base, verify: greenVerifierForEnv() });
+      if (!r.needsReauthor && !r.needsAssess && !r.escalated) clearReauthorMarker(consortDir, a.feature, a.story, a.ac);
+      process.stdout.write(
+        `cycle: reauthor-green ${a.story}/${a.ac} -> ${r.escalated ? "HIL (still flaky after re-author)" : r.needsReauthor ? "still flagged" : r.needsAssess ? "assess" : "GREEN (resilient)"}\n`,
+      );
       return 0;
     }
     case "review": {

@@ -28,7 +28,7 @@ import { deriveDriveState, effectiveLoopForStory, isContractStory } from "../sta
 import { runParallelAcLanesLive } from "../../experiment/ac-lane-live.js";
 import { shouldFanOutAcLanes } from "../../experiment/ac-lane-coordinator.js";
 import { parseFailedNodeDetails } from "../../pipeline/batch-decompose.js";
-import { supersededTestCandidates } from "../../architecture/contract-clean.js";
+import { supersededTestCandidates, requestFieldSupersededTestFiles } from "../../architecture/contract-clean.js";
 import { diskArtifactProbe, readDriveContext } from "../state/orchestrator-probe.js";
 import { readPipeline } from "../../pipeline/story-pipeline.js";
 import {
@@ -48,6 +48,7 @@ import { storyTestProgress, nextPendingBatch, DEFAULT_BATCH_CAP, storyAcOrder, a
 import { readSupersededTests, readGreenFailure } from "../../smells/supersession.js";
 import { writeEscalation } from "../../gates/escalation.js";
 import { readDeployVerifyAssessMarker, readDeployVerifyScope } from "../../smells/deploy-verify-assess.js";
+import { readReauthorMarker } from "../../smells/reauthor-resilience.js";
 import { readRefactorVerifyAssessMarker } from "../../smells/refactor-verify-assess.js";
 import { readConventions } from "../../architecture/architecture-conventions.js";
 import { deliveredFeatures } from "../status/feature-status.js";
@@ -502,24 +503,37 @@ function supersededTestsDirective(consortDir: string, featureId: string, story: 
   }
   if (!acId) return "";
   const sup = readSupersededTests(consortDir, featureId, story, acId);
-  if (!sup) return "";
-  // BATCH the supersession: UNION the Navigator's flagged set with the DETERMINISTIC
-  // dropped-symbol sweep — the SAME `supersededTestCandidates` source that already
-  // pre-localizes the assess advisory (one source of truth; backend + client refs). The
-  // one green-superseded turn then retargets the WHOLE superseded file set at once,
-  // collapsing the wave-by-wave driver refactors that otherwise dominate a contract
-  // story's serial-first AC. Deterministic + complete, so no round re-discovers.
+  // BATCH the supersession: UNION the Navigator's flagged set with the DETERMINISTIC sources — the
+  // dropped-symbol sweep (`supersededTestCandidates`) AND the request-field reconciliation
+  // (`requestFieldSupersededTestFiles`: prior-story tests POSTing to an endpoint this story made a field
+  // REQUIRED on — the backend API callers the Navigator's test-list-only enumeration MISSES). One
+  // green-superseded turn then retargets the WHOLE set at once. Deterministic + complete, so no round
+  // re-discovers — and the reconciliation set fires even when the Navigator flagged nothing for this AC
+  // (the F2 actor-on-EP4 case: S1's test_s1_adjust_*.py 422'd at deploy-verify because they were never flagged).
   let deterministic: string[] = [];
   try {
     deterministic = [...new Set(supersededTestCandidates({ projectDir: dirname(consortDir) }).candidates.map((c) => c.file))];
   } catch {
     /* advisory only: a gate error must never break the directive */
   }
-  const union = Array.from(new Set([...sup.tests, ...deterministic])).sort();
+  let reconciliation: string[] = [];
+  try {
+    reconciliation = requestFieldSupersededTestFiles({
+      projectDir: dirname(consortDir),
+      architectureJson: fs.readFileSync(architectureJson(consortDir, featureId), "utf8"),
+      currentStory: story,
+    });
+  } catch {
+    /* advisory only */
+  }
+  const flagged = sup?.tests ?? [];
+  if (flagged.length === 0 && deterministic.length === 0 && reconciliation.length === 0) return "";
+  const union = Array.from(new Set([...flagged, ...deterministic, ...reconciliation])).sort();
   const list = union.map((t) => `  - ${t}`).join("\n");
+  const reason = sup?.reason ?? "a later story made a request field required on a shared endpoint (prior writers must now supply it)";
   return (
     `\n\nSUPERSEDED TESTS: this AC (${acId}) supersedes behavior encoded in PRIOR tests — the Navigator's flagged` +
-    ` set UNIONED with the deterministic dropped-column sweep (${sup.reason}). The latest AC wins. Refactor ALL of` +
+    ` set UNIONED with the deterministic dropped-column sweep + request-field reconciliation (${reason}). The latest AC wins. Refactor ALL of` +
     ` these (and ONLY these) to the new behavior in ONE pass, alongside the production code, so the honest-GREEN` +
     ` verify holds — do them together, do NOT leave any for a later round:\n${list}\n` +
     `Do NOT touch any other test; an UNflagged failing test is a genuine regression that must stay red and escalate.`
@@ -1181,6 +1195,27 @@ function roleTaskBody(
           `Write ONLY that file; the orchestrator routes any fix deterministically.`
         );
       }
+      if (action.buildMode === "reauthor") {
+        // Test-RESILIENCE RE-AUTHOR: the deterministic GREEN smell gate flagged a NON-RESILIENT
+        // test THIS Navigator authored (a re-read racing a write, or a fixed-duration wait). The
+        // Navigator edits it resilient; the orchestrator then re-runs the GREEN verify (one-shot).
+        const rm = action.ac ? readReauthorMarker(consortDir, featureId, s, action.ac) : undefined;
+        const flagged = (rm?.flagged_tests ?? []).map((t) => `  ${t}`).join("\n");
+        return (
+          `RE-AUTHOR the NON-RESILIENT test(s) you authored for AC ${action.ac} in story ${s}. The deterministic` +
+          ` resilience gate flagged them as FLAKY BY CONSTRUCTION — they trust a transient/optimistic value or a` +
+          ` timing assumption instead of awaiting a confirmed CONDITION, so they pass only on a retry and give the` +
+          ` gate no signal.\nFlagged test file(s):\n${flagged}\n\n` +
+          `${rm?.remediation ?? ""}\n\n` +
+          `Edit ONLY those test file(s) to be RESILIENT: before any reload / re-read of persisted state, await the` +
+          ` server-CONFIRMED signal the app shows on a durable write (the success flash / a *-success or *-error` +
+          ` status seam / page.waitForResponse(<write endpoint>)) — never assert an optimistic value and then` +
+          ` re-read; and replace any fixed page.waitForTimeout/sleep with a condition wait (expect(...).toBeVisible(),` +
+          ` waitForResponse, waitForURL, waitForLoadState). Keep each assertion's INTENT; just make it deterministic.` +
+          ` Do NOT touch product code. The orchestrator re-runs the GREEN verify after your turn.` +
+          AGENT_TERSE_SUFFIX
+        );
+      }
       if (action.buildMode === "assess") {
         // The assess turn's DETERMINISTIC PRE-LOCALIZATION advisory – the verify's own
         // failure output (start-here), the contract-clean code refs, and the superseded-test
@@ -1789,6 +1824,12 @@ function buildCycleCommand(
   }
   if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "reflect") {
     return { kind: "cli", bin: CYCLE_BIN, args: ["reflect-gate", "--feature", f, "--story", action.story, "--tdd-dir", cfg.consortDir] };
+  } else if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "reauthor") {
+    // The Navigator RE-AUTHORED the flaky test(s) this turn; reauthor-green counts the one-shot
+    // and RE-RUNS the GREEN verify (greenOpenCycle) — greens if now resilient, escalates if the
+    // smell persists.
+    const acFlag = "ac" in action && action.ac ? ["--ac", action.ac] : [];
+    return { kind: "cli", bin: CYCLE_BIN, args: ["reauthor-green", "--feature", f, "--story", action.story, ...acFlag, "--tdd-dir", cfg.consortDir] };
   } else if (!("mode" in action) && action.role === "navigator" && "buildMode" in action && action.buildMode === "assess") {
     const acFlag = "ac" in action && action.ac ? ["--ac", action.ac] : [];
     return { kind: "cli", bin: CYCLE_BIN, args: ["assess-green", "--feature", f, "--story", action.story, ...acFlag, "--tdd-dir", cfg.consortDir] };
@@ -2321,9 +2362,13 @@ export function commandsForAction(action: WorkflowAction, cfg: DriveEffectsConfi
       // test-list – before the feature deploys. The per-story reflect gate catches
       // per-story design defects; this catches feature-wide coverage a single
       // story cannot see (e.g. an invariant no story's test covers). It enforces
-      // on the advance for ANY approver; a non-zero exit halts the drive.
+      // on the advance for ANY approver. On non-conformance it WRITES a surfaced
+      // `feature-conformance` escalation (--escalate-on-fail) then exits non-zero:
+      // the exit halts the drive (set-phase→deploy is skipped), and the written
+      // escalation means the resume/readState routes raise-to-hil with the repair
+      // resolver — a HITL surface, not a bare `exited 1`.
       return [
-        { kind: "cli", bin: GATE_CONFORMANCE_BIN, args: ["--feature", f, "--tdd-dir", cfg.consortDir] },
+        { kind: "cli", bin: GATE_CONFORMANCE_BIN, args: ["--feature", f, "--tdd-dir", cfg.consortDir, "--escalate-on-fail"] },
         { kind: "set-phase", phase: "deploy" },
       ];
 

@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path4) {
-      let input = path4;
+    function removeDotSegments(path5) {
+      let input = path5;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path4, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path4 && path4 !== "/" ? path4 : void 0;
+        const [path5, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6900,10 +6900,10 @@ function readHeldByPid(lockPath) {
     return null;
   }
 }
-function gatesLockFilePath(consortDir, featureId, basename5) {
+function gatesLockFilePath(consortDir, featureId, basename6) {
   const dir = requireFeatureDir(consortDir, featureId);
   mkdirSync2(dir, { recursive: true });
-  return join2(dir, basename5);
+  return join2(dir, basename6);
 }
 function withPipelineLock(featureId, fn, opts = {}) {
   return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
@@ -7566,7 +7566,29 @@ function checkJsdomBrowserAssertion(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
-function checkPersistenceCoverage(testListJson, architectureJson2) {
+function checkMockPrescription(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const prescribesMock = /\bmock(s|ed|ing)?\b|\bstub(s|bed|bing)?\b/i;
+  const negatesMock = /\b(no|not|never|without|real)\b[^.]{0,30}\b(mock|stub)/i;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const d = it.description ?? "";
+    if (prescribesMock.test(d) && !negatesMock.test(d)) {
+      violations.push(
+        `test item ${it.id ?? "?"} PRESCRIBES a mock/stub in its description ("${d.slice(0, 90)}\u2026") \u2014 the no-mock policy requires behavior/client/component tests to hit the REAL backend against the paired-branch DB. Re-author a BEHAVIORAL description (assert the observable outcome; the test's /api calls hit the real service), never a mocked/stubbed endpoint. (Only a pure client-unit test of the fetch wrapper itself may mock \u2014 that is NOT a test-list item.)`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkPersistenceCoverage(testListJson, architectureJson2, dbDesignJson2) {
   let arch;
   try {
     arch = JSON.parse(architectureJson2);
@@ -7574,7 +7596,7 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
     return { ok: true };
   }
   if (arch.service_backed !== true) return { ok: true };
-  const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0);
+  const invariants = (arch.persistence_invariants ?? []).filter((i) => !!i && typeof i.id === "string" && i.id.length > 0);
   if (invariants.length === 0) return { ok: true };
   let tl;
   try {
@@ -7583,7 +7605,9 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
   const covered = new Set((tl.items ?? []).map((i) => i.invariant_id).filter((x) => typeof x === "string" && x.length > 0));
-  const uncovered = invariants.map((i) => i.id).filter((id) => !covered.has(id));
+  const realizing = dbDesignJson2 ? invariantRealizingStory(architectureJson2, dbDesignJson2) : null;
+  const demanded = invariants.filter((i) => realizing === null || i.type === "transactional" || realizing.has(i.id));
+  const uncovered = demanded.map((i) => i.id).filter((id) => !covered.has(id));
   if (uncovered.length > 0) {
     return {
       ok: false,
@@ -7622,6 +7646,39 @@ function checkMigrationReversibleShape(testListJson, architectureJson2) {
     const ids = covering.map((it) => it.id ?? "?").join(", ");
     violations.push(
       `migration_reversible invariant ${inv.id} is covered only by FORWARD-ONLY test-list item(s) [${ids}] \u2014 none describes a downgrade round-trip. A migration_reversible invariant MUST be verified by a ROUND-TRIP: downgrade to the migration-under-test's OWN down_revision, then upgrade head, and assert reversibility (own-table \u2192 schema recreated; pre-existing table \u2192 seed before, rows unchanged after). A forward-only "seed then upgrade head" test does not exercise reversibility and is unsatisfiable on an already-migrated branch. Re-author the covering item as an explicit round-trip (carry @pytest.mark.migration), OR retag ${inv.id} onto the round-trip item that performs it. See navigator.md (case A/B) / test-strategy.md.`
+    );
+    for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkTransactionalShape(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const transactional = (arch.persistence_invariants ?? []).filter(
+    (i) => i && typeof i.id === "string" && i.id.length > 0 && i.type === "transactional"
+  );
+  if (transactional.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const inv of transactional) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) continue;
+    if (covering.some((it) => describesAtomicityRollback(it.description ?? ""))) continue;
+    const ids = covering.map((it) => it.id ?? "?").join(", ");
+    violations.push(
+      `transactional invariant ${inv.id} is covered only by item(s) [${ids}] that do NOT describe an ATOMICITY/ROLLBACK test \u2014 a transactional invariant MUST be verified by FORCING a mid-transaction failure and asserting NEITHER write persists (e.g. patch the commit/second write to raise, then assert the row-update AND the audit row both rolled back \u2014 the F2 T19 shape), NOT a migration downgrade/upgrade round-trip. Re-author the covering item as an atomicity test, OR retag ${inv.id} onto the item that performs it. See test-strategy.md / navigator.md.`
     );
     for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
   }
@@ -7930,9 +7987,9 @@ function checkSchemaChangeStoryRealizes(schemaChanges, storyLayers) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
-function canonicalArtifactName(path4) {
-  const base = basename(path4);
-  if (basename(dirname(path4)) === "acs" && base.endsWith(".json")) return "ac.json";
+function canonicalArtifactName(path5) {
+  const base = basename(path5);
+  if (basename(dirname(path5)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
 }
 function checkMigrationPreservationClass(architectureJson2, dbDesignJson2) {
@@ -8012,6 +8069,15 @@ function describesMigrationRoundTrip(desc) {
   // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
   // as forward-only — the description-fragility that must not bounce a correct test.
   /\bdown\s*[-/→>]+\s*up\b/i.test(desc);
+}
+function describesAtomicityRollback(desc) {
+  const d = desc.toLowerCase();
+  return /\broll\s*back\b|\brolls?\s*back\b|\brolled\s*back\b/.test(d) || /\bneither\b[^.]*\b(persist|written|writes|commit|row|saved|inserted)\b/.test(d) || /\b(transaction|commit|write|insert|update)\b[^.]*\bfail/.test(d) || /\beither\b[^.]*\bfail/.test(d) || /\batomic/.test(d) && /\b(fail|roll|neither|both)\b/.test(d) || // READ-ONLY flavor of a `transactional` invariant: the operation runs in a read-only unit of work
+  // (it performs NO writes), e.g. F5's PI25-count-read-only. Its correct covering test asserts the
+  // transaction writes nothing / leaves the tables unchanged — a valid transactional shape, not an
+  // atomicity/rollback one. Keyed narrowly (explicit read-only / writes-nothing / no-row-written) so
+  // a mere incidental "unchanged" aside cannot satisfy a genuine atomicity invariant.
+  /\bread[-\s]?only\b/.test(d) || /\bwrites?\s+nothing\b/.test(d) || /\bno\b[^.]*\b(row|write|insert|adjustment)s?\b[^.]*\b(written|inserted|created|persist|made)\b/.test(d);
 }
 var TEST_WORTHY_SCHEMA_CHANGE_KINDS = /* @__PURE__ */ new Set(["create_table", "add_index", "add_constraint"]);
 function idedSchemaChanges(dbDesignJson2) {
@@ -8148,6 +8214,67 @@ function checkApiContractConsistency(architectureJson2, acJsons) {
     }
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+var REQUEST_MUTATION_METHODS = /* @__PURE__ */ new Set(["POST", "PUT", "PATCH", "DELETE"]);
+function checkRequestFieldReconciliation(architectureJson2, acsByStory, storyOrder) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const contracts = (arch.api_contracts ?? []).filter(
+    (c) => c && typeof c.id === "string" && Array.isArray(c.request_fields) && c.request_fields.length > 0
+  );
+  if (contracts.length === 0) return { ok: true };
+  const writersByContract = /* @__PURE__ */ new Map();
+  const acIdsByContractWriter = /* @__PURE__ */ new Map();
+  for (const { story, acJson: acJson2 } of acsByStory) {
+    let ac;
+    try {
+      ac = JSON.parse(acJson2);
+    } catch {
+      continue;
+    }
+    const ref = ac.api_contract_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    const set = writersByContract.get(ref) ?? /* @__PURE__ */ new Set();
+    set.add(story);
+    writersByContract.set(ref, set);
+    const key = `${ref}|${story}`;
+    if (!acIdsByContractWriter.has(key) && typeof ac.id === "string") acIdsByContractWriter.set(key, ac.id);
+  }
+  const orderIdx = (s) => {
+    const i = storyOrder.indexOf(s);
+    return i < 0 ? Number.POSITIVE_INFINITY : i;
+  };
+  const violations = [];
+  const flaggedAcIds = /* @__PURE__ */ new Set();
+  for (const c of contracts) {
+    if (!REQUEST_MUTATION_METHODS.has(String(c.method ?? "").toUpperCase())) continue;
+    const writers = writersByContract.get(c.id) ?? /* @__PURE__ */ new Set();
+    for (const f of c.request_fields ?? []) {
+      if (f?.required !== true || typeof f.name !== "string" || f.name.length === 0) continue;
+      const since = f.since_story;
+      if (typeof since !== "string" || since.length === 0) {
+        violations.push(
+          `${c.id}.request_fields "${f.name}" is required:true but declares no since_story \u2014 set since_story to the story that made it required (its ORIGIN story if required from the start), so prior writer stories can be reconciled (checkRequestFieldReconciliation).`
+        );
+        continue;
+      }
+      const sinceIdx = orderIdx(since);
+      const reconciled = new Set(Array.isArray(f.reconciled_stories) ? f.reconciled_stories : []);
+      const unreconciled = [...writers].filter((w) => w !== since && orderIdx(w) < sinceIdx && !reconciled.has(w)).sort();
+      for (const w of unreconciled) {
+        const acId = acIdsByContractWriter.get(`${c.id}|${w}`);
+        violations.push(
+          `${c.id} requires request field "${f.name}" from ${since} on, but prior writer story ${w}${acId ? ` (AC ${acId})` : ""} writes this endpoint without reconciling it \u2014 supply "${f.name}" in ${w}'s fixtures and add ${w} to ${c.id}.request_fields "${f.name}".reconciled_stories, or make the field required:false.`
+        );
+        if (acId) flaggedAcIds.add(acId);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, ...flaggedAcIds.size ? { acIds: [...flaggedAcIds] } : {} };
 }
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
@@ -8749,6 +8876,33 @@ function apiContractConsistencyReason(consortDir, featureId) {
   const r = checkApiContractConsistency(arch, acJsons);
   return r.ok ? null : `api-contract consistency failed: ${r.violations.join("; ")}`;
 }
+function requestFieldReconciliationReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const fdir = featureResolved(consortDir, featureId);
+  const acsByStory = [];
+  const storiesDir2 = join12(fdir, "stories");
+  if (existsSync12(storiesDir2)) {
+    for (const s of readdirSync7(storiesDir2)) {
+      const acsDir2 = join12(storiesDir2, s, "acs");
+      if (!existsSync12(acsDir2)) continue;
+      for (const f of readdirSync7(acsDir2)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          acsByStory.push({ story: s, acJson: readFileSync12(join12(acsDir2, f), "utf8") });
+        } catch {
+        }
+      }
+    }
+  }
+  let storyOrder = [];
+  try {
+    storyOrder = JSON.parse(readFileSync12(join12(fdir, "feature-spec.json"), "utf8")).stories ?? [];
+  } catch {
+  }
+  const r = checkRequestFieldReconciliation(arch, acsByStory, storyOrder);
+  return r.ok ? null : `request-contract reconciliation failed: ${r.violations.join("; ")}`;
+}
 var MUTATION_METHODS = /* @__PURE__ */ new Set(["POST", "PUT", "PATCH", "DELETE"]);
 function serviceRuleTaggedE2eReason(consortDir, featureId) {
   const arch = readArchitecture(consortDir, featureId);
@@ -8966,6 +9120,10 @@ function jsdomBrowserAssertionReason(testListJson) {
   const r = checkJsdomBrowserAssertion(testListJson);
   return r.ok ? null : `jsdom-vacuous-browser-assertion: ${r.violations.join("; ")}`;
 }
+function mockPrescriptionReason(testListJson) {
+  const r = checkMockPrescription(testListJson);
+  return r.ok ? null : `mock-prescription: ${r.violations.join("; ")}`;
+}
 function e2eCoverageReason(consortDir, featureId, testListJson) {
   const storiesDir2 = join12(featureDir2(consortDir, featureId), "stories");
   if (!existsSync12(storiesDir2)) return null;
@@ -8988,7 +9146,15 @@ function e2eCoverageReason(consortDir, featureId, testListJson) {
 function persistenceCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
-  const r = checkPersistenceCoverage(testListJson, arch);
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = existsSync12(dbFile) ? (() => {
+    try {
+      return readFileSync12(dbFile, "utf8");
+    } catch {
+      return void 0;
+    }
+  })() : void 0;
+  const r = checkPersistenceCoverage(testListJson, arch, db);
   return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
 }
 function migrationReversibleShapeReason(consortDir, featureId, testListJson) {
@@ -8996,6 +9162,12 @@ function migrationReversibleShapeReason(consortDir, featureId, testListJson) {
   if (arch === void 0) return null;
   const r = checkMigrationReversibleShape(testListJson, arch);
   return r.ok ? null : `migration-reversibility shape failed: ${r.violations.join("; ")}`;
+}
+function transactionalShapeReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkTransactionalShape(testListJson, arch);
+  return r.ok ? null : `transactional shape failed: ${r.violations.join("; ")}`;
 }
 function schemaChangeCoverageReason(consortDir, featureId, testListJson) {
   const dbFile = dbDesignJson(consortDir, featureId);
@@ -9173,6 +9345,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (conventionsReason !== null) return { reason: conventionsReason };
       const apiContractReason = apiContractConsistencyReason(consortDir, featureId);
       if (apiContractReason !== null) return { reason: apiContractReason };
+      const requestContractReason = requestFieldReconciliationReason(consortDir, featureId);
+      if (requestContractReason !== null) return { reason: requestContractReason };
       const serviceRuleReason = serviceRuleTaggedE2eReason(consortDir, featureId);
       if (serviceRuleReason !== null) return { reason: serviceRuleReason };
       const serviceBacked = serviceBackedReason(consortDir, featureId);
@@ -9233,6 +9407,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (persistenceReason !== null) return { reason: persistenceReason };
         const reversibleShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlJson);
         if (reversibleShapeReason !== null) return { reason: reversibleShapeReason };
+        const txnShapeReason = transactionalShapeReason(consortDir, featureId, tlJson);
+        if (txnShapeReason !== null) return { reason: txnShapeReason };
         const schemaCoverageReason = schemaChangeCoverageReason(consortDir, featureId, tlJson);
         if (schemaCoverageReason !== null) return { reason: schemaCoverageReason };
         const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
@@ -9241,6 +9417,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (e2eReason !== null) return { reason: e2eReason };
         const jsdomReason = jsdomBrowserAssertionReason(tlJson);
         if (jsdomReason !== null) return { reason: jsdomReason };
+        const mockReason = mockPrescriptionReason(tlJson);
+        if (mockReason !== null) return { reason: mockReason };
       }
       return conf;
     }
@@ -9275,8 +9453,12 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (pReason !== null) return { reason: `${pReason} [re-checked at the deploy gate \u2014 a persistence invariant was declared/realized after the test_list gate and is still uncovered; add its test (consort-pipeline repair) before accepting]` };
         const revShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlForDeploy);
         if (revShapeReason !== null) return { reason: `${revShapeReason} [re-checked at the deploy gate \u2014 a migration_reversible invariant's covering test is forward-only; re-author it as a round-trip before accepting]` };
+        const txnShapeReasonDeploy = transactionalShapeReason(consortDir, featureId, tlForDeploy);
+        if (txnShapeReasonDeploy !== null) return { reason: `${txnShapeReasonDeploy} [re-checked at the deploy gate \u2014 a transactional invariant's covering test is not an atomicity/rollback test; re-author it (F2 T19 shape) before accepting]` };
         const dReason = invariantCoverageDistinctReason(consortDir, featureId, tlForDeploy);
         if (dReason !== null) return { reason: `${dReason} [re-checked at the deploy gate]` };
+        const rcReason = requestFieldReconciliationReason(consortDir, featureId);
+        if (rcReason !== null) return { reason: `${rcReason} [re-checked at the deploy gate \u2014 a request field was made required after the spec gate and a prior writer story is unreconciled; reconcile it before accepting]` };
       }
       return withConformance({ "deploy-evidence.json": evidence });
     }
@@ -9455,8 +9637,8 @@ Candidate features for this sprint, projected deterministically from the recorde
 
 // consort/orchestrator/status/revise.ts
 init_esm_shims();
-import { existsSync as existsSync31, readFileSync as readFileSync31, writeFileSync as writeFileSync20, mkdirSync as mkdirSync18, readdirSync as readdirSync20, rmSync as rmSync9 } from "fs";
-import { join as join30, dirname as dirname15 } from "path";
+import { existsSync as existsSync32, readFileSync as readFileSync32, writeFileSync as writeFileSync21, mkdirSync as mkdirSync19, readdirSync as readdirSync20, rmSync as rmSync10 } from "fs";
+import { join as join31, dirname as dirname16 } from "path";
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
@@ -9694,9 +9876,9 @@ function clearReconcileVerdict(consortDir, feature) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync30, readFileSync as readFileSync30, readdirSync as readdirSync19, statSync as statSync12, writeFileSync as writeFileSync19, mkdirSync as mkdirSync17, rmSync as rmSync8 } from "fs";
+import { existsSync as existsSync31, readFileSync as readFileSync31, readdirSync as readdirSync19, statSync as statSync12, writeFileSync as writeFileSync20, mkdirSync as mkdirSync18, rmSync as rmSync9 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
-import { join as join28, dirname as dirname14, basename as basename4 } from "path";
+import { join as join29, dirname as dirname15, basename as basename5 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -9772,7 +9954,7 @@ var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 // consort/architecture/contract-clean.ts
 init_esm_shims();
 import { existsSync as existsSync22, readFileSync as readFileSync22, readdirSync as readdirSync13, statSync as statSync8 } from "fs";
-import { join as join19, relative as relative2, extname as extname3 } from "path";
+import { join as join19, relative as relative2, extname as extname3, basename as basename3 } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -9801,7 +9983,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync24, readFileSync as readFileSync25, readdirSync as readdirSync16, writeFileSync as writeFileSync16, mkdirSync as mkdirSync14, copyFileSync } from "fs";
-import { join as join22, dirname as dirname11, basename as basename3 } from "path";
+import { join as join22, dirname as dirname11, basename as basename4 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
@@ -9858,6 +10040,11 @@ import { execFileSync as execFileSync4 } from "child_process";
 import { existsSync as existsSync29 } from "fs";
 import { join as join27 } from "path";
 
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs6 from "fs";
+import * as path4 from "path";
+
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -9867,24 +10054,24 @@ init_esm_shims();
 
 // consort/pipeline/cycle-record.ts
 function resetStoryBuildState(consortDir, featureId, story) {
-  const cyclesDir = join28(cyclesRootDir(consortDir), featureId, story);
+  const cyclesDir = join29(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
-  if (existsSync30(cyclesDir)) {
-    rmSync8(cyclesDir, { recursive: true, force: true });
+  if (existsSync31(cyclesDir)) {
+    rmSync9(cyclesDir, { recursive: true, force: true });
     cyclesCleared = true;
   }
   let testItemsReset = 0;
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (existsSync30(tlPath)) {
+  if (existsSync31(tlPath)) {
     try {
-      const tl = JSON.parse(readFileSync30(tlPath, "utf8"));
+      const tl = JSON.parse(readFileSync31(tlPath, "utf8"));
       for (const item of tl.items ?? []) {
         if (item.status && item.status !== "pending") {
           item.status = "pending";
           testItemsReset++;
         }
       }
-      writeFileSync19(tlPath, JSON.stringify(tl, null, 2) + "\n");
+      writeFileSync20(tlPath, JSON.stringify(tl, null, 2) + "\n");
     } catch {
     }
   }
@@ -9893,7 +10080,7 @@ function resetStoryBuildState(consortDir, featureId, story) {
 
 // consort/test-list/fan-out-plan.ts
 init_esm_shims();
-import { join as join29 } from "path";
+import { join as join30 } from "path";
 
 // consort/test-list/test-analyst-catalogue.ts
 init_esm_shims();
@@ -9917,7 +10104,7 @@ var TEST_ANALYST_CATALOGUE = {
     effort: "high",
     toolScope: ["Read"],
     inputs: ["architecture-invariants", "db-design"],
-    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the COMPONENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). A migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN `down_revision`, the explicit revision id named in that migration file; for an initial create-table that is the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after the downgrade-to-`down_revision` then `upgrade head` (NOT that data survives). TAG the reversibility item with `schema_change_id` = the EXACT db-design.json `schema_changes[]` id it exercises (e.g. `SC5-add-location-sku-index`): the DBA ledger is the authority. A migration-reversibility item with NO `schema_change_id` is flagged pre-reflect (`checkMigrationTestSchemaChangeTag`), and one naming a change the DBA did NOT plan is an orphan (`checkSchemaChangeOrphan`) \u2014 in either case DROP it rather than assert a migration the design defers (an index the architect only weighed). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` (the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
+    focusPrompt: "You are the FITNESS test analyst \u2013 the SOLE owner of `invariant_id`. Two duties: (1) Walk the architecture (layers, service_backed, ORM-only, config-in-env, each accepted NFR budget) and emit >=1 `kind:\"fitness\"` item per architectural constraint the story touches THAT IS NOT ALREADY DEFENDED DETERMINISTICALLY. The INWARD-DEPENDENCY layering (boundary -> service -> repository -> models, per layers[].may_import) and the ORM-CONTAINMENT contract (ONLY the repository/infrastructure touches the ORM/session) are defended DETERMINISTICALLY by the `consort-layering-clean` gate (a source scan at REVIEW) \u2013 do NOT author import-scan fitness items for them. A hand-authored 'no module under app/ imports the session' / 'no layer imports a layer its may_import forbids' test is redundant with the gate AND error-prone: it routinely forgets to exclude the infrastructure session-factory module (app/database.py), is then unsatisfiable on a correctly-layered tree, and the reflect gate bounces it lap after lap. DO emit fitness items for constraints the gate does NOT cover: config-from-env, and any service-layer guard an NFR demands (e.g. a write-time rejection of an overcommitting / negative-quantity write at the SERVICE layer \u2013 distinct from a DB CHECK constraint). Describe such a guard so it survives the layering refactor: the service is called WITH its required injected session (the layering contract makes the session a required param, no service-owned fallback) and the guard is proven by asserting the REPOSITORY WRITE is never reached (patch it, assert-not-called) \u2014 NOT by omitting the session (that raises TypeError once the session becomes required and masks the guard, the recurring driver-refactor regression). A CLIENT-render NFR fitness function (SPA rendering of null/optional/empty/loading/error states) is NOT yours \u2013 the COMPONENT analyst owns those; emit NO fitness item for a client-render NFR. When an NFR declares the ATOMIC `fitness_functions` ARRAY (one obligation per entry), emit ONE `kind:\"fitness\"` item PER ARRAY ENTRY, each with `nfr_id` set to that NFR's `id` (checkFitnessClauseCoverage hard-blocks the test_list gate unless every clause is covered) \u2013 never one item for the whole array. A COMPOUND singular `fitness_function` (an `and`/`+`/comma joining two checkable claims) likewise needs ONE item PER conjunct, never one for the pair. (2) Walk architecture.json `persistence_invariants[]` and emit AT LEAST ONE `kind:\"fitness\"` item per invariant with `invariant_id` set to that invariant's id, verified DIRECTLY against the real branch database (never a mock, never a generic ORM round-trip). COVER EVERY LEG the invariant NAMES: when one invariant names MULTIPLE columns/constraints (e.g. two NOT NULL audit columns `filed_by`+`filed_at`, a multi-column CHECK, or an FK set), cover EACH named leg \u2013 a parametrised sub-case per column/constraint (or a sibling item), all sharing that `invariant_id`. A single item exercising only ONE of the named columns leaves the others uncovered (the reflect gate rejects the un-covered leg). E.g. a NOT-NULL invariant over {filed_by, filed_at} needs a direct INSERT with EACH column NULL asserting its own constraint violation, not just one. ANCHOR BY REALIZING STORY, NOT KEYWORD PROXIMITY: emit an invariant's item ONLY when THIS story realizes that invariant's table \u2013 i.e. db-design.json `schema_changes[]` has an entry for THIS story_id (create_table, else the earliest add_column/alter/constraint) on the invariant's `table` (architecture.json `persistence_invariants[].table`). If the invariant's table is created by a LATER story, DO NOT emit its fitness item on this story \u2013 it belongs to that write story, and its test is un-buildable here (the table does not exist yet). A display/read-only story whose migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/reversibility invariants \u2013 the story that MIGRATES the table does). **EXCEPTION \u2014 a `transactional` (ATOMICITY) invariant.** Its test verifies the OPERATION (a multi-write transaction \u2014 e.g. UPDATE one table AND INSERT another, committed together), NOT a table's schema, so anchor it to the story whose ACs PERFORM that operation (the write path), NOT to a `schema_changes` entry \u2014 and EMIT its atomicity item EVEN when this story migrates NEITHER table (both INHERITED from prior features). The tables already exist, so a force-a-mid-transaction-failure test (patch the second write/commit to raise; assert NEITHER write persists) IS buildable here, and the transaction is THIS story's new code. The F5 case: a `reconcile` UPDATEs the inherited `stock_records` and INSERTs the inherited `stock_adjustment_audits` in one transaction \u2014 emit the atomicity `fitness` item (F2 `T19` shape: patch the audit insert/commit to raise, assert the stock-row update AND the audit insert BOTH roll back), tag it `invariant_id`=<the transactional PI>, anchor its `ac_id` to the reconcile/records-adjustment AC \u2014 even though this story's migrations create nothing. A `transactional` invariant is NOT exempted the way an inherited schema-CONSTRAINT (unique/not_null/check/fk) is, so the design-complete gate (`checkTransactionalShape`) HARD-DEMANDS this item; never leave it to a later story that does not own the operation. A migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN `down_revision`, the explicit revision id named in that migration file; for an initial create-table that is the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the WRONG migration once a later story moves head, and the deterministic gate `checkTestlistMigrationRevision` flags a relative step), and NEVER a blind `downgrade base`; mark it @pytest.mark.migration) asserting the SCHEMA is recreated \u2013 the table + its columns/constraints are present again after the downgrade-to-`down_revision` then `upgrade head` (NOT that data survives). TAG the reversibility item with `schema_change_id` = the EXACT db-design.json `schema_changes[]` id it exercises (e.g. `SC5-add-location-sku-index`): the DBA ledger is the authority. A migration-reversibility item with NO `schema_change_id` is flagged pre-reflect (`checkMigrationTestSchemaChangeTag`), and one naming a change the DBA did NOT plan is an orphan (`checkSchemaChangeOrphan`) \u2014 in either case DROP it rather than assert a migration the design defers (an index the architect only weighed). Data-preservation (seed rows, migrate, assert they survive with expected values) is a SEPARATE item that applies ONLY to an ADDITIVE migration on a PRE-EXISTING table (a later story adding a column/constraint, where a downgrade to that migration's `down_revision` removes only that addition and prior rows persist). NEVER author a data-preservation item for an INITIAL create-table migration: downgrading it to its `down_revision` (the base) drops the whole table, so 'rows survive' is UNSATISFIABLE and no code can make it pass (it dead-locks the assess/repair loop). If the story's migration is the table's FIRST (create-table), emit ONLY the schema-recreation reversibility item, not data-preservation. The created_at/audit immutability on an in-place upsert is its OWN item. Whole-table aggregate assertions must scope to the test's own rows (a delta), never an absolute total. Fitness items MUST NOT carry a `.feature` `scenario_file`. Seed idempotently with a per-run-unique key. " + SLICE_CONTRACT + " Set `invariant_id` on each item that covers a declared persistence invariant."
   },
   client: {
     kind: "client",
@@ -9939,12 +10126,12 @@ var TEST_ANALYST_CATALOGUE = {
     toolScope: ["Read"],
     inputs: ["story-acs", "architecture-invariants", "design-guide"],
     enabledWhen: (ctx) => ctx.uiTrack === true,
-    focusPrompt: "You are the COMPONENT test analyst (this project HAS a frontend). You author ISOLATED, REAL-DB component tests: a SINGLE React component rendered on its own (NOT the whole `<App>`, NOT a full user journey), with its real `/api` calls hitting the REAL backend the vitest harness boots \u2014 NEVER a mock (kit principle: never mock when a real counterpart exists; the deterministic `component-test-mock` gate FAILS a stubbed-fetch / MSW / `vi.mock`-of-the-api component test). Emit a `kind:\"component\"` item with `scenario_file` under `client/tests/` ending `.test.tsx` (e.g. `client/tests/components/<Component>.test.tsx`). WHEN to emit (organically, from the design \u2014 do NOT invent one): for every UI component the architecture / design-guide defines that has NON-TRIVIAL RENDER LOGIC derived from data \u2014 a status badge whose color/label depends on a value, a table/list rendering one row per record, a field that renders differently when null/empty (a 'not tracked' indicator), an empty / loading / error state \u2014 emit a component item that renders JUST that component against the real API and asserts the rendered output: the text AND the design-guide SEAM (the element's design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS. A trivial static element with no data-driven render logic needs NO component test \u2014 do not pad. SCOPE \u2014 you are the peer of the CLIENT (e2e) analyst, split by SCOPE not mock-vs-real: the client analyst owns the FULL browser journey (`client/tests/e2e/*.spec.ts`, Playwright, deployed app); YOU own the SINGLE-component render (`*.test.tsx`, jsdom, real backend). Do NOT author a full-journey flow (that is the client analyst's) and do NOT author an API-contract test (that is behavior's \u2014 a component test renders UI, it does not verify the raw wire contract; `checkClientKindLayerCoherence` flags a component item anchored to an `API`/`service`/`Infra` AC). A component test that CREATES a record keys it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) \u2014 so each run owns its row on the SHARED feature branch. ALSO own NFR CLIENT-RENDER fitness functions (moved here from the client analyst): for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (a row with null/optional fields asserting a 'not tracked' indicator; an empty/loading/error state), emit a `kind:\"component\"` item that performs that render and asserts the stated outcome. A stated client-render NFR with no component item is a reflect-testlist-defect. Do NOT set `invariant_id`. " + SLICE_CONTRACT
+    focusPrompt: "You are the COMPONENT test analyst (this project HAS a frontend). You author ISOLATED, REAL-DB component tests: a SINGLE React component rendered on its own (NOT the whole `<App>`, NOT a full user journey), with its real `/api` calls hitting the REAL backend the vitest harness boots \u2014 NEVER a mock (kit principle: never mock when a real counterpart exists; the deterministic `component-test-mock` gate FAILS a stubbed-fetch / MSW / `vi.mock`-of-the-api component test). Emit a `kind:\"component\"` item with `scenario_file` under `client/tests/` ending `.test.tsx` (e.g. `client/tests/components/<Component>.test.tsx`). WHEN to emit (organically, from the design \u2014 do NOT invent one): for every UI component the architecture / design-guide defines that has NON-TRIVIAL RENDER LOGIC derived from data \u2014 a status badge whose color/label depends on a value, a table/list rendering one row per record, a field that renders differently when null/empty (a 'not tracked' indicator), an empty / loading / error state \u2014 emit a component item that renders JUST that component against the real API and asserts the rendered output: the text AND the design-guide SEAM (the element's design-guide class / `data-testid`), NEVER an inline `style=` or raw CSS. A trivial static element with no data-driven render logic needs NO component test \u2014 do not pad. SCOPE \u2014 you are the peer of the CLIENT (e2e) analyst, split by SCOPE not mock-vs-real: the client analyst owns the FULL browser journey (`client/tests/e2e/*.spec.ts`, Playwright, deployed app); YOU own the SINGLE-component render (`*.test.tsx`, jsdom, real backend). Do NOT author a full-journey flow (that is the client analyst's) and do NOT author an API-contract test (that is behavior's \u2014 a component test renders UI, it does not verify the raw wire contract; `checkClientKindLayerCoherence` flags a component item anchored to an `API`/`service`/`Infra` AC). A component test that CREATES a record keys it on a per-run-unique business key \u2014 a `crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) \u2014 so each run owns its row on the SHARED feature branch. When it ASSERTS on COUNTS it asserts ONLY on its OWN rows: filter the rendered output to its unique key and count THOSE. NEVER assert a whole-table total and NEVER a `before`-minus-`after` delta against the shared branch (sibling rows from other runs and stories pollute both). That is the recurring shared-state-aggregate-assertion defect: filtering by a unique tag hides EVERY non-matching sibling, so `total - visible` is total-minus-mine, not the small count you expect. ALSO own NFR CLIENT-RENDER fitness functions (moved here from the client analyst): for every `architecture.json` NFR whose `fitness_function` describes a CLIENT render (a row with null/optional fields asserting a 'not tracked' indicator; an empty/loading/error state), emit a `kind:\"component\"` item that performs that render and asserts the stated outcome. A stated client-render NFR with no component item is a reflect-testlist-defect. Do NOT set `invariant_id`. " + SLICE_CONTRACT
   }
 };
 
 // consort/test-list/fan-out-plan.ts
-var analystOrderedJson = (consortDir, f, s) => join29(storyDir(consortDir, f, s), "analyst-ordered.json");
+var analystOrderedJson = (consortDir, f, s) => join30(storyDir(consortDir, f, s), "analyst-ordered.json");
 
 // consort/orchestrator/status/revise.ts
 var REVISE_APPROVER = "human-proxy";
@@ -9955,46 +10142,46 @@ function staleStoryArtifactsForRevise(consortDir, featureId, story, gate, scopeA
     const scoped = gate === "test_list" && !!scopeAcIds && scopeAcIds.length > 0;
     const clearAcs = new Set(storyAcIds(consortDir, featureId, story));
     const master = featureTestListJson(consortDir, featureId);
-    if (existsSync31(master)) {
+    if (existsSync32(master)) {
       try {
-        const data = JSON.parse(readFileSync31(master, "utf8"));
+        const data = JSON.parse(readFileSync32(master, "utf8"));
         if (Array.isArray(data.items)) {
           data.items = data.items.filter((it) => !it.ac_id || !clearAcs.has(it.ac_id));
-          writeFileSync20(master, JSON.stringify(data, null, 2) + "\n");
+          writeFileSync21(master, JSON.stringify(data, null, 2) + "\n");
         }
       } catch {
       }
     }
     const perStory = storyTestListJson(consortDir, featureId, story);
-    if (existsSync31(perStory)) rmSync9(perStory, { force: true });
+    if (existsSync32(perStory)) rmSync10(perStory, { force: true });
     const ordered = analystOrderedJson(consortDir, featureId, story);
     const patchMarker = testListPatchJson(consortDir, featureId, story);
     if (scoped) {
-      writeFileSync20(patchMarker, JSON.stringify({ ac_ids: scopeAcIds }, null, 2) + "\n");
+      writeFileSync21(patchMarker, JSON.stringify({ ac_ids: scopeAcIds }, null, 2) + "\n");
     } else {
-      if (existsSync31(ordered)) rmSync9(ordered, { force: true });
-      if (existsSync31(patchMarker)) rmSync9(patchMarker, { force: true });
+      if (existsSync32(ordered)) rmSync10(ordered, { force: true });
+      if (existsSync32(patchMarker)) rmSync10(patchMarker, { force: true });
     }
   }
   if (gate === "spec") {
     const marker = specReviseScopeJson(consortDir, featureId, story);
     if (specAcScope && specAcScope.length > 0) {
       clearStoryAcs(consortDir, featureId, story, specAcScope);
-      writeFileSync20(marker, JSON.stringify({ ac_ids: specAcScope }, null, 2) + "\n");
+      writeFileSync21(marker, JSON.stringify({ ac_ids: specAcScope }, null, 2) + "\n");
     } else {
       clearStoryAcs(consortDir, featureId, story);
-      if (existsSync31(marker)) rmSync9(marker, { force: true });
+      if (existsSync32(marker)) rmSync10(marker, { force: true });
     }
   } else if (gate === "architecture") {
     clearArchitecturalNotes(consortDir, featureId, story);
   } else if (gate === "ia") {
-    rmSync9(storyIaCoverageJson(consortDir, featureId, story), { force: true });
+    rmSync10(storyIaCoverageJson(consortDir, featureId, story), { force: true });
     clearArchitecturalNotes(consortDir, featureId, story);
   }
 }
 function clearStoryAcs(consortDir, featureId, story, acIds) {
   const dir = acsDir(consortDir, featureId, story);
-  if (!existsSync31(dir)) return;
+  if (!existsSync32(dir)) return;
   const scope = acIds && acIds.length > 0 ? new Set(acIds) : void 0;
   for (const f of readdirSync20(dir)) {
     if (!f.endsWith(".json") && !f.endsWith(".md")) continue;
@@ -10002,7 +10189,7 @@ function clearStoryAcs(consortDir, featureId, story, acIds) {
       const base = f.replace(/\.(json|md)$/, "");
       if (!scope.has(base)) continue;
     }
-    rmSync9(join30(dir, f), { force: true });
+    rmSync10(join31(dir, f), { force: true });
   }
 }
 function hasOpenReflectSpecDefect(consortDir, story) {
@@ -10029,17 +10216,17 @@ function hasOpenReflectIaDefect(consortDir, story) {
 }
 function clearArchitecturalNotes(consortDir, featureId, story, acIds) {
   const dir = acsDir(consortDir, featureId, story);
-  if (!existsSync31(dir)) return;
+  if (!existsSync32(dir)) return;
   const scope = acIds && acIds.length > 0 ? new Set(acIds) : void 0;
   for (const f of readdirSync20(dir)) {
     if (!f.endsWith(".json")) continue;
     if (scope && !scope.has(f.replace(/\.json$/, ""))) continue;
-    const p = join30(dir, f);
+    const p = join31(dir, f);
     try {
-      const ac = JSON.parse(readFileSync31(p, "utf8"));
+      const ac = JSON.parse(readFileSync32(p, "utf8"));
       if ("architectural_notes" in ac) {
         delete ac.architectural_notes;
-        writeFileSync20(p, JSON.stringify(ac, null, 2) + "\n");
+        writeFileSync21(p, JSON.stringify(ac, null, 2) + "\n");
       }
     } catch {
     }
@@ -10099,8 +10286,8 @@ function applyReviseSelfHeal(args) {
   );
   try {
     const hb = handbackFile(consortDir, args.featureId, args.routedTo, args.story);
-    mkdirSync18(dirname15(hb), { recursive: true });
-    writeFileSync20(hb, composeReviseBrief({ smell: args.smell, gate: args.gate, reason: args.reason, scoped, acIds: specAcScope }));
+    mkdirSync19(dirname16(hb), { recursive: true });
+    writeFileSync21(hb, composeReviseBrief({ smell: args.smell, gate: args.gate, reason: args.reason, scoped, acIds: specAcScope }));
   } catch {
   }
   const reflect = isReflectSmell(args.smell);
@@ -10111,14 +10298,14 @@ function applyReviseSelfHeal(args) {
       const marker = specReviseScopeJson(consortDir, args.featureId, args.story);
       if (specDefectAcIds.length > 0) {
         clearStoryAcs(consortDir, args.featureId, args.story, specDefectAcIds);
-        writeFileSync20(marker, JSON.stringify({ ac_ids: specDefectAcIds }, null, 2) + "\n");
+        writeFileSync21(marker, JSON.stringify({ ac_ids: specDefectAcIds }, null, 2) + "\n");
       } else {
         clearStoryAcs(consortDir, args.featureId, args.story);
-        if (existsSync31(marker)) rmSync9(marker, { force: true });
+        if (existsSync32(marker)) rmSync10(marker, { force: true });
       }
     }
     const iaDefectOpen = args.routedTo !== "ux-designer" && hasOpenReflectIaDefect(consortDir, args.story);
-    if (iaDefectOpen && args.gate !== "ia") rmSync9(storyIaCoverageJson(consortDir, args.featureId, args.story), { force: true });
+    if (iaDefectOpen && args.gate !== "ia") rmSync10(storyIaCoverageJson(consortDir, args.featureId, args.story), { force: true });
     const coHealRoles = scoped ? [] : args.gate === "ia" ? ["architect-reviewer"] : ["architect-reviewer", "test-strategist"];
     if (specDefectOpen) coHealRoles.unshift("spec-author");
     if (iaDefectOpen) coHealRoles.push("ux-designer");
@@ -10126,10 +10313,10 @@ function applyReviseSelfHeal(args) {
       if (role === args.routedTo) continue;
       try {
         const hb = handbackFile(consortDir, args.featureId, role, args.story);
-        mkdirSync18(dirname15(hb), { recursive: true });
+        mkdirSync19(dirname16(hb), { recursive: true });
         const gate = role === "architect-reviewer" ? "architecture" : role === "spec-author" ? "spec" : role === "ux-designer" ? "ia" : "test_list";
         const acIds = role === "spec-author" ? specDefectAcIds : void 0;
-        writeFileSync20(hb, composeReviseBrief({ smell: args.smell, gate, reason: args.reason, acIds }));
+        writeFileSync21(hb, composeReviseBrief({ smell: args.smell, gate, reason: args.reason, acIds }));
       } catch {
       }
     }
@@ -10151,7 +10338,7 @@ function applyReviseSelfHeal(args) {
 
 // consort/gates/sprint-gates.ts
 init_esm_shims();
-import { existsSync as existsSync32, mkdirSync as mkdirSync19, readFileSync as readFileSync32, renameSync as renameSync2, unlinkSync as unlinkSync3, writeFileSync as writeFileSync21 } from "fs";
+import { existsSync as existsSync33, mkdirSync as mkdirSync20, readFileSync as readFileSync33, renameSync as renameSync2, unlinkSync as unlinkSync3, writeFileSync as writeFileSync22 } from "fs";
 var SPRINT_GATES_SCHEMA_VERSION = 1;
 var PLAN_GATE_ARTIFACT = "feature-proposals.md";
 function defaultSprintGatesState(sprint) {
@@ -10167,10 +10354,10 @@ function sprintGatesFile(consortDir, sprint) {
 function readSprintGates(sprint, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
   const file = sprintGatesFile(consortDir, sprint);
-  if (!existsSync32(file)) return defaultSprintGatesState(sprint);
+  if (!existsSync33(file)) return defaultSprintGatesState(sprint);
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync32(file, "utf8"));
+    parsed = JSON.parse(readFileSync33(file, "utf8"));
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`sprint gates.json at ${file} is not valid JSON: ${cause}`);
@@ -10184,10 +10371,10 @@ function readSprintGates(sprint, opts = {}) {
 }
 function writeSprintGates(state, opts = {}) {
   const consortDir = opts.consortDir ?? resolveConsortDir();
-  mkdirSync19(sprintDir(consortDir, state.sprint), { recursive: true });
+  mkdirSync20(sprintDir(consortDir, state.sprint), { recursive: true });
   const file = sprintGatesJson(consortDir, state.sprint);
   const tmp = `${file}.tmp.${process.pid}.${Date.now()}`;
-  writeFileSync21(tmp, JSON.stringify(state, null, 2) + "\n", "utf8");
+  writeFileSync22(tmp, JSON.stringify(state, null, 2) + "\n", "utf8");
   try {
     renameSync2(tmp, file);
   } catch (err) {
@@ -10203,10 +10390,10 @@ function approveSprintPlanGate(args) {
   if (args.approver.length === 0) return { ok: false, reason: "approver must not be empty" };
   const consortDir = args.consortDir ?? resolveConsortDir();
   const file = featureProposalsMd(consortDir);
-  if (!existsSync32(file)) {
+  if (!existsSync33(file)) {
     return { ok: false, reason: `${PLAN_GATE_ARTIFACT} not found (no sprint plan to review)` };
   }
-  const content = readFileSync32(file, "utf8");
+  const content = readFileSync33(file, "utf8");
   const conf = checkArtifactConformance(PLAN_GATE_ARTIFACT, content);
   if (!conf.ok) {
     return { ok: false, reason: `${PLAN_GATE_ARTIFACT} not conformant: ${(conf.violations ?? []).join("; ")}` };
@@ -10239,13 +10426,13 @@ function approveSprintPlanGate(args) {
 
 // consort/gates/intake-gate.ts
 init_esm_shims();
-import { mkdirSync as mkdirSync20, writeFileSync as writeFileSync22 } from "fs";
-import { dirname as dirname16 } from "path";
+import { mkdirSync as mkdirSync21, writeFileSync as writeFileSync23 } from "fs";
+import { dirname as dirname17 } from "path";
 function approveIntakeGate(consortDir, approver) {
   const dir = consortDir ?? resolveConsortDir();
   const marker = intakeApprovedMarker(dir);
-  mkdirSync20(dirname16(marker), { recursive: true });
-  writeFileSync22(marker, `${(/* @__PURE__ */ new Date()).toISOString()} approved-by:${approver}
+  mkdirSync21(dirname17(marker), { recursive: true });
+  writeFileSync23(marker, `${(/* @__PURE__ */ new Date()).toISOString()} approved-by:${approver}
 `);
   logGateApproved({ consortDir: dir, gate: "intake", approver });
 }

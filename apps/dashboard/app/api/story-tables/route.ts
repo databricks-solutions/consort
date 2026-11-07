@@ -28,43 +28,100 @@ export const revalidate = 0;
 
 const SNAPSHOT_FILE = "table-snapshots.jsonl";
 const INTERACTIONS_FILE = "test-interactions.jsonl";
+const AGENT_LOG_FILE = "agent-log.jsonl";
 
-
-/** Per-test RETRIEVED/STORED rows (the precise capture written by the app's per-request events —
- *  app/consort_capture.py), grouped by table. Unlike the whole-table snapshot, these are exactly the
- *  rows THIS test read or wrote. Returns a Map<table, {read, stored}>. */
-function readInteractionsForTest(testId: string, atTs: string, feature: string, story: string): Map<string, { read: Record<string, unknown>[]; stored: Record<string, unknown>[] }> {
-  const byTable = new Map<string, { read: Record<string, unknown>[]; stored: Record<string, unknown>[] }>();
-  const abs = resolveContained(consortDir(), INTERACTIONS_FILE);
-  if (!abs || !testId) return byTable;
+/** Has test `testId` GREENED for this feature+story by the playhead? The authoritative signal is the
+ *  STAMPED `test.result` trail in the agent-log (status green|refactored). A test's table records must
+ *  NOT appear before it greens at the playhead — a seeded-but-RED or not-yet-run test shows nothing,
+ *  and the rows surface only from the green point onward (then the `atTs` capture filter walks the
+ *  history through scrubbing). At the live edge (atTs empty) any green result counts. This closes the
+ *  "records for a test before it's done" defect: a RED cycle writes real seed rows (the no-mock path),
+ *  but the view must stay empty until the test actually passes at the viewed moment. */
+function testGreenedBy(testId: string, feature: string, story: string, atTs: string): boolean {
+  if (!testId) return false;
+  const abs = resolveContained(consortDir(), AGENT_LOG_FILE);
+  if (!abs) return false;
   let text: string;
   try {
     text = readFileSync(abs, "utf8");
   } catch {
-    return byTable;
+    return false;
   }
-  const seen = new Set<string>(); // dedup identical (op,table,row) lines across requests
   for (const line of text.split("\n")) {
     const s = line.trim();
     if (!s) continue;
     try {
-      const o = JSON.parse(s) as { test_id?: string; table?: string; op?: string; row?: Record<string, unknown>; ts?: string; feature_id?: string; story_id?: string };
-      if (o.test_id !== testId || typeof o.table !== "string" || !o.row) continue;
-      // Same feature+story scope as the snapshots — a per-story test id can't borrow another story's
-      // interactions (back-compat: a line without feature_id/story_id is kept, matched by test_id).
-      if (!inScope({ featureId: o.feature_id, storyId: o.story_id }, feature, story)) continue;
-      // Scrubber-faithful: skip interactions AFTER the playhead so a test's rows appear only once the
-      // playhead reaches the moment it ran — a test that executes LATER in the run shows nothing here.
-      if (atTs && typeof o.ts === "string" && o.ts > atTs) continue;
-      const key = `${o.op}\u0000${o.table}\u0000${JSON.stringify(o.row)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const entry = byTable.get(o.table) ?? { read: [], stored: [] };
-      (o.op === "write" ? entry.stored : entry.read).push(o.row);
-      byTable.set(o.table, entry);
+      const o = JSON.parse(s) as { event?: string; timestamp?: string; metadata?: { test_id?: string; status?: string; feature_id?: string; story_id?: string } };
+      if (o.event !== "test.result") continue;
+      const m = o.metadata ?? {};
+      if (m.test_id !== testId) continue;
+      if (m.status !== "green" && m.status !== "refactored") continue;
+      if (!inScope({ featureId: m.feature_id, storyId: m.story_id }, feature, story)) continue;
+      if (atTs && typeof o.timestamp === "string" && o.timestamp > atTs) continue;
+      return true;
     } catch {
       continue;
     }
+  }
+  return false;
+}
+
+
+interface InteractionLine {
+  test_id?: string;
+  table?: string;
+  op?: string;
+  row?: Record<string, unknown>;
+  ts?: string;
+  feature_id?: string;
+  story_id?: string;
+}
+
+/** Read the whole interactions log once (app/consort_capture.py per-request events). */
+function readAllInteractions(): InteractionLine[] {
+  const abs = resolveContained(consortDir(), INTERACTIONS_FILE);
+  if (!abs) return [];
+  let text: string;
+  try {
+    text = readFileSync(abs, "utf8");
+  } catch {
+    return [];
+  }
+  const out: InteractionLine[] = [];
+  for (const line of text.split("\n")) {
+    const s = line.trim();
+    if (!s) continue;
+    try {
+      out.push(JSON.parse(s) as InteractionLine);
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+/** Per-test RETRIEVED/STORED rows (the precise capture written by the app's per-request events —
+ *  app/consort_capture.py), grouped by table. Unlike the whole-table snapshot, these are exactly the
+ *  rows THIS test read or wrote. Returns a Map<table, {read, stored}>. */
+function readInteractionsForTest(all: InteractionLine[], testId: string, atTs: string, feature: string, story: string, attributionActive: boolean): Map<string, { read: Record<string, unknown>[]; stored: Record<string, unknown>[] }> {
+  const byTable = new Map<string, { read: Record<string, unknown>[]; stored: Record<string, unknown>[] }>();
+  if (!testId) return byTable;
+  const seen = new Set<string>(); // dedup identical (op,table,row) lines across requests
+  for (const o of all) {
+    if (o.test_id !== testId || typeof o.table !== "string" || !o.row) continue;
+    // Same feature+story scope as the snapshots — a per-story test id can't borrow another story's
+    // interactions. Unstamped lines are kept only in a pre-attribution corpus (see inScope): once this
+    // feature stamps its captures, a `(None,None)` line is a foreign leftover, not this test's.
+    if (!inScope({ featureId: o.feature_id, storyId: o.story_id }, feature, story, attributionActive)) continue;
+    // Scrubber-faithful: skip interactions AFTER the playhead so a test's rows appear only once the
+    // playhead reaches the moment it ran — a test that executes LATER in the run shows nothing here.
+    if (atTs && typeof o.ts === "string" && o.ts > atTs) continue;
+    const key = `${o.op}\u0000${o.table}\u0000${JSON.stringify(o.row)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const entry = byTable.get(o.table) ?? { read: [], stored: [] };
+    (o.op === "write" ? entry.stored : entry.read).push(o.row);
+    byTable.set(o.table, entry);
   }
   return byTable;
 }
@@ -203,9 +260,26 @@ export async function GET(req: NextRequest) {
   const design = readDbDesign(feature);
   if (!design) return NextResponse.json({ available: false, reason: "no db-design.json" });
 
-  const all = readAllSnapshots().filter((e) => (!atTs || e.ts <= atTs) && inScope(e, feature, story));
+  // Gate: a test's records appear only once it has GREENED at the playhead. A RED cycle seeds real rows
+  // (the no-mock path writes to the real DB), but showing them while the test is still RED/pending reads
+  // as "records before the test is done". No green test.result ≤ the playhead ⇒ empty, with the schema
+  // still available for context. Once green, the rows surface and the atTs filter below walks them.
+  if (!testGreenedBy(testId, feature, story, atTs)) {
+    return NextResponse.json({ available: true, testId, tables: [], note: "not green at this playhead" });
+  }
+
+  const rawSnaps = readAllSnapshots();
+  const rawInteractions = readAllInteractions();
+  // Attribution is "active" for a feature once ANY of its captures carry a feature stamp (post the
+  // scm-utils attribution fix). From that point an UNSTAMPED line is a legacy/foreign leftover, not
+  // this feature's — so it must not leak into a reused test id (a RED F2/S2 T32 showing F1/S1's rows).
+  // Scoped PER-FEATURE so a feature that ran entirely pre-attribution (all lines unstamped) still
+  // renders its own captures by id (no regression). Snapshot (pytest) AND interaction (app) stamps
+  // are checked because a component-only story may stamp interactions but write no whole-table snapshot.
+  const attributionActive = rawSnaps.some((e) => e.featureId === feature) || rawInteractions.some((o) => o.feature_id === feature);
+  const all = rawSnaps.filter((e) => (!atTs || e.ts <= atTs) && inScope(e, feature, story, attributionActive));
   const byTable = snapshotForTest(all, testId);
-  const interactions = readInteractionsForTest(testId, atTs, feature, story); // precise per-test read/stored rows
+  const interactions = readInteractionsForTest(rawInteractions, testId, atTs, feature, story, attributionActive); // precise per-test read/stored rows
 
   // Tables to show = those the story structurally changes (schema_changes) UNION those the VIEWED
   // TEST actually captured a snapshot for OR touched (read/stored). The union is what makes READ-ONLY

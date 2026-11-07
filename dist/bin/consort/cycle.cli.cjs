@@ -3262,8 +3262,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path3) {
-      let input = path3;
+    function removeDotSegments(path4) {
+      let input = path4;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3516,8 +3516,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path3, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path3 && path3 !== "/" ? path3 : void 0;
+        const [path4, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path4 && path4 !== "/" ? path4 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6696,6 +6696,7 @@ var architectureJson = (tdd, f) => (0, import_node_path.join)(featureResolved(td
 var dbDesignJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "db-design.json");
 var featureTestListJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "test-list.json");
 var featureTestListMd = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "test-list.md");
+var pipelineJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "pipeline.json");
 var featureNfrsMd = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "nfrs.md");
 var storiesDir = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "stories");
 var storyDir = (tdd, f, s) => (0, import_node_path.join)(storiesDir(tdd, f), s);
@@ -7478,6 +7479,28 @@ function checkJsdomBrowserAssertion(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkMockPrescription(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const prescribesMock = /\bmock(s|ed|ing)?\b|\bstub(s|bed|bing)?\b/i;
+  const negatesMock = /\b(no|not|never|without|real)\b[^.]{0,30}\b(mock|stub)/i;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const d = it.description ?? "";
+    if (prescribesMock.test(d) && !negatesMock.test(d)) {
+      violations.push(
+        `test item ${it.id ?? "?"} PRESCRIBES a mock/stub in its description ("${d.slice(0, 90)}\u2026") \u2014 the no-mock policy requires behavior/client/component tests to hit the REAL backend against the paired-branch DB. Re-author a BEHAVIORAL description (assert the observable outcome; the test's /api calls hit the real service), never a mocked/stubbed endpoint. (Only a pure client-unit test of the fetch wrapper itself may mock \u2014 that is NOT a test-list item.)`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkTestlistWholeTableAggregate(testListJson) {
   let tl;
   try {
@@ -7502,13 +7525,13 @@ function checkTestlistWholeTableAggregate(testListJson) {
 }
 function normalizeEndpoint(tok) {
   const [rawPath, rawQuery = ""] = tok.toLowerCase().split("?");
-  const path3 = rawPath.split("/").map((s) => s !== "" && (/\d/.test(s) || /^\{.*\}$/.test(s)) ? "{param}" : s).join("/").replace(/\/+$/, "");
+  const path4 = rawPath.split("/").map((s) => s !== "" && (/\d/.test(s) || /^\{.*\}$/.test(s)) ? "{param}" : s).join("/").replace(/\/+$/, "");
   const keys = /* @__PURE__ */ new Set();
   for (const kv of rawQuery.split("&")) {
     const k = kv.split("=")[0]?.trim();
     if (k) keys.add(k);
   }
-  return { path: path3, keys };
+  return { path: path4, keys };
 }
 var API_ENDPOINT_RE = /\/api\/[A-Za-z0-9_{}/-]+(?:\?[A-Za-z0-9_=&{}%<>-]*)?/g;
 function extractApiEndpoints(text) {
@@ -7525,13 +7548,13 @@ function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
   const keysByPath = /* @__PURE__ */ new Map();
   const resourceSegs = /* @__PURE__ */ new Set();
   for (const d of declaredEndpoints) {
-    const { path: path3, keys } = normalizeEndpoint(d);
-    if (!path3.startsWith("/api/")) continue;
-    declaredPaths.add(path3);
-    const set = keysByPath.get(path3) ?? /* @__PURE__ */ new Set();
+    const { path: path4, keys } = normalizeEndpoint(d);
+    if (!path4.startsWith("/api/")) continue;
+    declaredPaths.add(path4);
+    const set = keysByPath.get(path4) ?? /* @__PURE__ */ new Set();
     for (const k of keys) set.add(k);
-    keysByPath.set(path3, set);
-    const segs = path3.split("/");
+    keysByPath.set(path4, set);
+    const segs = path4.split("/");
     for (let i = 0; i < segs.length - 1; i++) if (segs[i + 1] === "{param}" && segs[i]) resourceSegs.add(segs[i]);
   }
   if (declaredPaths.size === 0) return { ok: true };
@@ -7542,19 +7565,19 @@ function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
     if (it.kind !== "behavior" && it.kind !== "client" && it.kind !== "component") continue;
     const desc = it.description ?? "";
     for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
-      const { path: path3, keys } = normalizeEndpoint(tok);
-      if (!declaredPaths.has(path3)) {
+      const { path: path4, keys } = normalizeEndpoint(tok);
+      if (!declaredPaths.has(path4)) {
         violations.push(
           `test item ${it.id ?? "?"} asserts endpoint "${tok}" whose path is not in the architecture's declared API surface (declared: ${declaredList}). Re-target it to a declared endpoint.`
         );
         if (typeof it.ac_id === "string") acIds.add(it.ac_id);
         break;
       }
-      const declaredKeys = keysByPath.get(path3) ?? /* @__PURE__ */ new Set();
+      const declaredKeys = keysByPath.get(path4) ?? /* @__PURE__ */ new Set();
       const drift = [...keys].find((k) => !declaredKeys.has(k) && (resourceSegs.has(k) || resourceSegs.has(`${k}s`)));
       if (drift) {
         violations.push(
-          `test item ${it.id ?? "?"} queries "${tok}", but "${drift}" has a dedicated endpoint (/api/${drift}s/{${drift}}) \u2014 the architecture declares ${path3} without it. Re-target to the dedicated ${drift} endpoint.`
+          `test item ${it.id ?? "?"} queries "${tok}", but "${drift}" has a dedicated endpoint (/api/${drift}s/{${drift}}) \u2014 the architecture declares ${path4} without it. Re-target to the dedicated ${drift} endpoint.`
         );
         if (typeof it.ac_id === "string") acIds.add(it.ac_id);
         break;
@@ -7620,7 +7643,7 @@ function checkTestlistScenarioFileCoherence(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
-function checkPersistenceCoverage(testListJson, architectureJson2) {
+function checkPersistenceCoverage(testListJson, architectureJson2, dbDesignJson2) {
   let arch;
   try {
     arch = JSON.parse(architectureJson2);
@@ -7628,7 +7651,7 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
     return { ok: true };
   }
   if (arch.service_backed !== true) return { ok: true };
-  const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0);
+  const invariants = (arch.persistence_invariants ?? []).filter((i) => !!i && typeof i.id === "string" && i.id.length > 0);
   if (invariants.length === 0) return { ok: true };
   let tl;
   try {
@@ -7637,7 +7660,9 @@ function checkPersistenceCoverage(testListJson, architectureJson2) {
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
   const covered = new Set((tl.items ?? []).map((i) => i.invariant_id).filter((x) => typeof x === "string" && x.length > 0));
-  const uncovered = invariants.map((i) => i.id).filter((id) => !covered.has(id));
+  const realizing = dbDesignJson2 ? invariantRealizingStory(architectureJson2, dbDesignJson2) : null;
+  const demanded = invariants.filter((i) => realizing === null || i.type === "transactional" || realizing.has(i.id));
+  const uncovered = demanded.map((i) => i.id).filter((id) => !covered.has(id));
   if (uncovered.length > 0) {
     return {
       ok: false,
@@ -7678,6 +7703,81 @@ function checkMigrationReversibleShape(testListJson, architectureJson2) {
       `migration_reversible invariant ${inv.id} is covered only by FORWARD-ONLY test-list item(s) [${ids}] \u2014 none describes a downgrade round-trip. A migration_reversible invariant MUST be verified by a ROUND-TRIP: downgrade to the migration-under-test's OWN down_revision, then upgrade head, and assert reversibility (own-table \u2192 schema recreated; pre-existing table \u2192 seed before, rows unchanged after). A forward-only "seed then upgrade head" test does not exercise reversibility and is unsatisfiable on an already-migrated branch. Re-author the covering item as an explicit round-trip (carry @pytest.mark.migration), OR retag ${inv.id} onto the round-trip item that performs it. See navigator.md (case A/B) / test-strategy.md.`
     );
     for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkTransactionalShape(testListJson, architectureJson2) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const transactional = (arch.persistence_invariants ?? []).filter(
+    (i) => i && typeof i.id === "string" && i.id.length > 0 && i.type === "transactional"
+  );
+  if (transactional.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const inv of transactional) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) continue;
+    if (covering.some((it) => describesAtomicityRollback(it.description ?? ""))) continue;
+    const ids = covering.map((it) => it.id ?? "?").join(", ");
+    violations.push(
+      `transactional invariant ${inv.id} is covered only by item(s) [${ids}] that do NOT describe an ATOMICITY/ROLLBACK test \u2014 a transactional invariant MUST be verified by FORCING a mid-transaction failure and asserting NEITHER write persists (e.g. patch the commit/second write to raise, then assert the row-update AND the audit row both rolled back \u2014 the F2 T19 shape), NOT a migration downgrade/upgrade round-trip. Re-author the covering item as an atomicity test, OR retag ${inv.id} onto the item that performs it. See test-strategy.md / navigator.md.`
+    );
+    for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+function checkStoryPersistenceCoverage(storyTestListJson2, architectureJson2, ownedInvariantIds) {
+  if (ownedInvariantIds.length === 0) return { ok: true };
+  const owned = new Set(ownedInvariantIds);
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const invariants = (arch.persistence_invariants ?? []).filter(
+    (i) => !!i && typeof i.id === "string" && i.id.length > 0 && owned.has(i.id)
+  );
+  if (invariants.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(storyTestListJson2);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  const shapeOk = (type, desc) => type === "transactional" ? describesAtomicityRollback(desc) : type === "migration_reversible" ? describesMigrationRoundTrip(desc) : true;
+  for (const inv of invariants) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) {
+      violations.push(
+        `persistence_invariant ${inv.id}${inv.table ? ` (${inv.type ?? "?"} on ${inv.table})` : ""} is realized by this story but has NO covering test-list item (invariant_id) in this story's list. Add a covering test \u2014 or TAG the existing test that already verifies it \u2014 with invariant_id=${inv.id}` + (inv.type === "transactional" ? ` (a transactional invariant needs an atomicity/rollback test: force a mid-transaction failure, assert NEITHER write persists)` : inv.type === "migration_reversible" ? ` (a migration_reversible invariant needs a downgrade\u2192upgrade round-trip)` : ``) + `. See test-strategy.md.`
+      );
+      continue;
+    }
+    if (!covering.some((it) => shapeOk(inv.type, it.description ?? ""))) {
+      const ids = covering.map((it) => it.id ?? "?").join(", ");
+      violations.push(
+        `persistence_invariant ${inv.id} (${inv.type ?? "?"}) is covered only by wrong-shaped item(s) [${ids}] for its type \u2014 ` + (inv.type === "transactional" ? `it needs an ATOMICITY/ROLLBACK test (force a mid-transaction failure, assert neither write persists), not a migration round-trip` : `it needs a downgrade\u2192upgrade ROUND-TRIP`) + `. Re-author the covering item for the right shape (or retag ${inv.id} onto the item that performs it). See test-strategy.md.`
+      );
+      for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
@@ -7984,9 +8084,9 @@ function checkSchemaChangeStoryRealizes(schemaChanges, storyLayers) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
-function canonicalArtifactName(path3) {
-  const base = (0, import_path5.basename)(path3);
-  if ((0, import_path5.basename)((0, import_path5.dirname)(path3)) === "acs" && base.endsWith(".json")) return "ac.json";
+function canonicalArtifactName(path4) {
+  const base = (0, import_path5.basename)(path4);
+  if ((0, import_path5.basename)((0, import_path5.dirname)(path4)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
 }
 function checkMigrationPreservationClass(architectureJson2, dbDesignJson2) {
@@ -8107,6 +8207,15 @@ function describesMigrationRoundTrip(desc) {
   // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
   // as forward-only — the description-fragility that must not bounce a correct test.
   /\bdown\s*[-/→>]+\s*up\b/i.test(desc);
+}
+function describesAtomicityRollback(desc) {
+  const d = desc.toLowerCase();
+  return /\broll\s*back\b|\brolls?\s*back\b|\brolled\s*back\b/.test(d) || /\bneither\b[^.]*\b(persist|written|writes|commit|row|saved|inserted)\b/.test(d) || /\b(transaction|commit|write|insert|update)\b[^.]*\bfail/.test(d) || /\beither\b[^.]*\bfail/.test(d) || /\batomic/.test(d) && /\b(fail|roll|neither|both)\b/.test(d) || // READ-ONLY flavor of a `transactional` invariant: the operation runs in a read-only unit of work
+  // (it performs NO writes), e.g. F5's PI25-count-read-only. Its correct covering test asserts the
+  // transaction writes nothing / leaves the tables unchanged — a valid transactional shape, not an
+  // atomicity/rollback one. Keyed narrowly (explicit read-only / writes-nothing / no-row-written) so
+  // a mere incidental "unchanged" aside cannot satisfy a genuine atomicity invariant.
+  /\bread[-\s]?only\b/.test(d) || /\bwrites?\s+nothing\b/.test(d) || /\bno\b[^.]*\b(row|write|insert|adjustment)s?\b[^.]*\b(written|inserted|created|persist|made)\b/.test(d);
 }
 function isMigrationReversibilityDescription(desc) {
   const mentionsDowngrade = /\bdowngrad\w*/i;
@@ -8348,6 +8457,67 @@ function checkApiContractConsistency(architectureJson2, acJsons) {
     }
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+var REQUEST_MUTATION_METHODS = /* @__PURE__ */ new Set(["POST", "PUT", "PATCH", "DELETE"]);
+function checkRequestFieldReconciliation(architectureJson2, acsByStory, storyOrder) {
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  const contracts = (arch.api_contracts ?? []).filter(
+    (c) => c && typeof c.id === "string" && Array.isArray(c.request_fields) && c.request_fields.length > 0
+  );
+  if (contracts.length === 0) return { ok: true };
+  const writersByContract = /* @__PURE__ */ new Map();
+  const acIdsByContractWriter = /* @__PURE__ */ new Map();
+  for (const { story, acJson: acJson2 } of acsByStory) {
+    let ac;
+    try {
+      ac = JSON.parse(acJson2);
+    } catch {
+      continue;
+    }
+    const ref = ac.api_contract_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    const set = writersByContract.get(ref) ?? /* @__PURE__ */ new Set();
+    set.add(story);
+    writersByContract.set(ref, set);
+    const key = `${ref}|${story}`;
+    if (!acIdsByContractWriter.has(key) && typeof ac.id === "string") acIdsByContractWriter.set(key, ac.id);
+  }
+  const orderIdx = (s) => {
+    const i = storyOrder.indexOf(s);
+    return i < 0 ? Number.POSITIVE_INFINITY : i;
+  };
+  const violations = [];
+  const flaggedAcIds = /* @__PURE__ */ new Set();
+  for (const c of contracts) {
+    if (!REQUEST_MUTATION_METHODS.has(String(c.method ?? "").toUpperCase())) continue;
+    const writers = writersByContract.get(c.id) ?? /* @__PURE__ */ new Set();
+    for (const f of c.request_fields ?? []) {
+      if (f?.required !== true || typeof f.name !== "string" || f.name.length === 0) continue;
+      const since = f.since_story;
+      if (typeof since !== "string" || since.length === 0) {
+        violations.push(
+          `${c.id}.request_fields "${f.name}" is required:true but declares no since_story \u2014 set since_story to the story that made it required (its ORIGIN story if required from the start), so prior writer stories can be reconciled (checkRequestFieldReconciliation).`
+        );
+        continue;
+      }
+      const sinceIdx = orderIdx(since);
+      const reconciled = new Set(Array.isArray(f.reconciled_stories) ? f.reconciled_stories : []);
+      const unreconciled = [...writers].filter((w) => w !== since && orderIdx(w) < sinceIdx && !reconciled.has(w)).sort();
+      for (const w of unreconciled) {
+        const acId = acIdsByContractWriter.get(`${c.id}|${w}`);
+        violations.push(
+          `${c.id} requires request field "${f.name}" from ${since} on, but prior writer story ${w}${acId ? ` (AC ${acId})` : ""} writes this endpoint without reconciling it \u2014 supply "${f.name}" in ${w}'s fixtures and add ${w} to ${c.id}.request_fields "${f.name}".reconciled_stories, or make the field required:false.`
+        );
+        if (acId) flaggedAcIds.add(acId);
+      }
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, ...flaggedAcIds.size ? { acIds: [...flaggedAcIds] } : {} };
 }
 function checkClientKindLayerCoherence(testListJson, acLayerById) {
   let tl;
@@ -8826,6 +8996,33 @@ function apiContractConsistencyReason(consortDir, featureId) {
   const r = checkApiContractConsistency(arch, acJsons);
   return r.ok ? null : `api-contract consistency failed: ${r.violations.join("; ")}`;
 }
+function requestFieldReconciliationReason(consortDir, featureId) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const fdir = featureResolved(consortDir, featureId);
+  const acsByStory = [];
+  const storiesDir2 = (0, import_node_path2.join)(fdir, "stories");
+  if ((0, import_node_fs.existsSync)(storiesDir2)) {
+    for (const s of (0, import_node_fs.readdirSync)(storiesDir2)) {
+      const acsDir2 = (0, import_node_path2.join)(storiesDir2, s, "acs");
+      if (!(0, import_node_fs.existsSync)(acsDir2)) continue;
+      for (const f of (0, import_node_fs.readdirSync)(acsDir2)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          acsByStory.push({ story: s, acJson: (0, import_node_fs.readFileSync)((0, import_node_path2.join)(acsDir2, f), "utf8") });
+        } catch {
+        }
+      }
+    }
+  }
+  let storyOrder = [];
+  try {
+    storyOrder = JSON.parse((0, import_node_fs.readFileSync)((0, import_node_path2.join)(fdir, "feature-spec.json"), "utf8")).stories ?? [];
+  } catch {
+  }
+  const r = checkRequestFieldReconciliation(arch, acsByStory, storyOrder);
+  return r.ok ? null : `request-contract reconciliation failed: ${r.violations.join("; ")}`;
+}
 var MUTATION_METHODS = /* @__PURE__ */ new Set(["POST", "PUT", "PATCH", "DELETE"]);
 function serviceRuleTaggedE2eReason(consortDir, featureId) {
   const arch = readArchitecture(consortDir, featureId);
@@ -9043,6 +9240,10 @@ function jsdomBrowserAssertionReason(testListJson) {
   const r = checkJsdomBrowserAssertion(testListJson);
   return r.ok ? null : `jsdom-vacuous-browser-assertion: ${r.violations.join("; ")}`;
 }
+function mockPrescriptionReason(testListJson) {
+  const r = checkMockPrescription(testListJson);
+  return r.ok ? null : `mock-prescription: ${r.violations.join("; ")}`;
+}
 function e2eCoverageReason(consortDir, featureId, testListJson) {
   const storiesDir2 = (0, import_node_path2.join)(featureDir2(consortDir, featureId), "stories");
   if (!(0, import_node_fs.existsSync)(storiesDir2)) return null;
@@ -9065,7 +9266,15 @@ function e2eCoverageReason(consortDir, featureId, testListJson) {
 function persistenceCoverageReason(consortDir, featureId, testListJson) {
   const arch = readArchitecture(consortDir, featureId);
   if (arch === void 0) return null;
-  const r = checkPersistenceCoverage(testListJson, arch);
+  const dbFile = dbDesignJson(consortDir, featureId);
+  const db = (0, import_node_fs.existsSync)(dbFile) ? (() => {
+    try {
+      return (0, import_node_fs.readFileSync)(dbFile, "utf8");
+    } catch {
+      return void 0;
+    }
+  })() : void 0;
+  const r = checkPersistenceCoverage(testListJson, arch, db);
   return r.ok ? null : `persistence coverage failed: ${r.violations.join("; ")}`;
 }
 function migrationReversibleShapeReason(consortDir, featureId, testListJson) {
@@ -9073,6 +9282,12 @@ function migrationReversibleShapeReason(consortDir, featureId, testListJson) {
   if (arch === void 0) return null;
   const r = checkMigrationReversibleShape(testListJson, arch);
   return r.ok ? null : `migration-reversibility shape failed: ${r.violations.join("; ")}`;
+}
+function transactionalShapeReason(consortDir, featureId, testListJson) {
+  const arch = readArchitecture(consortDir, featureId);
+  if (arch === void 0) return null;
+  const r = checkTransactionalShape(testListJson, arch);
+  return r.ok ? null : `transactional shape failed: ${r.violations.join("; ")}`;
 }
 function schemaChangeCoverageReason(consortDir, featureId, testListJson) {
   const dbFile = dbDesignJson(consortDir, featureId);
@@ -9250,6 +9465,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
       if (conventionsReason !== null) return { reason: conventionsReason };
       const apiContractReason = apiContractConsistencyReason(consortDir, featureId);
       if (apiContractReason !== null) return { reason: apiContractReason };
+      const requestContractReason = requestFieldReconciliationReason(consortDir, featureId);
+      if (requestContractReason !== null) return { reason: requestContractReason };
       const serviceRuleReason = serviceRuleTaggedE2eReason(consortDir, featureId);
       if (serviceRuleReason !== null) return { reason: serviceRuleReason };
       const serviceBacked = serviceBackedReason(consortDir, featureId);
@@ -9310,6 +9527,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (persistenceReason !== null) return { reason: persistenceReason };
         const reversibleShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlJson);
         if (reversibleShapeReason !== null) return { reason: reversibleShapeReason };
+        const txnShapeReason = transactionalShapeReason(consortDir, featureId, tlJson);
+        if (txnShapeReason !== null) return { reason: txnShapeReason };
         const schemaCoverageReason = schemaChangeCoverageReason(consortDir, featureId, tlJson);
         if (schemaCoverageReason !== null) return { reason: schemaCoverageReason };
         const distinctReason = invariantCoverageDistinctReason(consortDir, featureId, tlJson);
@@ -9318,6 +9537,8 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (e2eReason !== null) return { reason: e2eReason };
         const jsdomReason = jsdomBrowserAssertionReason(tlJson);
         if (jsdomReason !== null) return { reason: jsdomReason };
+        const mockReason = mockPrescriptionReason(tlJson);
+        if (mockReason !== null) return { reason: mockReason };
       }
       return conf;
     }
@@ -9352,8 +9573,12 @@ function resolveArtifactInputs(gate, fdir, promoteRef, consortDir, featureId) {
         if (pReason !== null) return { reason: `${pReason} [re-checked at the deploy gate \u2014 a persistence invariant was declared/realized after the test_list gate and is still uncovered; add its test (consort-pipeline repair) before accepting]` };
         const revShapeReason = migrationReversibleShapeReason(consortDir, featureId, tlForDeploy);
         if (revShapeReason !== null) return { reason: `${revShapeReason} [re-checked at the deploy gate \u2014 a migration_reversible invariant's covering test is forward-only; re-author it as a round-trip before accepting]` };
+        const txnShapeReasonDeploy = transactionalShapeReason(consortDir, featureId, tlForDeploy);
+        if (txnShapeReasonDeploy !== null) return { reason: `${txnShapeReasonDeploy} [re-checked at the deploy gate \u2014 a transactional invariant's covering test is not an atomicity/rollback test; re-author it (F2 T19 shape) before accepting]` };
         const dReason = invariantCoverageDistinctReason(consortDir, featureId, tlForDeploy);
         if (dReason !== null) return { reason: `${dReason} [re-checked at the deploy gate]` };
+        const rcReason = requestFieldReconciliationReason(consortDir, featureId);
+        if (rcReason !== null) return { reason: `${rcReason} [re-checked at the deploy gate \u2014 a request field was made required after the spec gate and a prior writer story is unreconciled; reconcile it before accepting]` };
       }
       return withConformance({ "deploy-evidence.json": evidence });
     }
@@ -9618,10 +9843,10 @@ function logCycleEvent(consortDir, event) {
   }
 }
 function logTestResults(consortDir, cycle, status, role) {
-  const streamed = status === "red" ? /* @__PURE__ */ new Set() : streamedTestIds(consortDir);
+  const alreadyLogged = status === "red" ? /* @__PURE__ */ new Set() : agentLoggedTestIds(consortDir, cycle.feature_id, cycle.story_id, status);
   const realTs = realTestTimestamps(consortDir, status);
   for (const testId of coveredTestIds(cycle)) {
-    if (streamed.has(testId)) continue;
+    if (alreadyLogged.has(testId)) continue;
     const ts = realTs.get(testId);
     try {
       emitAgentLogEvent(
@@ -9639,15 +9864,23 @@ function logTestResults(consortDir, cycle, status, role) {
     }
   }
 }
-function streamedTestIds(consortDir) {
+function agentLoggedTestIds(consortDir, featureId, storyId, status) {
   const out = /* @__PURE__ */ new Set();
   try {
-    const text = (0, import_fs10.readFileSync)((0, import_path10.join)(consortDir, "test-run.jsonl"), "utf8");
+    const text = (0, import_fs10.readFileSync)((0, import_path10.join)(consortDir, "agent-log.jsonl"), "utf8");
     for (const line of text.split("\n")) {
       const s = line.trim();
       if (!s) continue;
-      const o = JSON.parse(s);
-      if (typeof o.test_id === "string") out.add(o.test_id);
+      let o;
+      try {
+        o = JSON.parse(s);
+      } catch {
+        continue;
+      }
+      if (o.event !== "test.result") continue;
+      const md = o.metadata ?? {};
+      if (md.feature_id !== featureId || md.story_id !== storyId) continue;
+      if (md.status === status && typeof md.test_id === "string") out.add(md.test_id);
     }
   } catch {
   }
@@ -9891,7 +10124,9 @@ function writeEscalation(consortDir, esc) {
     ...esc.story_id ? { story_id: esc.story_id } : {},
     ...esc.ac_id ? { ac_id: esc.ac_id } : {},
     raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
-    how_to_resolve: `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
+    // A caller MAY supply a source-specific resolution (e.g. feature-conformance names the exact
+    // `consort-pipeline repair` command); otherwise the generic clear-with-resolve-escalation default.
+    how_to_resolve: esc.how_to_resolve ?? `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
   };
   fs2.mkdirSync(escalationsDir(consortDir), { recursive: true });
   fs2.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
@@ -10039,6 +10274,13 @@ var AUTHOR_LAYER_TEST_SMELLS = /* @__PURE__ */ new Set([
   // first failure instead of burning assess->repair rounds (the F6/S3 T44 class).
   "unpinned-schema-diff-baseline"
 ]);
+var RESILIENCE_TEST_SMELLS = /* @__PURE__ */ new Set([
+  "e2e-reread-without-confirmation",
+  "e2e-timing-dependent-wait"
+]);
+function resilienceViolations(result) {
+  return result.violations.filter((v) => RESILIENCE_TEST_SMELLS.has(v.smell));
+}
 var DEFAULT_TEST_DIRS = ["tests", "client/tests"];
 var DEFAULT_MIGRATION_DIRS2 = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var EXCLUDE_DIR = /(^|\/)(node_modules|\.git|\.venv|venv|__pycache__|dist)(\/|$)/;
@@ -10127,6 +10369,8 @@ var SMELL_FIX = {
   "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example \u2014 a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) \u2014 matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
   "unpinned-schema-diff-baseline": "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head \u2014 the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged.",
   "dropped-column-test-reference": "this TEST inserts into / selects / asserts a column that a CONTRACT migration in this feature DROPPED, and the file performs no downgrade \u2014 so it runs against HEAD where the column no longer exists and dies with a ProgrammingError ('column does not exist'), even though the app is correct (the F6/S3 cross-story supersession class: a prior story's test still references tracking_code after S3 drops it). `opt2` scopes the per-cycle backend suite to the current story, so a prior-story test like this is NOT run per-cycle and only fails LATER at the full deploy-verify as a HALT. Refactor the superseded reference: drop the dropped column from the INSERT/SELECT/assertion, or retarget it to the surviving columns (e.g. batch_number/serial_number). Do NOT re-add the column to the model or edit the migration to hide it. (A migration round-trip test that re-adds the column via its own downgrade is legitimate and is not flagged \u2014 this only flags pure-HEAD references.)",
+  "e2e-reread-without-confirmation": "this Playwright e2e asserts a value, RE-READS it (page.reload() or a page.goto() back to the view), then re-asserts the same value to prove PERSISTENCE \u2014 but it never awaits a SERVER-CONFIRMED signal before the re-read, so it races the still-in-flight write. The pre-re-read assertion is satisfied by the OPTIMISTIC UI (the row shows the new value before the write resolves), then the reload/goto fetches from the DB; when the re-read beats the commit the DB still has the OLD value and the test fails \u2014 intermittently in isolation (the write is fast), DETERMINISTICALLY under full-suite/CI load (the write is slow). A test that only passes on a retry is not resilient and gives the gate no signal (the F5 -> F2 @T78 class). Make it RESILIENT: before the re-read, await the server-CONFIRMED signal the app emits on a durable write \u2014 the success flash / a `*-success` (or `*-error`) status element / `page.waitForResponse(<the write endpoint>)` \u2014 exactly as the resilient sibling test does; THEN reload and re-assert. Never assert on an optimistic value and immediately re-read.",
+  "e2e-timing-dependent-wait": "this test waits a FIXED DURATION (page.waitForTimeout(n) / a bare setTimeout/sleep) instead of awaiting a CONDITION. A hardcoded sleep is flaky by construction: too short under load (the thing never happened yet -> fails) and wasteful otherwise \u2014 'sleep and hope'. It passes on a fast/idle machine and fails under full-suite/CI load, the same non-deterministic signal as a flaky test. Replace the fixed wait with an await of the actual condition: `await expect(locator).toBeVisible()` / `toHaveText(...)` (Playwright auto-waits with a timeout), `page.waitForResponse(<endpoint>)`, `page.waitForURL(...)`, or `page.waitForLoadState('networkidle')`. Never gate a test on wall-clock time.",
   "psycopg2-pgcode-attr": "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) \u2014 a psycopg2 attribute \u2014 but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap \u2014 no production/driver shim."
 };
 function collectDroppedColumns(projectDir, migrationDirs) {
@@ -10296,6 +10540,45 @@ function projectDeclaresPsycopg2(projectDir) {
   }
   return false;
 }
+function testBlockRanges(lines) {
+  const BLOCK_START = /^\s*(?:test|it)\s*\(/;
+  const starts = [];
+  lines.forEach((l, i) => {
+    if (BLOCK_START.test(l)) starts.push(i);
+  });
+  return starts.map((from, k) => [from, k + 1 < starts.length ? starts[k + 1] : lines.length]);
+}
+function e2eRereadWithoutConfirmation(lines) {
+  const out = [];
+  const REREAD = /\bpage\s*\.\s*(?:reload|goto)\s*\(/;
+  const VALUE_ASSERT = /\b(?:toHaveText|toHaveValue|toContainText)\s*\(/;
+  const CONFIRM = /data-flash|getByTestId\(\s*["'`][^"'`]*(?:success|error|confirm|saved|toast|status)[^"'`]*["'`]|waitForResponse|waitForLoadState/i;
+  for (const [from, to] of testBlockRanges(lines)) {
+    for (let i = from; i < to; i++) {
+      if (!REREAD.test(lines[i])) continue;
+      let confirmedBefore = false;
+      let valueBefore = false;
+      for (let j = from; j < i; j++) {
+        if (CONFIRM.test(lines[j])) confirmedBefore = true;
+        if (VALUE_ASSERT.test(lines[j])) valueBefore = true;
+      }
+      if (confirmedBefore) continue;
+      if (!valueBefore) continue;
+      let valueAfter = false;
+      for (let j = i + 1; j < to; j++) if (VALUE_ASSERT.test(lines[j])) valueAfter = true;
+      if (valueAfter) out.push(i + 1);
+    }
+  }
+  return out;
+}
+function e2eTimingDependentWait(lines) {
+  const out = [];
+  const TIMING = /\b(?:waitForTimeout|setTimeout)\s*\(|\bawait\s+sleep\s*\(/;
+  lines.forEach((l, i) => {
+    if (TIMING.test(l)) out.push(i + 1);
+  });
+  return out;
+}
 function checkTestSmells(args) {
   const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
   const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
@@ -10318,6 +10601,14 @@ function checkTestSmells(args) {
       const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
       const isPy = file.endsWith(".py");
       const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
+      if (isJs && /\.spec\.(ts|tsx|js|jsx|mjs)$/.test(file)) {
+        for (const ln of e2eRereadWithoutConfirmation(lines)) {
+          push("e2e-reread-without-confirmation", rel, ln, lines[ln - 1] ?? "page.reload()");
+        }
+        for (const ln of e2eTimingDependentWait(lines)) {
+          push("e2e-timing-dependent-wait", rel, ln, lines[ln - 1] ?? "waitForTimeout(...)");
+        }
+      }
       if (isPy && droppedCols.size > 0 && !/\bdowngrade\b/.test(body)) {
         for (const col of droppedCols) {
           for (const ln of liveReferenceLines(body, col)) {
@@ -11875,6 +12166,51 @@ ${reverts}
   return { clean: false, violations, remediation };
 }
 
+// consort/smells/reauthor-resilience.ts
+init_cjs_shims();
+var fs6 = __toESM(require("fs"), 1);
+var path3 = __toESM(require("path"), 1);
+function markerPath3(consortDir, featureId, story, ac) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return path3.join(fdir, "stories", story, `reauthor-resilience-${ac}.json`);
+}
+function readReauthorMarker(consortDir, featureId, story, ac) {
+  const file = markerPath3(consortDir, featureId, story, ac);
+  if (!file || !fs6.existsSync(file)) return void 0;
+  try {
+    return JSON.parse(fs6.readFileSync(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function writeReauthorMarker(consortDir, featureId, story, ac, flaggedTests, remediation) {
+  const file = markerPath3(consortDir, featureId, story, ac);
+  if (!file) return void 0;
+  const prior = readReauthorMarker(consortDir, featureId, story, ac);
+  const marker = {
+    version: 1,
+    ac_id: ac,
+    flagged_tests: flaggedTests,
+    remediation,
+    attempts: prior?.attempts ?? 0
+  };
+  fs6.mkdirSync(path3.dirname(file), { recursive: true });
+  fs6.writeFileSync(file, JSON.stringify(marker, null, 2) + "\n", "utf8");
+  return file;
+}
+function markReauthored(consortDir, featureId, story, ac) {
+  const file = markerPath3(consortDir, featureId, story, ac);
+  const m = readReauthorMarker(consortDir, featureId, story, ac);
+  if (!file || !m) return;
+  m.attempts += 1;
+  fs6.writeFileSync(file, JSON.stringify(m, null, 2) + "\n", "utf8");
+}
+function clearReauthorMarker(consortDir, featureId, story, ac) {
+  const file = markerPath3(consortDir, featureId, story, ac);
+  if (file && fs6.existsSync(file)) fs6.rmSync(file, { force: true });
+}
+
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
@@ -12258,6 +12594,8 @@ async function greenOpenCycle(args) {
   });
   let testSmellRemediation;
   let authorLayerTestSmell = false;
+  let resilienceSmellRemediation;
+  let resilienceFlaggedTests = [];
   if (!result.passed && !consortEnv("REPLAY_BUILD_DIR") && isProvisioningFaultSummary(result.summary)) {
     const retry = await verify({ projectDir: (0, import_path12.dirname)(consortDir), consortDir, featureId, story, branchId: open.branch_id, cycleLayer: open.layer });
     if (retry.passed) {
@@ -12298,6 +12636,11 @@ async function greenOpenCycle(args) {
           result = { passed: false, summary: smells.remediation };
           testSmellRemediation = smells.remediation;
           authorLayerTestSmell = smells.violations.some((v) => AUTHOR_LAYER_TEST_SMELLS.has(v.smell));
+          const resil = resilienceViolations(smells);
+          if (resil.length > 0) {
+            resilienceSmellRemediation = smells.remediation;
+            resilienceFlaggedTests = [...new Set(resil.map((v) => v.file))];
+          }
         }
       } catch {
       }
@@ -12354,9 +12697,30 @@ async function greenOpenCycle(args) {
         if (!failSmells.clean && failSmells.remediation) {
           testSmellRemediation = failSmells.remediation;
           authorLayerTestSmell = failSmells.violations.some((v) => AUTHOR_LAYER_TEST_SMELLS.has(v.smell));
+          const resil = resilienceViolations(failSmells);
+          if (resil.length > 0) {
+            resilienceSmellRemediation = failSmells.remediation;
+            resilienceFlaggedTests = [...new Set(resil.map((v) => v.file))];
+          }
         }
       } catch {
       }
+    }
+    if (resilienceSmellRemediation && open.ac_id) {
+      const prior = readReauthorMarker(consortDir, featureId, story, open.ac_id);
+      if ((prior?.attempts ?? 0) >= 1) {
+        const escalation2 = writeEscalation(consortDir, {
+          source: "test-authoring-smell",
+          reason: `A test-RESILIENCE smell for ${open.test_id} (${open.ac_id}) in ${featureId}/${story} PERSISTS after one Navigator re-author \u2013 raising to HIL with the remediation instead of looping.
+${resilienceSmellRemediation}`,
+          feature_id: featureId,
+          story_id: story,
+          ac_id: open.ac_id
+        });
+        return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, escalated: true, escalation: escalation2, summary: result.summary };
+      }
+      writeReauthorMarker(consortDir, featureId, story, open.ac_id, resilienceFlaggedTests, resilienceSmellRemediation);
+      return { recorded: false, cycleId: open.cycle_id, testId: open.test_id, needsReauthor: true, summary: result.summary };
     }
     if (authorLayerTestSmell && testSmellRemediation) {
       const escalation2 = writeEscalation(consortDir, {
@@ -12842,6 +13206,7 @@ var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
 // consort/smells/testlist-conformance.ts
 init_cjs_shims();
 var import_fs15 = require("fs");
+var import_path13 = require("path");
 var TESTLIST_SMELL = "reflect-testlist-defect";
 function storyAcLayers(consortDir, featureId, story) {
   const acLayerById = {};
@@ -12888,6 +13253,107 @@ function testlistConformanceViolations(consortDir, featureId, story) {
   }
   return testlistConformanceForContent(consortDir, featureId, story, testListJson);
 }
+function featureStoryIds(consortDir, featureId) {
+  const dir = storiesDir(consortDir, featureId);
+  if (!(0, import_fs15.existsSync)(dir)) return [];
+  try {
+    return (0, import_fs15.readdirSync)(dir).filter((n) => {
+      try {
+        return (0, import_fs15.statSync)((0, import_path13.join)(dir, n)).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+function storyTestListItems(consortDir, featureId, story, current) {
+  let text;
+  if (current && current.story === story) {
+    text = current.json;
+  } else {
+    const p = storyTestListJson(consortDir, featureId, story);
+    if ((0, import_fs15.existsSync)(p)) {
+      try {
+        text = (0, import_fs15.readFileSync)(p, "utf8");
+      } catch {
+      }
+    }
+  }
+  if (!text) return [];
+  try {
+    const d = JSON.parse(text);
+    return Array.isArray(d.items) ? d.items : [];
+  } catch {
+    return [];
+  }
+}
+function invariantOwnerStories(consortDir, featureId, current, opts) {
+  const writePath = opts?.writePath === true;
+  const out = /* @__PURE__ */ new Map();
+  let archText;
+  let dbText;
+  try {
+    const p = architectureJson(consortDir, featureId);
+    if ((0, import_fs15.existsSync)(p)) archText = (0, import_fs15.readFileSync)(p, "utf8");
+  } catch {
+  }
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if ((0, import_fs15.existsSync)(p)) dbText = (0, import_fs15.readFileSync)(p, "utf8");
+  } catch {
+  }
+  if (archText === void 0) return out;
+  let arch;
+  try {
+    arch = JSON.parse(archText);
+  } catch {
+    return out;
+  }
+  const invariants = (arch.persistence_invariants ?? []).filter(
+    (i) => !!i && typeof i.id === "string" && i.id.length > 0
+  );
+  if (invariants.length === 0) return out;
+  const realizing = invariantRealizingStory(archText, dbText);
+  const storyIds = featureStoryIds(consortDir, featureId);
+  const itemsByStory = /* @__PURE__ */ new Map();
+  for (const s of storyIds) itemsByStory.set(s, storyTestListItems(consortDir, featureId, s, current));
+  for (const inv of invariants) {
+    const anchored = realizing.get(inv.id);
+    if (anchored) {
+      out.set(inv.id, anchored);
+      continue;
+    }
+    if (!writePath || !inv.table) {
+      out.set(inv.id, void 0);
+      continue;
+    }
+    let best;
+    let bestN = 0;
+    let tie = false;
+    for (const s of storyIds) {
+      const n = (itemsByStory.get(s) ?? []).filter(
+        (it) => it.invariant_id !== inv.id && (it.description ?? "").includes(inv.table)
+      ).length;
+      if (n > bestN) {
+        bestN = n;
+        best = s;
+        tie = false;
+      } else if (n === bestN && n > 0) {
+        tie = true;
+      }
+    }
+    out.set(inv.id, bestN > 0 && !tie ? best : void 0);
+  }
+  return out;
+}
+function storyOwnedInvariantIds(consortDir, featureId, story, storyTestListText) {
+  const owners = invariantOwnerStories(consortDir, featureId, { story, json: storyTestListText });
+  const ids = [];
+  for (const [id, owner] of owners) if (owner === story) ids.push(id);
+  return ids;
+}
 function testlistConformanceForContent(consortDir, featureId, story, testListJson) {
   const acLayerById = storyAcLayers(consortDir, featureId, story);
   let dbDesign;
@@ -12913,6 +13379,12 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
     checkTestlistComponentScenarioFile(testListJson),
+    // No-mock policy, enforced at the SOURCE of the test description: a component/behavior test that
+    // names a mock/stub of a service boundary (and does not negate it — "no mock", "real") is a
+    // design defect, since the policy is to hit the real backend + Lakebase branch. Caught here at the
+    // drive's pre-reflect self-check so the test-strategist re-authors the description BEFORE build —
+    // the gap that let F2/S2's T32 "fetch stubbed" reach the build lane (it was only in the gate guard).
+    checkMockPrescription(testListJson),
     checkTestlistMigrationRevision(testListJson),
     checkSchemaChangeOrphan(testListJson, dbDesign),
     // A migration-reversibility test must carry the schema_change_id it exercises, so the orphan
@@ -12931,7 +13403,15 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     // feature-level or sibling-story NFR from false-flagging before its story is designed.
     ...archJson !== void 0 ? [
       checkFitnessSingularCoverage(testListJson, archJson, { onlyStory: story }),
-      checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story })
+      checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story }),
+      // Story-scoped persistence-invariant coverage (the pre-reflect complement to the feature-wide
+      // checkPersistenceCoverage at the design-complete gate): a persistence invariant THIS story
+      // realizes must have a correctly-shaped covering item in this story's list. Ownership is the
+      // schema-change realizer, else a write-path anchor for an unmigrated table (the F2
+      // stock_records PI1/PI2 case). An owned-but-uncovered invariant flags the reflect-testlist
+      // -defect here so the revise-route self-heals it to the test-strategist BEFORE the build —
+      // instead of the feature-wide design-complete gate catching it late with a hard HIL halt.
+      checkStoryPersistenceCoverage(testListJson, archJson, storyOwnedInvariantIds(consortDir, featureId, story, testListJson))
     ] : []
   ]) {
     if (!r.ok) {
@@ -12942,6 +13422,7 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
   return violations.length === 0 ? null : { reason: violations.join("; "), acIds: [...acIds] };
 }
 function recordTestListGate(consortDir, featureId, story) {
+  const hits = [];
   const found = testlistConformanceViolations(consortDir, featureId, story);
   if (found === null) {
     resolveOpenSmells(consortDir, TESTLIST_SMELL, {
@@ -12949,26 +13430,138 @@ function recordTestListGate(consortDir, featureId, story) {
       kind: "cleared",
       note: "test-list now conforms to the deterministic structural checks"
     });
+  } else {
+    const hit = {
+      smell: TESTLIST_SMELL,
+      cycle_ids: [],
+      detail: `test-list conformance: ${found.reason}`,
+      story_id: story,
+      // Carry the flagged ac_id(s) so the revise self-heal scopes the re-author to
+      // exactly those ACs (a targeted patch, no whole-story architect re-annotate) — #4.
+      ...found.acIds.length > 0 ? { ac_ids: found.acIds } : {}
+    };
+    if (!hasOpenSmell(consortDir, TESTLIST_SMELL, story)) {
+      writeSmellsLog(consortDir, [hit]);
+      hits.push(hit);
+    }
+  }
+  for (const h of designCompleteCoverageHits(consortDir, featureId, story)) {
+    if (!hasOpenSmell(consortDir, TESTLIST_SMELL, h.story_id)) {
+      writeSmellsLog(consortDir, [h]);
+      hits.push(h);
+    }
+  }
+  return hits;
+}
+function isDesignCompletingStory(consortDir, featureId, story) {
+  let stories = [];
+  try {
+    stories = JSON.parse((0, import_fs15.readFileSync)(featureSpecJson(consortDir, featureId), "utf8")).stories ?? [];
+  } catch {
+    return false;
+  }
+  if (stories.length === 0) return false;
+  let pipe;
+  try {
+    pipe = JSON.parse((0, import_fs15.readFileSync)(pipelineJson(consortDir, featureId), "utf8"));
+  } catch {
+    return false;
+  }
+  return stories.every((s) => s === story || pipe.stories?.[s]?.gate?.status === "approved");
+}
+function featureUncoveredInvariantIds(consortDir, featureId) {
+  let archText, tlText;
+  try {
+    archText = (0, import_fs15.readFileSync)(architectureJson(consortDir, featureId), "utf8");
+    tlText = (0, import_fs15.readFileSync)(featureTestListJson(consortDir, featureId), "utf8");
+  } catch {
     return [];
   }
-  const hit = {
-    smell: TESTLIST_SMELL,
-    cycle_ids: [],
-    detail: `test-list conformance: ${found.reason}`,
-    story_id: story,
-    // Carry the flagged ac_id(s) so the revise self-heal scopes the re-author to
-    // exactly those ACs (a targeted patch, no whole-story architect re-annotate) — #4.
-    ...found.acIds.length > 0 ? { ac_ids: found.acIds } : {}
-  };
-  if (hasOpenSmell(consortDir, TESTLIST_SMELL, story)) return [];
-  writeSmellsLog(consortDir, [hit]);
-  return [hit];
+  let dbText;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if ((0, import_fs15.existsSync)(p)) dbText = (0, import_fs15.readFileSync)(p, "utf8");
+  } catch {
+  }
+  let arch;
+  let tl;
+  try {
+    arch = JSON.parse(archText);
+    tl = JSON.parse(tlText);
+  } catch {
+    return [];
+  }
+  if (arch.service_backed !== true) return [];
+  const realizing = dbText ? invariantRealizingStory(archText, dbText) : null;
+  const declared = (arch.persistence_invariants ?? []).filter((i) => !!i && typeof i.id === "string" && i.id.length > 0).filter((i) => realizing === null || i.type === "transactional" || realizing.has(i.id)).map((i) => i.id);
+  const covered = new Set((tl.items ?? []).map((i) => i.invariant_id).filter((x) => typeof x === "string" && x.length > 0));
+  return declared.filter((id) => !covered.has(id));
+}
+function featureMisshapedInvariants(consortDir, featureId) {
+  let archText, tlText;
+  try {
+    archText = (0, import_fs15.readFileSync)(architectureJson(consortDir, featureId), "utf8");
+    tlText = (0, import_fs15.readFileSync)(featureTestListJson(consortDir, featureId), "utf8");
+  } catch {
+    return [];
+  }
+  let arch;
+  let tl;
+  try {
+    arch = JSON.parse(archText);
+    tl = JSON.parse(tlText);
+  } catch {
+    return [];
+  }
+  if (arch.service_backed !== true) return [];
+  const items = tl.items ?? [];
+  const out = [];
+  for (const inv of arch.persistence_invariants ?? []) {
+    if (!inv || typeof inv.id !== "string" || !inv.id) continue;
+    if (inv.type !== "transactional" && inv.type !== "migration_reversible") continue;
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) continue;
+    const shaped = inv.type === "transactional" ? covering.some((it) => describesAtomicityRollback(it.description ?? "")) : covering.some((it) => describesMigrationRoundTrip(it.description ?? ""));
+    if (!shaped) out.push({ id: inv.id, type: inv.type });
+  }
+  return out;
+}
+function designCompleteCoverageHits(consortDir, featureId, story) {
+  if (!isDesignCompletingStory(consortDir, featureId, story)) return [];
+  const uncovered = featureUncoveredInvariantIds(consortDir, featureId);
+  const misshaped = featureMisshapedInvariants(consortDir, featureId);
+  const owners = invariantOwnerStories(consortDir, featureId, void 0, { writePath: true });
+  const ownerOf = (id) => owners.get(id) ?? `${story}(fallback)`;
+  const uncoveredNote = uncovered.length === 0 ? "none" : uncovered.map((id) => `${id} -> ${ownerOf(id)}`).join(", ");
+  const misshapedNote = misshaped.length === 0 ? "none" : misshaped.map((m) => `${m.id}(${m.type}) -> ${ownerOf(m.id)}`).join(", ");
+  process.stdout.write(`[coverage-self-heal] design-complete at ${story}: uncovered={${uncoveredNote}} misshaped={${misshapedNote}}
+`);
+  const hits = [];
+  for (const id of uncovered) {
+    const owner = owners.get(id) ?? story;
+    hits.push({
+      smell: TESTLIST_SMELL,
+      cycle_ids: [],
+      story_id: owner,
+      detail: `feature-wide persistence coverage (design-complete): invariant ${id} has NO covering test-list item (invariant_id); realized by ${owner}. Add a correctly-shaped covering test tagged invariant_id=${id} to ${owner}'s test-list (see test-strategy.md).`
+    });
+  }
+  for (const { id, type } of misshaped) {
+    const owner = owners.get(id) ?? story;
+    hits.push({
+      smell: TESTLIST_SMELL,
+      cycle_ids: [],
+      story_id: owner,
+      detail: `feature-wide persistence SHAPE (design-complete): transactional/migration invariant ${id} (${type}) is covered but by the WRONG SHAPE \u2014 ` + (type === "transactional" ? `a transactional invariant needs an ATOMICITY/ROLLBACK test (force a mid-transaction failure, assert NEITHER write persists \u2014 the F2 T19 shape), not a state/persistence assertion` : `a migration_reversible invariant needs a downgrade\u2192upgrade ROUND-TRIP, not a forward-only assertion`) + `. Re-author ${owner}'s covering item to the right shape, OR retag ${id} onto the item that performs it (see test-strategy.md).`
+    });
+  }
+  return hits;
 }
 
 // consort/smells/ia-conformance.ts
 init_cjs_shims();
 var import_fs16 = require("fs");
-var import_path13 = require("path");
+var import_path14 = require("path");
 var IA_SMELL = "reflect-ia-defect";
 function iaNamesSeam(iaMarkdown, seam) {
   const esc = seam.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -12981,7 +13574,7 @@ function storyUiSeams(consortDir, featureId, story) {
   for (const f of (0, import_fs16.readdirSync)(dir)) {
     if (!f.endsWith(".json")) continue;
     try {
-      const ac = JSON.parse((0, import_fs16.readFileSync)((0, import_path13.join)(dir, f), "utf8"));
+      const ac = JSON.parse((0, import_fs16.readFileSync)((0, import_path14.join)(dir, f), "utf8"));
       const seams = Array.isArray(ac.ui_seams) ? ac.ui_seams.filter((s) => typeof s === "string" && s.length > 0) : [];
       if (seams.length > 0) out.push({ id: typeof ac.id === "string" ? ac.id : f.replace(/\.json$/, ""), seams });
     } catch {
@@ -13130,6 +13723,17 @@ async function main(argv = process.argv.slice(2)) {
         process.stdout.write(`cycle: GREEN ${r.cycleId} for ${r.testId}
 `);
       }
+      return 0;
+    }
+    case "reauthor-green": {
+      if (!a.ac) return usage("reauthor-green: --ac is required.");
+      markReauthored(consortDir, a.feature, a.story, a.ac);
+      const r = await greenOpenCycle({ ...base, verify: greenVerifierForEnv() });
+      if (!r.needsReauthor && !r.needsAssess && !r.escalated) clearReauthorMarker(consortDir, a.feature, a.story, a.ac);
+      process.stdout.write(
+        `cycle: reauthor-green ${a.story}/${a.ac} -> ${r.escalated ? "HIL (still flaky after re-author)" : r.needsReauthor ? "still flagged" : r.needsAssess ? "assess" : "GREEN (resilient)"}
+`
+      );
       return 0;
     }
     case "review": {

@@ -3254,8 +3254,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path3) {
-      let input = path3;
+    function removeDotSegments(path4) {
+      let input = path4;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3508,8 +3508,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path3, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path3 && path3 !== "/" ? path3 : void 0;
+        const [path4, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path4 && path4 !== "/" ? path4 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6690,7 +6690,7 @@ function findFeatureDir(tdd, featureId) {
 
 // consort/gates/escalation.ts
 init_cjs_shims();
-var fs5 = __toESM(require("fs"), 1);
+var fs6 = __toESM(require("fs"), 1);
 
 // consort/smells/smells.ts
 init_cjs_shims();
@@ -7025,6 +7025,11 @@ var import_node_child_process4 = require("child_process");
 var import_node_fs10 = require("fs");
 var import_node_path12 = require("path");
 
+// consort/smells/reauthor-resilience.ts
+init_cjs_shims();
+var fs5 = __toESM(require("fs"), 1);
+var path3 = __toESM(require("path"), 1);
+
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
 var import_lakebase7 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
@@ -7144,18 +7149,18 @@ function escalationId(parts) {
   return [parts.source, parts.feature_id, parts.story_id, parts.ac_id].filter(Boolean).join("__").replace(/[^A-Za-z0-9_.-]/g, "-");
 }
 function readEscalationFile(file) {
-  if (!fs5.existsSync(file)) return void 0;
+  if (!fs6.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs5.readFileSync(file, "utf8"));
+    return JSON.parse(fs6.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
 }
 function readEscalations(consortDir) {
   const dir = escalationsDir(consortDir);
-  if (!fs5.existsSync(dir)) return [];
+  if (!fs6.existsSync(dir)) return [];
   const out = [];
-  for (const f of fs5.readdirSync(dir)) {
+  for (const f of fs6.readdirSync(dir)) {
     if (!f.endsWith(".json")) continue;
     const e = readEscalationFile(`${dir}/${f}`);
     if (e) out.push(e);
@@ -7170,7 +7175,7 @@ function resolveEscalations(consortDir, opts = {}) {
     if (opts.id && e.id !== opts.id) continue;
     if (opts.featureId && e.feature_id !== void 0 && e.feature_id !== opts.featureId) continue;
     if (opts.story && e.story_id !== opts.story) continue;
-    fs5.writeFileSync(
+    fs6.writeFileSync(
       escalationFile(consortDir, e.id),
       JSON.stringify({ ...e, resolved_at: at, ...opts.resolution ? { resolution: opts.resolution } : {} }, null, 2) + "\n",
       "utf8"

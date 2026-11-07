@@ -7007,6 +7007,28 @@ function checkJsdomBrowserAssertion(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkMockPrescription(testListJson) {
+  let tl;
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const prescribesMock = /\bmock(s|ed|ing)?\b|\bstub(s|bed|bing)?\b/i;
+  const negatesMock = /\b(no|not|never|without|real)\b[^.]{0,30}\b(mock|stub)/i;
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  for (const it of tl.items ?? []) {
+    const d = it.description ?? "";
+    if (prescribesMock.test(d) && !negatesMock.test(d)) {
+      violations.push(
+        `test item ${it.id ?? "?"} PRESCRIBES a mock/stub in its description ("${d.slice(0, 90)}\u2026") \u2014 the no-mock policy requires behavior/client/component tests to hit the REAL backend against the paired-branch DB. Re-author a BEHAVIORAL description (assert the observable outcome; the test's /api calls hit the real service), never a mocked/stubbed endpoint. (Only a pure client-unit test of the fetch wrapper itself may mock \u2014 that is NOT a test-list item.)`
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function checkTestlistWholeTableAggregate(testListJson) {
   let tl;
   try {
@@ -7149,6 +7171,48 @@ function checkTestlistScenarioFileCoherence(testListJson) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
+function checkStoryPersistenceCoverage(storyTestListJson2, architectureJson2, ownedInvariantIds) {
+  if (ownedInvariantIds.length === 0) return { ok: true };
+  const owned = new Set(ownedInvariantIds);
+  let arch;
+  try {
+    arch = JSON.parse(architectureJson2);
+  } catch {
+    return { ok: true };
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const invariants = (arch.persistence_invariants ?? []).filter(
+    (i) => !!i && typeof i.id === "string" && i.id.length > 0 && owned.has(i.id)
+  );
+  if (invariants.length === 0) return { ok: true };
+  let tl;
+  try {
+    tl = JSON.parse(storyTestListJson2);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations = [];
+  const acIds = /* @__PURE__ */ new Set();
+  const shapeOk = (type, desc) => type === "transactional" ? describesAtomicityRollback(desc) : type === "migration_reversible" ? describesMigrationRoundTrip(desc) : true;
+  for (const inv of invariants) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) {
+      violations.push(
+        `persistence_invariant ${inv.id}${inv.table ? ` (${inv.type ?? "?"} on ${inv.table})` : ""} is realized by this story but has NO covering test-list item (invariant_id) in this story's list. Add a covering test \u2014 or TAG the existing test that already verifies it \u2014 with invariant_id=${inv.id}` + (inv.type === "transactional" ? ` (a transactional invariant needs an atomicity/rollback test: force a mid-transaction failure, assert NEITHER write persists)` : inv.type === "migration_reversible" ? ` (a migration_reversible invariant needs a downgrade\u2192upgrade round-trip)` : ``) + `. See test-strategy.md.`
+      );
+      continue;
+    }
+    if (!covering.some((it) => shapeOk(inv.type, it.description ?? ""))) {
+      const ids = covering.map((it) => it.id ?? "?").join(", ");
+      violations.push(
+        `persistence_invariant ${inv.id} (${inv.type ?? "?"}) is covered only by wrong-shaped item(s) [${ids}] for its type \u2014 ` + (inv.type === "transactional" ? `it needs an ATOMICITY/ROLLBACK test (force a mid-transaction failure, assert neither write persists), not a migration round-trip` : `it needs a downgrade\u2192upgrade ROUND-TRIP`) + `. Re-author the covering item for the right shape (or retag ${inv.id} onto the item that performs it). See test-strategy.md.`
+      );
+      for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
 function clauseRealizedBy(c) {
   return typeof c === "object" && c !== null && Array.isArray(c.realized_by) ? c.realized_by.filter((a) => typeof a === "string" && a.length > 0) : [];
 }
@@ -7284,6 +7348,38 @@ function checkStoryIndependence(stories, targetStory) {
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
+function invariantRealizingStory(architectureJson2, dbDesignJson2) {
+  const out = /* @__PURE__ */ new Map();
+  if (!architectureJson2 || !dbDesignJson2) return out;
+  let arch;
+  let db;
+  try {
+    arch = JSON.parse(architectureJson2);
+    db = JSON.parse(dbDesignJson2);
+  } catch {
+    return out;
+  }
+  const changes = (db.schema_changes ?? []).filter(
+    (c) => !!c && typeof c.story_id === "string" && typeof c.kind === "string" && typeof c.table === "string"
+  );
+  const sNum = (s) => {
+    const m = /^S(\d+)/.exec(s);
+    return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+  };
+  const tableRealizer = /* @__PURE__ */ new Map();
+  for (const table of new Set(changes.map((c) => c.table))) {
+    const forTable = changes.filter((c) => c.table === table);
+    const creator = forTable.find((c) => c.kind === "create_table");
+    const realizer = creator ? creator.story_id : [...forTable].sort((a, b) => sNum(a.story_id) - sNum(b.story_id))[0]?.story_id;
+    if (realizer) tableRealizer.set(table, realizer);
+  }
+  for (const inv of arch.persistence_invariants ?? []) {
+    if (!inv || typeof inv.id !== "string" || typeof inv.table !== "string") continue;
+    const realizer = tableRealizer.get(inv.table);
+    if (realizer) out.set(inv.id, realizer);
+  }
+  return out;
+}
 function canonicalArtifactName(path) {
   const base = (0, import_path2.basename)(path);
   if ((0, import_path2.basename)((0, import_path2.dirname)(path)) === "acs" && base.endsWith(".json")) return "ac.json";
@@ -7369,6 +7465,15 @@ function describesMigrationRoundTrip(desc) {
   // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
   // as forward-only — the description-fragility that must not bounce a correct test.
   /\bdown\s*[-/→>]+\s*up\b/i.test(desc);
+}
+function describesAtomicityRollback(desc) {
+  const d = desc.toLowerCase();
+  return /\broll\s*back\b|\brolls?\s*back\b|\brolled\s*back\b/.test(d) || /\bneither\b[^.]*\b(persist|written|writes|commit|row|saved|inserted)\b/.test(d) || /\b(transaction|commit|write|insert|update)\b[^.]*\bfail/.test(d) || /\beither\b[^.]*\bfail/.test(d) || /\batomic/.test(d) && /\b(fail|roll|neither|both)\b/.test(d) || // READ-ONLY flavor of a `transactional` invariant: the operation runs in a read-only unit of work
+  // (it performs NO writes), e.g. F5's PI25-count-read-only. Its correct covering test asserts the
+  // transaction writes nothing / leaves the tables unchanged — a valid transactional shape, not an
+  // atomicity/rollback one. Keyed narrowly (explicit read-only / writes-nothing / no-row-written) so
+  // a mere incidental "unchanged" aside cannot satisfy a genuine atomicity invariant.
+  /\bread[-\s]?only\b/.test(d) || /\bwrites?\s+nothing\b/.test(d) || /\bno\b[^.]*\b(row|write|insert|adjustment)s?\b[^.]*\b(written|inserted|created|persist|made)\b/.test(d);
 }
 function isMigrationReversibilityDescription(desc) {
   const mentionsDowngrade = /\bdowngrad\w*/i;
@@ -8328,6 +8433,8 @@ var SMELL_FIX = {
   "dsn-inline-credentials": "a DSN literal in this test carries INLINE credentials (scheme://user:pass@host). Even a deliberately fake example \u2014 a postgresql:// URL with a someuser:pw@ credential segment (host dbhost.invalid) \u2014 matches the corporate postgres-connection-string secret-scanner and BLOCKS the merge commit on every Databricks machine \u2014 not a real leak, but the git hook cannot tell. A config/example DSN needs no credentials for host/port/database assertions: drop them (postgresql://dbhost.invalid:5432/somedb asserts the same host/port/db), or assemble a credentialed DSN from parts at runtime if a test genuinely needs one. Real DB connections come from DATABASE_URL / a fixture, never a source literal.",
   "unpinned-schema-diff-baseline": "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head \u2014 the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged.",
   "dropped-column-test-reference": "this TEST inserts into / selects / asserts a column that a CONTRACT migration in this feature DROPPED, and the file performs no downgrade \u2014 so it runs against HEAD where the column no longer exists and dies with a ProgrammingError ('column does not exist'), even though the app is correct (the F6/S3 cross-story supersession class: a prior story's test still references tracking_code after S3 drops it). `opt2` scopes the per-cycle backend suite to the current story, so a prior-story test like this is NOT run per-cycle and only fails LATER at the full deploy-verify as a HALT. Refactor the superseded reference: drop the dropped column from the INSERT/SELECT/assertion, or retarget it to the surviving columns (e.g. batch_number/serial_number). Do NOT re-add the column to the model or edit the migration to hide it. (A migration round-trip test that re-adds the column via its own downgrade is legitimate and is not flagged \u2014 this only flags pure-HEAD references.)",
+  "e2e-reread-without-confirmation": "this Playwright e2e asserts a value, RE-READS it (page.reload() or a page.goto() back to the view), then re-asserts the same value to prove PERSISTENCE \u2014 but it never awaits a SERVER-CONFIRMED signal before the re-read, so it races the still-in-flight write. The pre-re-read assertion is satisfied by the OPTIMISTIC UI (the row shows the new value before the write resolves), then the reload/goto fetches from the DB; when the re-read beats the commit the DB still has the OLD value and the test fails \u2014 intermittently in isolation (the write is fast), DETERMINISTICALLY under full-suite/CI load (the write is slow). A test that only passes on a retry is not resilient and gives the gate no signal (the F5 -> F2 @T78 class). Make it RESILIENT: before the re-read, await the server-CONFIRMED signal the app emits on a durable write \u2014 the success flash / a `*-success` (or `*-error`) status element / `page.waitForResponse(<the write endpoint>)` \u2014 exactly as the resilient sibling test does; THEN reload and re-assert. Never assert on an optimistic value and immediately re-read.",
+  "e2e-timing-dependent-wait": "this test waits a FIXED DURATION (page.waitForTimeout(n) / a bare setTimeout/sleep) instead of awaiting a CONDITION. A hardcoded sleep is flaky by construction: too short under load (the thing never happened yet -> fails) and wasteful otherwise \u2014 'sleep and hope'. It passes on a fast/idle machine and fails under full-suite/CI load, the same non-deterministic signal as a flaky test. Replace the fixed wait with an await of the actual condition: `await expect(locator).toBeVisible()` / `toHaveText(...)` (Playwright auto-waits with a timeout), `page.waitForResponse(<endpoint>)`, `page.waitForURL(...)`, or `page.waitForLoadState('networkidle')`. Never gate a test on wall-clock time.",
   "psycopg2-pgcode-attr": "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) \u2014 a psycopg2 attribute \u2014 but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap \u2014 no production/driver shim."
 };
 function collectDroppedColumns(projectDir, migrationDirs) {
@@ -8497,6 +8604,45 @@ function projectDeclaresPsycopg2(projectDir) {
   }
   return false;
 }
+function testBlockRanges(lines) {
+  const BLOCK_START = /^\s*(?:test|it)\s*\(/;
+  const starts = [];
+  lines.forEach((l, i) => {
+    if (BLOCK_START.test(l)) starts.push(i);
+  });
+  return starts.map((from, k) => [from, k + 1 < starts.length ? starts[k + 1] : lines.length]);
+}
+function e2eRereadWithoutConfirmation(lines) {
+  const out = [];
+  const REREAD = /\bpage\s*\.\s*(?:reload|goto)\s*\(/;
+  const VALUE_ASSERT = /\b(?:toHaveText|toHaveValue|toContainText)\s*\(/;
+  const CONFIRM = /data-flash|getByTestId\(\s*["'`][^"'`]*(?:success|error|confirm|saved|toast|status)[^"'`]*["'`]|waitForResponse|waitForLoadState/i;
+  for (const [from, to] of testBlockRanges(lines)) {
+    for (let i = from; i < to; i++) {
+      if (!REREAD.test(lines[i])) continue;
+      let confirmedBefore = false;
+      let valueBefore = false;
+      for (let j = from; j < i; j++) {
+        if (CONFIRM.test(lines[j])) confirmedBefore = true;
+        if (VALUE_ASSERT.test(lines[j])) valueBefore = true;
+      }
+      if (confirmedBefore) continue;
+      if (!valueBefore) continue;
+      let valueAfter = false;
+      for (let j = i + 1; j < to; j++) if (VALUE_ASSERT.test(lines[j])) valueAfter = true;
+      if (valueAfter) out.push(i + 1);
+    }
+  }
+  return out;
+}
+function e2eTimingDependentWait(lines) {
+  const out = [];
+  const TIMING = /\b(?:waitForTimeout|setTimeout)\s*\(|\bawait\s+sleep\s*\(/;
+  lines.forEach((l, i) => {
+    if (TIMING.test(l)) out.push(i + 1);
+  });
+  return out;
+}
 function checkTestSmells(args) {
   const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
   const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
@@ -8519,6 +8665,14 @@ function checkTestSmells(args) {
       const isJs = /\.(ts|tsx|js|jsx|mjs)$/.test(file);
       const isPy = file.endsWith(".py");
       const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
+      if (isJs && /\.spec\.(ts|tsx|js|jsx|mjs)$/.test(file)) {
+        for (const ln of e2eRereadWithoutConfirmation(lines)) {
+          push("e2e-reread-without-confirmation", rel, ln, lines[ln - 1] ?? "page.reload()");
+        }
+        for (const ln of e2eTimingDependentWait(lines)) {
+          push("e2e-timing-dependent-wait", rel, ln, lines[ln - 1] ?? "waitForTimeout(...)");
+        }
+      }
       if (isPy && droppedCols.size > 0 && !/\bdowngrade\b/.test(body)) {
         for (const col of droppedCols) {
           for (const ln of liveReferenceLines(body, col)) {
@@ -8671,6 +8825,7 @@ ${list}`;
 // consort/smells/testlist-conformance.ts
 init_cjs_shims();
 var import_fs2 = require("fs");
+var import_path3 = require("path");
 
 // consort/smells/smells.ts
 init_cjs_shims();
@@ -8801,6 +8956,107 @@ function declaredApiEndpoints(consortDir, featureId, story) {
   for (const t of texts) for (const e of extractApiEndpoints(t)) toks.add(e);
   return [...toks];
 }
+function featureStoryIds(consortDir, featureId) {
+  const dir = storiesDir(consortDir, featureId);
+  if (!(0, import_fs2.existsSync)(dir)) return [];
+  try {
+    return (0, import_fs2.readdirSync)(dir).filter((n) => {
+      try {
+        return (0, import_fs2.statSync)((0, import_path3.join)(dir, n)).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+function storyTestListItems(consortDir, featureId, story, current) {
+  let text;
+  if (current && current.story === story) {
+    text = current.json;
+  } else {
+    const p = storyTestListJson(consortDir, featureId, story);
+    if ((0, import_fs2.existsSync)(p)) {
+      try {
+        text = (0, import_fs2.readFileSync)(p, "utf8");
+      } catch {
+      }
+    }
+  }
+  if (!text) return [];
+  try {
+    const d = JSON.parse(text);
+    return Array.isArray(d.items) ? d.items : [];
+  } catch {
+    return [];
+  }
+}
+function invariantOwnerStories(consortDir, featureId, current, opts) {
+  const writePath = opts?.writePath === true;
+  const out = /* @__PURE__ */ new Map();
+  let archText;
+  let dbText;
+  try {
+    const p = architectureJson(consortDir, featureId);
+    if ((0, import_fs2.existsSync)(p)) archText = (0, import_fs2.readFileSync)(p, "utf8");
+  } catch {
+  }
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if ((0, import_fs2.existsSync)(p)) dbText = (0, import_fs2.readFileSync)(p, "utf8");
+  } catch {
+  }
+  if (archText === void 0) return out;
+  let arch;
+  try {
+    arch = JSON.parse(archText);
+  } catch {
+    return out;
+  }
+  const invariants = (arch.persistence_invariants ?? []).filter(
+    (i) => !!i && typeof i.id === "string" && i.id.length > 0
+  );
+  if (invariants.length === 0) return out;
+  const realizing = invariantRealizingStory(archText, dbText);
+  const storyIds = featureStoryIds(consortDir, featureId);
+  const itemsByStory = /* @__PURE__ */ new Map();
+  for (const s of storyIds) itemsByStory.set(s, storyTestListItems(consortDir, featureId, s, current));
+  for (const inv of invariants) {
+    const anchored = realizing.get(inv.id);
+    if (anchored) {
+      out.set(inv.id, anchored);
+      continue;
+    }
+    if (!writePath || !inv.table) {
+      out.set(inv.id, void 0);
+      continue;
+    }
+    let best;
+    let bestN = 0;
+    let tie = false;
+    for (const s of storyIds) {
+      const n = (itemsByStory.get(s) ?? []).filter(
+        (it) => it.invariant_id !== inv.id && (it.description ?? "").includes(inv.table)
+      ).length;
+      if (n > bestN) {
+        bestN = n;
+        best = s;
+        tie = false;
+      } else if (n === bestN && n > 0) {
+        tie = true;
+      }
+    }
+    out.set(inv.id, bestN > 0 && !tie ? best : void 0);
+  }
+  return out;
+}
+function storyOwnedInvariantIds(consortDir, featureId, story, storyTestListText) {
+  const owners = invariantOwnerStories(consortDir, featureId, { story, json: storyTestListText });
+  const ids = [];
+  for (const [id, owner] of owners) if (owner === story) ids.push(id);
+  return ids;
+}
 function testlistConformanceForContent(consortDir, featureId, story, testListJson) {
   const acLayerById = storyAcLayers(consortDir, featureId, story);
   let dbDesign;
@@ -8826,6 +9082,12 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     checkTestlistEndpointCoherence(testListJson, declaredApiEndpoints(consortDir, featureId, story)),
     checkTestlistE2eSpecSuffix(testListJson),
     checkTestlistComponentScenarioFile(testListJson),
+    // No-mock policy, enforced at the SOURCE of the test description: a component/behavior test that
+    // names a mock/stub of a service boundary (and does not negate it — "no mock", "real") is a
+    // design defect, since the policy is to hit the real backend + Lakebase branch. Caught here at the
+    // drive's pre-reflect self-check so the test-strategist re-authors the description BEFORE build —
+    // the gap that let F2/S2's T32 "fetch stubbed" reach the build lane (it was only in the gate guard).
+    checkMockPrescription(testListJson),
     checkTestlistMigrationRevision(testListJson),
     checkSchemaChangeOrphan(testListJson, dbDesign),
     // A migration-reversibility test must carry the schema_change_id it exercises, so the orphan
@@ -8844,7 +9106,15 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
     // feature-level or sibling-story NFR from false-flagging before its story is designed.
     ...archJson !== void 0 ? [
       checkFitnessSingularCoverage(testListJson, archJson, { onlyStory: story }),
-      checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story })
+      checkFitnessClauseCoverage(testListJson, archJson, { onlyStory: story }),
+      // Story-scoped persistence-invariant coverage (the pre-reflect complement to the feature-wide
+      // checkPersistenceCoverage at the design-complete gate): a persistence invariant THIS story
+      // realizes must have a correctly-shaped covering item in this story's list. Ownership is the
+      // schema-change realizer, else a write-path anchor for an unmigrated table (the F2
+      // stock_records PI1/PI2 case). An owned-but-uncovered invariant flags the reflect-testlist
+      // -defect here so the revise-route self-heals it to the test-strategist BEFORE the build —
+      // instead of the feature-wide design-complete gate catching it late with a hard HIL halt.
+      checkStoryPersistenceCoverage(testListJson, archJson, storyOwnedInvariantIds(consortDir, featureId, story, testListJson))
     ] : []
   ]) {
     if (!r.ok) {
@@ -8858,8 +9128,8 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
 // consort/gates/registered-breakdown.ts
 init_cjs_shims();
 var import_fs3 = require("fs");
-var import_path3 = require("path");
-var registrationPath = (consortDir) => (0, import_path3.join)(consortDir, "registration.json");
+var import_path4 = require("path");
+var registrationPath = (consortDir) => (0, import_path4.join)(consortDir, "registration.json");
 function storySlug(id) {
   return id.replace(/^S\d+-/, "");
 }

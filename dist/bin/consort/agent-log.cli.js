@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path4) {
-      let input = path4;
+    function removeDotSegments(path5) {
+      let input = path5;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path4, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path4 && path4 !== "/" ? path4 : void 0;
+        const [path5, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -7369,7 +7369,7 @@ function reconstituteAgentLog(opts) {
 
 // consort/gates/escalation.ts
 init_esm_shims();
-import * as fs5 from "fs";
+import * as fs6 from "fs";
 
 // consort/smells/smells.ts
 init_esm_shims();
@@ -7505,7 +7505,7 @@ var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 // consort/architecture/contract-clean.ts
 init_esm_shims();
 import { existsSync as existsSync14, readFileSync as readFileSync13, readdirSync as readdirSync8, statSync as statSync7 } from "fs";
-import { join as join14, relative as relative3, extname as extname3 } from "path";
+import { join as join14, relative as relative3, extname as extname3, basename as basename2 } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -7534,7 +7534,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync16, readFileSync as readFileSync16, readdirSync as readdirSync11, writeFileSync as writeFileSync9, mkdirSync as mkdirSync7, copyFileSync } from "fs";
-import { join as join17, dirname as dirname10, basename as basename2 } from "path";
+import { join as join17, dirname as dirname10, basename as basename3 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
@@ -7590,6 +7590,11 @@ init_esm_shims();
 import { execFileSync as execFileSync4 } from "child_process";
 import { existsSync as existsSync21 } from "fs";
 import { join as join22 } from "path";
+
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs5 from "fs";
+import * as path4 from "path";
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";

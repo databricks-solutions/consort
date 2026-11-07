@@ -119,7 +119,7 @@ var fs2 = __toESM(require("fs"), 1);
 var import_node_path2 = require("path");
 var str = (v) => typeof v === "string" && v.length > 0 ? v : void 0;
 function buildCrossStoryContext(consortDir, feature, currentStory) {
-  const ctx = { current_story: currentStory, sibling_stories: [], open_decisions: [], required_persistence_fields: [] };
+  const ctx = { current_story: currentStory, sibling_stories: [], open_decisions: [], required_persistence_fields: [], required_request_fields: [] };
   const currentDir = (() => {
     try {
       return (0, import_node_path2.basename)(storyResolved(consortDir, feature, currentStory));
@@ -168,6 +168,16 @@ function buildCrossStoryContext(consortDir, feature, currentStory) {
       ctx.required_persistence_fields = arch.persistence_invariants.filter(
         (p) => !!p && typeof p.id === "string" && p.type === "not_null"
       ).map((p) => ({ invariant_id: String(p.id), table: str(p.table), brief: str(p.brief) }));
+    }
+    if (Array.isArray(arch.api_contracts)) {
+      ctx.required_request_fields = arch.api_contracts.filter((c) => !!c && typeof c.id === "string" && Array.isArray(c.request_fields)).flatMap(
+        (c) => c.request_fields.filter((f) => !!f && f.required === true && typeof f.name === "string").map((f) => ({
+          contract_id: String(c.id),
+          field: String(f.name),
+          since_story: str(f.since_story),
+          reconciled_stories: Array.isArray(f.reconciled_stories) ? f.reconciled_stories.filter((x) => typeof x === "string") : void 0
+        }))
+      );
     }
   } catch {
   }

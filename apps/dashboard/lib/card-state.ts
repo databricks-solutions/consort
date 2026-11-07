@@ -133,6 +133,17 @@ export function currentLocus(v: FoldView): Locus | null {
   // approved gate (which outranks the pre-gate role step). A plain loop (no closure) so the pick is
   // obvious and TS can track it.
   const candidates: { id: string; kind: "step" | "gate" }[] = [...v.reachedThisPass].map((id) => ({ id, kind: "step" }));
+  // SCRUB ALIGNMENT: on a scrubbed frame (`!atLive`) include the server-folded `focus.step` — the
+  // playhead's own step, folded to exactly this `at` — as a candidate. The one-locus refactor
+  // (5c88a561c) keyed the glow on live-only `laneCurrent` (null on every scrubbed fold) and this
+  // furthest-reached fallback, which drops `focus` entirely — so the lit card stopped aligning to the
+  // scrubber (the original behavior was `currentStep = state.focus.step`). As a candidate it wins the
+  // normal case (it IS the furthest reached) AND lights when `reachedThisPass` is empty at a pass
+  // boundary (previously dark), while a PARKED/SURFACED gate (pendingGateStep above) or an APPROVED gate
+  // FURTHER along still outranks it by ORDER — so the gate-over-trailing-step invariant is preserved.
+  if (!v.atLive && v.focus.kind === "step" && v.focus.step && STEP_LANE[v.focus.step]) {
+    candidates.push({ id: v.focus.step, kind: "step" });
+  }
   for (const key of v.approvedGates) {
     const s = GATE_STEP_BY_KEY[key];
     if (s) candidates.push({ id: s, kind: "gate" });
@@ -173,7 +184,13 @@ export function foldViewOf(state: DashboardState): FoldView {
     focus: state.focus,
     liveStep: state.topology.laneCurrent?.step ?? null,
     reachedThisPass: new Set(state.topology.reachedThisPass),
-    approvedGates: new Set((state.gates ?? []).filter((g) => g.status === "approved").map((g) => g.name)),
+    // The locus must use the PLAYHEAD's approvals (slice-scoped `approvedGatesAtPlayhead`), not the
+    // run's — so a scrubbed view lights the gate AT the playhead, not the run's furthest-approved (the
+    // "promote lit at the deploy-gate event" bug). Fall back to `state.gates` for pre-field fixtures so
+    // existing render snapshots stay byte-identical; the real fold always populates the slice field.
+    approvedGates: new Set(
+      state.topology.approvedGatesAtPlayhead ?? (state.gates ?? []).filter((g) => g.status === "approved").map((g) => g.name),
+    ),
     atLive: state.atLive,
     parkedGateStep: state.topology.laneGate,
     complete: state.phase === "complete",

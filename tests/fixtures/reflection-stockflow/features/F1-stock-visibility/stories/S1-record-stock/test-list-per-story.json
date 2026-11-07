@@ -58,7 +58,7 @@
     },
     {
       "id": "T8",
-      "description": "the stock_records migration applies, reverses on a single downgrade -1, and re-applies cleanly, preserving any pre-existing rows (real branch, isolated migration test)",
+      "description": "applying the stock_records migration, then downgrading to its own down_revision and upgrading head again, recreates the stock_records schema identically with pre-existing rows surviving the round-trip (own-table reversibility; real branch, isolated migration test)",
       "ac_id": "AC2-file-new-stock-confirmed",
       "status": "green",
       "kind": "fitness",

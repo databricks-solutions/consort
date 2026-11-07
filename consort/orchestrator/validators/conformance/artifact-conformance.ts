@@ -684,6 +684,45 @@ export function checkJsdomBrowserAssertion(testListJson: string): ConformanceRes
 }
 
 /**
+ * NO-MOCK at authoring. The strategist's own brief says "Mocks never for the database" and a `component`
+ * test "lets its real /api calls hit the real backend — never a mock", yet a test-list DESCRIPTION can
+ * still PRESCRIBE one (the live defect: T4 "CountForm rendered … (fetch mocked at /api/counts/variance …)").
+ * The driver then either ships that mock, or the navigator's build-time component-test-mock smell strips
+ * it — leaving the test-list DESCRIPTION STALE, still saying "mocked" for a test that was implemented
+ * REAL. This flags the prescription at the test_list gate so the strategist re-authors a BEHAVIORAL,
+ * real-backend description BEFORE any code is written — so description and implementation agree from the
+ * start and never drift. Deterministic from the test-list alone; mirrors checkJsdomBrowserAssertion
+ * (catches at authoring what the build-time smell / reflect lap caught later). A description that NEGATES
+ * mocking ("never a mock", "no stub", "real, not mocked") is fine — only a PRESCRIPTION is a violation.
+ */
+export function checkMockPrescription(testListJson: string): ConformanceResult {
+  let tl: { items?: Array<{ id?: string; description?: string; ac_id?: string; kind?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const prescribesMock = /\bmock(s|ed|ing)?\b|\bstub(s|bed|bing)?\b/i;
+  // A negation within ~30 chars BEFORE the mock/stub word ("never a mock", "no stub", "real, not mocked").
+  const negatesMock = /\b(no|not|never|without|real)\b[^.]{0,30}\b(mock|stub)/i;
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const it of tl.items ?? []) {
+    const d = it.description ?? "";
+    if (prescribesMock.test(d) && !negatesMock.test(d)) {
+      violations.push(
+        `test item ${it.id ?? "?"} PRESCRIBES a mock/stub in its description ("${d.slice(0, 90)}…") — the no-mock policy ` +
+          `requires behavior/client/component tests to hit the REAL backend against the paired-branch DB. Re-author a ` +
+          `BEHAVIORAL description (assert the observable outcome; the test's /api calls hit the real service), never a ` +
+          `mocked/stubbed endpoint. (Only a pure client-unit test of the fetch wrapper itself may mock — that is NOT a test-list item.)`,
+      );
+      if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
  * DESCRIPTION-level whole-table-aggregate (the F6/S1 T12 class). The code-level
  * `whole-table-aggregate` detector (test-smell-clean.ts) catches `COUNT(*)` in a
  * scenario file at GREEN; this catches the SAME aggregate-isolation defect one step
@@ -943,15 +982,15 @@ export function checkTestlistScenarioFileCoherence(testListJson: string): Confor
  * service-backed feature that declares NO invariants is itself a gap (it persists
  * data, so it has at least one). Gate 3 hard-blocks.
  */
-export function checkPersistenceCoverage(testListJson: string, architectureJson: string): ConformanceResult {
-  let arch: { service_backed?: boolean; persistence_invariants?: Array<{ id?: string }> };
+export function checkPersistenceCoverage(testListJson: string, architectureJson: string, dbDesignJson?: string): ConformanceResult {
+  let arch: { service_backed?: boolean; persistence_invariants?: Array<{ id?: string; type?: string }> };
   try {
     arch = JSON.parse(architectureJson);
   } catch {
     return { ok: true }; // invalid architecture reported elsewhere
   }
   if (arch.service_backed !== true) return { ok: true };
-  const invariants = (arch.persistence_invariants ?? []).filter((i) => i && typeof i.id === "string" && i.id.length > 0);
+  const invariants = (arch.persistence_invariants ?? []).filter((i): i is { id: string; type?: string } => !!i && typeof i.id === "string" && i.id.length > 0);
   // A service does not always mean a database. No declared invariants => a
   // non-persisting service with nothing to cover, so coverage is vacuously ok.
   // The guard that a feature which really persists MUST declare invariants lives
@@ -964,7 +1003,18 @@ export function checkPersistenceCoverage(testListJson: string, architectureJson:
     return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
   }
   const covered = new Set((tl.items ?? []).map((i) => i.invariant_id).filter((x): x is string => typeof x === "string" && x.length > 0));
-  const uncovered = invariants.map((i) => i.id as string).filter((id) => !covered.has(id));
+  // EXEMPT inherited SCHEMA-CONSTRAINT invariants. When db-design is supplied, a non-`transactional`
+  // invariant (unique/not_null/foreign_key/check/cascade/migration_reversible) whose TABLE this feature
+  // does NOT migrate (it has no schema_change, so invariantRealizingStory has no entry for it) is a
+  // PRE-EXISTING constraint enforced + tested by the feature that CREATED the table — never re-tested
+  // here. Re-declaring it (the recurring F5 case: PI1 F1-unique, PI4/PI5 F2 audit constraints, briefs
+  // admitting "pre-existing, no new migration") must NOT demand a cover this feature cannot meaningfully
+  // author → otherwise the design-complete gate dead-locks to HIL. `transactional` invariants stay
+  // demanded (they are BEHAVIOR this feature's code implements, even on an inherited table). Omitting
+  // db-design keeps the prior behavior (demand all) so no caller regresses until it threads it through.
+  const realizing = dbDesignJson ? invariantRealizingStory(architectureJson, dbDesignJson) : null;
+  const demanded = invariants.filter((i) => realizing === null || i.type === "transactional" || realizing.has(i.id));
+  const uncovered = demanded.map((i) => i.id).filter((id) => !covered.has(id));
   if (uncovered.length > 0) {
     return {
       ok: false,
@@ -1033,6 +1083,141 @@ export function checkMigrationReversibleShape(testListJson: string, architecture
         `performs it. See navigator.md (case A/B) / test-strategy.md.`,
     );
     for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
+ * DESIGN-TIME SHAPE gate for `transactional` invariants — the atomicity complement to
+ * checkMigrationReversibleShape. `checkPersistenceCoverage` only proves a covering item EXISTS (is
+ * tagged); it cannot tell a RIGHT-shaped test from a wrong one. A `transactional` invariant ("in one
+ * service-owned transaction both writes land; if either fails NEITHER persists") MUST be verified by
+ * forcing a mid-transaction failure and asserting neither write persists (the F2 `T19
+ * test_adjust_rolls_back_when_transaction_fails` shape) — NOT by a migration downgrade/upgrade
+ * round-trip. Without this gate a `transactional` invariant can be "covered" by a migration-survival
+ * round-trip (the F5/PI1 repair false-green: `coverInvariant`'s author-fallback authors a round-trip
+ * for ANY type, and nothing checked the shape). Keying off the invariant TYPE (deterministic) closes
+ * that hole: a non-atomicity covering item now fails the gate and routes back to re-author the right shape.
+ */
+export function checkTransactionalShape(testListJson: string, architectureJson: string): ConformanceResult {
+  let arch: { service_backed?: boolean; persistence_invariants?: Array<{ id?: string; type?: string }> };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true }; // invalid architecture reported elsewhere
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const transactional = (arch.persistence_invariants ?? []).filter(
+    (i) => i && typeof i.id === "string" && i.id.length > 0 && i.type === "transactional",
+  );
+  if (transactional.length === 0) return { ok: true };
+  let tl: { items?: Array<{ id?: string; invariant_id?: string; description?: string; ac_id?: string }> };
+  try {
+    tl = JSON.parse(testListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  for (const inv of transactional) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    // Presence is checkPersistenceCoverage's job; this grades the SHAPE of whatever covers it.
+    if (covering.length === 0) continue;
+    if (covering.some((it) => describesAtomicityRollback(it.description ?? ""))) continue;
+    const ids = covering.map((it) => it.id ?? "?").join(", ");
+    violations.push(
+      `transactional invariant ${inv.id} is covered only by item(s) [${ids}] that do NOT describe an ATOMICITY/ROLLBACK ` +
+        `test — a transactional invariant MUST be verified by FORCING a mid-transaction failure and asserting NEITHER write ` +
+        `persists (e.g. patch the commit/second write to raise, then assert the row-update AND the audit row both rolled ` +
+        `back — the F2 T19 shape), NOT a migration downgrade/upgrade round-trip. Re-author the covering item as an ` +
+        `atomicity test, OR retag ${inv.id} onto the item that performs it. See test-strategy.md / navigator.md.`,
+    );
+    for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+  }
+  return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/**
+ * STORY-SCOPED persistence-invariant coverage — the pre-reflect complement to the feature-wide
+ * checkPersistenceCoverage (which only runs at the design-complete / deploy / feature-complete gates,
+ * where an uncovered invariant is caught LATE and hard-escalates with no self-heal). For each
+ * persistence_invariant THIS story OWNS (its id in `ownedInvariantIds`, derived by the caller), this
+ * story's test-list MUST carry >=1 covering item (invariant_id === the invariant's id) of the correct
+ * SHAPE for its type (transactional => atomicity/rollback; migration_reversible => downgrade
+ * round-trip; other types => presence is enough). An owned-but-uncovered or mis-shaped invariant is a
+ * reflect-testlist-defect the deterministic testlist-gate routes to the test-strategist via the
+ * existing revise-route — self-healed at THIS story's design, before any build, with NO LLM lap.
+ *
+ * Story-scoped (not feature-wide here) on purpose: the pre-reflect gate runs per story, so it may only
+ * flag an invariant THIS story is responsible for — flagging a sibling story's invariant would loop a
+ * story to a dead end it cannot fix. Ownership (invariantOwnerStories in testlist-conformance.ts) is a
+ * schema-change anchor when the feature migrates the invariant's table, else a write-path anchor (the
+ * story whose test-list most references the table) for a pre-existing/unmigrated table — the F2
+ * stock_records PI1/PI2 case where invariantRealizingStory yields no owner. An invariant with no
+ * derivable owner is left for the feature-wide design-complete backstop.
+ */
+export function checkStoryPersistenceCoverage(
+  storyTestListJson: string,
+  architectureJson: string,
+  ownedInvariantIds: readonly string[],
+): ConformanceResult {
+  if (ownedInvariantIds.length === 0) return { ok: true };
+  const owned = new Set(ownedInvariantIds);
+  let arch: { service_backed?: boolean; persistence_invariants?: Array<{ id?: string; type?: string; table?: string }> };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true }; // invalid architecture reported elsewhere
+  }
+  if (arch.service_backed !== true) return { ok: true };
+  const invariants = (arch.persistence_invariants ?? []).filter(
+    (i): i is { id: string; type?: string; table?: string } =>
+      !!i && typeof i.id === "string" && i.id.length > 0 && owned.has(i.id),
+  );
+  if (invariants.length === 0) return { ok: true };
+  let tl: { items?: Array<{ id?: string; invariant_id?: string; description?: string; ac_id?: string }> };
+  try {
+    tl = JSON.parse(storyTestListJson);
+  } catch (err) {
+    return { ok: false, violations: [`test-list.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`] };
+  }
+  const items = tl.items ?? [];
+  const violations: string[] = [];
+  const acIds = new Set<string>();
+  const shapeOk = (type: string | undefined, desc: string): boolean =>
+    type === "transactional"
+      ? describesAtomicityRollback(desc)
+      : type === "migration_reversible"
+        ? describesMigrationRoundTrip(desc)
+        : true;
+  for (const inv of invariants) {
+    const covering = items.filter((it) => it.invariant_id === inv.id);
+    if (covering.length === 0) {
+      violations.push(
+        `persistence_invariant ${inv.id}${inv.table ? ` (${inv.type ?? "?"} on ${inv.table})` : ""} is realized by this story but ` +
+          `has NO covering test-list item (invariant_id) in this story's list. Add a covering test — or TAG the existing test ` +
+          `that already verifies it — with invariant_id=${inv.id}` +
+          (inv.type === "transactional"
+            ? ` (a transactional invariant needs an atomicity/rollback test: force a mid-transaction failure, assert NEITHER write persists)`
+            : inv.type === "migration_reversible"
+              ? ` (a migration_reversible invariant needs a downgrade→upgrade round-trip)`
+              : ``) +
+          `. See test-strategy.md.`,
+      );
+      continue;
+    }
+    if (!covering.some((it) => shapeOk(inv.type, it.description ?? ""))) {
+      const ids = covering.map((it) => it.id ?? "?").join(", ");
+      violations.push(
+        `persistence_invariant ${inv.id} (${inv.type ?? "?"}) is covered only by wrong-shaped item(s) [${ids}] for its type — ` +
+          (inv.type === "transactional"
+            ? `it needs an ATOMICITY/ROLLBACK test (force a mid-transaction failure, assert neither write persists), not a migration round-trip`
+            : `it needs a downgrade→upgrade ROUND-TRIP`) +
+          `. Re-author the covering item for the right shape (or retag ${inv.id} onto the item that performs it). See test-strategy.md.`,
+      );
+      for (const it of covering) if (typeof it.ac_id === "string") acIds.add(it.ac_id);
+    }
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
 }
@@ -1759,6 +1944,21 @@ export function scanFeatureConformance(consortDir: string, featureId: string): F
         ok: persist.ok,
         violations: persist.ok ? [] : persist.violations,
       });
+      // SHAPE, not just presence: a migration_reversible invariant must be a round-trip, and a
+      // transactional invariant an atomicity/rollback test (the F5/PI1 false-green — a transactional
+      // PI "covered" by a migration-survival round-trip). Both run at the feature-complete backstop too.
+      const revShape = checkMigrationReversibleShape(testListContent, archContent);
+      entries.push({
+        artifact: "test-list.json -> architecture.json (migration_reversible shape)",
+        ok: revShape.ok,
+        violations: revShape.ok ? [] : revShape.violations,
+      });
+      const txnShape = checkTransactionalShape(testListContent, archContent);
+      entries.push({
+        artifact: "test-list.json -> architecture.json (transactional atomicity shape)",
+        ok: txnShape.ok,
+        violations: txnShape.ok ? [] : txnShape.violations,
+      });
     }
   }
 
@@ -1984,6 +2184,31 @@ export function describesMigrationRoundTrip(desc: string): boolean {
     // Without this, a genuine round-trip phrased "additive migration down->up preserves …" false-flags
     // as forward-only — the description-fragility that must not bounce a correct test.
     /\bdown\s*[-/→>]+\s*up\b/i.test(desc)
+  );
+}
+
+/** True when a test-list item describes an ATOMICITY/ROLLBACK test for a `transactional` invariant:
+ *  a FORCED mid-transaction failure + an assertion that NEITHER write persists (the F2 `T19` shape).
+ *  Deliberately DISJOINT from describesMigrationRoundTrip (downgrade/upgrade/round-trip wording) so a
+ *  migration-survival test does NOT satisfy a transactional invariant's shape (the F5/PI1 false-green).
+ *  Matches: rollback / rolls back / rolled back; "neither … persists/written/commits"; a
+ *  transaction|commit|write that FAILS; "if either … fails"; or `atomic` paired with a failure/rollback. */
+export function describesAtomicityRollback(desc: string): boolean {
+  const d = desc.toLowerCase();
+  return (
+    /\broll\s*back\b|\brolls?\s*back\b|\brolled\s*back\b/.test(d) ||
+    /\bneither\b[^.]*\b(persist|written|writes|commit|row|saved|inserted)\b/.test(d) ||
+    /\b(transaction|commit|write|insert|update)\b[^.]*\bfail/.test(d) ||
+    /\beither\b[^.]*\bfail/.test(d) ||
+    (/\batomic/.test(d) && /\b(fail|roll|neither|both)\b/.test(d)) ||
+    // READ-ONLY flavor of a `transactional` invariant: the operation runs in a read-only unit of work
+    // (it performs NO writes), e.g. F5's PI25-count-read-only. Its correct covering test asserts the
+    // transaction writes nothing / leaves the tables unchanged — a valid transactional shape, not an
+    // atomicity/rollback one. Keyed narrowly (explicit read-only / writes-nothing / no-row-written) so
+    // a mere incidental "unchanged" aside cannot satisfy a genuine atomicity invariant.
+    /\bread[-\s]?only\b/.test(d) ||
+    /\bwrites?\s+nothing\b/.test(d) ||
+    /\bno\b[^.]*\b(row|write|insert|adjustment)s?\b[^.]*\b(written|inserted|created|persist|made)\b/.test(d)
   );
 }
 
@@ -2376,6 +2601,115 @@ export function checkApiContractConsistency(architectureJson: string, acJsons: s
     }
   }
   return violations.length === 0 ? { ok: true } : { ok: false, violations, acIds: [...acIds] };
+}
+
+/** HTTP methods whose api_contract is a backend WRITE — the only endpoints a required REQUEST
+ *  field can gate a submit on. A GET has no required request-body field to reconcile, so scoping
+ *  to these eliminates the pure-read false-positive class. Local on purpose: the dependency
+ *  direction is gates -> validators, so this never imports from consort/gates. */
+const REQUEST_MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * Cross-story REQUEST-CONTRACT reconciliation (the actor-required-on-EP4-broke-S1/S2 class).
+ * When a later story makes a request field REQUIRED on a shared MUTATION endpoint, every EARLIER
+ * story whose AC writes that endpoint must have reconciled its fixtures to supply the field — else
+ * those prior-story tests 422 at the full-feature verify (the silent cross-story deploy-verify HIL).
+ *
+ * DETERMINISTIC — uses ONLY structured signals, never given/when/then or test-body prose:
+ *   - `api_contracts[].request_fields[].{name,required,since_story,reconciled_stories}` (the contract),
+ *   - each AC's `api_contract_id` + its owning story (writers), and
+ *   - `storyOrder` (feature-spec.json `stories[]`) to tell a PRIOR writer from a LATER one.
+ *
+ * For each MUTATION contract C and each request field F with `required:true`:
+ *   1. F must declare `since_story` (the story that made it required) — else a violation. A field
+ *      required from the endpoint's inception sets `since_story` to its ORIGIN story, so it has no
+ *      prior writers and passes; this keeps the check no-false-positive while still forcing the
+ *      machine-readable provenance (the record whose ABSENCE let the original defect stay prose).
+ *   2. priorWriters = writer stories ordered BEFORE `since_story`. Later writers are excluded (the
+ *      field was already required when they were designed). An unknown story order is treated as
+ *      "not-before" (conservative: only flag a writer we can confirm is prior).
+ *   3. Each prior writer NOT in F.reconciled_stories is a violation naming C, F, since_story, and the
+ *      unreconciled writer's AC — resolve by supplying F in that story's fixtures + listing it in
+ *      reconciled_stories, or make F `required:false`.
+ * Vacuous (ok) when no contract declares request_fields (back-compat).
+ */
+export function checkRequestFieldReconciliation(
+  architectureJson: string,
+  acsByStory: Array<{ story: string; acJson: string }>,
+  storyOrder: string[],
+): ConformanceResult {
+  let arch: {
+    api_contracts?: Array<{
+      id?: string;
+      method?: string;
+      request_fields?: Array<{ name?: string; required?: boolean; since_story?: string; reconciled_stories?: string[] }>;
+    }>;
+  };
+  try {
+    arch = JSON.parse(architectureJson);
+  } catch {
+    return { ok: true }; // invalid architecture reported elsewhere
+  }
+  const contracts = (arch.api_contracts ?? []).filter(
+    (c) => c && typeof c.id === "string" && Array.isArray(c.request_fields) && c.request_fields.length > 0,
+  );
+  if (contracts.length === 0) return { ok: true }; // no structured request contract declared — vacuous
+
+  // writersByContract: the set of stories whose ACs reference each contract id.
+  const writersByContract = new Map<string, Set<string>>();
+  const acIdsByContractWriter = new Map<string, string>(); // `${contractId}|${story}` -> a representative AC id (for the message)
+  for (const { story, acJson } of acsByStory) {
+    let ac: { id?: string; api_contract_id?: string };
+    try {
+      ac = JSON.parse(acJson);
+    } catch {
+      continue; // a malformed AC is reported by the acs-conformance gate
+    }
+    const ref = ac.api_contract_id;
+    if (typeof ref !== "string" || ref.length === 0) continue;
+    const set = writersByContract.get(ref) ?? new Set<string>();
+    set.add(story);
+    writersByContract.set(ref, set);
+    const key = `${ref}|${story}`;
+    if (!acIdsByContractWriter.has(key) && typeof ac.id === "string") acIdsByContractWriter.set(key, ac.id);
+  }
+
+  const orderIdx = (s: string): number => {
+    const i = storyOrder.indexOf(s);
+    return i < 0 ? Number.POSITIVE_INFINITY : i;
+  };
+
+  const violations: string[] = [];
+  const flaggedAcIds = new Set<string>();
+  for (const c of contracts) {
+    if (!REQUEST_MUTATION_METHODS.has(String(c.method ?? "").toUpperCase())) continue;
+    const writers = writersByContract.get(c.id as string) ?? new Set<string>();
+    for (const f of c.request_fields ?? []) {
+      if (f?.required !== true || typeof f.name !== "string" || f.name.length === 0) continue;
+      const since = f.since_story;
+      if (typeof since !== "string" || since.length === 0) {
+        violations.push(
+          `${c.id}.request_fields "${f.name}" is required:true but declares no since_story — set since_story to the story that made it required (its ORIGIN story if required from the start), so prior writer stories can be reconciled (checkRequestFieldReconciliation).`,
+        );
+        continue;
+      }
+      const sinceIdx = orderIdx(since);
+      const reconciled = new Set(Array.isArray(f.reconciled_stories) ? f.reconciled_stories : []);
+      const unreconciled = [...writers].filter((w) => w !== since && orderIdx(w) < sinceIdx && !reconciled.has(w)).sort();
+      for (const w of unreconciled) {
+        const acId = acIdsByContractWriter.get(`${c.id}|${w}`);
+        violations.push(
+          `${c.id} requires request field "${f.name}" from ${since} on, but prior writer story ${w}` +
+            `${acId ? ` (AC ${acId})` : ""} writes this endpoint without reconciling it — supply "${f.name}" in ${w}'s ` +
+            `fixtures and add ${w} to ${c.id}.request_fields "${f.name}".reconciled_stories, or make the field required:false.`,
+        );
+        if (acId) flaggedAcIds.add(acId);
+      }
+    }
+  }
+  return violations.length === 0
+    ? { ok: true }
+    : { ok: false, violations, ...(flaggedAcIds.size ? { acIds: [...flaggedAcIds] } : {}) };
 }
 
 export function checkClientKindLayerCoherence(testListJson: string, acLayerById: Record<string, string>): ConformanceResult {

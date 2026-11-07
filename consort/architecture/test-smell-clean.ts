@@ -66,7 +66,11 @@ export type TestSmellName =
   | "dsn-inline-credentials"
   | "unpinned-schema-diff-baseline"
   | "psycopg2-pgcode-attr"
-  | "dropped-column-test-reference";
+  | "dropped-column-test-reference"
+  // Test-RESILIENCE family: a test that trusts a transient/optimistic value or a timing
+  // assumption instead of awaiting a confirmed CONDITION — flaky by construction.
+  | "e2e-reread-without-confirmation"
+  | "e2e-timing-dependent-wait";
 
 /** Test-smell classes that CANNOT be closed by a surgical Driver repair (narrow a catch,
  *  drop a teardown): they require RE-AUTHORING the test's mechanics, which a Driver
@@ -94,6 +98,17 @@ export const AUTHOR_LAYER_TEST_SMELLS: ReadonlySet<TestSmellName> = new Set<Test
   "unpinned-schema-diff-baseline",
 ]);
 
+/** The test-RESILIENCE family: a test that trusts a transient/optimistic value or a timing
+ *  assumption instead of awaiting a confirmed CONDITION (flaky by construction). These are NOT
+ *  in AUTHOR_LAYER_TEST_SMELLS (which HIL-escalates): instead the build-cycle routes an AUTO
+ *  Navigator RE-AUTHOR turn (the Navigator who authored the test edits it resilient), then
+ *  re-verifies — one-shot. Caught at authoring, so a flaky test never reaches deploy/CI (the
+ *  F5 -> F2 @T78 class). */
+export const RESILIENCE_TEST_SMELLS: ReadonlySet<TestSmellName> = new Set<TestSmellName>([
+  "e2e-reread-without-confirmation",
+  "e2e-timing-dependent-wait",
+]);
+
 export interface TestSmellViolation {
   smell: TestSmellName;
   /** Project-relative file path. */
@@ -111,6 +126,12 @@ export interface TestSmellCleanResult {
   violations: TestSmellViolation[];
   /** A precise, Navigator-actionable fix list, or undefined when clean. */
   remediation?: string;
+}
+
+/** The subset of a scan's violations that are test-RESILIENCE smells (route the Navigator
+ *  RE-AUTHOR turn, not HIL and not a Driver repair). */
+export function resilienceViolations(result: TestSmellCleanResult): TestSmellViolation[] {
+  return result.violations.filter((v) => RESILIENCE_TEST_SMELLS.has(v.smell));
 }
 
 const DEFAULT_TEST_DIRS = ["tests", "client/tests"];
@@ -224,6 +245,10 @@ const SMELL_FIX: Record<TestSmellName, string> = {
     "this test runs the parent-aware `lakebase-schema-diff` with NO --against/--comparison-branch, so the CLI resolves the comparison branch from metadata = the branch's OWN parent (sourceBranchId). Under the build-lane verify the test runs on an ephemeral CHILD of the experiment branch, whose parent is ALREADY migrated to head — the parent-aware diff is EMPTY, so an assertion that it lists a column added/removed can never pass by ANY product change (the outcome depends on branch topology, not code: the F6/S3 T44 class). Pin a FIXED baseline: pass `--against <pre-migration branch>` (the feature base / main), OR assert the migration's OWN before/after on an isolated @pytest.mark.migration branch (downgrade to its down_revision, capture schema, upgrade head, compare). A diff invocation WITH --against is fine and is not flagged.",
   "dropped-column-test-reference":
     "this TEST inserts into / selects / asserts a column that a CONTRACT migration in this feature DROPPED, and the file performs no downgrade — so it runs against HEAD where the column no longer exists and dies with a ProgrammingError ('column does not exist'), even though the app is correct (the F6/S3 cross-story supersession class: a prior story's test still references tracking_code after S3 drops it). `opt2` scopes the per-cycle backend suite to the current story, so a prior-story test like this is NOT run per-cycle and only fails LATER at the full deploy-verify as a HALT. Refactor the superseded reference: drop the dropped column from the INSERT/SELECT/assertion, or retarget it to the surviving columns (e.g. batch_number/serial_number). Do NOT re-add the column to the model or edit the migration to hide it. (A migration round-trip test that re-adds the column via its own downgrade is legitimate and is not flagged — this only flags pure-HEAD references.)",
+  "e2e-reread-without-confirmation":
+    "this Playwright e2e asserts a value, RE-READS it (page.reload() or a page.goto() back to the view), then re-asserts the same value to prove PERSISTENCE — but it never awaits a SERVER-CONFIRMED signal before the re-read, so it races the still-in-flight write. The pre-re-read assertion is satisfied by the OPTIMISTIC UI (the row shows the new value before the write resolves), then the reload/goto fetches from the DB; when the re-read beats the commit the DB still has the OLD value and the test fails — intermittently in isolation (the write is fast), DETERMINISTICALLY under full-suite/CI load (the write is slow). A test that only passes on a retry is not resilient and gives the gate no signal (the F5 -> F2 @T78 class). Make it RESILIENT: before the re-read, await the server-CONFIRMED signal the app emits on a durable write — the success flash / a `*-success` (or `*-error`) status element / `page.waitForResponse(<the write endpoint>)` — exactly as the resilient sibling test does; THEN reload and re-assert. Never assert on an optimistic value and immediately re-read.",
+  "e2e-timing-dependent-wait":
+    "this test waits a FIXED DURATION (page.waitForTimeout(n) / a bare setTimeout/sleep) instead of awaiting a CONDITION. A hardcoded sleep is flaky by construction: too short under load (the thing never happened yet -> fails) and wasteful otherwise — 'sleep and hope'. It passes on a fast/idle machine and fails under full-suite/CI load, the same non-deterministic signal as a flaky test. Replace the fixed wait with an await of the actual condition: `await expect(locator).toBeVisible()` / `toHaveText(...)` (Playwright auto-waits with a timeout), `page.waitForResponse(<endpoint>)`, `page.waitForURL(...)`, or `page.waitForLoadState('networkidle')`. Never gate a test on wall-clock time.",
   "psycopg2-pgcode-attr":
     "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) — a psycopg2 attribute — but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap — no production/driver shim.",
 };
@@ -468,6 +493,73 @@ function projectDeclaresPsycopg2(projectDir: string): boolean {
   return false;
 }
 
+/** Split spec lines into top-level `test(`/`it(` block ranges `[from, to)`. Spec files
+ *  list tests flat, so top-level openers approximate block boundaries (where the Navigator
+ *  authors them). */
+function testBlockRanges(lines: string[]): Array<[number, number]> {
+  const BLOCK_START = /^\s*(?:test|it)\s*\(/;
+  const starts: number[] = [];
+  lines.forEach((l, i) => {
+    if (BLOCK_START.test(l)) starts.push(i);
+  });
+  return starts.map((from, k) => [from, k + 1 < starts.length ? starts[k + 1] : lines.length]);
+}
+
+/**
+ * e2e-reread-without-confirmation (test-resilience family). Within a Playwright
+ * `test(...)`/`it(...)` block, a RE-READ of persisted state — `page.reload()` or a
+ * `page.goto(...)` back to a view — used to re-assert a value (a value assertion both
+ * BEFORE and AFTER the re-read: the "assert X, re-read, re-assert X" round-trip) with
+ * NO server-CONFIRMED signal awaited before the re-read. Confirmed signals: the
+ * success/error status element the app renders only AFTER the write resolves (a
+ * `*-success`/`*-error`/`data-flash`/status/toast testid or attribute), or an explicit
+ * `page.waitForResponse` / `waitForLoadState`. Without one, the pre-re-read assertion is
+ * satisfied by the OPTIMISTIC UI and the re-read races the write — non-resilient. The
+ * value-assert-BEFORE gate keeps a setup `goto` (initial navigation, no prior assertion)
+ * from tripping it. Returns the 1-based line of each offending re-read. Pure: string-only.
+ */
+export function e2eRereadWithoutConfirmation(lines: string[]): number[] {
+  const out: number[] = [];
+  const REREAD = /\bpage\s*\.\s*(?:reload|goto)\s*\(/;
+  const VALUE_ASSERT = /\b(?:toHaveText|toHaveValue|toContainText)\s*\(/;
+  // A durable-write CONFIRMATION the app only shows AFTER the server responds.
+  const CONFIRM =
+    /data-flash|getByTestId\(\s*["'`][^"'`]*(?:success|error|confirm|saved|toast|status)[^"'`]*["'`]|waitForResponse|waitForLoadState/i;
+  for (const [from, to] of testBlockRanges(lines)) {
+    for (let i = from; i < to; i++) {
+      if (!REREAD.test(lines[i])) continue;
+      let confirmedBefore = false;
+      let valueBefore = false;
+      for (let j = from; j < i; j++) {
+        if (CONFIRM.test(lines[j])) confirmedBefore = true;
+        if (VALUE_ASSERT.test(lines[j])) valueBefore = true;
+      }
+      if (confirmedBefore) continue; // resilient: a confirmed signal was awaited first
+      if (!valueBefore) continue; // setup nav / read-only reload (no optimistic pre-assert) — not this smell
+      let valueAfter = false;
+      for (let j = i + 1; j < to; j++) if (VALUE_ASSERT.test(lines[j])) valueAfter = true;
+      if (valueAfter) out.push(i + 1); // persistence round-trip with no confirmation before the re-read
+    }
+  }
+  return out;
+}
+
+/**
+ * e2e-timing-dependent-wait (test-resilience family). A FIXED-DURATION wait —
+ * `page.waitForTimeout(n)` or a bare `setTimeout`/`sleep(n)` await — instead of awaiting a
+ * CONDITION. Flaky by construction (too short under load, wasteful otherwise). Returns the
+ * 1-based line of each occurrence. Pure: string-only. (A `waitForTimeout(0)` micro-yield is
+ * still flagged — prefer an explicit condition; the fix guidance covers the alternatives.)
+ */
+export function e2eTimingDependentWait(lines: string[]): number[] {
+  const out: number[] = [];
+  const TIMING = /\b(?:waitForTimeout|setTimeout)\s*\(|\bawait\s+sleep\s*\(/;
+  lines.forEach((l, i) => {
+    if (TIMING.test(l)) out.push(i + 1);
+  });
+  return out;
+}
+
 /** Scan the project's test files for the authoring-smell catalog. */
 export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
   const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
@@ -500,6 +592,18 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
       // A client COMPONENT test (`.test.tsx` under client/, NOT an e2e `.spec.ts`) — the no-mock rule
       // applies to these: they must hit the real backend over `/api`, not a stubbed data path.
       const isComponentTest = isJs && /\.test\.(ts|tsx|js|jsx|mjs)$/.test(file) && file.replace(/\\/g, "/").includes("/client/");
+
+      // Test-RESILIENCE family (file-level, Playwright `.spec.` only): a re-read-to-assert-
+      // persistence round-trip with no confirmed signal before the re-read, and fixed-duration
+      // (sleep-and-hope) waits. Both are non-resilient AUTHORING defects routed to the Navigator.
+      if (isJs && /\.spec\.(ts|tsx|js|jsx|mjs)$/.test(file)) {
+        for (const ln of e2eRereadWithoutConfirmation(lines)) {
+          push("e2e-reread-without-confirmation", rel, ln, lines[ln - 1] ?? "page.reload()");
+        }
+        for (const ln of e2eTimingDependentWait(lines)) {
+          push("e2e-timing-dependent-wait", rel, ln, lines[ln - 1] ?? "waitForTimeout(...)");
+        }
+      }
 
       // dropped-column-test-reference (file-level): a Python test that references a contract-dropped
       // column while doing NO downgrade in the file (so it runs at HEAD where the column is gone). A

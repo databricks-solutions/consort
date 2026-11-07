@@ -92,6 +92,9 @@ export interface StoryArtifactProbe {
   /** The open AC whose GREEN verify failed + has not yet been assessed, or null
    *  (drives the reactive Navigator assess turn). */
   assessGreenFailureAc(story: string): string | null;
+  /** The open AC the GREEN smell gate flagged with an UNSPENT test-RESILIENCE reauthor
+   *  marker, or null (drives the Navigator RE-AUTHOR turn). */
+  reauthorResilienceAc(story: string): string | null;
   /** The open AC the Navigator assessed as a DRIVER-FIXABLE regression (recorded a
    *  fix directive), repair not yet consumed, or null (drives the Driver repair turn). */
   repairRegressionFixAc(story: string): string | null;
@@ -268,6 +271,7 @@ function storyView(
       reviewStoryPending: probe.reviewPending(id),
       refactorStoryPending: probe.refactorPending(id),
       assessGreenAc: probe.assessGreenFailureAc(id),
+      reauthorResilienceAc: probe.reauthorResilienceAc(id),
       repairRegressionAc: probe.repairRegressionFixAc(id),
       greenSupersededAc: probe.greenSupersededFailureAc(id),
       specDefectAc: probe.specDefectAc(id),

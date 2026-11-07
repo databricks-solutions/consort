@@ -140,6 +140,29 @@
             "type": "string",
             "description": "For shape `list`/`object`: the row/body type in prose or a model ref (e.g. \"stock-record: {sku, location, quantity, tracking_code|null, par_level|null}\"). Per-field nullability lives HERE once, not re-stated per AC."
           },
+          "request_fields": {
+            "type": "array",
+            "description": "The REQUEST contract for this endpoint — the MACHINE-READABLE source of truth for which request fields are required vs optional (the `item` prose stays for humans). The Driver builds endpoint validation FROM this, not by inferring from prose or a persistence invariant. checkRequestFieldReconciliation HARD-BLOCKS the spec gate when a required field on a MUTATION endpoint is unreconciled with a PRIOR writer story (the actor-required-on-EP4-broke-S1/S2 class): when a later story makes a field required via `since_story`, every earlier story whose AC references this endpoint (api_contract_id) must appear in that field's `reconciled_stories` (its fixtures now supply the field) OR the field must be `required:false`.",
+            "items": {
+              "type": "object",
+              "required": ["name", "required"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "required": { "type": "boolean" },
+                "since_story": {
+                  "type": "string",
+                  "description": "The story id that MADE this field required (its provenance). REQUIRED whenever `required:true` and a prior story already writes this endpoint — it is the only machine-readable record that a later story changed the contract (the introducing story often has NO AC on this endpoint, e.g. S3 made `actor` required on EP4 while all of S3's own ACs target EP5). The gate auto-exempts this story; prior writer stories must be in `reconciled_stories`."
+                },
+                "reconciled_stories": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "The prior writer stories whose ACs/fixtures have been reconciled to supply this now-required field — the structured ack that lets the reconciliation gate pass (the analog of an open_decisions resolution, keyed to the field). Every prior writer of this endpoint must be listed here (or the field made optional)."
+                },
+                "brief": { "type": "string" }
+              }
+            }
+          },
           "story": {
             "type": "string",
             "description": "The story id that introduced this endpoint."

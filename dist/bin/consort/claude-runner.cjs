@@ -7676,7 +7676,8 @@ var test_strategist_default = {
     {
       id: "db-design",
       source: "feature:features/{feature}/db-design.json",
-      description: "The DBA's concrete tables/constraints the invariant tests assert against. Feature-scoped: {feature} expands to the run's feature id (features/<F>/db-design.json)."
+      optional: true,
+      description: "The DBA's concrete tables/constraints the invariant tests assert against. Feature-scoped: {feature} expands to the run's feature id (features/<F>/db-design.json). OPTIONAL: a non-persisting / non-service-backed feature (service_backed=false, persistence_invariants=[]) runs no DBA step and has no db-design.json \u2014 the DBA output contract already states it 'may leave this empty', so the test-strategist must not fail-loud on its absence (its invariant tests simply have nothing to assert; the architecture input stays the authority). A persisting feature still provides it."
     }
   ],
   preconditions: [],
@@ -7853,6 +7854,32 @@ var navigator_review_default = {
   agentOptions: {
     model: "sonnet",
     effort: "low",
+    session: "resume",
+    resumeKeyFrom: "story"
+  },
+  postTurn: [
+    { bin: "@build-cycle", args: [], when: "after" }
+  ]
+};
+
+// consort/orchestrator/steps/manifests/navigator-reauthor.json
+var navigator_reauthor_default = {
+  id: "navigator-reauthor",
+  role: "navigator",
+  agent: { kind: "claude", config: { role: "navigator" } },
+  match: { kind: "invoke-role", role: "navigator", buildMode: "reauthor" },
+  inputs: [
+    { id: "code", source: "story:code", optional: true, description: "The flaky test file(s) the Navigator RE-AUTHORS for resilience (read + edited directly in the project tree, per the reauthor-resilience marker's remediation). OPTIONAL: the test files are the project tree, not a .consort artifact to presence-check." },
+    { id: "acs", source: "story:acs", optional: true, description: "The acceptance criteria whose assertion INTENT must be preserved while the test is made deterministic." }
+  ],
+  raises: [],
+  outputs: [],
+  routing: {
+    produced: { next: "state-derived" }
+  },
+  agentOptions: {
+    model: "sonnet",
+    effort: "default",
     session: "resume",
     resumeKeyFrom: "story"
   },
@@ -8204,6 +8231,7 @@ var SHIPPED_MANIFESTS = [
   ux_ia_default,
   navigator_red_default,
   navigator_review_default,
+  navigator_reauthor_default,
   navigator_reflect_default,
   navigator_reconcile_default,
   navigator_assess_default,
@@ -8259,6 +8287,9 @@ function turnKeyForAction(action) {
       // feature-complete symmetric cross-story reconciliation — its OWN step key (NOT red)
       case "review":
         return "review";
+      case "reauthor":
+        return "reauthor";
+      // test-RESILIENCE re-author (navigator edits the flaky test) — its OWN step key, NOT red
       case "refactor":
       case "refactor-deploy":
       case "refactor-superseded":

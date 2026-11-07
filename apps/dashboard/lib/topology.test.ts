@@ -1451,4 +1451,27 @@ describe("topology — reachedThisPass (pass-scoped traversal)", () => {
     expect([...reached].sort()).toEqual(["b-green", "b-red", "b-review"]);
     expect(reached.has("b-refactor")).toBe(false);
   });
+
+  it("RESETS build + deploy at an experiment.cut so the prior story's verify stops reading reached", () => {
+    // S1 ran a full build cycle THEN a deploy-verify; an experiment.cut opens S2's build pass. In the
+    // gap between the cut and S2's first navigator-red, the prior deploy's dp-verify must NOT linger
+    // reached — that was the "verify card lit at the experiment cut, next step navigator-red" bug.
+    const verify = ev("test.result", "release-engineer", { status: "green", story: "S1" }); // dp-verify
+    const cut = ev("experiment.cut", "orchestrator", {});
+    const atCut = reachedThisPass([...cycle1, verify, cut]);
+    expect(atCut.has("dp-verify")).toBe(false);
+    expect(atCut.has("b-green")).toBe(false);
+    expect(atCut.has("b-red")).toBe(false);
+    // The next navigator-red re-opens the build lane fresh for the new story.
+    const afterRed = reachedThisPass([...cycle1, verify, cut, red]);
+    expect([...afterRed]).toEqual(["b-red"]);
+  });
+
+  it("an experiment.cut does NOT reset upstream design — a design step stays reached across the cut", () => {
+    const dSpec = ev("phase.start", "spec-author", { phase: "design" }); // d-spec
+    const cut = ev("experiment.cut", "orchestrator", {});
+    const reached = reachedThisPass([dSpec, ...cycle1, cut]);
+    expect(reached.has("d-spec")).toBe(true); // upstream design is behind the frontier, untouched by the cut
+    expect(reached.has("b-green")).toBe(false); // build cleared at the cut
+  });
 });

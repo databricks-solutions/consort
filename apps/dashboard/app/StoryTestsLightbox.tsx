@@ -16,7 +16,12 @@ import type { ActivityLine, ActivityTimeline } from "./AgentLogReplay";
 // `TestBubbles` is a PURE render (no fetch/state) so it renders server-side in tests; the fetching +
 // overlay live in `StoryTestsLightbox`.
 
-export type TestStatus = "pending" | "running" | "red" | "green" | "refactored" | "skipped";
+// The authored/recorded statuses PLUS two DERIVED display states the playhead-aware fold computes
+// (never emitted by the API): `superseded` = a test that NEVER greened and will not run again at the
+// playhead (abandoned — dim RED + strikethrough); `supersededGreen` = a test that WAS green and has
+// since regressed/been replaced (dim GREEN + strikethrough, shown only AFTER that transition). Before
+// a test is superseded it renders in its live colour, never dimmed. See `testDisplayStateForStory`.
+export type TestStatus = "pending" | "running" | "red" | "green" | "refactored" | "skipped" | "superseded" | "supersededGreen";
 
 export interface StoryTest {
   id: string;
@@ -31,28 +36,36 @@ export interface StoryTest {
 
 // status → the visual language. green & refactored both read as "passing" (green); red is written-
 // but-failing; pending is upcoming (neutral, dashed); skipped is set aside (faint).
-const STATUS_STYLE: Record<TestStatus, { bg: string; border: string; fg: string; dot: string; label: string; dashed?: boolean; strike?: boolean }> = {
+const STATUS_STYLE: Record<TestStatus, { bg: string; border: string; fg: string; dot: string; label: string; dashed?: boolean; strike?: boolean; dim?: boolean }> = {
   green: { bg: "var(--status-good-tint)", border: "var(--status-good)", fg: "var(--status-good-text)", dot: "var(--status-good)", label: "passing" },
   refactored: { bg: "var(--status-good-tint)", border: "var(--status-good)", fg: "var(--status-good-text)", dot: "var(--status-good)", label: "passing ♺" },
   running: { bg: "var(--status-warning-tint)", border: "var(--status-warning)", fg: "var(--status-warning-text)", dot: "var(--status-warning)", label: "running" },
   red: { bg: "var(--status-critical-tint)", border: "var(--status-critical)", fg: "var(--status-critical-text)", dot: "var(--status-critical)", label: "failing" },
   pending: { bg: "var(--surface-inset)", border: "var(--border-default)", fg: "var(--text-muted)", dot: "var(--text-faint)", label: "upcoming", dashed: true },
   skipped: { bg: "transparent", border: "var(--border-default)", fg: "var(--text-faint)", dot: "var(--text-faint)", label: "skipped", strike: true },
+  // DERIVED (playhead-aware), both dim + strikethrough. `superseded` = never greened then abandoned
+  // (keeps the RED hue so it never reads as a pass); `supersededGreen` = was green then replaced
+  // (keeps the GREEN hue, struck to show it no longer counts). `dim` drops the whole tile's opacity.
+  superseded: { bg: "var(--status-critical-tint)", border: "var(--status-critical)", fg: "var(--status-critical-text)", dot: "var(--status-critical)", label: "superseded", strike: true, dim: true },
+  supersededGreen: { bg: "var(--status-good-tint)", border: "var(--status-good)", fg: "var(--status-good-text)", dot: "var(--status-good)", label: "superseded", strike: true, dim: true },
 };
 
-const STATUS_ORDER: TestStatus[] = ["green", "refactored", "running", "red", "pending", "skipped"];
+const STATUS_ORDER: TestStatus[] = ["green", "refactored", "running", "red", "pending", "supersededGreen", "superseded", "skipped"];
 
 export function summarizeTests(items: StoryTest[]): {
   by: Record<string, number>;
   passing: number;
+  superseded: number;
   total: number;
   pct: number;
 } {
   const by: Record<string, number> = {};
   for (const t of items) by[t.status] = (by[t.status] ?? 0) + 1;
   const passing = (by.green ?? 0) + (by.refactored ?? 0);
+  // Both superseded variants (never-greened + was-green-then-regressed) count as "superseded".
+  const superseded = (by.superseded ?? 0) + (by.supersededGreen ?? 0);
   const total = items.length;
-  return { by, passing, total, pct: total ? Math.round((passing / total) * 100) : 0 };
+  return { by, passing, superseded, total, pct: total ? Math.round((passing / total) * 100) : 0 };
 }
 
 // The per-test status tail AS-OF the LINE playhead, SCOPED to one feature+story. Each test's
@@ -72,6 +85,36 @@ export function testTailForStory(lines: ActivityLine[], lineAt: number, feature:
     m.set(l.testId, l.status ?? "");
   }
   return m;
+}
+
+const isGreenStatus = (s: string): boolean => s === "green" || s === "refactored";
+
+// The display status for ONE test, from AUTHORITATIVE signals — never inferred from the (lossy)
+// test.result trail. The rule, in priority order:
+//
+//   1. SUPERSEDED — the test id is in `supersededIds` (the Navigator's real `superseded-tests.json` /
+//      a `regression-assessment.json{superseded:true}`; see /api/story-tests). This is the ONLY source
+//      of supersession — it is never derived from a test going/staying red. Struck green if the authored
+//      status is green (passed then replaced), else struck red.
+//   2. SHIPPED story — when the viewed story's feature has shipped at the playhead, the story is DONE:
+//      trust the authoritative per-story `test-list-per-story.json` status (passed = green). The
+//      test.result trail is not consulted (it has capture gaps — a passed test can lack a green event).
+//   3. ACTIVE story — a story still building at the playhead reveals its live red→green march from the
+//      trail (`testTailForStory`): the last status ≤ the line playhead, or "pending" when unreached.
+//      At the live edge a test with no trail line falls back to its authored (HEAD) status.
+export function resolveTestDisplayStatus(args: {
+  test: StoryTest;
+  supersededIds: Set<string>;
+  featureShipped: boolean;
+  trail: Map<string, string>; // raw last-status ≤ line playhead, from testTailForStory
+  haveTestLines: boolean;
+  atLive: boolean;
+}): TestStatus {
+  const { test, supersededIds, featureShipped, trail, haveTestLines, atLive } = args;
+  if (supersededIds.has(test.id)) return isGreenStatus(test.status) ? "supersededGreen" : "superseded";
+  if (featureShipped) return test.status; // authoritative: the story shipped
+  if (haveTestLines) return (trail.get(test.id) as TestStatus) ?? (atLive ? test.status : "pending");
+  return atLive ? test.status : "pending";
 }
 
 function Legend({ by }: { by: Record<string, number> }) {
@@ -107,6 +150,14 @@ export function testType(t: StoryTest): "behavior" | "fitness" | "e2e" | "compon
 export function testHitsDb(t: StoryTest): boolean {
   const ty = testType(t);
   return ty === "behavior" || ty === "fitness" || ty === "e2e";
+}
+
+// The lakebase-branch chip label. The chip reports the LIVE current branch (Kind-1). When the viewed
+// story IS the live one, it is plainly "lakebase branch". When it is NOT (pinned / scrubbed / a past
+// feature), hard-label it as the LIVE run's and name the live feature, so it is never read as THIS
+// story's branch.
+export function branchChipLabel(viewedIsLive: boolean, liveFeature: string | null): string {
+  return viewedIsLive ? "lakebase branch" : `live · ${liveFeature ?? "run"} · branch`;
 }
 
 // A pill decorating the test type (behavior / fitness / e2e / component) next to the T#. Each type
@@ -202,6 +253,9 @@ function Bubble({ t, onSelect, selected }: { t: StoryTest; onSelect?: (id: strin
         border: `1px ${st.dashed ? "dashed" : "solid"} ${st.border}`,
         borderRadius: radius.panel,
         padding: "8px 10px",
+        // A superseded test is dimmed so the eye skims past it to the live ones; the strikethrough
+        // (on the description, below) says it no longer counts.
+        opacity: st.dim ? 0.55 : 1,
         cursor: onSelect ? "pointer" : undefined,
         outline: selected ? "2px solid var(--status-play)" : undefined,
         outlineOffset: selected ? 1 : undefined,
@@ -320,6 +374,11 @@ export function TestBubbles({
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-strong)", fontVariantNumeric: "tabular-nums" }}>
           {s.passing}/{s.total} passing <span style={{ color: "var(--text-faint)", fontWeight: 500 }}>({s.pct}%)</span>
+          {/* Superseded tests are counted apart from passing/total so the fraction isn't read as "failing":
+              a struck test no longer counts, it is just recorded history of the story's build. */}
+          {s.superseded > 0 ? (
+            <span style={{ color: "var(--text-faint)", fontWeight: 500, textDecoration: "line-through" }}> · {s.superseded} superseded</span>
+          ) : null}
         </span>
         <Legend by={s.by} />
       </div>
@@ -339,12 +398,14 @@ export function TestBubbles({
 export function StoryTestsLightbox({
   feature,
   story,
+  liveFeature,
+  viewedIsLive,
+  featureShipped,
   mode,
   atLive,
   atEventIndex,
   timeline,
   lineAt,
-  foldStatus,
   state,
   selectedTestId,
   onSelectTest,
@@ -352,14 +413,23 @@ export function StoryTestsLightbox({
 }: {
   feature: string;
   story: string;
+  // The live run's feature (the ONE run position) + whether the viewed story IS the live one. When
+  // it is NOT (pinned / scrubbed / a past feature), the branch chip + live pass/fail are the LIVE
+  // run's, not this story's, so they are rendered under a hard LIVE label.
+  liveFeature: string | null;
+  viewedIsLive: boolean;
+  // Has the viewed story's FEATURE shipped as of the playhead? When true the story is DONE — the panel
+  // reads as shipped (survivors green, superseded tests struck) rather than a mid-build red/pending.
+  featureShipped: boolean;
   mode: string | null;
   // The selected test is LIFTED to the page: clicking a bubble selects it here, and the table
   // capture for that test renders in the bottom dock (not an overlay panel inside this rail).
   selectedTestId: string | null;
   onSelectTest: (id: string | null) => void;
-  // Timeline position: at the live edge the on-disk (HEAD) status is authoritative; scrubbed back
-  // it would describe the future, so the status comes from the recorded `test.result` trail
-  // folded as-of the playhead (`foldStatus`), defaulting un-reached tests to "pending".
+  // Timeline position: at the live edge the on-disk (HEAD) status is authoritative; for an actively-
+  // building story scrubbed back, the per-test progression comes from the recorded `test.result` trail
+  // folded as-of the LINE playhead, defaulting un-reached tests to "pending". A SHIPPED story ignores
+  // the trail entirely (it has capture gaps) and trusts the authoritative per-story list.
   atLive: boolean;
   atEventIndex: number;
   // The agent-step timeline + the line playhead. Each test's status-TRANSITION is a `test` line in the
@@ -368,11 +438,14 @@ export function StoryTestsLightbox({
   // and immune to the burst-collapse that wall-clock interpolation suffered.
   timeline: ActivityTimeline | null;
   lineAt: number;
-  foldStatus: Record<string, string>;
   state: DashboardState;
   onClose: () => void;
 }) {
   const [items, setItems] = useState<StoryTest[] | null>(null);
+  // The REAL supersession set for this story — the test ids the Navigator flagged superseded (from
+  // /api/story-tests, read off `superseded-tests.json` / `regression-assessment.json{superseded:true}`).
+  // Empty unless a run actually superseded tests; never inferred from the test.result trail.
+  const [supersededIds, setSupersededIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   // The Lakebase branch the tests run on + a console deep-link (header chip). Polled at the live
   // edge so it tracks the per-cycle experiment branch as the drive cuts/merges.
@@ -386,20 +459,33 @@ export function StoryTestsLightbox({
     setError(null);
     const q = new URLSearchParams({ feature, story });
     if (mode) q.set("mode", mode);
-    fetch(`/api/story-tests?${q.toString()}`)
-      .then((r) => r.json())
-      .then((d: { items?: StoryTest[]; error?: string }) => {
-        if (!alive) return;
-        if (d.error) setError(d.error);
-        else setItems(d.items ?? []);
-      })
-      .catch((e) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
-      });
+    const poll = () => {
+      fetch(`/api/story-tests?${q.toString()}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: { items?: StoryTest[]; superseded?: string[]; error?: string }) => {
+          if (!alive) return;
+          if (d.error) setError(d.error);
+          else {
+            setItems(d.items ?? []);
+            setSupersededIds(new Set(d.superseded ?? []));
+          }
+        })
+        .catch((e) => {
+          if (alive) setError(e instanceof Error ? e.message : String(e));
+        });
+    };
+    poll();
+    // POLL at the LIVE edge. The per-story test-list is written mid-design (around the navigator step),
+    // OFTEN AFTER the operator has already opened the story — a one-shot fetch then shows "No tests
+    // authored for this story yet" until a rewind forces a re-read (the live-doesn't-reflect-disk defect).
+    // Re-fetching on the 2s cadence (matching the StoryTables panel) surfaces newly-authored tests live.
+    // A scrubbed playhead (atLive false) is a static moment — read once, no poll.
+    const h = atLive ? setInterval(poll, 2000) : null;
     return () => {
       alive = false;
+      if (h) clearInterval(h);
     };
-  }, [feature, story, mode]);
+  }, [feature, story, mode, atLive]);
 
   useEffect(() => {
     let alive = true;
@@ -430,17 +516,12 @@ export function StoryTestsLightbox({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // The freshest per-test status at the live edge: match a run entry by (id + scenario_file) first —
-  // which disambiguates a T-id reused in another story/feature — then fall back to an id-only match.
-  // Per-test status AS-OF the LINE playhead. Each test's status TRANSITION is a `test` line in the
-  // stream (placed in the turn that ran it, in pass order); fold the lines REVEALED so far (idx <
-  // lineAt), last-revealed status per test winning. So scrubbing forward flips bubbles one at a time
-  // in the order they passed — line position, not wall-clock (which collapsed a burst into one step).
-  // Per-test status AS-OF the LINE playhead, scoped to THIS feature+story (test ids recur per story,
-  // so an unscoped fold leaks another story's statuses onto this drawer's same-id bubbles).
-  const testStatusByLine = testTailForStory(timeline?.lines ?? [], lineAt, feature, story);
+  // Per-test progression from the recorded trail, AS-OF the LINE playhead, scoped to THIS feature+story
+  // (ids recur per story). Used ONLY for an actively-building story's red→green reveal; a shipped story
+  // trusts the authoritative list and supersession comes only from `supersededIds`. See
+  // `resolveTestDisplayStatus`.
+  const trail = testTailForStory(timeline?.lines ?? [], lineAt, feature, story);
   const haveTestLines = (timeline?.lines ?? []).some((l) => l.kind === "test");
-  const liveStatusFor = (t: StoryTest): string | undefined => testStatusByLine.get(t.id);
   const currentTestId = selectedTestId;
 
   // The rail is a FIXED-WIDTH right-edge column of test bubbles only — the table capture for the
@@ -479,6 +560,16 @@ export function StoryTestsLightbox({
             {feature} · {story}
           </span>
           <span style={{ fontSize: "0.72rem", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.05em" }}>tests</span>
+          {/* Shipped stories read as DONE: a chip states it outright so the panel is never mistaken for a
+              mid-build view (where reds/pending would mean "still failing/upcoming" rather than history). */}
+          {featureShipped ? (
+            <span
+              title="This story's feature shipped as of the playhead — its tests are history, not a live run."
+              style={{ fontSize: "0.56rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--status-good-text)", background: "var(--status-good-tint)", border: "1px solid var(--status-good)", borderRadius: radius.chip, padding: "1px 7px" }}
+            >
+              ✓ shipped
+            </span>
+          ) : null}
           <button
             onClick={onClose}
             aria-label="Close"
@@ -500,8 +591,19 @@ export function StoryTestsLightbox({
         {branch ? (
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.72rem", color: "var(--text-muted)" }}>
             <span aria-hidden>⎇</span>
-            <span style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.58rem", color: "var(--text-faint)" }}>
-              lakebase branch
+            <span
+              style={{
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                fontSize: "0.58rem",
+                // The branch chip is a LIVE/current-branch fact. When the viewed story is NOT the live
+                // one (pinned/scrubbed/past), hard-label it as the LIVE run's + name the live feature,
+                // so it is never read as THIS story's branch.
+                color: viewedIsLive ? "var(--text-faint)" : "var(--status-play)",
+                fontWeight: viewedIsLive ? 400 : 700,
+              }}
+            >
+              {branchChipLabel(viewedIsLive, liveFeature)}
             </span>
             {branch.consoleUrl ? (
               <a
@@ -528,21 +630,14 @@ export function StoryTestsLightbox({
         ) : items === null ? (
           <div style={{ fontSize: "0.78rem", color: "var(--text-faint)" }}>Loading tests…</div>
         ) : (
-          // Colour priority, freshest first: (1) the LIVE per-test tail (`liveStatusFor`), folded by
-          // the playhead ts — it flips each bubble at the REAL moment that test passed, so scrubbing
-          // forward lights them in pass order (finer than the batched cycle event). (2) When the tail
-          // exists, a test it has NOT reached by the playhead is honestly "pending" (NOT the coarse
-          // `test.result` fold, which would wrongly green the whole cycle at once). (3) No tail (a
-          // replay corpus): the recorded `test.result` fold governs, else HEAD at the live edge /
-          // "pending" scrubbed. So an open drawer relights pending→red→green in pass order.
+          // Status per test from AUTHORITATIVE signals (never inferred from the lossy trail): the real
+          // supersession set wins (dim+strike), then a shipped story trusts the per-story list, else an
+          // actively-building story reveals the recorded red→green progression by line. See
+          // `resolveTestDisplayStatus`.
           <TestBubbles
             items={items.map((t) => ({
               ...t,
-              status:
-                (liveStatusFor(t) as TestStatus) ??
-                (haveTestLines
-                  ? ((atLive ? (foldStatus[t.id] as TestStatus) ?? t.status : "pending") as TestStatus)
-                  : (foldStatus[t.id] as TestStatus) ?? (atLive ? t.status : "pending")),
+              status: resolveTestDisplayStatus({ test: t, supersededIds, featureShipped, trail, haveTestLines, atLive }),
             }))}
             onSelect={(id) => onSelectTest(currentTestId === id ? null : id)}
             selectedId={currentTestId}

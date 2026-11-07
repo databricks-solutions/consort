@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import { dirname, join } from "node:path";
 import { readConventions } from "../../architecture/architecture-conventions.js";
 import { consortEnv } from "../../config/consort-env.js";
-import { storyAcIds, readAcLayer, architectureJson, designGuideJson } from "../../config/consort-paths.js";
+import { storyAcIds, readAcLayer, acJson, architectureJson, designGuideJson } from "../../config/consort-paths.js";
 import { projectLanguage } from "../../config/consort-config-file.js";
 
 /** The .consort artifact root for a project (identity: the artifact dir IS the root). */
@@ -85,6 +85,38 @@ function contextRubric(consortDir: string, featureId: string, story: string, ac:
     }
   } catch {
     /* no architecture.json -> omit; prompt still names nfrs.md */
+  }
+
+  // REQUEST CONTRACTS for the endpoints THIS story writes: the required/optional request fields,
+  // pre-extracted from architecture.json api_contracts[].request_fields so the Driver builds endpoint
+  // validation FROM the contract (not inferred from prose or a persistence invariant — the
+  // actor-required-on-EP4-over-build class). Only the endpoints the story's ACs reference (via
+  // api_contract_id), and only contracts that declare request_fields (vacuous otherwise, back-compat).
+  try {
+    const arch = JSON.parse(fs.readFileSync(architectureJson(consortDir, featureId), "utf8")) as {
+      api_contracts?: Array<{ id?: string; method?: string; path?: string; request_fields?: Array<{ name?: string; required?: boolean }> }>;
+    };
+    const refByAc = new Set<string>();
+    for (const id of acIds) {
+      try {
+        const acObj = JSON.parse(fs.readFileSync(acJson(consortDir, featureId, story, id), "utf8")) as { api_contract_id?: string };
+        if (typeof acObj.api_contract_id === "string" && acObj.api_contract_id.length) refByAc.add(acObj.api_contract_id);
+      } catch {
+        /* a malformed/absent AC is reported elsewhere */
+      }
+    }
+    const lines: string[] = [];
+    for (const c of arch.api_contracts ?? []) {
+      if (!c || typeof c.id !== "string" || !refByAc.has(c.id) || !Array.isArray(c.request_fields) || !c.request_fields.length) continue;
+      const req = c.request_fields.filter((f) => f && typeof f.name === "string" && f.required === true).map((f) => f.name);
+      const opt = c.request_fields.filter((f) => f && typeof f.name === "string" && f.required !== true).map((f) => f.name);
+      lines.push(
+        `${c.id} (${c.method ?? "?"} ${c.path ?? "?"}): required {${req.join(", ")}}${opt.length ? `, optional {${opt.join(", ")}}` : ""}`,
+      );
+    }
+    if (lines.length) parts.push(`request contracts (build validation FROM these), ${lines.join("; ")}`);
+  } catch {
+    /* no architecture.json -> omit */
   }
 
   // Design-token groups to check, only when UI (E2E) work is in scope, the

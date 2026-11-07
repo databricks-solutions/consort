@@ -157,7 +157,15 @@ export function AgentLogReplay({ timeline, lineAt, fill = false }: { timeline: A
                         <span style={{ color: testColor, fontWeight: 700, minWidth: 64, flex: "0 0 auto" }}>
                           {l.status === "red" ? "✗ test" : "✓ test"}
                         </span>
-                        <span style={{ color: testColor, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.testId}</span>
+                        <span style={{ color: testColor, fontWeight: 700, flex: "0 0 auto" }}>{l.testId}</span>
+                        {/* feature·story scope: a test id (T1, T37) recurs across stories/features, so
+                            the raw id is ambiguous — scope it so a green here isn't read as the open
+                            story's when it belongs to another (the F3-vs-F5 T1 case). */}
+                        {l.featureId || l.storyId ? (
+                          <span style={{ color: "var(--text-faint)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {[l.featureId, l.storyId].filter(Boolean).join(" · ")}
+                          </span>
+                        ) : null}
                       </>
                     ) : isEvent ? (
                       // A non-tool event-log STAGE (verify / green / gate / deploy / …): the verb is the

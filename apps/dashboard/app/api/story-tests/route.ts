@@ -33,17 +33,14 @@ export async function GET(req: NextRequest) {
 
     const { source } = resolveSource(requested);
 
-    // The path is `.consort/`-relative (readArtifactAtHead / stepOutputContent both resolve under the
+    // The paths are `.consort/`-relative (artifactAtHead / stepOutputContent both resolve under the
     // project's `.consort/` dir and drop the prefix), never project-root-relative.
-    const rel = `features/${feature}/stories/${story}/test-list-per-story.json`;
+    const readRel = (rel: string) =>
+      source.artifactAtHead ? source.artifactAtHead(rel) : source.stepOutputContent ? source.stepOutputContent(rel) : null;
 
     // Prefer HEAD content (live: greens appear as the driver works). Replay has no artifactAtHead but
     // resolves step-output content under its recorded corpus. Either returns ArtifactContent.
-    const read = source.artifactAtHead
-      ? source.artifactAtHead(rel)
-      : source.stepOutputContent
-        ? source.stepOutputContent(rel)
-        : null;
+    let read = readRel(`features/${feature}/stories/${story}/test-list-per-story.json`);
 
     if (read === null) {
       return NextResponse.json(
@@ -52,10 +49,25 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Absent file (story not designed yet, or an older corpus layout): an empty list, not an error —
+    // FALLBACK to the DESIGN-authored list. `test-list-per-story.json` is only split out at BUILD start
+    // (navigator-red), so between design-complete and the first RED the per-story file is absent — yet
+    // the test-strategist has ALREADY authored the story's tests into `analyst-ordered.json` (same
+    // `{items:[…]}` shape, per-story scope, each item `status: "pending"`). Showing those is what makes
+    // the lightbox list the authored tests at DESIGN time instead of only appearing after navigator-red
+    // (the user-reported defect). When the per-story file DOES exist it wins — it carries live status.
+    let note: string | undefined = read.content === null ? (read.reason ?? undefined) : undefined;
+    if (read.content === null) {
+      const authored = readRel(`features/${feature}/stories/${story}/analyst-ordered.json`);
+      if (authored && authored.content !== null) {
+        read = authored;
+        note = "design-authored (analyst-ordered); per-story list not yet split at build";
+      }
+    }
+
+    // Still absent (story not designed yet, or an older corpus layout): an empty list, not an error —
     // the lightbox shows its "no tests authored yet" state rather than a failure.
     if (read.content === null) {
-      return NextResponse.json({ feature, story, mode: source.mode, items: [], note: read.reason });
+      return NextResponse.json({ feature, story, mode: source.mode, items: [], note });
     }
 
     let parsed: unknown;
@@ -72,7 +84,31 @@ export async function GET(req: NextRequest) {
         ? (parsed as { items: unknown[] }).items
         : [];
 
-    return NextResponse.json({ feature, story, mode: source.mode, items });
+    // The REAL supersession signal (never inferred): the Navigator's per-AC `superseded-tests.json`
+    // (key `tests`, alias `superseded_tests`) and a `regression-assessment.json` with `superseded:true`
+    // + a `tests` array — both under `.consort/cycles/<F>/<S>/<AC>/`. A test is superseded ONLY when it
+    // is named here; absent artifacts ⇒ nothing superseded. ACs come from the authored items' `ac_id`.
+    const readJsonAtHead = (rel: string): unknown | null => {
+      const r = source.artifactAtHead ? source.artifactAtHead(rel) : source.stepOutputContent ? source.stepOutputContent(rel) : null;
+      if (!r || r.content === null) return null;
+      try {
+        return JSON.parse(r.content);
+      } catch {
+        return null;
+      }
+    };
+    const idsFrom = (arr: unknown): string[] =>
+      Array.isArray(arr) ? arr.map((t) => (typeof t === "string" ? t : t && typeof t === "object" && typeof (t as { id?: unknown }).id === "string" ? (t as { id: string }).id : null)).filter((x): x is string => x !== null) : [];
+    const acIds = [...new Set(items.map((t) => (t && typeof t === "object" ? (t as { ac_id?: unknown }).ac_id : null)).filter((a): a is string => typeof a === "string" && SAFE_SEGMENT.test(a)))];
+    const superseded = new Set<string>();
+    for (const ac of acIds) {
+      const flagged = readJsonAtHead(`cycles/${feature}/${story}/${ac}/superseded-tests.json`) as { tests?: unknown; superseded_tests?: unknown } | null;
+      for (const id of idsFrom(flagged?.tests ?? flagged?.superseded_tests)) superseded.add(id);
+      const regression = readJsonAtHead(`cycles/${feature}/${story}/${ac}/regression-assessment.json`) as { superseded?: unknown; tests?: unknown } | null;
+      if (regression?.superseded === true) for (const id of idsFrom(regression.tests)) superseded.add(id);
+    }
+
+    return NextResponse.json({ feature, story, mode: source.mode, items, superseded: [...superseded], ...(note ? { note } : {}) });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

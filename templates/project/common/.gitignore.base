@@ -50,6 +50,17 @@ application-local.properties
 .consort/.recorder-state.json
 .consort/routing-decisions.jsonl
 .consort/turns/
+# The per-test capture sidecars: the live per-test status ledger (test-run.jsonl, appended by the
+# scaffolded pytest/Playwright/Vitest reporters), the DB-interaction log (test-interactions.jsonl,
+# appended by the app capture middleware keyed on X-Consort-Test-Id), and the per-test table-state
+# snapshots (table-snapshots.jsonl, appended by consort-capture during Vitest/Playwright runs). All
+# are per-run test telemetry the dashboard reads ONLY from the working tree (readFileSync, never git),
+# and they grow unbounded across a multi-feature drive. A committed one eventually exceeds GitHub's
+# 100MB file limit and gets the prepare-pr push declined. Ignore them like the other capture logs so
+# a broad `git add .consort` (e.g. the promote-merge reconciliation) never sweeps them into history.
+.consort/test-run.jsonl
+.consort/test-interactions.jsonl
+.consort/table-snapshots.jsonl
 # Playwright-MCP's browser scratch (screenshots/traces a UX/review turn drops). Transient
 # tool output, not corpus; ignore it so it never dirties the tree before an experiment cut.
 .playwright-mcp/

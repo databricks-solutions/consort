@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path4) {
-      let input = path4;
+    function removeDotSegments(path5) {
+      let input = path5;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path4, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path4 && path4 !== "/" ? path4 : void 0;
+        const [path5, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -7284,10 +7284,10 @@ function readHeldByPid(lockPath) {
     return null;
   }
 }
-function gatesLockFilePath(consortDir, featureId, basename3) {
+function gatesLockFilePath(consortDir, featureId, basename4) {
   const dir = requireFeatureDir(consortDir, featureId);
   mkdirSync4(dir, { recursive: true });
-  return join8(dir, basename3);
+  return join8(dir, basename4);
 }
 function withPipelineLock(featureId, fn, opts = {}) {
   return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
@@ -7418,9 +7418,9 @@ import { mergePaired } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync20, readFileSync as readFileSync20, readdirSync as readdirSync15, statSync as statSync11, writeFileSync as writeFileSync11, mkdirSync as mkdirSync12, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync21, readFileSync as readFileSync21, readdirSync as readdirSync15, statSync as statSync11, writeFileSync as writeFileSync12, mkdirSync as mkdirSync13, rmSync as rmSync7 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
-import { join as join22, dirname as dirname11, basename as basename2 } from "path";
+import { join as join23, dirname as dirname12, basename as basename3 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -7478,7 +7478,7 @@ var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 // consort/architecture/contract-clean.ts
 init_esm_shims();
 import { existsSync as existsSync12, readFileSync as readFileSync12, readdirSync as readdirSync9, statSync as statSync7 } from "fs";
-import { join as join13, relative as relative2, extname as extname3 } from "path";
+import { join as join13, relative as relative2, extname as extname3, basename } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -7507,7 +7507,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync14, readFileSync as readFileSync15, readdirSync as readdirSync12, writeFileSync as writeFileSync8, mkdirSync as mkdirSync9, copyFileSync } from "fs";
-import { join as join16, dirname as dirname8, basename } from "path";
+import { join as join16, dirname as dirname8, basename as basename2 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
@@ -7564,6 +7564,11 @@ import { execFileSync as execFileSync4 } from "child_process";
 import { existsSync as existsSync19 } from "fs";
 import { join as join21 } from "path";
 
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs6 from "fs";
+import * as path4 from "path";
+
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -7599,24 +7604,24 @@ async function commitDriveStateForAccept(projectDir, message) {
   return commitAllIfChanged({ cwd: projectDir, message, untrackedAllow: [] });
 }
 function resetStoryBuildState(consortDir, featureId, story) {
-  const cyclesDir = join22(cyclesRootDir(consortDir), featureId, story);
+  const cyclesDir = join23(cyclesRootDir(consortDir), featureId, story);
   let cyclesCleared = false;
-  if (existsSync20(cyclesDir)) {
-    rmSync6(cyclesDir, { recursive: true, force: true });
+  if (existsSync21(cyclesDir)) {
+    rmSync7(cyclesDir, { recursive: true, force: true });
     cyclesCleared = true;
   }
   let testItemsReset = 0;
   const tlPath = storyTestListJson(consortDir, featureId, story);
-  if (existsSync20(tlPath)) {
+  if (existsSync21(tlPath)) {
     try {
-      const tl = JSON.parse(readFileSync20(tlPath, "utf8"));
+      const tl = JSON.parse(readFileSync21(tlPath, "utf8"));
       for (const item of tl.items ?? []) {
         if (item.status && item.status !== "pending") {
           item.status = "pending";
           testItemsReset++;
         }
       }
-      writeFileSync11(tlPath, JSON.stringify(tl, null, 2) + "\n");
+      writeFileSync12(tlPath, JSON.stringify(tl, null, 2) + "\n");
     } catch {
     }
   }
@@ -7665,7 +7670,7 @@ async function mergeAndAcceptStory(args, ops = realExperimentOps) {
 // consort/pipeline/design-fingerprint.ts
 init_esm_shims();
 import { createHash as createHash2 } from "crypto";
-import { readFileSync as readFileSync21 } from "fs";
+import { readFileSync as readFileSync22 } from "fs";
 var MUTABLE_TESTLIST_FIELDS = /* @__PURE__ */ new Set([
   "status",
   "green_at",
@@ -7684,7 +7689,7 @@ function designOnlyItem(item) {
 }
 function storyDesignFingerprint(consortDir, feature, story) {
   try {
-    const raw = readFileSync21(storyTestListJson(consortDir, feature, story), "utf8");
+    const raw = readFileSync22(storyTestListJson(consortDir, feature, story), "utf8");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed.items) ? parsed.items.map(designOnlyItem) : parsed.items;
     const canonical = JSON.stringify({ ...parsed, items });

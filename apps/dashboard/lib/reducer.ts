@@ -38,6 +38,7 @@ import {
   featureIdOf,
   featuresFromLog,
   latestOrchestratorActivity,
+  runPositionOf,
 } from "./derive";
 import { LANE_IDS, laneProgress, laneStepMeta, nodeForPhase, passedNodes, reachedThisPass } from "./topology";
 import { GATE_ROLE_BY_KEY } from "./gates";
@@ -183,6 +184,7 @@ export function emptyState(projectDir: string, generatedAt: string): DashboardSt
     orchestratorActivity: null,
     pendingGate: null,
     focus: { kind: "idle" },
+    runPosition: { feature: null, story: null, phase: null, lane: "plan" as const, locus: { kind: "idle" as const } },
     laneStepMeta: {},
     lane: "plan" as const, // empty/fresh run is at the start (plan), not design
     totalCost: 0,
@@ -205,6 +207,7 @@ export function emptyState(projectDir: string, generatedAt: string): DashboardSt
       laneLast: Object.fromEntries(LANE_IDS.map((l) => [l, null])),
       laneGate: null,
       atTimestamp: null,
+      approvedGatesAtPlayhead: [],
     },
   };
 }
@@ -232,7 +235,9 @@ function deriveTopology(
    * `phase.end` handling already covers this, so it is a no-op there.
    */
   featureDone: boolean,
-): DashboardState["topology"] {
+  // `approvedGatesAtPlayhead` is added by the caller (`fold`) from the slice-scoped log approvals,
+  // which live outside this pure topology walk — so it is Omitted from this return.
+): Omit<DashboardState["topology"], "approvedGatesAtPlayhead"> {
   const scope = feature ?? undefined;
   const progress = laneProgress(slice, undefined, scope);
   const laneSteps: Record<string, string[]> = {};
@@ -380,23 +385,18 @@ export function fold(
   // feature being worked on NOW, which for a multi-feature run is not the one that was
   // active 200 events ago. At the live edge next.json is preferred — it is authoritative
   // and survives a log that hasn't stamped feature_id recently.
-  // featureIdOf skips `reasoning` events, whose feature_id is unreliable — in the corpus
-  // three of them hold a story id or a truncated "F1", which would otherwise make the newest
-  // -event-wins rule name a story as the active feature.
-  const featureFromLog = (): string | null => {
-    for (let i = slice.length - 1; i >= 0; i--) {
-      const f = featureIdOf(slice[i]);
-      if (f) return f;
-    }
-    return null;
-  };
-  // The feature the playhead naturally sits on, before any pin. At the live edge, prefer next.json's
-  // current feature. Scrubbed back, the LOG is the truth — do NOT fall back to next.json's feature:
-  // that is the run's CURRENT (future) feature, and attributing a PRE-feature playhead (intake /
-  // propose / estimate, all stamped feature_id "") to it scoped those events out, so activeNode went
-  // null and the Intake box never lit (nor turned purple at the intake gate). Null here = "no feature
-  // yet", which is honest and leaves the sprint-level intake unscoped so it lights.
-  const playheadFeature = atLive ? next?.feature ?? featureFromLog() : featureFromLog();
+  // The run's position — the ONE authoritative "where the drive is", from DRIVE-POSITION events only
+  // (phase.start/handoff/gate/…), never test.result / merged-suite / frozen next.json. Scoped to the
+  // slice so it rewinds honestly when scrubbed (Kind-2) and is Kind-1 at the live edge. runPositionOf
+  // subsumes the old featureFromLog + its test.result/reasoning skips — one rule, one source.
+  const rp = runPositionOf(slice);
+  // The feature the playhead sits on, before any pin. At the live edge prefer the drive-position
+  // feature; next.json fills in ONLY when the log has named no feature yet (intake/plan, feature_id
+  // ""). Scrubbed back, the log is the truth. (No more frozen-next.json flicker: next.json is only a
+  // fallback here, and the lane/phase block below trusts it only when it names the live feature.)
+  const playheadFeature = atLive
+    ? (snap.driveAlive && rp.feature ? rp.feature : (next?.feature ?? rp.feature))
+    : rp.feature;
 
   // Every feature the window has touched — the switcher's list, and the validity check for a
   // pin. A pin naming a feature not in this window is stale (scrubbed before it appears, or a
@@ -553,9 +553,13 @@ export function fold(
   }
   const storiesWithTestItems = stories.map((s) => {
     const m = testStatusByStory.get(`${s.feature ?? ""}|${s.id}`);
-    return m && m.size > 0
-      ? { ...s, testItems: [...m.entries()].map(([id, status]) => ({ id, status })) }
-      : s;
+    // `active` is re-stamped from the ONE run position (not the per-deriver guess): a story is active
+    // iff it IS the drive-position story of the drive-position feature and isn't done. A pinned/past
+    // feature yields no active story (its feature !== rp.feature), and a merged-suite test.result for
+    // an earlier feature's story can never make it "active".
+    const active = s.feature === rp.feature && s.id === rp.story && s.status !== "done";
+    const withItems = m && m.size > 0 ? { ...s, testItems: [...m.entries()].map(([id, status]) => ({ id, status })) } : s;
+    return { ...withItems, active };
   });
 
   // --- test counts ---
@@ -609,7 +613,17 @@ export function fold(
   // sprint-boundary events, which carry no feature_id yet, must not be forced complete just
   // because the carried-forward feature has ended — that is the F1→F6 handoff at event 214).
   const pinnedDone = pinnedDivergent !== null && (features.find((f) => f.id === feature)?.done ?? false);
-  const topology = deriveTopology(slice, feature, pinnedDone);
+  // `approvedGatesAtPlayhead` is the slice-scoped log approvals FOR THE VIEWED FEATURE, never the
+  // snapshot and never cross-feature. The locus's furthest-approved-gate fallback must see only THIS
+  // feature's gates: in a sprint, F2–F5 all approved their own deploy+promote earlier in the slice, so
+  // the un-scoped `logApprovedNames` made F9's locus pick the run's promote while F9 was only at its
+  // deploy gate. Scope to `feature` (the viewed/playhead feature) so an earlier feature's completed
+  // deploy/promote can't light a later feature's gate. (`gatesFromLog(slice, feature)` already filters
+  // by the carried `currentFeature`.)
+  const approvedGatesAtPlayhead = feature
+    ? [...new Set(gatesFromLog(slice, feature).filter((g) => g.status === "approved").map((g) => g.name))]
+    : [...logApprovedNames];
+  const topology = { ...deriveTopology(slice, feature, pinnedDone), approvedGatesAtPlayhead };
   // Use where the playhead IS, not what the run has ever touched. `passedNodes` is wrong
   // here: `reflect` maps to the build node, so any design-lane reflect would make an
   // early-design playhead claim "build". The lane the current phase belongs to is the
@@ -623,8 +637,25 @@ export function fold(
   // phase yet (derived_phase is null), so fall back to the playhead's lane instead of blindly
   // defaulting to "design" (the intake-gate false "design in progress"). Off the live edge, the
   // playhead's own position is authoritative.
+  // `runEnded` (log's phase.end/workflow) fires once PER FEATURE, so in a multi-feature sprint it
+  // trips at every feature boundary while later features still run — forcing a premature "complete"
+  // (and resting the locus on the last approved gate) between F2's build-end and F3's start. Only
+  // treat it as run-complete when the drive has actually EXITED (!driveAlive); while the drive is
+  // alive the sprint is ongoing, so fall through to the live lane. A pinned shipped past feature
+  // stays complete via pinnedDone. (At the live edge a genuinely finished run has driveAlive=false.)
+  // The log's drive-position lane at the playhead (feature-scoped topology), the Kind-2 truth.
+  const logLane = laneFromPlayhead(topology);
+  // Trust next.json's derived_phase ONLY when it describes the LIVE feature. In a headless sprint
+  // next.json is frozen at the last-STOP feature, so it reports an EARLIER feature's phase (showed
+  // "complete" while a later feature was still building). When it does not name the live feature,
+  // ignore it and use the log lane. (`next.feature === rp.feature` is the single guard.)
+  const snapshotDescribesLive = atLive && next?.feature != null && next.feature === rp.feature;
   const derived =
-    runEnded || pinnedDone ? "complete" : atLive ? (derivedSnapshot ?? laneFromPlayhead(topology)) : laneFromPlayhead(topology);
+    (runEnded && !snap.driveAlive) || pinnedDone
+      ? "complete"
+      : snapshotDescribesLive
+        ? (derivedSnapshot ?? logLane)
+        : logLane;
   const lane: DashboardState["lane"] =
     derived === "complete" ? "complete" : derived === "build" ? "build" : derived === "plan" ? "plan" : "design";
 
@@ -691,6 +722,24 @@ export function fold(
   const carriedLaneStep: string | null =
     lane === "design" || lane === "build" || lane === "plan" ? topology.laneLast[lane] ?? null : null;
 
+  // The ONE focus observation, derived once; the return's `focus` AND runPosition.locus share it, so
+  // the glow deriver (card-state locusFocus) stays the single source — RunPosition bundles it.
+  const focus = focusOf({
+    topology: restingAtGate
+      ? { ...topology, laneCurrent: null }
+      : topology.laneCurrent
+        ? topology
+        : carriedLaneStep
+          ? { ...topology, laneCurrent: { lane, step: carriedLaneStep } }
+          : topology,
+    gateFocus: restingAtGate
+      ? { gate: frontierGate!.gate, status: frontierGate!.approved ? "approved" : "surfaced" }
+      : pendingGate
+        ? { gate: pendingGate, status: "surfaced" }
+        : null,
+    blockers,
+  });
+
   return {
     ...base,
     ok: true,
@@ -724,7 +773,9 @@ export function fold(
     // Derived over the FULL slice, never the recentEvents tail: the orchestrator's latest
     // narration (a gate, a dispatch, a build START) for the story in flight can sit many turns
     // behind the gate you're waiting at, so a tail lookup would go stale.
-    orchestratorActivity: latestOrchestratorActivity(slice),
+    // Latest orchestrator narration for the action text; the structured `story` is overwritten with
+    // the run-position story, so the ▸ chip can't name an earlier feature's story mid merged-suite verify.
+    orchestratorActivity: ((a) => (a ? { action: a.action, story: rp.story } : null))(latestOrchestratorActivity(slice)),
     pendingGate,
     // The one focus observation, derived once here; every surface reads it (see focusOf).
     //
@@ -744,23 +795,9 @@ export function fold(
     // step rather than momentarily dropping to the gate. The same carry runs when SCRUBBED back
     // (restingAtGate is false off the live edge), so rewinding the timeline replays the role
     // progression instead of flashing the gate at every between-turns frame.
-    focus: focusOf({
-      topology: restingAtGate
-        ? { ...topology, laneCurrent: null }
-        : topology.laneCurrent
-          ? topology
-          : carriedLaneStep
-            ? { ...topology, laneCurrent: { lane, step: carriedLaneStep } }
-            : topology,
-      // At rest the frontier gate (approved OR surfaced) is the locus; while running/scrubbed only an
-      // unapproved gate can be the fallback locus (an approved gate behind a running step is not it).
-      gateFocus: restingAtGate
-        ? { gate: frontierGate!.gate, status: frontierGate!.approved ? "approved" : "surfaced" }
-        : pendingGate
-          ? { gate: pendingGate, status: "surfaced" }
-          : null,
-      blockers,
-    }),
+    focus,
+    // The ONE authoritative run position; every "current feature/story/phase/lane" surface reads it.
+    runPosition: { feature: rp.feature, story: rp.story, phase: rp.phase, lane, locus: focus },
     // Per-step model/effort/cost/turns for the step cards, folded over the full slice.
     laneStepMeta: laneStepMeta(slice),
     lane,

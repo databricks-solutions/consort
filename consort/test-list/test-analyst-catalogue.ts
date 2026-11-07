@@ -181,7 +181,21 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "its test is un-buildable here (the table does not exist yet). A display/read-only story whose " +
       "migrations create NO table an invariant names emits NO invariant fitness items, even if its ACs " +
       "mention a related record (e.g. an AC 'shows the record' does NOT own the record's not-null/FK/" +
-      "reversibility invariants – the story that MIGRATES the table does). A " +
+      "reversibility invariants – the story that MIGRATES the table does). " +
+      "**EXCEPTION — a `transactional` (ATOMICITY) invariant.** Its test verifies the OPERATION (a " +
+      "multi-write transaction — e.g. UPDATE one table AND INSERT another, committed together), NOT a " +
+      "table's schema, so anchor it to the story whose ACs PERFORM that operation (the write path), NOT " +
+      "to a `schema_changes` entry — and EMIT its atomicity item EVEN when this story migrates NEITHER " +
+      "table (both INHERITED from prior features). The tables already exist, so a force-a-mid-transaction" +
+      "-failure test (patch the second write/commit to raise; assert NEITHER write persists) IS buildable " +
+      "here, and the transaction is THIS story's new code. The F5 case: a `reconcile` UPDATEs the inherited " +
+      "`stock_records` and INSERTs the inherited `stock_adjustment_audits` in one transaction — emit the " +
+      "atomicity `fitness` item (F2 `T19` shape: patch the audit insert/commit to raise, assert the " +
+      "stock-row update AND the audit insert BOTH roll back), tag it `invariant_id`=<the transactional PI>, " +
+      "anchor its `ac_id` to the reconcile/records-adjustment AC — even though this story's migrations create " +
+      "nothing. A `transactional` invariant is NOT exempted the way an inherited schema-CONSTRAINT " +
+      "(unique/not_null/check/fk) is, so the design-complete gate (`checkTransactionalShape`) HARD-DEMANDS " +
+      "this item; never leave it to a later story that does not own the operation. A " +
       "migration reversibility is ALWAYS one item: reversibility (downgrade to the migration-under-test's OWN " +
       "`down_revision`, the explicit revision id named in that migration file; for an initial create-table that is " +
       "the base; then `upgrade head`; NEVER a relative `downgrade -1` (it reverts whatever is HEAD, so it targets the " +
@@ -285,7 +299,12 @@ export const TEST_ANALYST_CATALOGUE: Record<string, TestAnalystCatalogueEntry> =
       "flags a component item anchored to an `API`/`service`/`Infra` AC). " +
       "A component test that CREATES a record keys it on a per-run-unique business key — a " +
       "`crypto.randomUUID()`-suffixed sku/code (built-in; never `import ... from \"uuid\"`) — so each run " +
-      "owns its row on the SHARED feature branch. " +
+      "owns its row on the SHARED feature branch. When it ASSERTS on COUNTS it asserts ONLY on its OWN " +
+      "rows: filter the rendered output to its unique key and count THOSE. NEVER assert a whole-table total " +
+      "and NEVER a `before`-minus-`after` delta against the shared branch (sibling rows from other runs and " +
+      "stories pollute both). That is the recurring shared-state-aggregate-assertion defect: filtering by a " +
+      "unique tag hides EVERY non-matching sibling, so `total - visible` is total-minus-mine, not the small " +
+      "count you expect. " +
       "ALSO own NFR CLIENT-RENDER fitness functions (moved here from the client analyst): for every " +
       "`architecture.json` NFR whose `fitness_function` describes a CLIENT render (a row with null/optional " +
       "fields asserting a 'not tracked' indicator; an empty/loading/error state), emit a `kind:\"component\"` " +

@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { checkContractClean, netDroppedSymbols, supersededTestCandidates } from "../../consort/architecture/contract-clean.js";
+import { checkContractClean, netDroppedSymbols, supersededTestCandidates, requestFieldSupersededTestFiles } from "../../consort/architecture/contract-clean.js";
 import { collectDroppedColumns } from "../../consort/architecture/test-smell-clean.js";
 import {
   beginNextPendingCycle,
@@ -367,5 +367,60 @@ describe("greenOpenCycle: contract-incompleteness self-heals deterministically",
     const gf = readGreenFailure(tdd, F, S, "AC1");
     expect(gf?.assessed).toBe(false);
     expect(gf?.contractRefs).toBeUndefined();
+  });
+});
+
+describe("requestFieldSupersededTestFiles: prior-story callers of an endpoint made field-required", () => {
+  function seed(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reqfield-"));
+    tmpDirs.push(dir);
+    const fdir = path.join(dir, ".consort", "features", "F2");
+    fs.mkdirSync(fdir, { recursive: true });
+    fs.writeFileSync(
+      path.join(fdir, "architecture.json"),
+      JSON.stringify({
+        feature_id: "F2",
+        api_contracts: [
+          {
+            id: "EP4-adjust", method: "POST", path: "/api/stock-records/adjust", story: "S1-adjust",
+            request_fields: [
+              { name: "delta", required: true, since_story: "S1-adjust" },
+              { name: "actor", required: true, since_story: "S2-audit", reconciled_stories: ["S1-adjust"] },
+            ],
+          },
+        ],
+      }),
+    );
+    fs.mkdirSync(path.join(dir, "tests"), { recursive: true });
+    // Prior story S1's backend test POSTs to the endpoint via a URL literal (no actor).
+    fs.writeFileSync(path.join(dir, "tests", "test_s1_adjust_stock_level.py"), 'URL = "/api/stock-records/adjust"\ndef test_x(client): client.post(URL, json={"sku":"A","location":"L","delta":1})\n');
+    // Current story S2's OWN backend test (asserts missing actor -> 422) must NOT be flagged.
+    fs.writeFileSync(path.join(dir, "tests", "test_s2_audit_requires_actor.py"), 'URL = "/api/stock-records/adjust"\ndef test_422(client): assert client.post(URL, json={"sku":"A"}).status_code == 422\n');
+    // Unrelated test — does not reference the endpoint.
+    fs.writeFileSync(path.join(dir, "tests", "test_other.py"), "def test_y(): assert 1\n");
+    return dir;
+  }
+
+  it("flags the PRIOR story's backend API test (by endpoint path) and EXCLUDES the current story's own backend test", () => {
+    const dir = seed();
+    const files = requestFieldSupersededTestFiles({
+      projectDir: dir,
+      architectureJson: fs.readFileSync(path.join(dir, ".consort", "features", "F2", "architecture.json"), "utf8"),
+      currentStory: "S2-audit",
+    });
+    expect(files).toContain("tests/test_s1_adjust_stock_level.py"); // prior writer, 422s without actor
+    expect(files).not.toContain("tests/test_s2_audit_requires_actor.py"); // current story — excluded by test_s2_ prefix
+    expect(files).not.toContain("tests/test_other.py"); // never references the endpoint
+  });
+
+  it("returns [] when THIS story made no field required on any endpoint (no reconciliation)", () => {
+    const dir = seed();
+    // Ask as the ORIGIN story S1 (actor's since_story is S2) → nothing it newly-required with reconciled prior writers.
+    const files = requestFieldSupersededTestFiles({
+      projectDir: dir,
+      architectureJson: fs.readFileSync(path.join(dir, ".consort", "features", "F2", "architecture.json"), "utf8"),
+      currentStory: "S1-adjust",
+    });
+    expect(files).toEqual([]);
   });
 });

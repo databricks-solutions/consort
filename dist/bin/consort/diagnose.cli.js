@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path7) {
-      let input = path7;
+    function removeDotSegments(path8) {
+      let input = path8;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path7, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path7 && path7 !== "/" ? path7 : void 0;
+        const [path8, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path8 && path8 !== "/" ? path8 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6648,8 +6648,8 @@ var require_ajv = __commonJS({
 
 // bin/consort/diagnose.cli.ts
 init_esm_shims();
-import * as fs8 from "fs";
-import * as path6 from "path";
+import * as fs9 from "fs";
+import * as path7 from "path";
 
 // consort/config/consort-paths.ts
 init_esm_shims();
@@ -6717,12 +6717,12 @@ function collectDiagnosticSources(consortDir) {
 
 // consort/orchestrator/diagnose/analyze-failure.ts
 init_esm_shims();
-import * as fs7 from "fs";
-import * as path5 from "path";
+import * as fs8 from "fs";
+import * as path6 from "path";
 
 // consort/gates/escalation.ts
 init_esm_shims();
-import * as fs6 from "fs";
+import * as fs7 from "fs";
 
 // consort/smells/smells.ts
 init_esm_shims();
@@ -6934,7 +6934,7 @@ var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 // consort/architecture/contract-clean.ts
 init_esm_shims();
 import { existsSync as existsSync8, readFileSync as readFileSync7, readdirSync as readdirSync6, statSync as statSync5 } from "fs";
-import { join as join10, relative as relative2, extname as extname3 } from "path";
+import { join as join10, relative as relative2, extname as extname3, basename } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -6963,7 +6963,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync10, readFileSync as readFileSync10, readdirSync as readdirSync9, writeFileSync as writeFileSync4, mkdirSync as mkdirSync4, copyFileSync } from "fs";
-import { join as join13, dirname as dirname6, basename } from "path";
+import { join as join13, dirname as dirname6, basename as basename2 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
@@ -7020,6 +7020,11 @@ import { execFileSync as execFileSync4 } from "child_process";
 import { existsSync as existsSync15 } from "fs";
 import { join as join18 } from "path";
 
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs6 from "fs";
+import * as path5 from "path";
+
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
 import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
@@ -7029,18 +7034,18 @@ init_esm_shims();
 
 // consort/gates/escalation.ts
 function readEscalationFile(file) {
-  if (!fs6.existsSync(file)) return void 0;
+  if (!fs7.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs6.readFileSync(file, "utf8"));
+    return JSON.parse(fs7.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
 }
 function readEscalations(consortDir) {
   const dir = escalationsDir(consortDir);
-  if (!fs6.existsSync(dir)) return [];
+  if (!fs7.existsSync(dir)) return [];
   const out = [];
-  for (const f of fs6.readdirSync(dir)) {
+  for (const f of fs7.readdirSync(dir)) {
     if (!f.endsWith(".json")) continue;
     const e = readEscalationFile(`${dir}/${f}`);
     if (e) out.push(e);
@@ -7077,18 +7082,18 @@ function readGreenFailures(consortDir) {
   const walk = (dir) => {
     let entries;
     try {
-      entries = fs7.readdirSync(dir, { withFileTypes: true });
+      entries = fs8.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const e of entries) {
-      const p = path5.join(dir, e.name);
+      const p = path6.join(dir, e.name);
       if (e.isDirectory()) walk(p);
       else if (e.name === "green-failure.json") {
         try {
-          const gf = JSON.parse(fs7.readFileSync(p, "utf8"));
+          const gf = JSON.parse(fs8.readFileSync(p, "utf8"));
           out.push({
-            location: path5.relative(root, path5.dirname(p)),
+            location: path6.relative(root, path6.dirname(p)),
             summary: gf.summary ?? "",
             ...gf.failureOutput ? { failureOutput: gf.failureOutput } : {}
           });
@@ -7189,16 +7194,16 @@ function parseArgs(argv) {
   return out;
 }
 function redactedCopy(src, dst, tailLines) {
-  let content = fs8.readFileSync(src, "utf8");
+  let content = fs9.readFileSync(src, "utf8");
   if (tailLines) {
     const lines = content.split("\n");
     content = (lines.length > tailLines ? lines.slice(-tailLines) : lines).join("\n");
   }
-  fs8.writeFileSync(dst, redactSecrets(content));
+  fs9.writeFileSync(dst, redactSecrets(content));
 }
 function bundleName(consortDir, s) {
-  const rel = path6.relative(consortDir, s.path).replace(/[\\/]/g, "__");
-  return rel || path6.basename(s.path);
+  const rel = path7.relative(consortDir, s.path).replace(/[\\/]/g, "__");
+  return rel || path7.basename(s.path);
 }
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -7217,14 +7222,14 @@ ${renderAnalysis(analysis)}
 
 `);
   const ts = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-  const outDir = args.out ?? path6.join(consortDir, "diagnostics", ts);
-  fs8.mkdirSync(outDir, { recursive: true });
+  const outDir = args.out ?? path7.join(consortDir, "diagnostics", ts);
+  fs9.mkdirSync(outDir, { recursive: true });
   const collected = [];
   for (const s of present) {
     const name = bundleName(consortDir, s);
-    const dst = path6.join(outDir, name);
+    const dst = path7.join(outDir, name);
     redactedCopy(s.path, dst, s.tailLines);
-    collected.push({ kind: s.kind, from: path6.relative(consortDir, s.path), file: name, ...s.tailLines ? { tailed: s.tailLines } : {} });
+    collected.push({ kind: s.kind, from: path7.relative(consortDir, s.path), file: name, ...s.tailLines ? { tailed: s.tailLines } : {} });
   }
   const manifest = {
     created_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -7235,10 +7240,10 @@ ${renderAnalysis(analysis)}
     },
     items: collected
   };
-  fs8.writeFileSync(path6.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
-  fs8.writeFileSync(path6.join(outDir, "analysis.json"), redactSecrets(JSON.stringify(analysis, null, 2)) + "\n");
-  fs8.writeFileSync(
-    path6.join(outDir, "README.md"),
+  fs9.writeFileSync(path7.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
+  fs9.writeFileSync(path7.join(outDir, "analysis.json"), redactSecrets(JSON.stringify(analysis, null, 2)) + "\n");
+  fs9.writeFileSync(
+    path7.join(outDir, "README.md"),
     "# Consort diagnostic bundle\n\nThe local forensic record of a failed run \u2013 what actually troubleshoots the error.\n\n- `analysis.json` \u2013 the classified failure + suggested remediation (start here).\n- `*escalations__*.json` \u2013 the raise-to-HIL reason + source.\n- `*green-failure.json` \u2013 the verify-failure pre-localization (what failed, where).\n- `workflow-state.json` \u2013 the phase/feature/story the run was at.\n- `agent-log.jsonl` \u2013 tail of the structured event trail.\n- `drive-live.log` \u2013 tail of the live narration.\n\nTelemetry does NOT contain any of this (it is allowlisted enums/counts/durations only); this bundle is the content, for you to inspect or share with the maintainers.\n\n## Redaction\n\nThis bundle is auto-REDACTED before it is written: DSN passwords (`postgres://user:***@host`), `dapi\u2026` tokens, `Bearer \u2026` headers, known secret assignments (DB_PASSWORD / *_TOKEN / *_SECRET / password), and absolute home paths (`/Users/<user>/\u2026`) are masked. Redaction is best-effort \u2013 **still review the files before sharing**; a novel secret shape may not be caught.\n"
   );
   process.stdout.write(

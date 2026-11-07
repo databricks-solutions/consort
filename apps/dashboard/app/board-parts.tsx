@@ -7,7 +7,7 @@
 // (`Property 'x' is incompatible with index signature`). `npm run build` catches that; `tsc`
 // and vitest do not, which is how it slipped through once.
 
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { ROLES, type DashboardState } from "@/lib/types";
 import { colorForRole, font, radius } from "@/lib/theme";
 import { AgentLogReplay, type ActivityTimeline } from "./AgentLogReplay";
@@ -225,20 +225,31 @@ export function EventTicker({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const newestTs = merged[merged.length - 1]?.ts;
-  useEffect(() => {
+  // LAYOUT effect, EVERY render (no dep array): pin to the bottom synchronously after the DOM mutates
+  // but before paint, so `scrollHeight` is the NEW height. Running every render is what makes scrub-
+  // follow hold: a single scrub re-renders the ticker MORE THAN ONCE (the client-fold bridge, then the
+  // server-scoped `source` landing with the correspondence rows) and the later render changes the
+  // content height with the SAME newest event — a deps=[newestTs,eventCount] effect didn't re-fire for
+  // it, so the view stranded mid-list (the "scrollbar jumps to the middle" bug). Paired with
+  // `overflow-anchor: none` below so scroll-anchoring can't drag the view off the bottom. Only when the
+  // viewer is parked at the bottom (`stick`) — scrolling up to read history still holds its place.
+  void newestTs; // content-change signal (the effect reads the live DOM, not this value)
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [newestTs, state.eventCount]);
+  });
   const onScroll = () => {
     const el = scrollRef.current;
     if (el) stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
   };
   // The scroll list: a capped rounded card in "block" mode, or a flex-filling, square, un-capped
   // list that takes the whole pane height in "pane" mode.
+  // `overflowAnchor: none` — stop the browser from re-anchoring scrollTop to a row when the rows above
+  // change (scrub rebuilds the list), which otherwise fights the stick-to-bottom + drifts a parked view.
   const listStyle: React.CSSProperties =
     variant === "pane"
-      ? { flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 10px", background: "transparent", fontFamily: font.mono, fontSize: "0.72rem" }
-      : { background: "var(--surface-card)", border: `1px solid var(--border-default)`, borderRadius: radius.panel, padding: "12px 14px", maxHeight: 240, overflowY: "auto", fontFamily: font.mono, fontSize: "0.72rem" };
+      ? { flex: 1, minHeight: 0, overflowY: "auto", overflowAnchor: "none", padding: "8px 10px", background: "transparent", fontFamily: font.mono, fontSize: "0.72rem" }
+      : { background: "var(--surface-card)", border: `1px solid var(--border-default)`, borderRadius: radius.panel, padding: "12px 14px", maxHeight: 240, overflowY: "auto", overflowAnchor: "none", fontFamily: font.mono, fontSize: "0.72rem" };
   return (
     <div style={variant === "pane" ? { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 } : undefined}>
       {/* A drill-down (turn-starting / artifact) row must LOOK clickable at rest, not only reward a
@@ -316,12 +327,24 @@ export function EventTicker({
             >
               {/* Time column (reference `.t`): muted, tabular figures. */}
               <span style={{ color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>{e.timestamp.slice(11, 19)}</span>
-              {/* Message column (reference `.m`): #ord · event · [role] · message, wrapping. */}
+              {/* Message column (reference `.m`): #ord · event · [role] · message, wrapping. A
+                  test.result row also carries its feature·story scope, since a test id (T1, T37)
+                  recurs across features/stories — without it a "TEST T1 green" is ambiguous (F3's T1
+                  vs F5's) and reads as if it were the open story's. */}
               <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {openTurn ? <span style={{ color: agentColor, fontWeight: 700 }}>#{turn} </span> : null}
                 <span style={{ fontWeight: 700, color: eventColor }}>{e.event}</span>{" "}
                 <span style={{ color: "var(--text-muted)" }}>[{e.role ?? "?"}]</span>{" "}
                 <span style={{ color: "var(--text-body)" }}>{e.message}</span>
+                {e.event === "test.result"
+                  ? (() => {
+                      const f = typeof e.metadata?.feature_id === "string" ? e.metadata.feature_id : null;
+                      const s = typeof e.metadata?.story_id === "string" ? e.metadata.story_id : null;
+                      return f || s ? (
+                        <span style={{ color: "var(--text-faint)", fontSize: "0.9em" }}> · {[f, s].filter(Boolean).join(" · ")}</span>
+                      ) : null;
+                    })()
+                  : null}
               </span>
             </div>
           );

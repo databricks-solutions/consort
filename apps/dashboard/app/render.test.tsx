@@ -24,8 +24,11 @@ import { LaneGraph } from "./LaneGraph";
 import { DrilldownPanel, TranscriptView, turnMetaFields, turnUrl, type TurnPayload } from "./DrilldownPanel";
 import { DriftBanner, EventTicker, FidelityBanner, modeFromUrl } from "./board-parts";
 import { FeatureStatusSection } from "./FeatureStatusSection";
+import { OrchestratorLane } from "./OrchestratorLane";
+import { ActivityDock } from "./ActivityDock";
 import type { DashboardState, StoryProgress } from "@/lib/types";
 import { focusOf } from "@/lib/reducer";
+import { guardedProjection, CARD_INPUTS, type CardId } from "@/lib/card-inputs";
 
 // Fixtures predate the `focus` field; derive it the same way the fold does so components that read
 // state.focus work, and so a test that overrides topology gets a focus matching that override.
@@ -958,6 +961,69 @@ describe("render — DrilldownPanel", () => {
     expect(turnUrl(16, null, "app/a.ts")).toBe("/api/turn/16?file=app%2Fa.ts");
     // A path with a literal `&` must not be able to inject another parameter.
     expect(turnUrl(16, null, "a&mode=live.ts")).toBe("/api/turn/16?file=a%26mode%3Dlive.ts");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The card→inputs MAP, enforced dynamically. Every STATE-consuming card is rendered through
+// `guardedProjection(state, id)`: the guard throws the moment a card reads a DashboardState field it
+// did NOT declare in CARD_INPUTS, so this suite fails if a card's real usage drifts from its declared
+// `reads`. This is the backbone that stops a surface from quietly rendering a wrong-KIND value again.
+
+describe("card→inputs MAP — enforced (guardedProjection throws on undeclared reads)", () => {
+  const noop = () => {};
+  // render-state.json predates `runPosition`/`features`; supply them so orchestrator + the status
+  // rollup render far enough to exercise their reads. This never weakens the guard — it throws on the
+  // ACCESS of any undeclared field regardless of value.
+  const guardState: DashboardState = {
+    ...state,
+    runPosition: state.runPosition ?? { feature: state.feature, story: null, phase: state.phase, lane: state.lane, locus: { kind: "idle" } },
+    features: state.features ?? [],
+  };
+  const guard = (id: CardId) => guardedProjection(guardState, id);
+
+  // Each importable state-consuming card, rendered through its guard — the strongest check: the real
+  // component runs and throws if it touches any field outside its declared `reads`.
+  const stateCards: Record<string, () => string> = {
+    orchestrator: () => renderToStaticMarkup(<OrchestratorLane state={guard("orchestrator")} />),
+    workflowGraph: () => renderToStaticMarkup(<WorkflowGraph state={guard("workflowGraph")} />),
+    laneGraph: () => renderToStaticMarkup(<LaneGraph state={guard("laneGraph")} />),
+    activityDock: () => renderToStaticMarkup(<ActivityDock state={guard("activityDock")} timeline={null} lineAt={0} bottomOffset={58} height={300} onHeightChange={noop} />),
+    eventTicker: () => renderToStaticMarkup(<EventTicker state={guard("eventTicker")} />),
+    featureStatusSection: () => renderToStaticMarkup(<FeatureStatusSection state={guard("featureStatusSection")} pinned={null} onPin={noop} openStory={null} onOpenStory={noop} />),
+  };
+
+  for (const id of Object.keys(stateCards)) {
+    it(`${id} reads ONLY the fields it declared in CARD_INPUTS`, () => {
+      expect(stateCards[id]).not.toThrow();
+    });
+  }
+
+  // Header, CostBar and BuildLane (the run-vitals card) are declared INSIDE the Next route file
+  // app/page.tsx, which may export only `default` — Next's generated route types reject any other
+  // named export, so they can't be imported here to full-render. Their reads are grounded by grep and
+  // routed through cardState() at their mounts; here we at least prove every field they declare is
+  // readable through the guard (a declared read never throws), so the declared set stays self-consistent.
+  const pageLocalCards: Record<string, (keyof DashboardState)[]> = {
+    header: CARD_INPUTS.header.reads as (keyof DashboardState)[],
+    costBar: CARD_INPUTS.costBar.reads as (keyof DashboardState)[],
+    vitals: CARD_INPUTS.vitals.reads as (keyof DashboardState)[],
+  };
+  for (const [id, reads] of Object.entries(pageLocalCards)) {
+    it(`${id} (page-local): every declared read passes the guard`, () => {
+      const g = guard(id as CardId);
+      for (const key of reads) expect(() => g[key]).not.toThrow();
+    });
+  }
+
+  // The remaining cards receive page-SCOPED narrow props (not `state`), so they can't render a
+  // wrong-KIND field by construction; their CARD_INPUTS entry records the page-level derivation feeding
+  // them. Listed explicitly so a NEW card can't be silently left out of any path.
+  const pageDerivedCards = ["transport", "agentLogReplay", "driftBanner", "drilldownPanel", "storyTestsLightbox", "backlogPanel"] as const;
+
+  it("every CardId is guard-rendered, guard-checked (page-local), or an accounted-for page-derived card", () => {
+    const covered = new Set<string>([...Object.keys(stateCards), ...Object.keys(pageLocalCards), ...pageDerivedCards]);
+    expect([...covered].sort()).toEqual((Object.keys(CARD_INPUTS) as CardId[]).sort());
   });
 });
 

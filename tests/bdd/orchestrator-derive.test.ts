@@ -49,6 +49,7 @@ function fakeProbe(facts: Record<string, Partial<Record<keyof StoryArtifactProbe
     reviewPending: (s) => get(s, "reviewPending" as keyof StoryArtifactProbe),
     refactorPending: (s) => get(s, "refactorPending" as keyof StoryArtifactProbe),
     assessGreenFailureAc: () => null,
+    reauthorResilienceAc: () => null,
     repairRegressionFixAc: () => null,
     greenSupersededFailureAc: () => null,
     specDefectAc: () => null,

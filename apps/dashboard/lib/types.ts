@@ -369,6 +369,21 @@ export type Focus =
   | { kind: "escalation"; step: string | null }
   | { kind: "idle" };
 
+// The ONE authoritative "where is the run right now", derived once in the fold from DRIVE-POSITION
+// events only (phase.start / handoff / gate.* / intake.supplied / experiment.accepted) — never from
+// test.result / cycle.* / turn.usage / reasoning, and never from a frozen next.json. A feature's
+// deploy-verify runs the FULL merged suite, so the newest test.result belongs to an EARLIER feature;
+// attributing "current" from it flips the board backward. Every surface that needs "the active
+// feature/story/phase/lane" reads THIS one value, so no surface re-derives it (and disagrees).
+// Kind-1 (live) at the live edge; honestly reconstructed from the log prefix when scrubbed (Kind-2).
+export interface RunPosition {
+  feature: string | null;
+  story: string | null;
+  phase: string | null;
+  lane: "plan" | "design" | "build" | "complete";
+  locus: Focus;
+}
+
 export interface DashboardState {
   ok: boolean;
   error: string | null;
@@ -434,6 +449,10 @@ export interface DashboardState {
   // laneCurrent + pendingGate + blockers, so a step running, a gate parked-at, an escalation, or idle
   // is decided in one place instead of each surface recombining the raw fields (and disagreeing).
   focus: Focus;
+  // The ONE authoritative run position (see RunPosition). `feature`/`phase`/`lane`/`focus`/
+  // `orchestratorActivity.story`/`stories[].active` are all populated FROM this, so every surface
+  // agrees; new surfaces (the test lightbox's live-vs-viewed label) read `runPosition.feature` directly.
+  runPosition: RunPosition;
   lane: "plan" | "design" | "build" | "complete"; // which top bar to emphasize ("plan" = intake/planning, before design starts)
   totalCost: number;
   totalTokens: number;
@@ -487,6 +506,11 @@ export interface DashboardState {
     laneLast: Record<string, string | null>;
     laneGate: string | null; // the GATE/checkpoint step id the playhead is parked AT (glows the card)
     atTimestamp: string | null; // timestamp of the event at the playhead, for the clock
+    // Gate KEYS approved AS OF the playhead — ALWAYS the slice-scoped `gatesFromLog(slice)` approvals,
+    // never the live snapshot. The locus (card-state `currentLocus`) picks the furthest APPROVED gate,
+    // so it must read the playhead's approvals, not the run's: scrubbed to "deploy gate awaiting", the
+    // lit gate is DEPLOY, not the run's later-approved PROMOTE. At the live edge slice=full, identical.
+    approvedGatesAtPlayhead: string[];
   };
 }
 

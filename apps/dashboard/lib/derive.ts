@@ -207,7 +207,9 @@ export function computeStories(
   let currentFeature: string | null = null;
   for (const e of events) {
     const f = featureIdOf(e);
-    if (f) currentFeature = f;
+    // Only drive-position events advance the in-force feature — a merged-suite test.result carries
+    // an earlier feature's id and must not re-stamp CLI-reported stories.
+    if (f && DRIVE_POSITION_EVENTS.has(e.event)) currentFeature = f;
     if (e.event === "phase.start") {
       const md = (e.metadata || {}) as Record<string, unknown>;
       const st = md.story as string | undefined;
@@ -297,6 +299,48 @@ export function featureIdOf(e: AgentLogEvent): string | null {
   if (e.event === "reasoning") return null;
   const f = (e.metadata as Record<string, unknown> | undefined)?.feature_id;
   return typeof f === "string" && f ? f : null;
+}
+
+// Events that mark WHERE THE DRIVE IS — what the orchestrator/roles are doing. The run's position
+// (active feature/story/phase) is read ONLY from these. Deliberately EXCLUDES test.result (its
+// feature_id/story is the TEST's owner, and a deploy-verify runs the full merged suite so the newest
+// test.result belongs to an earlier feature), cycle.*/turn.usage/reasoning (per-turn noise). This is
+// the single rule that stops the board flipping back to F2/F5 while the drive is on F9.
+export const DRIVE_POSITION_EVENTS = new Set<string>([
+  "phase.start",
+  "handoff",
+  "gate.surfaced",
+  "gate.approved",
+  "gate.rejected",
+  "intake.supplied",
+  "experiment.accepted",
+]);
+
+// The run's position from drive-position events only: the newest such event wins, scanning back.
+// `phase`/`story`/`feature` are filled from the most recent drive-position event that carries each.
+// Scoped to the passed slice, so it rewinds honestly when scrubbed (Kind-2) and is Kind-1 at the edge.
+export function runPositionOf(events: AgentLogEvent[]): {
+  feature: string | null;
+  story: string | null;
+  phase: string | null;
+} {
+  let feature: string | null = null;
+  let story: string | null = null;
+  let phase: string | null = null;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (!DRIVE_POSITION_EVENTS.has(e.event)) continue;
+    const md = (e.metadata ?? {}) as Record<string, unknown>;
+    if (phase === null && typeof md.phase === "string" && md.phase) phase = md.phase;
+    if (story === null) {
+      const s = typeof md.story === "string" && md.story ? md.story
+        : typeof md.subject === "string" && md.subject ? md.subject : null;
+      if (s) story = s;
+    }
+    if (feature === null) { const f = featureIdOf(e); if (f) feature = f; }
+    if (feature && story && phase) break;
+  }
+  return { feature, story, phase };
 }
 
 // --- log-derived story + gate state (for scrubbed-back views) ----------------
@@ -413,7 +457,9 @@ export function storiesFromLog(events: AgentLogEvent[]): StoryProgress[] {
   for (const e of events) {
     const md = (e.metadata || {}) as Record<string, unknown>;
     const feature = featureIdOf(e);
-    if (feature) currentFeature = feature;
+    // Advance the in-force feature ONLY on drive-position events: a merged-suite test.result carries
+    // an EARLIER feature's id, which would otherwise flip subsequent stories onto the wrong feature.
+    if (feature && DRIVE_POSITION_EVENTS.has(e.event)) currentFeature = feature;
     const key = note(md.story, currentFeature);
     if (key) activeKey = key;
 
@@ -484,6 +530,12 @@ export function featuresFromLog(events: AgentLogEvent[]): FeatureSummary[] {
   const done = new Set<string>();
   let last: string | null = null;
   for (const e of events) {
+    // `test.result` is NOT a position/work signal — a cross-feature full-suite re-run (during a LATER
+    // feature's deploy-verify) emits test.result events stamped with the EARLIER feature's id. Letting
+    // those re-stamp `last`/`done` wrongly reopened an already-shipped feature (clearing its `done`) and
+    // flipped `active` back to it. Skip them here, same as the governing Kind principle elsewhere: a
+    // feature's done/active is driven by its OWN lifecycle (phase/gate), never by who ran its tests.
+    if (e.event === "test.result") continue;
     const f = featureIdOf(e);
     if (f) {
       if (!order.includes(f)) order.push(f);

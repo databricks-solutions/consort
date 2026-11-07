@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { deriveCardStates, type CardState, type FoldView } from "./card-state";
-import type { Focus } from "./types";
+import { deriveCardStates, foldViewOf, type CardState, type FoldView } from "./card-state";
+import type { DashboardState, Focus } from "./types";
 
 const DESIGN = ["d-breakdown", "d-spec", "d-ux-ia", "d-arch", "d-dba", "d-ts", "d-nav"];
 const BUILD = ["b-red", "b-green", "b-review", "b-refactor"];
@@ -154,5 +154,87 @@ describe("card-state — exactly ONE card glows: the current locus", () => {
       approvedGates: new Set(["intake", "plan", "spec", "acceptance", "deploy", "promote"]),
     });
     expect(glowing(deriveCardStates(v))).toBeNull(); // Shipped rests; nothing flashes
+  });
+});
+
+// Regression guard (the "scrubber does not rewind the glow" report): the one-locus refactor keyed the
+// glow on live-only `laneCurrent` (null on every scrubbed fold) + the furthest-reached fallback, so the
+// lit card stopped ALIGNING to the scrubber. On a SCRUBBED frame the glow must follow the server-folded
+// `focus.step` (the playhead), while a parked/approved gate still outranks a trailing step.
+describe("card-state — a SCRUBBED frame aligns the glow to the folded focus (scrubber playhead)", () => {
+  it("lights the scrubbed focus step even though laneCurrent/liveStep is null on a scrubbed fold", () => {
+    const v = base({
+      focus: { kind: "step", lane: "design", step: "d-ux-ia" } as Focus, // the folded playhead step
+      liveStep: null, // laneCurrent is null on every scrubbed fold — the regression's blind spot
+      reachedThisPass: new Set(["d-breakdown", "d-spec", "d-ux-ia"]),
+      atLive: false,
+    });
+    expect(glowing(deriveCardStates(v))).toEqual({ id: "d-ux-ia", state: "current-step" });
+  });
+
+  it("lights the focus step at a PASS BOUNDARY where reachedThisPass is empty (previously went dark)", () => {
+    const v = base({
+      focus: { kind: "step", lane: "design", step: "d-breakdown" } as Focus,
+      liveStep: null,
+      reachedThisPass: new Set(), // a new feature/phase just started at this scrub position
+      atLive: false,
+    });
+    expect(glowing(deriveCardStates(v))).toEqual({ id: "d-breakdown", state: "current-step" });
+  });
+
+  it("the glow MOVES as the scrubber advances through a lane (not stuck on current)", () => {
+    const at = (step: string, reached: string[]) =>
+      glowing(deriveCardStates(base({ focus: { kind: "step", lane: "design", step } as Focus, liveStep: null, reachedThisPass: new Set(reached), atLive: false })));
+    expect(at("d-breakdown", ["d-breakdown"])?.id).toBe("d-breakdown");
+    expect(at("d-dba", ["d-breakdown", "d-spec", "d-ux-ia", "d-arch", "d-dba"])?.id).toBe("d-dba");
+    expect(at("d-nav", DESIGN)?.id).toBe("d-nav");
+  });
+
+  it("a PARKED/surfaced gate still outranks the trailing focus step on a scrubbed frame", () => {
+    const v = base({
+      focus: { kind: "step", lane: "plan", step: "p-ux-establish" } as Focus,
+      liveStep: null,
+      reachedThisPass: new Set(["p-intake", "p-ux-establish"]),
+      atLive: false,
+      parkedGateStep: "p-intake-gate",
+    });
+    expect(glowing(deriveCardStates(v))).toEqual({ id: "p-intake-gate", state: "current-gate" });
+  });
+
+  it("at the LIVE edge the glow is UNCHANGED (liveStep still wins; focus.step is not used as a scrub candidate)", () => {
+    const v = base({
+      focus: { kind: "step", lane: "build", step: "b-red" } as Focus,
+      liveStep: "b-green", // live running step differs from a lagging focus carry
+      reachedThisPass: new Set(["b-red", "b-green"]),
+      atLive: true,
+    });
+    expect(glowing(deriveCardStates(v))).toEqual({ id: "b-green", state: "current-step" });
+  });
+});
+
+describe("foldViewOf — approvedGates is slice-scoped (the promote-lit-at-deploy-gate bug)", () => {
+  const topo = (over: Partial<DashboardState["topology"]> = {}): DashboardState["topology"] => ({
+    passedNodes: [], activeNode: null, laneSteps: {}, reachedThisPass: [], laneCurrent: null,
+    laneLast: {}, laneGate: null, atTimestamp: null, approvedGatesAtPlayhead: [], ...over,
+  });
+  const st = (over: Partial<DashboardState>): DashboardState =>
+    ({ focus: { kind: "idle" }, atLive: false, phase: "deploy", gates: [], topology: topo(), ...over }) as unknown as DashboardState;
+
+  it("uses topology.approvedGatesAtPlayhead, NOT the full-run state.gates", () => {
+    // Scrubbed to the deploy-gate event: the playhead has approved only `deploy`, but the full-run
+    // snapshot gates also carry `promote` (approved later). The locus set must exclude promote.
+    const v = foldViewOf(st({
+      topology: topo({ approvedGatesAtPlayhead: ["deploy"] }),
+      gates: [{ name: "deploy", status: "approved" }, { name: "promote", status: "approved" }] as DashboardState["gates"],
+    }));
+    expect([...v.approvedGates].sort()).toEqual(["deploy"]); // promote NOT leaked from full-run gates
+  });
+
+  it("falls back to state.gates when approvedGatesAtPlayhead is absent (pre-field fixtures byte-identical)", () => {
+    const v = foldViewOf(st({
+      topology: { ...topo(), approvedGatesAtPlayhead: undefined as unknown as string[] },
+      gates: [{ name: "deploy", status: "approved" }] as DashboardState["gates"],
+    }));
+    expect([...v.approvedGates]).toEqual(["deploy"]);
   });
 });
