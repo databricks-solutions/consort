@@ -20083,7 +20083,7 @@ ${help()}`);
   const cfg = buildCfg(args, args.feature);
   {
     const scm = readWorkflowState3(cfg.projectDir);
-    if (isForeignFeatureClaim(scm, cfg.featureId)) {
+    if (isForeignFeatureClaim(scm, cfg.featureId) && scm?.state !== "merged") {
       process.stderr.write(
         `consort-drive: refusing to drive "${cfg.featureId}" \u2013 the SCM workflow state records a
 DIFFERENT feature "${scm?.feature_id}" (branch ${scm?.branch ?? "?"}). Driving now would fork the
@@ -20102,9 +20102,10 @@ then re-run.
     return 0;
   }
   if (!inReplayLane) {
-    const claimed = readWorkflowState3(cfg.projectDir)?.feature_id?.trim();
-    if (!claimed) {
-      process.stderr.write(`consort-drive: no feature branch claimed \u2014 claiming the paired "${cfg.featureId}" branch (un-skippable Step 0)...
+    const scmBefore = readWorkflowState3(cfg.projectDir);
+    const claimed = scmBefore?.feature_id?.trim();
+    if (!claimed || isForeignFeatureClaim(scmBefore, cfg.featureId)) {
+      process.stderr.write(`consort-drive: claiming the paired "${cfg.featureId}" branch (un-skippable Step 0)...
 `);
       const lkShim = path15.join(cfg.projectDir, "scripts", "lk");
       try {

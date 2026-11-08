@@ -1453,9 +1453,15 @@ async function main(): Promise<number> {
   // stale predecessor's branch as this feature's featureBranch, so the experiment
   // would fork from (and the build commit onto) the wrong branch. Block loud – the
   // human claims this feature (or reconciles the prior one) first.
+  // EXCEPTION — a cleanly `merged` prior is a sprint HAND-OFF, not an out-of-band
+  // conflict: the previous feature shipped (its code is in the tier parent THIS feature
+  // forks from), and the claim CLI advances `merged` -> `feature-claimed`. A finished
+  // sprint leaves the last feature at `merged`, so refusing here wrongly dead-ended the
+  // NEXT feature's first drive. Only a NON-merged foreign claim (another feature still in
+  // flight) risks the wrong-branch fork — refuse that; the auto-claim below handles merged.
   {
     const scm = readWorkflowState(cfg.projectDir);
-    if (isForeignFeatureClaim(scm, cfg.featureId)) {
+    if (isForeignFeatureClaim(scm, cfg.featureId) && scm?.state !== "merged") {
       process.stderr.write(
         `consort-drive: refusing to drive "${cfg.featureId}" – the SCM workflow state records a\n` +
           `DIFFERENT feature "${scm?.feature_id}" (branch ${scm?.branch ?? "?"}). Driving now would fork the\n` +
@@ -1490,9 +1496,15 @@ async function main(): Promise<number> {
   // DIFFERENT claimed feature. Skipped in replay lanes (no live branch); never reached by
   // --dry-run (returned above), so planning stays unblocked.
   if (!inReplayLane) {
-    const claimed = readWorkflowState(cfg.projectDir)?.feature_id?.trim();
-    if (!claimed) {
-      process.stderr.write(`consort-drive: no feature branch claimed — claiming the paired "${cfg.featureId}" branch (un-skippable Step 0)...\n`);
+    const scmBefore = readWorkflowState(cfg.projectDir);
+    const claimed = scmBefore?.feature_id?.trim();
+    // Claim when there is no ACTIVE claim for THIS feature: either no feature_id at all, OR a
+    // foreign claim the guard above admitted as a clean hand-off (a MERGED prior — e.g. the last
+    // feature of a finished sprint). The claim advances scaffold-complete/merged -> feature-claimed,
+    // cutting THIS feature's paired branch from the tier parent so the experiment never inherits the
+    // shipped predecessor's branch.
+    if (!claimed || isForeignFeatureClaim(scmBefore, cfg.featureId)) {
+      process.stderr.write(`consort-drive: claiming the paired "${cfg.featureId}" branch (un-skippable Step 0)...\n`);
       const lkShim = path.join(cfg.projectDir, "scripts", "lk");
       try {
         await spawnCmd(lkShim, ["lakebase-scm-claim-feature-branch", cfg.featureId, "--project-dir", cfg.projectDir, "--json"], cfg.projectDir);

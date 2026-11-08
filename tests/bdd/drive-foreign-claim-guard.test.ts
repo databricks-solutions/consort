@@ -42,6 +42,14 @@ describe("consort-drive wires the foreign-claim refusal (FEIP-8023)", () => {
     // Points the operator at the remedy, not a bare failure.
     expect(guardRegion).toMatch(/claim|reconcile|resume/i);
   });
+
+  it("ADMITS a cleanly-merged foreign claim (a finished sprint's hand-off), refusing only a non-merged one", () => {
+    // The refuse is gated to EXCLUDE a merged prior: a shipped predecessor is a safe hand-off
+    // (its code is in the tier parent this feature forks from) and the claim advances merged ->
+    // feature-claimed. Only a NON-merged foreign claim (another feature still in flight) refuses.
+    const guardRegion = DRIVE_SRC.slice(DRIVE_SRC.indexOf("isForeignFeatureClaim("), DRIVE_SRC.indexOf("return 2;", DRIVE_SRC.indexOf("isForeignFeatureClaim(")) + 10);
+    expect(guardRegion).toMatch(/scm\?\.state !== "merged"/);
+  });
 });
 
 // Companion to the foreign-claim guard: entering the feature lane with NO claim at all
@@ -51,8 +59,8 @@ describe("consort-drive wires the foreign-claim refusal (FEIP-8023)", () => {
 // refusing + dead-ending). Same static-source wiring check (drive.cli.ts is a self-invoking bin).
 describe("consort-drive AUTO-CLAIMS the feature branch when none is claimed (any entry path)", () => {
   it("runs lakebase-scm-claim-feature-branch itself rather than refusing", () => {
-    expect(DRIVE_SRC).toMatch(/no feature branch claimed/i);
-    const idx = DRIVE_SRC.indexOf("no feature branch claimed");
+    expect(DRIVE_SRC).toMatch(/claiming the paired/i);
+    const idx = DRIVE_SRC.indexOf("claiming the paired");
     const region = DRIVE_SRC.slice(idx, idx + 900);
     // It RUNS the claim (spawnCmd), not just names it in a refusal message.
     expect(region).toMatch(/spawnCmd\(/);
@@ -61,11 +69,20 @@ describe("consort-drive AUTO-CLAIMS the feature branch when none is claimed (any
     expect(region).toMatch(/return 2;/);
   });
 
+  it("fires on NO claim OR a (merged, guard-admitted) foreign claim — the sprint hand-off, not only an empty feature_id", () => {
+    // The claim-when-absent condition must also cover a merged foreign prior, else the NEXT
+    // feature after a finished sprint (feature_id still set to the merged predecessor) never
+    // auto-claims and dead-ends.
+    const idx = DRIVE_SRC.indexOf("claiming the paired");
+    const region = DRIVE_SRC.slice(Math.max(0, idx - 500), idx);
+    expect(region).toMatch(/if\s*\(!claimed\s*\|\|\s*isForeignFeatureClaim\(/);
+  });
+
   it("places the auto-claim after --dry-run and gates it on replay lanes (planning/replay stay unblocked)", () => {
-    const idx = DRIVE_SRC.indexOf("no feature branch claimed");
+    const idx = DRIVE_SRC.indexOf("claiming the paired");
     expect(idx).toBeGreaterThan(DRIVE_SRC.indexOf("if (args.dryRun)"));
     // The auto-claim block is gated on !inReplayLane (replay has no live branch).
-    expect(DRIVE_SRC.slice(Math.max(0, idx - 400), idx)).toMatch(/inReplayLane/);
+    expect(DRIVE_SRC.slice(Math.max(0, idx - 1000), idx)).toMatch(/inReplayLane/);
   });
 });
 
@@ -76,7 +93,7 @@ describe("consort-drive AUTO-CLAIMS the feature branch when none is claimed (any
 // feature branch → "story not in the pipeline" → HIL. The single owner must therefore ALSO
 // check out the claimed branch, UNCONDITIONALLY — not only when it just claimed.
 describe("consort-drive Step 0 ALSO checks out the claimed paired branch, unconditionally (one door)", () => {
-  const idxClaim = DRIVE_SRC.indexOf("no feature branch claimed");
+  const idxClaim = DRIVE_SRC.indexOf("claiming the paired");
 
   it("reads the claimed branch from the SCM workflow state AFTER the auto-claim block", () => {
     const after = DRIVE_SRC.slice(idxClaim);
