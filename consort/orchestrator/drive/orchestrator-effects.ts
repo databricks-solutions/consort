@@ -35,6 +35,7 @@ import {
   storyJson, designGuideJson, iaMd, handbackFile, storyAcIds, architectureJson, readAcLayer,
   featureProposalsMd, featureSpecJson, featureTestListJson, acsDir, planningEstimatesJson, cycleDir,
   featureDeployReverifyMarkerJson, testListPatchJson, storyResolved, cyclesRootDir,
+  specReviseScopeJson,
 } from "../../config/consort-paths.js";
 import { kitRoot } from "../../config/kit-bin.js";
 import type { TurnKey } from "./turn-key.js";
@@ -637,6 +638,20 @@ function consumeHandback(
   consortDir: string,
 ): string {
   const story = "story" in action ? action.story : undefined;
+  // CONSUME-ONCE the scoped spec-revise latch when the spec-author's scoped turn is dispatched. The
+  // marker (specReviseScopeJson) is the derive-latch that makes specRevisePending true so THIS turn is
+  // reached; the SCOPE guidance (which ACs to re-author) travels in the handback brief below. The probe's
+  // old proxy ("the cleared AC file(s) have reappeared") assumed the remedy is ALWAYS to re-author the
+  // SAME flagged ac_id — but a reflect-spec-defect's remedy is often ADDITIVE (author a NEW capture AC and
+  // leave the flagged one dropped), so the cleared file never returns and specRevisePending stays true
+  // FOREVER → the design loop re-dispatches spec-author without advancing (line :81 precedes the ux-ia
+  // step) until the stall guard hard-halts (observed live: F2/S3 actor-seam co-heal, spec-author ×10).
+  // The latch means "spec-author owes exactly ONE scoped turn"; consume it here so the loop advances to
+  // the ux-ia fix (the actual root of a coupled ia+spec defect) next derive. A genuinely unaddressed spec
+  // gap re-fires at the next reflect, which the spent reflect budget turns into a bounded HIL, not a loop.
+  if (action.role === "spec-author" && story !== undefined) {
+    fs.rmSync(specReviseScopeJson(consortDir, featureId, story), { force: true });
+  }
   const file = handbackFile(consortDir, featureId, action.role, story);
   if (!fs.existsSync(file)) return "";
   let note = "";
@@ -1792,8 +1807,94 @@ export function buildClaudeCommandWithBody(
  * buildClaudeCommandWithBody directly with the executor-assembled prompt (declared preconditions
  * re-injected) instead of the full inline body.
  */
+/** The first REFLOW-SAFE identifier in any of the given texts — a test node-id (`path::test`) or a
+ *  source/test file path — which survives a prompt builder reformatting the surrounding prose. Used by
+ *  the routed-reason guard: if the reason source carries such a token, a correctly-built prompt MUST echo
+ *  it. Null when none of the texts carry one (then the guard cannot probe, so it does not assert). */
+function firstStableReasonToken(...texts: Array<string | undefined>): string | null {
+  for (const t of texts) {
+    if (!t) continue;
+    const nodeId = t.match(/[\w./-]+::[\w.[\]/-]+/);
+    if (nodeId) return nodeId[0];
+    const filePath = t.match(/[\w./-]+\.(?:py|tsx?|jsx?)(?:::[\w.[\]/-]+)?/);
+    if (filePath) return filePath[0];
+  }
+  return null;
+}
+
+/** THE ROUTED-REASON CONTRACT. When the orchestrator routes to a role for a DEFECT/RE-WORK (a build
+ *  `buildMode`), the diagnosis lives in a marker/scope file that mode reads; a correctly-built prompt must
+ *  carry it. Returns a reflow-safe probe token the prompt MUST contain, or null when this action is a
+ *  first-pass lane step / a non-diagnosis turn (reflect/review/post-review refactor) that carries no
+ *  reason by design. ONE place — so a new routed mode that forgets its reason injection is caught here,
+ *  not per-path (the reopen `--reason` silent-drop class). Revise/reopen deliver via the handback brief
+ *  (consumeHandback prepends it to the body), which this does not re-check — it is structurally
+ *  guaranteed + separately tested. */
+export function routedReasonProbe(
+  action: Extract<WorkflowAction, { kind: "invoke-role" }>,
+  cfg: DriveEffectsConfig,
+): string | null {
+  if (!("buildMode" in action) || !("story" in action)) return null;
+  const { consortDir, featureId } = cfg;
+  const s = action.story;
+  const ac = "ac" in action ? action.ac : undefined;
+  // Each case mirrors the EXACT source the matching directive in buildTaskBody injects (so the probe and
+  // the prompt never disagree — the contract test proves it): the navigator ASSESS turns read the raw
+  // failure, the driver REFACTOR/repair turns read the navigator's downstream scope/flagged output.
+  switch (action.buildMode) {
+    case "assess": // navigator: buildGreenFailureAdvisory(green-failure.failureOutput)
+    case "repair": // driver: regressionRepairDirective(green-failure.failureOutput)
+      return firstStableReasonToken(ac ? readGreenFailure(consortDir, featureId, s, ac)?.failureOutput : undefined);
+    case "assess-deploy": // navigator: marker.failure_output (OBSERVED failure output)
+      return firstStableReasonToken(readDeployVerifyAssessMarker(consortDir, featureId, s)?.failure_output);
+    case "refactor-deploy": { // driver: scope.directives[].node_id (the Navigator's per-test scope)
+      const scope = readDeployVerifyScope(consortDir, featureId, s);
+      const fromScope = (scope?.directives ?? []).map((d) => d.node_id).join("\n");
+      return firstStableReasonToken(fromScope, readDeployVerifyAssessMarker(consortDir, featureId, s)?.failure_output);
+    }
+    case "assess-refactor": { // navigator: marker.superseded_advisory / summary
+      const m = readRefactorVerifyAssessMarker(consortDir, featureId, s);
+      return firstStableReasonToken(m?.superseded_advisory, m?.summary);
+    }
+    case "refactor-superseded": // driver: refactorSupersededDirective(marker.flagged_tests)
+      return firstStableReasonToken((readRefactorVerifyAssessMarker(consortDir, featureId, s)?.flagged_tests ?? []).join("\n"));
+    case "reauthor": // navigator: reauthor marker.flagged_tests
+      return firstStableReasonToken(ac ? (readReauthorMarker(consortDir, featureId, s, ac)?.flagged_tests ?? []).join("\n") : undefined);
+    default:
+      // red/green (first-pass), reflect/review/reconcile (gate), refactor (review notes), and
+      // green-superseded (a story-wide aggregation with no single marker) carry no single diagnosis
+      // token to probe — unguarded by design (never a false throw), covered by their own tests.
+      return null;
+  }
+}
+
+/** Dispatch-time ENFORCEMENT of the routed-reason contract, at the single prompt choke point
+ *  (buildClaudeCommand): a routed turn whose assembled prompt does NOT echo its reason probe is a
+ *  silent-drop — the orchestrator routed to the role for a defect but the diagnosis never reached the
+ *  prompt (the reopen `--reason` class). THROW so it is caught in dev/CI; skipped under NODE_ENV=production
+ *  and an explicit escape hatch, so a live run can never be halted by a probe false-positive. */
+export function assertRoutedReasonInPrompt(
+  action: Extract<WorkflowAction, { kind: "invoke-role" }>,
+  cfg: DriveEffectsConfig,
+  task: string,
+): void {
+  if (process.env.NODE_ENV === "production" || process.env.CONSORT_REASON_GUARD === "off") return;
+  const probe = routedReasonProbe(action, cfg);
+  if (probe && !task.includes(probe)) {
+    const mode = "buildMode" in action ? action.buildMode : "?";
+    throw new Error(
+      `consort routed-reason contract: the ${mode} turn for ${action.role}/${"story" in action ? action.story : "?"} ` +
+        `assembled a prompt MISSING its routing reason (probe "${probe}" absent from the task). The orchestrator routed to this ` +
+        `role for a defect but the diagnosis did not reach the prompt — the reopen --reason silent-drop class. Inject the reason ` +
+        `for this buildMode in buildTaskBody (set CONSORT_REASON_GUARD=off to bypass).`,
+    );
+  }
+}
+
 export function buildClaudeCommand(action: Extract<WorkflowAction, { kind: "invoke-role" }>, cfg: DriveEffectsConfig): DriveCommand {
-  return buildClaudeCommandWithBody(action, cfg, buildTaskBody(action, cfg));
+  const body = buildTaskBody(action, cfg);
+  assertRoutedReasonInPrompt(action, cfg, body);
+  return buildClaudeCommandWithBody(action, cfg, body);
 }
 
 /**

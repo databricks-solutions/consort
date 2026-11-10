@@ -408,6 +408,55 @@ function substituteScmUtilsVersionInScripts(scriptsDir, version) {
     }
   }
 }
+function refreshKitOwnedInstrumentation(projectDir, kitDir) {
+  const refreshed = [];
+  try {
+    const scmProj = [
+      path4.join(kitDir, "node_modules", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
+      path4.join(kitDir, "..", "lakebase-scm-utils", "templates", "project"),
+      path4.join(kitDir, "..", "..", "@databricks-solutions", "lakebase-scm-utils", "templates", "project")
+    ].find((c) => fs5.existsSync(c));
+    if (!scmProj) throw new Error("scm-utils templates not found");
+    const refreshReporter = (srcRel, destRel) => {
+      const src = path4.join(scmProj, srcRel);
+      const dest = path4.join(projectDir, destRel);
+      if (!fs5.existsSync(src) || !fs5.existsSync(path4.dirname(dest))) return;
+      try {
+        fs5.copyFileSync(src, dest);
+        refreshed.push(destRel);
+      } catch {
+      }
+    };
+    refreshReporter(path4.join("common", "tests", "e2e", "conftest.py"), path4.join("tests", "e2e", "conftest.py"));
+    const isPython = fs5.existsSync(path4.join(projectDir, "pyproject.toml")) || fs5.existsSync(path4.join(projectDir, "requirements.txt"));
+    if (isPython) {
+      refreshReporter(path4.join("python", "tests", "conftest.py"), path4.join("tests", "conftest.py"));
+      refreshReporter(path4.join("python", "app", "consort_capture.py"), path4.join("app", "consort_capture.py"));
+    }
+    const hasClient = fs5.existsSync(path4.join(projectDir, "client", "package.json"));
+    if (hasClient) {
+      refreshReporter(path4.join("client", "tests", "setup.ts"), path4.join("client", "tests", "setup.ts"));
+      refreshReporter(path4.join("client", "consort-vitest-reporter.ts"), path4.join("client", "consort-vitest-reporter.ts"));
+      refreshReporter(path4.join("client", "vitest.globalSetup.ts"), path4.join("client", "vitest.globalSetup.ts"));
+      refreshReporter(path4.join("client", "tests", "e2e", "consort-fixtures.ts"), path4.join("client", "tests", "e2e", "consort-fixtures.ts"));
+    }
+  } catch {
+  }
+  try {
+    const commonDir = path4.join(kitDir, "templates", "project", "common");
+    for (const f of ["consort-capture.ts", "consort-test-reporter.ts"]) {
+      const src = path4.join(commonDir, f);
+      if (!fs5.existsSync(src)) continue;
+      try {
+        fs5.copyFileSync(src, path4.join(projectDir, f));
+        refreshed.push(f);
+      } catch {
+      }
+    }
+  } catch {
+  }
+  return refreshed;
+}
 function refreshSurface(projectDir, kitDir, targetVersion) {
   const a = updateAgents({ projectDir, kitDir, force: true });
   const c = updateCommands({ projectDir, kitDir, force: true });
@@ -440,37 +489,7 @@ function refreshSurface(projectDir, kitDir, targetVersion) {
       removedRootFiles.push("playwright.config.ts");
     }
   }
-  const reporterFiles = [];
-  try {
-    const scmProj = [
-      path4.join(kitDir, "node_modules", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
-      path4.join(kitDir, "..", "lakebase-scm-utils", "templates", "project"),
-      path4.join(kitDir, "..", "..", "@databricks-solutions", "lakebase-scm-utils", "templates", "project")
-    ].find((c2) => fs5.existsSync(c2));
-    if (!scmProj) throw new Error("scm-utils templates not found");
-    const refreshReporter = (srcRel, destRel) => {
-      const src = path4.join(scmProj, srcRel);
-      const dest = path4.join(projectDir, destRel);
-      if (!fs5.existsSync(src) || !fs5.existsSync(path4.dirname(dest))) return;
-      try {
-        fs5.copyFileSync(src, dest);
-        reporterFiles.push(destRel);
-      } catch {
-      }
-    };
-    refreshReporter(path4.join("common", "tests", "e2e", "conftest.py"), path4.join("tests", "e2e", "conftest.py"));
-    const isPython = fs5.existsSync(path4.join(projectDir, "pyproject.toml")) || fs5.existsSync(path4.join(projectDir, "requirements.txt"));
-    if (isPython) {
-      refreshReporter(path4.join("python", "tests", "conftest.py"), path4.join("tests", "conftest.py"));
-      refreshReporter(path4.join("python", "app", "consort_capture.py"), path4.join("app", "consort_capture.py"));
-    }
-    if (hasClient) {
-      refreshReporter(path4.join("client", "tests", "setup.ts"), path4.join("client", "tests", "setup.ts"));
-      refreshReporter(path4.join("client", "consort-vitest-reporter.ts"), path4.join("client", "consort-vitest-reporter.ts"));
-      refreshReporter(path4.join("client", "tests", "e2e", "consort-fixtures.ts"), path4.join("client", "tests", "e2e", "consort-fixtures.ts"));
-    }
-  } catch {
-  }
+  const reporterFiles = refreshKitOwnedInstrumentation(projectDir, kitDir);
   let gitignoreMerged = false;
   try {
     const basePath = path4.join(commonDir, ".gitignore.base");

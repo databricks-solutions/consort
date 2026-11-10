@@ -36,6 +36,41 @@ export function parseFailedNodeIds(output: string): string[] {
 }
 
 /**
+ * A RUNNER-AGNOSTIC digest of the failing lines in a verify run's captured output. `parseFailedNodeIds`
+ * only recognizes pytest ids (`FAILED <path>::<test>`), so a CLIENT (vitest) or Playwright failure yields
+ * nothing — and the terminal deploy-verify escalation then carried a blind output TAIL that a later
+ * passing file's output had already scrolled the failure out of, losing the failing test's identity (the
+ * reason a client deploy-verify HIL was undiagnosable). This scans the WHOLE output for the failure
+ * markers each runner emits — pytest `FAILED/ERROR <id>`, vitest file-level `FAIL <file>` / failed-file
+ * pointer `❯ <file>` / per-test `× name`, a `Failed Tests` banner, and assertion detail
+ * (`AssertionError`, `Expected…Received`, `Unable to find`, Playwright `Timed out … waiting`) — strips
+ * ANSI, dedups, and caps. Pure. Empty only when the output truly carries no recognizable failure line.
+ */
+export function verifyFailureDigest(output: string, cap = 60): string[] {
+  const markers: RegExp[] = [
+    /^(?:FAILED|ERROR)\s+\S+::/, // pytest node id
+    /^\s*FAIL\s+\S+\.(?:tsx?|jsx?|spec\.[a-z]+)/i, // vitest/playwright file-level fail
+    /^\s*❯\s+\S+\.(?:tsx?|jsx?)/, // vitest failed-file pointer
+    /^\s*(?:×|✗|✘)\s+\S/, // per-test fail glyph
+    /Failed Tests/, // vitest failed-tests banner
+    /\bAssertionError\b|\bExpected\b.*\bReceived\b|Unable to find|Timed out .*waiting/, // assertion detail
+  ];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of output.split("\n")) {
+    // eslint-disable-next-line no-control-regex
+    const line = raw.replace(/\u001b\[[0-9;]*m/g, "").trim(); // strip ANSI colour codes
+    if (!line) continue;
+    if (markers.some((re) => re.test(line)) && !seen.has(line)) {
+      seen.add(line);
+      out.push(line);
+      if (out.length >= cap) break;
+    }
+  }
+  return out;
+}
+
+/**
  * Classify which of the deploy-verify FAILING node-ids are SUPERSEDED: their test
  * file references a column a CONTRACT migration in this feature DROPPED. At the
  * deploy-verify stage the test factually failed at HEAD, so a dropped-column

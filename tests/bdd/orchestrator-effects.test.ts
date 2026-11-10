@@ -13,6 +13,9 @@ import {
   commandsFromManifest,
   commandsForActionResolved,
   buildDriveEffects,
+  buildClaudeCommand,
+  routedReasonProbe,
+  assertRoutedReasonInPrompt,
   planNextAction,
   type DriveCommand,
   type DriveEffectsConfig,
@@ -20,9 +23,12 @@ import {
 } from "../../consort/orchestrator/drive/orchestrator-effects";
 import type { WorkflowAction } from "../../consort/orchestrator/drive/orchestrator-drive";
 import { existsSync, readFileSync } from "node:fs";
-import { handbackFile } from "../../consort/config/consort-paths";
+import { handbackFile, specReviseScopeJson } from "../../consort/config/consort-paths";
 import { beginNextPendingCycle } from "../../consort/pipeline/cycle-record";
 import { writeGreenFailure, writeSupersededTests } from "../../consort/smells/supersession";
+import { writeDeployVerifyAssessMarker } from "../../consort/smells/deploy-verify-assess";
+import { writeRefactorVerifyAssessMarker, markRefactorVerifyAssessed } from "../../consort/smells/refactor-verify-assess";
+import { writeReauthorMarker } from "../../consort/smells/reauthor-resilience";
 
 function recordingRunner(): { runner: CommandRunner; calls: DriveCommand[] } {
   const calls: DriveCommand[] = [];
@@ -915,6 +921,39 @@ describe("hand-back delivery: onHandback writes, roleTask consumes (informed ret
   });
 });
 
+// REGRESSION (F2/S3 actor-seam co-heal stall): a scoped spec-revise clears the flagged AC file(s) and
+// writes specReviseScopeJson so specRevisePending re-invokes the spec-author ONCE. The old probe proxy
+// ("the cleared AC file reappeared") stuck FOREVER when the reflect-spec-defect's remedy was ADDITIVE
+// (author a NEW capture AC, leave the flagged one dropped) — so the design loop re-dispatched spec-author
+// without advancing (never reaching the ux-ia fix) until the stall guard hard-halted (spec-author ×10).
+// FIX: dispatching the spec-author's scoped turn CONSUMES the marker (consume-once latch), so the loop
+// advances next derive regardless of which ACs the turn produced.
+describe("spec-revise latch: dispatching the spec-author's scoped turn consumes specReviseScopeJson", () => {
+  let tdd: string;
+  beforeEach(() => {
+    tdd = mkdtempSync(join(tmpdir(), "spec-revise-latch-"));
+    mkdirSync(join(tdd, "features", "F1", "stories", "S2", "acs"), { recursive: true });
+  });
+  afterEach(() => rmSync(tdd, { recursive: true, force: true }));
+
+  it("consumes the marker on the spec-author story dispatch — even when the flagged AC is NOT re-created (additive remedy)", () => {
+    const marker = specReviseScopeJson(tdd, "F1", "S2");
+    writeFileSync(marker, JSON.stringify({ ac_ids: ["AC3-missing-actor-rejected"] }) + "\n");
+    expect(existsSync(marker)).toBe(true);
+    // Dispatch the spec-author's scoped story turn. AC3 stays absent (the additive-remedy case).
+    commandsForAction({ kind: "invoke-role", role: "spec-author", story: "S2" }, cfg({ consortDir: tdd, projectDir: tdd }));
+    // The latch is consumed → specRevisePending is false next derive → the loop advances to ux-ia.
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("does NOT consume another role's dispatch (a test-strategist story turn leaves the spec marker intact)", () => {
+    const marker = specReviseScopeJson(tdd, "F1", "S2");
+    writeFileSync(marker, JSON.stringify({ ac_ids: ["AC3-missing-actor-rejected"] }) + "\n");
+    commandsForAction({ kind: "invoke-role", role: "test-strategist", story: "S2" }, cfg({ consortDir: tdd, projectDir: tdd }));
+    expect(existsSync(marker)).toBe(true);
+  });
+});
+
 describe("commandsForAction: build-lane perf (P2 review rubric / P5 session scope / P6 effort)", () => {
   const review = { kind: "invoke-role", role: "navigator", story: "S1", ac: "AC1-create", buildMode: "review" } as const;
   const red = { kind: "invoke-role", role: "navigator", story: "S1" } as const;
@@ -1504,5 +1543,101 @@ describe("commandsForAction: FEIP-8006 out-of-root artifact guard (verify-artifa
     expect(
       verify(commandsForAction({ kind: "invoke-role", role: "product-owner", mode: "author-requests" }, cfg())),
     ).toBeUndefined();
+  });
+});
+
+// THE ROUTED-REASON CONTRACT (the audit's enforcement): every orchestrator→role DEFECT/RE-WORK routing
+// must carry its diagnosis into the prompt. Seed each routed buildMode's reason SOURCE with a UNIQUE
+// reflow-safe token, build the prompt via the SINGLE choke point (buildClaudeCommand), and assert the
+// token reaches .task — so a mode that drops its diagnosis (the reopen --reason / #12 silent-drop class)
+// fails HERE, at the wrapper, not per-path.
+describe("routed-reason contract: each defect/rework routing echoes its reason in the prompt", () => {
+  const F = "F1";
+  const S = "S1";
+  const AC = "AC1-x";
+  type Case = { mode: string; action: WorkflowAction; token: string; seed: (dir: string) => void };
+  const cases: Case[] = [
+    {
+      mode: "assess", token: "tests/test_probe.py::test_RR_assess",
+      action: { kind: "invoke-role", role: "navigator", story: S, ac: AC, buildMode: "assess" } as WorkflowAction,
+      seed: (d) => writeGreenFailure(d, F, S, AC, { assessed: false, summary: "verify failed", failureOutput: "FAILED tests/test_probe.py::test_RR_assess\n1 failed" }),
+    },
+    {
+      mode: "assess-deploy", token: "tests/test_dv.py::test_RR_dv",
+      action: { kind: "invoke-role", role: "navigator", story: S, buildMode: "assess-deploy" } as WorkflowAction,
+      seed: (d) => writeDeployVerifyAssessMarker(d, F, S, ["tests/test_dv.py::test_RR_dv"], { failureOutput: "FAILED tests/test_dv.py::test_RR_dv" }),
+    },
+    {
+      mode: "refactor-deploy", token: "tests/test_dv.py::test_RR_dv2",
+      action: { kind: "invoke-role", role: "driver", story: S, buildMode: "refactor-deploy" } as WorkflowAction,
+      // The driver reads the NAVIGATOR's deploy-verify-scope.json (directives[].node_id), not the marker.
+      seed: (d) =>
+        writeFileSync(
+          join(d, "features", F, "stories", S, "deploy-verify-scope.json"),
+          JSON.stringify({ version: 1, story_id: S, directives: [{ node_id: "tests/test_dv.py::test_RR_dv2", directive: "scope the seed to the row" }] }),
+        ),
+    },
+    {
+      mode: "assess-refactor", token: "client/tests/e2e/rv_RR.spec.ts",
+      action: { kind: "invoke-role", role: "navigator", story: S, buildMode: "assess-refactor" } as WorkflowAction,
+      seed: (d) => writeRefactorVerifyAssessMarker(d, F, S, { summary: "full suite failed after refactor", supersededAdvisory: "prior test client/tests/e2e/rv_RR.spec.ts references a removed symbol" }),
+    },
+    {
+      mode: "refactor-superseded", token: "client/tests/e2e/rs_RR.spec.ts",
+      action: { kind: "invoke-role", role: "driver", story: S, buildMode: "refactor-superseded" } as WorkflowAction,
+      // The driver reads the refactor-verify marker's flagged_tests (set by the Navigator's assess).
+      seed: (d) => {
+        writeRefactorVerifyAssessMarker(d, F, S, { summary: "full suite failed" });
+        markRefactorVerifyAssessed(d, F, S, ["client/tests/e2e/rs_RR.spec.ts"]);
+      },
+    },
+    {
+      mode: "reauthor", token: "client/tests/e2e/flaky_RR.spec.ts",
+      action: { kind: "invoke-role", role: "navigator", story: S, ac: AC, buildMode: "reauthor" } as WorkflowAction,
+      seed: (d) => writeReauthorMarker(d, F, S, AC, ["client/tests/e2e/flaky_RR.spec.ts"], "await the server-confirmed signal before re-reading"),
+    },
+  ];
+
+  for (const c of cases) {
+    it(`${c.mode}: the routed prompt carries its reason probe (${c.token})`, () => {
+      const dir = mkdtempSync(join(tmpdir(), `rr-${c.mode}-`));
+      try {
+        mkdirSync(join(dir, "features", F, "stories", S, "acs"), { recursive: true });
+        c.seed(dir);
+        // The contract's probe resolves to the seeded token...
+        expect(routedReasonProbe(c.action as Extract<WorkflowAction, { kind: "invoke-role" }>, cfg({ consortDir: dir }))).toBe(c.token);
+        // ...and the assembled prompt (single choke point) actually carries it.
+        const cmd = buildClaudeCommand(c.action as Extract<WorkflowAction, { kind: "invoke-role" }>, cfg({ consortDir: dir })) as DriveCommand & { task: string };
+        expect(cmd.task).toContain(c.token);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("THROWS when a routed prompt is missing its reason (the #12 silent-drop class), passes when present", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rr-guard-"));
+    try {
+      mkdirSync(join(dir, "features", F, "stories", S), { recursive: true });
+      writeDeployVerifyAssessMarker(dir, F, S, ["tests/test_x.py::test_guard"], { failureOutput: "FAILED tests/test_x.py::test_guard" });
+      const action = { kind: "invoke-role", role: "navigator", story: S, buildMode: "assess-deploy" } as Extract<WorkflowAction, { kind: "invoke-role" }>;
+      expect(() => assertRoutedReasonInPrompt(action, cfg({ consortDir: dir }), "a prompt that forgot the diagnosis")).toThrow(/routed-reason contract/);
+      expect(() => assertRoutedReasonInPrompt(action, cfg({ consortDir: dir }), "diagnosis: FAILED tests/test_x.py::test_guard")).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does NOT guard a first-pass lane step (no reason by design → probe null, never a false throw)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rr-firstpass-"));
+    try {
+      // A plain RED (navigator) / GREEN (driver) turn, and a reflect gate turn: no buildMode diagnosis.
+      expect(routedReasonProbe({ kind: "invoke-role", role: "navigator", story: S } as Extract<WorkflowAction, { kind: "invoke-role" }>, cfg({ consortDir: dir }))).toBeNull();
+      expect(routedReasonProbe({ kind: "invoke-role", role: "driver", story: S } as Extract<WorkflowAction, { kind: "invoke-role" }>, cfg({ consortDir: dir }))).toBeNull();
+      expect(routedReasonProbe({ kind: "invoke-role", role: "navigator", story: S, buildMode: "reflect" } as Extract<WorkflowAction, { kind: "invoke-role" }>, cfg({ consortDir: dir }))).toBeNull();
+      expect(() => assertRoutedReasonInPrompt({ kind: "invoke-role", role: "navigator", story: S } as Extract<WorkflowAction, { kind: "invoke-role" }>, cfg({ consortDir: dir }), "anything")).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

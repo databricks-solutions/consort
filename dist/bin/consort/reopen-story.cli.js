@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path2) {
-      let input = path2;
+    function removeDotSegments(path5) {
+      let input = path5;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path2, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path2 && path2 !== "/" ? path2 : void 0;
+        const [path5, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path5 && path5 !== "/" ? path5 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -3680,49 +3680,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse(serialize(base, options), options);
-        relative = parse(serialize(relative, options), options);
+        relative4 = parse(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3730,7 +3730,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -6648,6 +6648,7 @@ var require_ajv = __commonJS({
 
 // bin/consort/reopen-story.cli.ts
 init_esm_shims();
+import { execFileSync as execFileSync6 } from "child_process";
 
 // consort/config/consort-paths.ts
 init_esm_shims();
@@ -6656,6 +6657,7 @@ import { join } from "path";
 var ARTIFACT_ROOT = ".consort";
 var LEGACY_ARTIFACT_ROOTS = [".sftdd", ".tdd"];
 var ALL_ARTIFACT_ROOTS = [ARTIFACT_ROOT, ...LEGACY_ARTIFACT_ROOTS];
+var artifactRootsRegexAlternation = () => ALL_ARTIFACT_ROOTS.map((r) => r.replace(/[.]/g, "\\.")).join("|");
 function resolveConsortDir(projectDir = process.cwd()) {
   const next = join(projectDir, ARTIFACT_ROOT);
   if (fs.existsSync(next)) return next;
@@ -6694,6 +6696,7 @@ var acsDir = (tdd, f, s) => join(storyResolved(tdd, f, s), "acs");
 var storyTestListJson = (tdd, f, s) => join(storyResolved(tdd, f, s), "test-list-per-story.json");
 var storyPlanJson = (tdd, f, s) => join(storyResolved(tdd, f, s), "plan.json");
 var reflectVerdictJson = (tdd, f, s) => join(storyResolved(tdd, f, s), "reflect-verdict.json");
+var handbackFile = (tdd, f, role, story) => join(featureDir(tdd, f), ".handback", `${role}${story ? `.${story}` : ""}.md`);
 function findFeatureDir(tdd, featureId) {
   const root = featuresDir(tdd);
   if (!fs.existsSync(root)) return void 0;
@@ -6720,7 +6723,7 @@ import { dirname as dirname4, join as join7 } from "path";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync as readdirSync2, statSync as statSync2 } from "fs";
+import { existsSync as existsSync3, readFileSync as readFileSync3, readdirSync as readdirSync2 } from "fs";
 import { join as join5, dirname as dirname3 } from "path";
 
 // consort/config/consort-config-file.ts
@@ -6936,10 +6939,10 @@ function readHeldByPid(lockPath) {
     return null;
   }
 }
-function gatesLockFilePath(consortDir, featureId, basename2) {
+function gatesLockFilePath(consortDir, featureId, basename4) {
   const dir = requireFeatureDir(consortDir, featureId);
   mkdirSync2(dir, { recursive: true });
-  return join6(dir, basename2);
+  return join6(dir, basename4);
 }
 function withPipelineLock(featureId, fn, opts = {}) {
   return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
@@ -6985,6 +6988,34 @@ import * as fs2 from "fs";
 var PHASE_OWNER_KEY = "phase_feature_id";
 
 // consort/gates/reopen-story.ts
+function writeReopenBrief(consortDir, feature, story, role, reason) {
+  const text = (reason ?? "").trim();
+  if (!text) return;
+  try {
+    const hb = handbackFile(consortDir, feature, role, story);
+    fs3.mkdirSync(dirname5(hb), { recursive: true });
+    fs3.writeFileSync(
+      hb,
+      `REOPEN RE-AUTHOR BRIEF (${role}): this story was reopened to you for a genuine re-author. Address EXACTLY the following, then produce your normal output \u2014 do NOT re-emit the same artifact unchanged:
+
+${text}
+`
+    );
+  } catch {
+  }
+}
+function storyHasMigration(consortDir, feature, story) {
+  try {
+    const p = dbDesignJson(consortDir, feature);
+    if (!fs3.existsSync(p)) return false;
+    const db = JSON.parse(fs3.readFileSync(p, "utf8"));
+    return (db.schema_changes ?? []).some(
+      (c) => c?.story_id === story && typeof c.kind === "string" && /create_table|add_column|add_constraint|add_index|drop_/.test(c.kind)
+    );
+  } catch {
+    return false;
+  }
+}
 function reopenStoryForRedesign(consortDir, feature, story, opts = {}) {
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
   const storyRoot = storyResolved(consortDir, feature, story);
@@ -7021,7 +7052,8 @@ function reopenStoryForRedesign(consortDir, feature, story, opts = {}) {
     }
   }
   resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared);
-  return { backupDir, cleared };
+  writeReopenBrief(consortDir, feature, story, "spec-author", opts.reason);
+  return { backupDir, cleared, dbResyncNeeded: storyHasMigration(consortDir, feature, story) };
 }
 function resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared) {
   const fde = featureDeployEvidenceJson(consortDir, feature);
@@ -7132,7 +7164,8 @@ function reopenStoryFromRole(consortDir, feature, story, fromRole, opts = {}) {
   }
   clearFile(storyPlanJson(consortDir, feature, story), "plan.json (design-spec)", "plan.json");
   resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared);
-  return { backupDir, cleared };
+  writeReopenBrief(consortDir, feature, story, fromRole, opts.reason);
+  return { backupDir, cleared, dbResyncNeeded: storyHasMigration(consortDir, feature, story) };
 }
 function stripArchitecturalNotes(consortDir, feature, story, backupDir, cleared) {
   const dir = acsDir(consortDir, feature, story);
@@ -7155,8 +7188,226 @@ function stripArchitecturalNotes(consortDir, feature, story, backupDir, cleared)
   if (stripped > 0) cleared.push(`acs/*.json architectural_notes stripped (${stripped}) \u2014 architect re-annotates`);
 }
 
+// consort/deploy/deploy.ts
+init_esm_shims();
+import { execSync, execFileSync as execFileSync5, spawn } from "child_process";
+import { randomBytes } from "crypto";
+import { existsSync as existsSync20, mkdirSync as mkdirSync12, readFileSync as readFileSync20, rmSync as rmSync7, writeFileSync as writeFileSync12 } from "fs";
+import { dirname as dirname11, join as join21 } from "path";
+import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
+
+// consort/gates/escalation.ts
+init_esm_shims();
+import * as fs8 from "fs";
+
+// consort/smells/smells.ts
+init_esm_shims();
+
+// consort/pipeline/run-cycle.ts
+init_esm_shims();
+import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/experiment/experiment.ts
+init_esm_shims();
+import { execFileSync } from "child_process";
+import { createPairedBranch, deletePairedBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+var RUNTIME_ARTIFACT_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/"
+];
+
+// consort/pipeline/cycle-record.ts
+init_esm_shims();
+import { execFileSync as execFileSync4 } from "child_process";
+
+// consort/gates/verify-gate-integrity.ts
+init_esm_shims();
+
+// consort/gates/gate-hash.ts
+init_esm_shims();
+
+// consort/gates/gates.ts
+init_esm_shims();
+
+// consort/architecture/design-adherence.ts
+init_esm_shims();
+import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync6, writeFileSync as writeFileSync6, mkdirSync as mkdirSync6, copyFileSync } from "fs";
+import { join as join9, dirname as dirname6, basename as basename2 } from "path";
+
+// consort/architecture/layering-clean.ts
+init_esm_shims();
+import { existsSync as existsSync9, readFileSync as readFileSync9, readdirSync as readdirSync7, statSync as statSync4 } from "fs";
+import { join as join10 } from "path";
+var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".git",
+  "build",
+  "dist",
+  ...ALL_ARTIFACT_ROOTS,
+  ".lakebase",
+  "alembic",
+  "migrations",
+  "tests",
+  "test",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache"
+]);
+
+// consort/smells/supersession.ts
+init_esm_shims();
+import * as fs4 from "fs";
+import { execFileSync as execFileSync2 } from "child_process";
+import { createHash } from "crypto";
+import { dirname as dirname7, join as join11 } from "path";
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+
+// consort/architecture/contract-clean.ts
+init_esm_shims();
+import { existsSync as existsSync12, readFileSync as readFileSync12, readdirSync as readdirSync10, statSync as statSync6 } from "fs";
+import { join as join13, relative, extname as extname2, basename as basename3 } from "path";
+
+// consort/experiment/py-source.ts
+init_esm_shims();
+
+// consort/architecture/migration-columns.ts
+init_esm_shims();
+import { existsSync as existsSync11, readFileSync as readFileSync11, readdirSync as readdirSync9, statSync as statSync5 } from "fs";
+import { join as join12, extname } from "path";
+var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
+var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
+var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
+var DROP_COLUMN_PY = new RegExp(`op\\.drop_column\\(\\s*${TABLE_ARG}\\s*,\\s*${COL_ARG}`, "g");
+var ADD_COLUMN_PY = new RegExp(`op\\.add_column\\(\\s*${TABLE_ARG}\\s*,\\s*sa\\.Column\\(\\s*${COL_ARG}`, "g");
+var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
+
+// consort/architecture/contract-clean.ts
+var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
+var EXCLUDE_DIR = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build|tests?|alembic|migrations)(/|$)`
+);
+var EXCLUDE_DIR_JUNK = new RegExp(
+  `(^|/)(node_modules|\\.git|\\.venv|venv|__pycache__|${ARTIFACT_ROOTS_RE}|\\.lakebase|dist|build)(/|$)`
+);
+
+// consort/smells/refactor-verify-assess.ts
+init_esm_shims();
+import * as fs5 from "fs";
+import * as path2 from "path";
+
+// consort/architecture/migration-app-clean.ts
+init_esm_shims();
+import { existsSync as existsSync14, readFileSync as readFileSync14, readdirSync as readdirSync11, statSync as statSync7 } from "fs";
+import { join as join15, relative as relative2, extname as extname3 } from "path";
+
+// consort/architecture/migration-history-clean.ts
+init_esm_shims();
+import { execFileSync as execFileSync3 } from "child_process";
+import { existsSync as existsSync15 } from "fs";
+import { join as join16 } from "path";
+
+// consort/architecture/test-smell-clean.ts
+init_esm_shims();
+import { existsSync as existsSync16, readFileSync as readFileSync15, readdirSync as readdirSync12, statSync as statSync8 } from "fs";
+import { join as join17, relative as relative3, extname as extname4 } from "path";
+var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
+
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs6 from "fs";
+import * as path3 from "path";
+
+// consort/pipeline/cycle-record.ts
+import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
+import { assertCommitTargetNotProtected, ProtectedBranchCommitError } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/pipeline/batch-decompose.ts
+init_esm_shims();
+
+// consort/smells/deploy-verify-assess.ts
+init_esm_shims();
+import * as fs7 from "fs";
+import * as path4 from "path";
+
+// consort/architecture/e2e-regex-clean.ts
+init_esm_shims();
+import { readdirSync as readdirSync14, readFileSync as readFileSync19, statSync as statSync9 } from "fs";
+import { join as join20 } from "path";
+
+// consort/smells/ephemeral-verify.ts
+init_esm_shims();
+import { LAKEBASE_BRANCH_NAME_MAX } from "@databricks-solutions/lakebase-scm-utils/util";
+import { createBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { deleteBranch } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+import { getConnection as getConnection2, waitForBranchAuthReady } from "@databricks-solutions/lakebase-scm-utils/lakebase";
+
+// consort/deploy/deploy.ts
+function verifyTimeoutMs() {
+  return Math.max(1, Number(process.env.LAKEBASE_VERIFY_TIMEOUT_MS) || 9e5);
+}
+function isOffTreeStampFailure(output) {
+  return !!output && /can'?t locate revision|no such revision|revision .* is not present/i.test(output);
+}
+function buildBranchSchemaResetCommand(projectDir) {
+  const isPython = existsSync20(join21(projectDir, "pyproject.toml")) || existsSync20(join21(projectDir, "requirements.txt"));
+  if (!isPython) return void 0;
+  const py = "import os, sys; sys.path.insert(0, os.getcwd()); from app.database import make_engine; from sqlalchemy import pool; e=make_engine(poolclass=pool.NullPool); c=e.connect(); c.exec_driver_sql('DROP SCHEMA public CASCADE'); c.exec_driver_sql('CREATE SCHEMA public'); c.commit(); c.close(); from alembic.config import Config; from alembic import command; command.upgrade(Config('alembic.ini'), 'head')";
+  return `uv run --extra dev python -I -c ${JSON.stringify(py)}`;
+}
+function defaultRunVerify(cmd, cwd, env) {
+  const timeout = verifyTimeoutMs();
+  try {
+    const out = execSync(cmd, { cwd, stdio: "pipe", env: env ?? process.env, timeout, killSignal: "SIGTERM" });
+    return { passed: true, output: out?.toString() ?? "" };
+  } catch (err) {
+    const e = err;
+    const timedOut = e.killed === true || e.signal === "SIGTERM" || e.code === "ETIMEDOUT";
+    const output = `${e.stderr?.toString() ?? ""}${e.stdout?.toString() ?? ""}`.trimEnd() + (timedOut ? `
+[deploy] VERIFY TIMED OUT after ${timeout}ms (SIGTERM) \u2013 failing this pass rather than hanging.` : "");
+    const tail = output.split("\n").slice(-30).join("\n");
+    process.stderr.write(`
+[deploy] feature-verify ${timedOut ? "TIMED OUT" : "failed"}; last output:
+${tail}
+`);
+    return { passed: false, output };
+  }
+}
+function resyncOffTreeStampIfPresent(projectDir, runVerify, env) {
+  const resetCmd = buildBranchSchemaResetCommand(projectDir);
+  if (!resetCmd) return { probedOffTree: false, reset: false };
+  const probe = runVerify("uv run alembic current", projectDir, env);
+  if (probe.passed || !isOffTreeStampFailure(probe.output)) return { probedOffTree: false, reset: false };
+  const res = runVerify(resetCmd, projectDir, env);
+  return { probedOffTree: true, reset: res.passed };
+}
+
 // bin/consort/reopen-story.cli.ts
+import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { isCliEntry } from "@databricks-solutions/lakebase-scm-utils/util";
+function currentGitBranch(projectDir) {
+  try {
+    return execFileSync6("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: projectDir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim() || null;
+  } catch {
+    return null;
+  }
+}
 function parseArgs(argv) {
   const out = { reason: "reopened for redesign", projectDir: process.cwd() };
   for (let i = 0; i < argv.length; i++) {
@@ -7208,9 +7459,24 @@ async function main() {
 `);
     return 2;
   }
+  const scm = readWorkflowState(args.projectDir);
+  const claimedBranch = scm?.feature_id?.trim() ? scm?.branch?.trim() : void 0;
+  const current = currentGitBranch(args.projectDir);
+  if (claimedBranch && current && current !== claimedBranch) {
+    process.stderr.write(
+      `consort-reopen-story: refusing \u2014 the working tree is on "${current}", not the feature branch "${claimedBranch}".
+        reopen clears .consort design artifacts tracked on the feature branch; clearing them here would
+        land the revert on the wrong branch (an experiment branch) and be lost on the next checkout.
+        Check out the feature branch first, then re-run:
+            git checkout ${claimedBranch}
+            consort-reopen-story --feature ${args.feature} --story ${args.story}${args.from !== void 0 ? ` --from ${args.from}` : ""}
+`
+    );
+    return 2;
+  }
   const consortDir = args.consortDir ?? resolveConsortDir(args.projectDir);
   const from = args.from;
-  const res = from ? reopenStoryFromRole(consortDir, args.feature, args.story, from) : reopenStoryForRedesign(consortDir, args.feature, args.story);
+  const res = from ? reopenStoryFromRole(consortDir, args.feature, args.story, from, { reason: args.reason }) : reopenStoryForRedesign(consortDir, args.feature, args.story, { reason: args.reason });
   if (!res.cleared.length) {
     process.stdout.write(`consort-reopen-story: ${args.story} had no design artifacts to clear${from ? ` from ${from}` : ""} (nothing to revert).
 `);
@@ -7224,15 +7490,25 @@ async function main() {
   for (const c of res.cleared) process.stdout.write(`    - ${c}
 `);
   const resume = from ? from.replace("navigator", "navigator (reflect)") : "Spec Author";
+  let dbStep = "";
+  if (res.dbResyncNeeded) {
+    let healed = false;
+    try {
+      healed = resyncOffTreeStampIfPresent(args.projectDir, defaultRunVerify).reset;
+    } catch {
+      healed = false;
+    }
+    dbStep = healed ? "  3. RESYNCED THE PAIRED DB: this story owned a migration, so its reverted migration left the\n     feature-branch DB stamped at an orphaned revision \u2014 now auto-reset to the code's alembic head\n     (drop + recreate + `alembic upgrade head`). No action needed; the next build starts clean.\n" : "  3. RESYNC THE PAIRED DB (auto-resync did not complete): this story owned a migration, so its\n     reverted migration left the feature-branch DB stamped at an orphaned revision. Reset it to the\n     code's alembic head manually (drop the public schema + `alembic upgrade head`), OR re-cut the\n     experiment branch from a clean parent \u2014 else `alembic upgrade head` fails \"Can't locate revision\".\n";
+  }
   process.stderr.write(
     `
 This reset the design tail AND the pipeline entry (spec gate + experiment + acceptance -> designing),
-the feature deploy-evidence, and the coarse phase. Two things remain:
+the feature deploy-evidence, and the coarse phase. ${res.dbResyncNeeded ? "Three" : "Two"} things remain:
   1. Discard the story's actual git/Lakebase experiment BRANCH if one exists \u2013 this cannot clear a
      live branch, only the pipeline record of it. Do NOT leave it orphaned.
   2. Re-run the drive: it re-derives the resume point at the ${resume} and re-runs the design tail ->
      the spec gate (re-surfaced + re-approved, fresh integrity), then cuts a FRESH experiment and rebuilds.
-`
+` + dbStep
   );
   return 0;
 }

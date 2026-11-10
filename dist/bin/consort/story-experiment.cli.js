@@ -6919,7 +6919,7 @@ import { dirname as dirname5, join as join9 } from "path";
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
+import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync3 } from "fs";
 import { join as join6, dirname as dirname3 } from "path";
 
 // consort/config/consort-config-file.ts
@@ -7418,7 +7418,7 @@ import { mergePaired } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync21, readFileSync as readFileSync21, readdirSync as readdirSync15, statSync as statSync11, writeFileSync as writeFileSync12, mkdirSync as mkdirSync13, rmSync as rmSync7 } from "fs";
+import { existsSync as existsSync21, readFileSync as readFileSync21, readdirSync as readdirSync16, statSync as statSync11, writeFileSync as writeFileSync12, mkdirSync as mkdirSync13, rmSync as rmSync7 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
 import { join as join23, dirname as dirname12, basename as basename3 } from "path";
 
@@ -7433,16 +7433,16 @@ init_esm_shims();
 
 // consort/deploy/deploy.ts
 init_esm_shims();
-import { execSync, execFileSync as execFileSync2, spawn } from "child_process";
+import { execSync, execFileSync as execFileSync3, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync13, mkdirSync as mkdirSync8, readFileSync as readFileSync14, rmSync as rmSync3, writeFileSync as writeFileSync7 } from "fs";
-import { dirname as dirname7, join as join15 } from "path";
+import { existsSync as existsSync16, mkdirSync as mkdirSync11, readFileSync as readFileSync17, rmSync as rmSync6, writeFileSync as writeFileSync10 } from "fs";
+import { dirname as dirname10, join as join18 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // consort/gates/escalation.ts
 init_esm_shims();
-import * as fs2 from "fs";
+import * as fs6 from "fs";
 
 // consort/smells/smells.ts
 init_esm_shims();
@@ -7451,20 +7451,41 @@ init_esm_shims();
 init_esm_shims();
 import { getConnection } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 
-// consort/smells/deploy-verify-assess.ts
+// consort/smells/supersession.ts
+init_esm_shims();
+import * as fs2 from "fs";
+import { execFileSync as execFileSync2 } from "child_process";
+import { createHash } from "crypto";
+import { dirname as dirname6, join as join10 } from "path";
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+
+// consort/smells/refactor-verify-assess.ts
 init_esm_shims();
 import * as fs3 from "fs";
 import * as path2 from "path";
 
+// consort/smells/deploy-verify-assess.ts
+init_esm_shims();
+import * as fs4 from "fs";
+import * as path3 from "path";
+
 // consort/architecture/test-smell-clean.ts
 init_esm_shims();
-import { existsSync as existsSync10, readFileSync as readFileSync10, readdirSync as readdirSync8, statSync as statSync6 } from "fs";
-import { join as join11, relative, extname as extname2 } from "path";
+import { existsSync as existsSync11, readFileSync as readFileSync11, readdirSync as readdirSync8, statSync as statSync6 } from "fs";
+import { join as join13, relative, extname as extname2 } from "path";
 
 // consort/architecture/migration-columns.ts
 init_esm_shims();
-import { existsSync as existsSync9, readFileSync as readFileSync9, readdirSync as readdirSync7, statSync as statSync5 } from "fs";
-import { join as join10, extname } from "path";
+import { existsSync as existsSync10, readFileSync as readFileSync10, readdirSync as readdirSync7, statSync as statSync5 } from "fs";
+import { join as join12, extname } from "path";
 var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
 var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
 var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
@@ -7475,10 +7496,15 @@ var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
 // consort/architecture/test-smell-clean.ts
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs5 from "fs";
+import * as path4 from "path";
+
 // consort/architecture/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync12, readFileSync as readFileSync12, readdirSync as readdirSync9, statSync as statSync7 } from "fs";
-import { join as join13, relative as relative2, extname as extname3, basename } from "path";
+import { existsSync as existsSync15, readFileSync as readFileSync15, readdirSync as readdirSync10, statSync as statSync7 } from "fs";
+import { join as join16, relative as relative2, extname as extname3, basename } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -7494,8 +7520,8 @@ var EXCLUDE_DIR_JUNK = new RegExp(
 
 // consort/architecture/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync10, readFileSync as readFileSync13, statSync as statSync8 } from "fs";
-import { join as join14 } from "path";
+import { readdirSync as readdirSync11, readFileSync as readFileSync16, statSync as statSync8 } from "fs";
+import { join as join17 } from "path";
 
 // consort/smells/ephemeral-verify.ts
 init_esm_shims();
@@ -7506,13 +7532,13 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync14, readFileSync as readFileSync15, readdirSync as readdirSync12, writeFileSync as writeFileSync8, mkdirSync as mkdirSync9, copyFileSync } from "fs";
-import { join as join16, dirname as dirname8, basename as basename2 } from "path";
+import { existsSync as existsSync17, readFileSync as readFileSync18, readdirSync as readdirSync13, writeFileSync as writeFileSync11, mkdirSync as mkdirSync12, copyFileSync } from "fs";
+import { join as join19, dirname as dirname11, basename as basename2 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
-import { existsSync as existsSync15, readFileSync as readFileSync16, readdirSync as readdirSync13, statSync as statSync9 } from "fs";
-import { join as join17 } from "path";
+import { existsSync as existsSync18, readFileSync as readFileSync19, readdirSync as readdirSync14, statSync as statSync9 } from "fs";
+import { join as join20 } from "path";
 var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   "node_modules",
   "__pycache__",
@@ -7532,42 +7558,16 @@ var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   ".ruff_cache"
 ]);
 
-// consort/smells/supersession.ts
-init_esm_shims();
-import * as fs4 from "fs";
-import { execFileSync as execFileSync3 } from "child_process";
-import { createHash } from "crypto";
-import { dirname as dirname9, join as join18 } from "path";
-var TREE_STATE_EXCLUDE_PREFIXES = [
-  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
-  ".lakebase/",
-  ".claude/agent-memory/",
-  "node_modules/",
-  "dist/",
-  ".venv/",
-  "coverage/"
-];
-
-// consort/smells/refactor-verify-assess.ts
-init_esm_shims();
-import * as fs5 from "fs";
-import * as path3 from "path";
-
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync18, readFileSync as readFileSync19, readdirSync as readdirSync14, statSync as statSync10 } from "fs";
-import { join as join20, relative as relative3, extname as extname4 } from "path";
+import { existsSync as existsSync19, readFileSync as readFileSync20, readdirSync as readdirSync15, statSync as statSync10 } from "fs";
+import { join as join21, relative as relative3, extname as extname4 } from "path";
 
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
 import { execFileSync as execFileSync4 } from "child_process";
-import { existsSync as existsSync19 } from "fs";
-import { join as join21 } from "path";
-
-// consort/smells/reauthor-resilience.ts
-init_esm_shims();
-import * as fs6 from "fs";
-import * as path4 from "path";
+import { existsSync as existsSync20 } from "fs";
+import { join as join22 } from "path";
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";

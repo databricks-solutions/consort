@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   parseFailedNodeIds,
+  verifyFailureDigest,
   classifyDeployVerifyFailure,
   classifyDeployVerifySupersession,
   classifyDeployVerifyTestSmell,
@@ -49,6 +50,35 @@ describe("parseFailedNodeIds", () => {
     expect(parseFailedNodeIds("all good, 44 passed")).toEqual([]);
     const dup = "FAILED a.py::t\nFAILED a.py::t";
     expect(parseFailedNodeIds(dup)).toEqual(["a.py::t"]);
+  });
+});
+
+// REGRESSION (F3/S2 client deploy-verify HIL): a CLIENT (vitest) failure has no pytest `::` node-id, so
+// parseFailedNodeIds returns [] and the terminal escalation used to name no test — the failing identity
+// was lost. verifyFailureDigest recovers it from the WHOLE output across runners, for the escalation forensic.
+describe("verifyFailureDigest (runner-agnostic failure lines for the terminal escalation forensic)", () => {
+  it("captures a vitest client failure (file-level FAIL + per-test glyph + assertion) parseFailedNodeIds misses", () => {
+    const out = [
+      " ✓ tests/components/StockTable.test.tsx (7 tests) 11s",
+      " FAIL  tests/components/Confirmation.test.tsx > Confirmation > shows the receipt @T17",
+      "   × Confirmation > shows the receipt @T17 1203ms",
+      "     AssertionError: expected '7' to be '4'",
+      " ✓ tests/components/SkuDetail.test.tsx (1 test) 2s",
+      " Test Files  1 failed | 9 passed (10)",
+    ].join("\n");
+    expect(parseFailedNodeIds(out)).toEqual([]); // pytest parser is blind to this
+    const digest = verifyFailureDigest(out);
+    expect(digest.some((l) => l.includes("Confirmation.test.tsx"))).toBe(true);
+    expect(digest.some((l) => l.includes("@T17"))).toBe(true);
+    expect(digest.some((l) => l.includes("AssertionError"))).toBe(true);
+    expect(digest.some((l) => l.includes("✓"))).toBe(false); // passing lines are not in the digest
+  });
+
+  it("captures pytest failures and strips ANSI, deduped + capped", () => {
+    const out = "\u001b[31mFAILED a.py::t_one\u001b[0m\nFAILED a.py::t_one\nFAILED b.py::t_two\nok";
+    expect(verifyFailureDigest(out)).toEqual(["FAILED a.py::t_one", "FAILED b.py::t_two"]);
+    expect(verifyFailureDigest("all 42 passed")).toEqual([]);
+    expect(verifyFailureDigest(Array.from({ length: 200 }, (_, i) => `× t${i} > case`).join("\n"), 5)).toHaveLength(5);
   });
 });
 

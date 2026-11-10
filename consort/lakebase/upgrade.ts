@@ -243,6 +243,94 @@ function substituteScmUtilsVersionInScripts(scriptsDir: string, version: string)
   }
 }
 
+/**
+ * Force-refresh the KIT-OWNED per-test INSTRUMENTATION a project carries (NOT project-authored code):
+ * the e2e readiness conftest, the Python reporter conftest + backend row-capture, and the client Vitest
+ * setup (the `/api` fetch shim + owner-header threading + RTL asyncUtilTimeout), the Vitest reporter, the
+ * Vitest globalSetup (real-backend boot), and the Playwright e2e header fixture — all sourced from the
+ * pinned scm-utils LANGUAGE/common/client templates and force-overwritten (kit-owned, never project-
+ * customized), guarded on the target dir existing.
+ *
+ * Shared by BOTH consort-upgrade (refreshSurface) AND the drive's kit-drift resync, so a kit MOVE — a
+ * release upgrade OR a dev kit via LAKEBASE_KIT_DIR — propagates an instrumentation fix WITHOUT an
+ * explicit upgrade. This closes the gap where a project on a newer kit kept running a stale setup.ts
+ * (the `asyncUtilTimeout` default too short for a real-backend `waitFor` under full-suite load → the F9
+ * CI failure): the drive used to refresh only `.claude/agents/`, so the instrumentation never moved.
+ *
+ * Returns the refreshed dest paths (empty when the scm-utils templates are not resolvable from kitDir —
+ * a dev checkout without the nested templates; fresh scaffolds still carry the fix). Best-effort: one
+ * unreadable file never aborts the refresh. CONTRACT: this set MUST stay in sync with what the scm-utils
+ * scaffold deploys (the "SCAFFOLD ↔ UPGRADE SURFACE CONTRACT" header in scm-utils scaffold.ts).
+ */
+export function refreshKitOwnedInstrumentation(projectDir: string, kitDir: string): string[] {
+  const refreshed: string[] = [];
+  try {
+    // Locate the installed scm-utils templates by existsSync candidate paths (portable across the CJS +
+    // ESM bundles tsup emits — no require.resolve / import.meta): nested under the kit, hoisted as a
+    // sibling in @databricks-solutions/, or one level up.
+    const scmProj = [
+      path.join(kitDir, "node_modules", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
+      path.join(kitDir, "..", "lakebase-scm-utils", "templates", "project"),
+      path.join(kitDir, "..", "..", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
+    ].find((c) => fs.existsSync(c));
+    if (!scmProj) throw new Error("scm-utils templates not found");
+    const refreshReporter = (srcRel: string, destRel: string): void => {
+      const src = path.join(scmProj, srcRel);
+      const dest = path.join(projectDir, destRel);
+      if (!fs.existsSync(src) || !fs.existsSync(path.dirname(dest))) return;
+      try {
+        fs.copyFileSync(src, dest);
+        refreshed.push(destRel);
+      } catch {
+        /* best-effort: one unreadable reporter file must not abort the refresh */
+      }
+    };
+    // e2e readiness conftest (common across languages) — only when the project has tests/e2e/.
+    refreshReporter(path.join("common", "tests", "e2e", "conftest.py"), path.join("tests", "e2e", "conftest.py"));
+    // Python per-test reporter conftest + the backend STORED/RETRIEVED row-capture.
+    const isPython =
+      fs.existsSync(path.join(projectDir, "pyproject.toml")) || fs.existsSync(path.join(projectDir, "requirements.txt"));
+    if (isPython) {
+      refreshReporter(path.join("python", "tests", "conftest.py"), path.join("tests", "conftest.py"));
+      refreshReporter(path.join("python", "app", "consort_capture.py"), path.join("app", "consort_capture.py"));
+    }
+    // Client-side per-test instrumentation: the Vitest setup (fetch shim + owner headers + asyncUtilTimeout),
+    // the Vitest reporter, the Vitest globalSetup (real-backend boot that now surfaces its boot error), and
+    // the Playwright e2e header fixture. All kit-owned; force-refreshed, guarded on client/ existing.
+    const hasClient = fs.existsSync(path.join(projectDir, "client", "package.json"));
+    if (hasClient) {
+      refreshReporter(path.join("client", "tests", "setup.ts"), path.join("client", "tests", "setup.ts"));
+      refreshReporter(path.join("client", "consort-vitest-reporter.ts"), path.join("client", "consort-vitest-reporter.ts"));
+      refreshReporter(path.join("client", "vitest.globalSetup.ts"), path.join("client", "vitest.globalSetup.ts"));
+      refreshReporter(path.join("client", "tests", "e2e", "consort-fixtures.ts"), path.join("client", "tests", "e2e", "consort-fixtures.ts"));
+    }
+  } catch {
+    /* scm-utils templates not resolvable from this kit (dev checkout) — skip; fresh scaffolds carry the fix */
+  }
+  // COUPLED consort-owned ROOT instrumentation (consort's common/ bundle, NOT scm-utils): the client
+  // setup.ts above imports the root consort-capture.ts (captureTablesFromRoute + consortOwnerHeaders +
+  // findConsortDir), so refreshing setup.ts WITHOUT it risks an import mismatch when the template setup.ts
+  // evolved its consort-capture API past the project's older copy. Refresh them in LOCKSTEP so the client
+  // instrumentation + its root dependency always move together on a kit-move. Force-overwrite (kit-owned
+  // CODE); guarded on the source existing in this kit. The project root always exists.
+  try {
+    const commonDir = path.join(kitDir, "templates", "project", "common");
+    for (const f of ["consort-capture.ts", "consort-test-reporter.ts"]) {
+      const src = path.join(commonDir, f);
+      if (!fs.existsSync(src)) continue;
+      try {
+        fs.copyFileSync(src, path.join(projectDir, f));
+        refreshed.push(f);
+      } catch {
+        /* best-effort */
+      }
+    }
+  } catch {
+    /* consort common/ not resolvable (unexpected) — skip; the scm-utils set above still refreshed */
+  }
+  return refreshed;
+}
+
 /** Refresh the FULL kit-owned scaffolded surface from the target kit dir: agents +
  *  commands (.claude/), the scripts/ helper tree, and the CI workflows (.github/workflows/).
  *  Resets the agent-sync marker to the target so the next drive sees the surface current
@@ -301,73 +389,12 @@ export function refreshSurface(projectDir: string, kitDir: string, targetVersion
       removedRootFiles.push("playwright.config.ts");
     }
   }
-  // Kit-owned per-test INSTRUMENTATION that lives in the scm-utils LANGUAGE/common/client templates
-  // (NOT consort's common/ bundle) — reporter conftests (tests/conftest.py + tests/e2e/conftest.py),
-  // the backend row-capture (app/consort_capture.py), and the client Vitest reporter + Playwright e2e
-  // header fixture. refreshSurface historically touched NONE of them, so a fix that landed in scm-utils
-  // reached FRESH scaffolds but never an UPGRADED project (the capture stayed pre-stamp; a reporter fix
-  // never propagated). Refresh them FROM the installed scm-utils templates (this kit's pinned version),
-  // treating them as kit-owned surface like consort-capture.ts (force-overwrite). Resolve the scm-utils
-  // templates by node module resolution from kitDir (never a guessed node_modules layout). GUARDED:
-  // only refresh a file whose target dir already exists, so a project without tests/, app/, or client/
-  // never gets a stray file. Best-effort; a failure here must never abort the surface refresh.
-  // CONTRACT: this set MUST stay in sync with what the scm-utils scaffold deploys — see the
-  // "SCAFFOLD ↔ UPGRADE SURFACE CONTRACT" header in scm-utils scripts/lakebase/scaffold.ts.
-  const reporterFiles: string[] = [];
-  try {
-    // Locate the installed scm-utils templates by existsSync candidate paths (portable across the
-    // CJS + ESM bundles tsup emits — no require.resolve / import.meta): nested under the kit, hoisted
-    // as a sibling in @databricks-solutions/, or one level up.
-    const scmProj = [
-      path.join(kitDir, "node_modules", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
-      path.join(kitDir, "..", "lakebase-scm-utils", "templates", "project"),
-      path.join(kitDir, "..", "..", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
-    ].find((c) => fs.existsSync(c));
-    if (!scmProj) throw new Error("scm-utils templates not found");
-    const refreshReporter = (srcRel: string, destRel: string): void => {
-      const src = path.join(scmProj, srcRel);
-      const dest = path.join(projectDir, destRel);
-      if (!fs.existsSync(src) || !fs.existsSync(path.dirname(dest))) return;
-      try {
-        fs.copyFileSync(src, dest);
-        reporterFiles.push(destRel);
-      } catch {
-        /* best-effort: one unreadable reporter file must not abort the refresh */
-      }
-    };
-    // e2e readiness conftest (common across languages) — only when the project has tests/e2e/.
-    refreshReporter(path.join("common", "tests", "e2e", "conftest.py"), path.join("tests", "e2e", "conftest.py"));
-    // Main per-test reporter conftest (language-specific) — Python projects.
-    const isPython =
-      fs.existsSync(path.join(projectDir, "pyproject.toml")) || fs.existsSync(path.join(projectDir, "requirements.txt"));
-    if (isPython) {
-      refreshReporter(path.join("python", "tests", "conftest.py"), path.join("tests", "conftest.py"));
-      // The per-test STORED/RETRIEVED capture (app/consort_capture.py) is scm-utils-owned instrumentation
-      // CODE deployed into the app at scaffold time. Like the conftests it was NEVER refreshed on upgrade,
-      // so a project pinned to a newer scm-utils kept running the capture it was scaffolded with — e.g. a
-      // project pinned to scm-utils 0.3.14 still ran PRE-STAMP capture (no feature/story stamping, so the
-      // dashboard could not scope reads/writes per feature). Bring it forward from the pinned scm-utils
-      // templates too (force-overwrite, guarded on app/ existing by refreshReporter).
-      refreshReporter(path.join("python", "app", "consort_capture.py"), path.join("app", "consort_capture.py"));
-    }
-    // Client-side per-test instrumentation — the Vitest SETUP (client/tests/setup.ts: the /api fetch
-    // shim that reroutes to the booted backend, threads X-Consort-Test-Id + the OWNER feature/story
-    // headers, and configures RTL's asyncUtilTimeout for real-backend awaits), the Vitest reporter
-    // (component/hook test liveness), and the Playwright e2e header fixture (tags browser requests with
-    // X-Consort-Test-Id so the backend capture can attribute e2e reads/writes). Same scm-utils-owned
-    // CODE family as the conftests and app/consort_capture.py, and historically NOT refreshed on
-    // upgrade — so a client project on a newer scm-utils kept running stale setup/reporter/fixture code
-    // (setup.ts was the last holdout: it lagged the owner-header threading AND the asyncUtilTimeout
-    // bump even after the reporter/fixture refresh landed). Bring them all forward (guarded on client/
-    // existing by refreshReporter).
-    if (hasClient) {
-      refreshReporter(path.join("client", "tests", "setup.ts"), path.join("client", "tests", "setup.ts"));
-      refreshReporter(path.join("client", "consort-vitest-reporter.ts"), path.join("client", "consort-vitest-reporter.ts"));
-      refreshReporter(path.join("client", "tests", "e2e", "consort-fixtures.ts"), path.join("client", "tests", "e2e", "consort-fixtures.ts"));
-    }
-  } catch {
-    /* scm-utils templates not resolvable from this kit (dev checkout) — skip; fresh scaffolds still carry the fix */
-  }
+  // Kit-owned per-test INSTRUMENTATION (reporter conftests, backend row-capture, client Vitest
+  // setup/reporter/globalSetup + Playwright e2e fixture) — refreshed from the pinned scm-utils templates.
+  // Extracted to refreshKitOwnedInstrumentation so the SAME set propagates via the drive's kit-drift
+  // resync too (a kit move — a release OR a dev kit — carries an instrumentation fix without an explicit
+  // upgrade; the gap that let a project keep running a stale setup.ts → the asyncUtilTimeout CI failure).
+  const reporterFiles = refreshKitOwnedInstrumentation(projectDir, kitDir);
   // MERGE new kit ignore rules from .gitignore.base into the project .gitignore. .gitignore.base is the
   // scaffold SOURCE of the project .gitignore but is project-OWNED once scaffolded (COMMON_ROOT_SKIP
   // above never copies it), so refreshSurface left .gitignore frozen. When the kit ADDS ignore rules

@@ -190,6 +190,22 @@ describe("refreshSurface – brings agents + commands to the target + stamps the
     expect(readFileSync(join(proj, "tests", "e2e", "conftest.py"), "utf8")).not.toContain("STALE e2e readiness");
   });
 
+  it("refreshes the CLIENT per-test instrumentation (setup.ts w/ asyncUtilTimeout + globalSetup) from the pinned scm-utils (the F9-CI stale-setup.ts gap)", () => {
+    writeFileSync(join(proj, "package.json"), "{}");
+    mkdirSync(join(proj, "client", "tests", "e2e"), { recursive: true });
+    writeFileSync(join(proj, "client", "package.json"), "{}"); // marks it a client project
+    writeFileSync(join(proj, "client", "tests", "setup.ts"), "// STALE setup — no asyncUtilTimeout\n");
+    writeFileSync(join(proj, "client", "vitest.globalSetup.ts"), "// STALE globalSetup\n");
+    const r = refreshSurface(proj, repoRoot, "9.9.9-test");
+    expect(r.reporterFiles).toEqual(
+      expect.arrayContaining([join("client", "tests", "setup.ts"), join("client", "vitest.globalSetup.ts")]),
+    );
+    const setup = readFileSync(join(proj, "client", "tests", "setup.ts"), "utf8");
+    expect(setup).not.toContain("STALE setup"); // overwritten FROM the kit
+    expect(setup).toContain("asyncUtilTimeout"); // the fix that prevents the F9 CI real-backend waitFor timeout
+    expect(readFileSync(join(proj, "client", "vitest.globalSetup.ts"), "utf8")).not.toContain("STALE globalSetup");
+  });
+
   it("does NOT create a stray reporter conftest when the project has no tests/ dir (dest-dir guard)", () => {
     writeFileSync(join(proj, "pyproject.toml"), "[project]\nname = 'x'\n");
     const r = refreshSurface(proj, repoRoot, "9.9.9-test"); // no tests/ dir exists

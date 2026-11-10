@@ -1620,6 +1620,46 @@ export function checkInvariantCoverageDistinct(
    *  back to the earliest-S-number heuristic (a story-order proxy for "who realizes it"). */
   ownerByInvariant?: Map<string, string>,
 ): ConformanceResult {
+  // Build the violation strings from the structured offenders (one rule, one source — see
+  // invariantDistinctOffenders). Preserves the exact prior messages + order.
+  const offenders = invariantDistinctOffenders(perStory, ownerByInvariant);
+  if (offenders.length === 0) return { ok: true };
+  const violations = offenders.map((o) =>
+    o.realized
+      ? `${o.story} carries persistence invariant ${o.invariant} but does NOT realize it – its table/migration ` +
+        `is introduced by ${o.owner} (db-design schema_changes). Move the ${o.invariant} fitness item to ${o.owner}` +
+        `${o.ownerCovers ? "" : " (which must add it)"}; a display/read-only story cannot test an invariant whose ` +
+        `table it never creates. Anchor by the realizing story, not AC keyword proximity.`
+      : `${o.story} re-tests persistence invariant ${o.invariant} already covered by ${o.owner}. ` +
+        `A persistence invariant is realized once per feature and belongs to exactly one story's fitness tests; ` +
+        `drop the duplicate fitness item(s) from ${o.story}. If ${o.story}'s migration adds a NEW ` +
+        `invariant, cover that new invariant instead.`,
+  );
+  return { ok: false, violations };
+}
+
+/** A cross-story distinct-invariant VIOLATION, structured so BOTH the gate reason (checkInvariantCoverage
+ *  Distinct) and the pre-reflect design-complete SELF-HEAL (testlist-conformance) read ONE rule: the
+ *  `story` carries a fitness item for `invariant` but is NOT its `owner`, so it must DROP it (→ the
+ *  revise-route reopens that story's test-strategist). `realized` = the owner is the db-design schema
+ *  realizer (authoritative); false = the earliest-S-number fallback (no db-design anchor). `ownerCovers`
+ *  = the owner already carries a covering item (else the owner must ADD one). */
+export interface InvariantDistinctOffender {
+  story: string;
+  invariant: string;
+  owner: string;
+  realized: boolean;
+  ownerCovers: boolean;
+}
+
+/** The DISTINCT-invariant rule, as structured offenders (the single source checkInvariantCoverageDistinct
+ *  formats into prose). Each invariant belongs to exactly ONE story: its db-design schema realizer
+ *  (`ownerByInvariant`) when known, else the earliest-S-number carrier. Any OTHER carrier is an offender
+ *  that must drop its duplicate fitness item. Pure; order matches the reason strings. */
+export function invariantDistinctOffenders(
+  perStory: Array<{ story: string; invariantIds: string[] }>,
+  ownerByInvariant?: Map<string, string>,
+): InvariantDistinctOffender[] {
   // invariant_id -> the stories (with S-number) whose fitness items reference it.
   const carriers = new Map<string, Array<{ story: string; num: number }>>();
   for (const s of perStory) {
@@ -1632,39 +1672,29 @@ export function checkInvariantCoverageDistinct(
       carriers.set(inv, arr);
     }
   }
-  const violations: string[] = [];
+  const offenders: InvariantDistinctOffender[] = [];
   for (const [inv, stories] of carriers) {
     const realizer = ownerByInvariant?.get(inv);
     if (realizer && stories.some((s) => s.story !== realizer)) {
-      // REALIZATION-based ownership: every carrier that is NOT the realizing story is mis-anchored ,
-      // its migration/table does not exist there. This fires even for a SINGLE carrier (a display-only
-      // story holding a write-story's invariant), which the earliest-wins path silently accepted.
-      const owns = stories.some((s) => s.story === realizer);
+      // REALIZATION-based ownership: every carrier that is NOT the realizing story is mis-anchored —
+      // its migration/table does not exist there. Fires even for a SINGLE carrier (a display-only story
+      // holding a write-story's invariant), which the earliest-wins fallback silently accepted.
+      const ownerCovers = stories.some((s) => s.story === realizer);
       for (const c of stories) {
         if (c.story === realizer) continue;
-        violations.push(
-          `${c.story} carries persistence invariant ${inv} but does NOT realize it – its table/migration ` +
-            `is introduced by ${realizer} (db-design schema_changes). Move the ${inv} fitness item to ${realizer}` +
-            `${owns ? "" : " (which must add it)"}; a display/read-only story cannot test an invariant whose ` +
-            `table it never creates. Anchor by the realizing story, not AC keyword proximity.`,
-        );
+        offenders.push({ story: c.story, invariant: inv, owner: realizer, realized: true, ownerCovers });
       }
       continue;
     }
     if (stories.length < 2) continue;
-    // Fallback (no db-design owner map): earliest-S-number heuristic – the lowest story owns it.
+    // Fallback (no db-design owner map): earliest-S-number heuristic — the lowest story owns it.
     const sorted = [...stories].sort((a, b) => a.num - b.num || a.story.localeCompare(b.story));
     const owner = sorted[0].story;
     for (const later of sorted.slice(1)) {
-      violations.push(
-        `${later.story} re-tests persistence invariant ${inv} already covered by ${owner}. ` +
-          `A persistence invariant is realized once per feature and belongs to exactly one story's fitness tests; ` +
-          `drop the duplicate fitness item(s) from ${later.story}. If ${later.story}'s migration adds a NEW ` +
-          `invariant, cover that new invariant instead.`,
-      );
+      offenders.push({ story: later.story, invariant: inv, owner, realized: false, ownerCovers: true });
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return offenders;
 }
 
 /**
@@ -1938,7 +1968,12 @@ export function scanFeatureConformance(consortDir: string, featureId: string): F
         ok: fit.ok,
         violations: fit.ok ? [] : fit.violations,
       });
-      const persist = checkPersistenceCoverage(testListContent, archContent);
+      // Thread db-design (read above at dbDesignContent) so the exemption for INHERITED schema-constraint
+      // invariants applies here too — otherwise this full scan demands-all and false-flags a PRE-EXISTING
+      // constraint (e.g. F1's UNIQUE(sku,location) re-declared as PI1 by F2, whose table F2 never migrates),
+      // which the gate-guard's persistenceCoverageReason already exempts → a design-passes / deploy-fails
+      // inconsistency (the F2 PI1-adjust-updates-in-place deploy halt).
+      const persist = checkPersistenceCoverage(testListContent, archContent, dbDesignContent);
       entries.push({
         artifact: "test-list.json -> architecture.json (persistence-invariant coverage)",
         ok: persist.ok,

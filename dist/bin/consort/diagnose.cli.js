@@ -6855,7 +6855,7 @@ init_esm_shims();
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync4, readFileSync as readFileSync3, readdirSync as readdirSync3, statSync as statSync2 } from "fs";
+import { existsSync as existsSync4, readFileSync as readFileSync3, readdirSync as readdirSync3 } from "fs";
 import { join as join6, dirname as dirname3 } from "path";
 
 // consort/config/consort-config-file.ts
@@ -7011,7 +7011,7 @@ import * as path4 from "path";
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync14, readFileSync as readFileSync14, readdirSync as readdirSync11, statSync as statSync8 } from "fs";
+import { existsSync as existsSync14, readFileSync as readFileSync14, readdirSync as readdirSync12, statSync as statSync8 } from "fs";
 import { join as join17, relative as relative3, extname as extname4 } from "path";
 
 // consort/architecture/migration-history-clean.ts

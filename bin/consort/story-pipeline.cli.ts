@@ -48,9 +48,7 @@ import {
   resetIncompleteBreakdown,
   surfaceForGate,
   approveStoryGateFromDisk,
-  batchedDraftMessage,
   withdrawStoryGate,
-  findBatchedDraftStories,
   cutStoryExperiment,
   awaitAcceptance,
   discardStory,
@@ -148,25 +146,6 @@ function usage(msg: string): number {
   return 2;
 }
 
-/**
- * Hard-fail (exit 3) when the Spec Author batched acceptance criteria across
- * stories instead of drafting one at a time. The per-story spec gate (surface /
- * approve-gate) is the choke point: a story cannot be gated while sibling
- * un-gated stories already have ACs on disk. Returns 3 + prints actionable
- * guidance when batched; null when the draft is correctly one-story-scoped.
- */
-function rejectBatchedDraft(
-  consortDir: string,
-  feature: string,
-  pipeline: StoryPipeline,
-  story: string,
-): number | null {
-  const batched = findBatchedDraftStories(consortDir, feature, pipeline, story);
-  if (batched.length === 0) return null;
-  process.stderr.write(batchedDraftMessage(story, batched) + "\n");
-  return 3;
-}
-
 async function main(): Promise<number> {
   const args = parse(process.argv.slice(2));
   const consortDir = args.consortDir ?? resolveConsortDir();
@@ -250,8 +229,6 @@ async function main(): Promise<number> {
     }
     case "surface": {
       if (!args.story) return usage("surface needs --story");
-      const batched = rejectBatchedDraft(consortDir, feature, pipeline, args.story);
-      if (batched !== null) return batched;
       updatePipeline(consortDir, feature, (p) => surfaceForGate(p, args.story!));
       process.stdout.write(`surfaced ${args.story} for the per-story spec gate (awaiting-gate)\n`);
       return 0;
@@ -267,10 +244,6 @@ async function main(): Promise<number> {
         specHash: args.specHash,
       });
       if (!r.ok) {
-        if (r.batched) {
-          process.stderr.write(batchedDraftMessage(args.story, r.batched) + "\n");
-          return 3;
-        }
         process.stderr.write(`approve-gate: ${r.error}\n`);
         return 2;
       }

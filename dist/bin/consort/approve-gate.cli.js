@@ -6741,6 +6741,7 @@ var featureResolved = (tdd, f) => findFeatureDir(tdd, f) ?? featureDir(tdd, f);
 var featureSpecJson = (tdd, f) => join2(featureResolved(tdd, f), "feature-spec.json");
 var architectureJson = (tdd, f) => join2(featureResolved(tdd, f), "architecture.json");
 var dbDesignJson = (tdd, f) => join2(featureResolved(tdd, f), "db-design.json");
+var featureTestListJson = (tdd, f) => join2(featureResolved(tdd, f), "test-list.json");
 var pipelineJson = (tdd, f) => join2(featureResolved(tdd, f), "pipeline.json");
 var featureNfrsMd = (tdd, f) => join2(featureResolved(tdd, f), "nfrs.md");
 var storiesDir = (tdd, f) => join2(featureResolved(tdd, f), "stories");
@@ -7503,6 +7504,14 @@ function checkAcIndependence(acs) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 function checkInvariantCoverageDistinct(perStory, ownerByInvariant) {
+  const offenders = invariantDistinctOffenders(perStory, ownerByInvariant);
+  if (offenders.length === 0) return { ok: true };
+  const violations = offenders.map(
+    (o) => o.realized ? `${o.story} carries persistence invariant ${o.invariant} but does NOT realize it \u2013 its table/migration is introduced by ${o.owner} (db-design schema_changes). Move the ${o.invariant} fitness item to ${o.owner}${o.ownerCovers ? "" : " (which must add it)"}; a display/read-only story cannot test an invariant whose table it never creates. Anchor by the realizing story, not AC keyword proximity.` : `${o.story} re-tests persistence invariant ${o.invariant} already covered by ${o.owner}. A persistence invariant is realized once per feature and belongs to exactly one story's fitness tests; drop the duplicate fitness item(s) from ${o.story}. If ${o.story}'s migration adds a NEW invariant, cover that new invariant instead.`
+  );
+  return { ok: false, violations };
+}
+function invariantDistinctOffenders(perStory, ownerByInvariant) {
   const carriers = /* @__PURE__ */ new Map();
   for (const s of perStory) {
     const m = /^S(\d+)/.exec(s.story);
@@ -7514,16 +7523,14 @@ function checkInvariantCoverageDistinct(perStory, ownerByInvariant) {
       carriers.set(inv, arr);
     }
   }
-  const violations = [];
+  const offenders = [];
   for (const [inv, stories] of carriers) {
     const realizer = ownerByInvariant?.get(inv);
     if (realizer && stories.some((s) => s.story !== realizer)) {
-      const owns = stories.some((s) => s.story === realizer);
+      const ownerCovers = stories.some((s) => s.story === realizer);
       for (const c of stories) {
         if (c.story === realizer) continue;
-        violations.push(
-          `${c.story} carries persistence invariant ${inv} but does NOT realize it \u2013 its table/migration is introduced by ${realizer} (db-design schema_changes). Move the ${inv} fitness item to ${realizer}${owns ? "" : " (which must add it)"}; a display/read-only story cannot test an invariant whose table it never creates. Anchor by the realizing story, not AC keyword proximity.`
-        );
+        offenders.push({ story: c.story, invariant: inv, owner: realizer, realized: true, ownerCovers });
       }
       continue;
     }
@@ -7531,12 +7538,10 @@ function checkInvariantCoverageDistinct(perStory, ownerByInvariant) {
     const sorted = [...stories].sort((a, b) => a.num - b.num || a.story.localeCompare(b.story));
     const owner = sorted[0].story;
     for (const later of sorted.slice(1)) {
-      violations.push(
-        `${later.story} re-tests persistence invariant ${inv} already covered by ${owner}. A persistence invariant is realized once per feature and belongs to exactly one story's fitness tests; drop the duplicate fitness item(s) from ${later.story}. If ${later.story}'s migration adds a NEW invariant, cover that new invariant instead.`
-      );
+      offenders.push({ story: later.story, invariant: inv, owner, realized: false, ownerCovers: true });
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return offenders;
 }
 function invariantRealizingStory(architectureJson2, dbDesignJson2) {
   const out = /* @__PURE__ */ new Map();
@@ -8543,7 +8548,7 @@ function appendSelectionLog(consortDir, entry) {
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync13, readFileSync as readFileSync13, readdirSync as readdirSync7, statSync as statSync4 } from "fs";
+import { existsSync as existsSync13, readFileSync as readFileSync13, readdirSync as readdirSync7 } from "fs";
 import { join as join12, dirname as dirname7 } from "path";
 
 // consort/config/consort-config-file.ts
@@ -8637,6 +8642,35 @@ function acIdsInStoryDir(storyDir2) {
 function acsForStory(tddDir, featureId, storyId) {
   const storyDir2 = findStoryDir(tddDir, featureId, storyId);
   return storyDir2 ? acIdsInStoryDir(storyDir2) : [];
+}
+function featurePerStoryInvariantIds(tddDir, featureId) {
+  let master;
+  try {
+    master = JSON.parse(readFileSync10(featureTestListJson(tddDir, featureId), "utf8"));
+  } catch {
+    return [];
+  }
+  const items = master.items ?? [];
+  let sdir;
+  try {
+    sdir = join10(requireFeatureDir(tddDir, featureId), "stories");
+  } catch {
+    return [];
+  }
+  if (!existsSync10(sdir)) return [];
+  return readdirSync5(sdir).filter((s) => {
+    try {
+      return statSync3(join10(sdir, s)).isDirectory();
+    } catch {
+      return false;
+    }
+  }).map((story) => {
+    const acIds = new Set(acsForStory(tddDir, featureId, story));
+    const invariantIds = items.filter(
+      (it) => typeof it.invariant_id === "string" && it.invariant_id.length > 0 && typeof it.ac_id === "string" && acIds.has(it.ac_id)
+    ).map((it) => it.invariant_id);
+    return { story, invariantIds };
+  });
 }
 
 // consort/architecture/architecture-conventions.ts
@@ -9235,26 +9269,12 @@ function schemaChangeCoverageReason(consortDir, featureId, testListJson) {
   return r.ok ? null : `schema-change coverage failed: ${r.violations.join("; ")}`;
 }
 function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
-  let master;
   try {
-    master = JSON.parse(testListJson);
+    JSON.parse(testListJson);
   } catch {
     return null;
   }
-  const items = master.items ?? [];
-  const storiesDir2 = join12(featureDir2(consortDir, featureId), "stories");
-  if (!existsSync13(storiesDir2)) return null;
-  const perStory = readdirSync7(storiesDir2).filter((s) => {
-    try {
-      return statSync4(join12(storiesDir2, s)).isDirectory();
-    } catch {
-      return false;
-    }
-  }).map((story) => {
-    const acIds = new Set(acsForStory(consortDir, featureId, story));
-    const invariantIds = items.filter((it) => typeof it.invariant_id === "string" && it.invariant_id.length > 0 && typeof it.ac_id === "string" && acIds.has(it.ac_id)).map((it) => it.invariant_id);
-    return { story, invariantIds };
-  });
+  const perStory = featurePerStoryInvariantIds(consortDir, featureId);
   const archFile = architectureJson(consortDir, featureId);
   const dbFile = dbDesignJson(consortDir, featureId);
   const owner = invariantRealizingStory(
@@ -9623,23 +9643,6 @@ function enqueueReady(pipeline, storyId) {
   if (!pipeline.build_queue.includes(storyId)) pipeline.build_queue.push(storyId);
   return pipeline;
 }
-function storyHasAcceptanceCriteria(consortDir, featureId, storyId) {
-  const acsDir2 = acsDir(consortDir, featureId, storyId);
-  if (!existsSync15(acsDir2)) return false;
-  return readdirSync9(acsDir2).some((f) => f.endsWith(".json"));
-}
-function findBatchedDraftStories(consortDir, featureId, pipeline, gatingStoryId) {
-  const storiesDir2 = storiesDir(consortDir, featureId);
-  if (!existsSync15(storiesDir2)) return [];
-  const offenders = [];
-  for (const storyId of readdirSync9(storiesDir2)) {
-    if (storyId === gatingStoryId) continue;
-    if (!storyHasAcceptanceCriteria(consortDir, featureId, storyId)) continue;
-    const status = pipeline.stories[storyId]?.status;
-    if (status === void 0 || status === "designing") offenders.push(storyId);
-  }
-  return offenders.sort();
-}
 function approveStoryGate(pipeline, storyId, opts) {
   const story = pipeline.stories[storyId];
   if (!story) throw new Error(`approveStoryGate: story ${storyId} is not in the pipeline`);
@@ -9658,11 +9661,6 @@ function approveStoryGate(pipeline, storyId, opts) {
   enqueueReady(pipeline, storyId);
   return pipeline;
 }
-function batchedDraftMessage(story, batched) {
-  return `per-story draft invariant violated: ACs already exist for ${batched.join(", ")}, but ${story} is the story being gated.
-The design lane drafts ONE story's acceptance criteria at a time (draft -> surface -> approve), then moves to the next story. Drafting every story's ACs in one pass defeats the streaming pipeline.
-Remove the out-of-turn ACs (keep only ${story}'s), invoke the Spec Author once per story, and retry.`;
-}
 function featureDesignCompletedBy(consortDir, feature, approvingStory, pipeline) {
   let stories = [];
   try {
@@ -9675,8 +9673,6 @@ function featureDesignCompletedBy(consortDir, feature, approvingStory, pipeline)
 }
 function approveStoryGateFromDisk(consortDir, feature, story, opts) {
   const pipeline = readPipeline(consortDir, feature);
-  const batched = findBatchedDraftStories(consortDir, feature, pipeline, story);
-  if (batched.length > 0) return { ok: false, batched };
   const registeredReason = registeredBreakdownReason(consortDir, feature);
   if (registeredReason) return { ok: false, error: registeredReason };
   const acReason = storyAcsConformanceReason(featureDir2(consortDir, feature), story);
@@ -9777,14 +9773,10 @@ decision to a named human. (For headless/smoke runs use consort-human-proxy.)
     if (p.json) {
       process.stdout.write(`${JSON.stringify(r)}
 `);
-      if (!r.ok) return r.batched ? 3 : 2;
+      if (!r.ok) return 2;
       return 0;
     }
     if (!r.ok) {
-      if (r.batched) {
-        process.stderr.write(batchedDraftMessage(p.story, r.batched) + "\n");
-        return 3;
-      }
       process.stderr.write(`approve-gate: ${r.error}
 `);
       return 2;

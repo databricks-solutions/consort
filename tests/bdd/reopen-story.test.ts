@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync
 import { tmpdir } from "os";
 import { join } from "path";
 import { reopenStoryForRedesign, reopenStoryFromRole } from "../../consort/gates/reopen-story";
-import { storyAcIds } from "../../consort/config/consort-paths";
+import { storyAcIds, handbackFile } from "../../consort/config/consort-paths";
 
 let tdd: string;
 beforeEach(() => {
@@ -119,6 +119,47 @@ describe("reopenStoryForRedesign", () => {
       expect(existsSync(join(res.backupDir, "test-list-per-story.json"))).toBe(true); // backed up
     });
 
+    it("DELIVERS the --reason to the re-authoring role as a handback brief (so it re-authors WITH the diagnosis, not blind)", () => {
+      // Regression (F6/S1): a reopen --from test-strategist --reason re-authored BLIND — the test-strategist
+      // reported "the revise brief wasn't in the files I could read" and changed nothing, reproducing the
+      // defect. The reason must land where the drive's consumeHandback reads it (handbackFile(role, story)).
+      seedFullyDesigned();
+      reopenStoryFromRole(tdd, F, S, "test-strategist", {
+        now: () => new Date("2026-09-07T00:00:00Z"),
+        reason: "AC4's e2e seeds batch/serial out-of-band; re-author as a prop-driven component test.",
+      });
+      const brief = handbackFile(tdd, F, "test-strategist", S);
+      expect(existsSync(brief)).toBe(true);
+      const body = readFileSync(brief, "utf8");
+      expect(body).toContain("REOPEN RE-AUTHOR BRIEF (test-strategist)");
+      expect(body).toContain("prop-driven component test");
+    });
+
+    it("writes NO brief when no reason is given (no stray handback)", () => {
+      seedFullyDesigned();
+      reopenStoryFromRole(tdd, F, S, "test-strategist", { now: () => new Date("2026-09-07T00:00:00Z") });
+      expect(existsSync(handbackFile(tdd, F, "test-strategist", S))).toBe(false);
+    });
+
+    it("flags dbResyncNeeded when the reverted story owns a MIGRATION (the orphan-alembic-stamp class)", () => {
+      // The story has a db-design schema_change (a migration): reverting it leaves the paired DB stamped
+      // at an orphaned revision, so the reopen MUST signal the DB-resync step (F6/S1 orphan-stamp).
+      seedFullyDesigned();
+      write(`features/${F}/db-design.json`, {
+        feature_id: F,
+        tables: [],
+        schema_changes: [{ id: "SC1", story_id: S, kind: "add_column", table: "stock_records" }],
+      });
+      const res = reopenStoryFromRole(tdd, F, S, "test-strategist", { now: () => new Date("2026-09-07T00:00:00Z") });
+      expect(res.dbResyncNeeded).toBe(true);
+    });
+
+    it("does NOT flag dbResyncNeeded for a read-only story (no schema_change → no false DB-resync step)", () => {
+      seedFullyDesigned(); // db-design has tables:[] and no schema_changes
+      const res = reopenStoryFromRole(tdd, F, S, "test-strategist", { now: () => new Date("2026-09-07T00:00:00Z") });
+      expect(res.dbResyncNeeded).toBe(false);
+    });
+
     it("--from architect-reviewer: reverts architecture + strips AC notes + downstream, KEEPS the ACs", () => {
       seedFullyDesigned();
       reopenStoryFromRole(tdd, F, S, "architect-reviewer", { now: () => new Date("2026-09-07T00:00:00Z") });
@@ -180,5 +221,48 @@ describe("reopenStoryForRedesign", () => {
     const ws = JSON.parse(readFileSync(join(tdd, "workflow-state.json"), "utf8")) as Record<string, unknown>;
     expect(ws.phase).toBeUndefined();
     expect(ws.phase_feature_id).toBeUndefined();
+  });
+});
+
+// The CLI's branch guard: reopen CLEARS .consort design artifacts that are tracked on the feature
+// (paired) branch. Run from an experiment branch the revert lands on the wrong branch and is lost on
+// the next checkout. reopen-story.cli.ts is a self-invoking bin (dist __dirname shim) so it cannot be
+// imported from source; a static source assertion is the proportionate wiring check (the live F6 drive
+// exercises the real behavior). Same approach as drive-foreign-claim-guard.test.ts.
+describe("consort-reopen-story refuses when the working tree is not on the claimed feature branch", () => {
+  const SRC = readFileSync(new URL("../../bin/consort/reopen-story.cli.ts", import.meta.url), "utf8");
+
+  it("reads the claimed feature branch (workflow state) and the live git branch", () => {
+    expect(SRC).toMatch(/readWorkflowState\(/);
+    expect(SRC).toMatch(/rev-parse",\s*"--abbrev-ref",\s*"HEAD"/);
+  });
+
+  it("refuses (return 2) with the exact checkout remedy when the live branch differs from the claim", () => {
+    // The guard compares the live branch to the claimed feature branch (the positive invariant),
+    // not an experiment-branch name pattern.
+    expect(SRC).toMatch(/current\s*!==\s*claimedBranch/);
+    const idx = SRC.indexOf("current !== claimedBranch");
+    const region = SRC.slice(idx, idx + 1200);
+    expect(region).toMatch(/refusing/i);
+    expect(region).toMatch(/git checkout \$\{claimedBranch\}/);
+    expect(region).toMatch(/return 2;/);
+  });
+
+  it("only guards when a claim exists AND the branch is readable (best-effort otherwise)", () => {
+    // claimedBranch is undefined without a claim; current is null when git can't be read — either
+    // skips the refuse so a non-SCM / detached context is not hard-blocked.
+    expect(SRC).toMatch(/if\s*\(claimedBranch\s*&&\s*current\s*&&\s*current\s*!==\s*claimedBranch\)/);
+  });
+
+  it("AUTO-RESYNCS the paired DB at the source when a migration-bearing story is reverted (not a manual step)", () => {
+    // The orphan alembic stamp is BORN here: reverting a migration-bearing story leaves the feature-branch
+    // DB stamped at the discarded revision. The reopen runs ON the feature branch, so it fixes it at the
+    // source via resyncOffTreeStampIfPresent instead of printing a manual "RESYNC THE PAIRED DB" step.
+    expect(SRC).toMatch(/resyncOffTreeStampIfPresent\(args\.projectDir,\s*defaultRunVerify\)/);
+    const idx = SRC.indexOf("res.dbResyncNeeded");
+    const region = SRC.slice(idx, idx + 1400);
+    expect(region).toMatch(/resyncOffTreeStampIfPresent/); // runs the resync, not just a message
+    expect(region).toMatch(/RESYNCED THE PAIRED DB/); // reports success
+    expect(region).toMatch(/auto-resync did not complete/); // and a manual fallback only if it fails
   });
 });

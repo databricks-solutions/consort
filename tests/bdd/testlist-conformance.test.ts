@@ -597,6 +597,40 @@ describe("invariantOwnerStories: write-path owner EXCLUDES the invariant's own c
     expect(pi26!.story_id).toBe("S2-reconcile"); // routed to the owning (write-path) story, not hard-raised
   });
 
+  it("PART B (DISTINCT): a later story re-testing a PRIOR story's invariant SELF-HEALS to the OFFENDING story, not a hard HIL (the F3/S3 PI6 case)", () => {
+    // S1-receive REALIZES PI6 (its schema_change creates stock_receipts); S2-display wrongly carries a
+    // PI6 fitness item too (AC keyword proximity). Previously this slipped every design check and
+    // hard-raised at the approve gate (invariantCoverageDistinctReason). The design-complete self-heal
+    // must now flag reflect-testlist-defect against S2-display (DROP it), routing the revise to ITS
+    // test-strategist — the same rule + scoping as the approve-gate backstop.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "partb-distinct-"));
+    tmpDirs.push(dir);
+    const fdir = path.join(dir, "features", F);
+    fs.mkdirSync(path.join(fdir, "stories", "S1-receive", "acs"), { recursive: true });
+    fs.mkdirSync(path.join(fdir, "stories", "S2-display", "acs"), { recursive: true });
+    fs.writeFileSync(path.join(fdir, "stories", "S1-receive", "acs", "AC1.json"), JSON.stringify({ id: "AC1", layer: "Infra" }));
+    fs.writeFileSync(path.join(fdir, "stories", "S2-display", "acs", "AC2.json"), JSON.stringify({ id: "AC2", layer: "E2E" }));
+    fs.writeFileSync(path.join(fdir, "feature-spec.json"), JSON.stringify({ id: F, stories: ["S1-receive", "S2-display"] }));
+    fs.writeFileSync(path.join(fdir, "pipeline.json"), JSON.stringify({ feature_id: F, stories: { "S1-receive": { gate: { status: "approved" } }, "S2-display": { gate: { status: "open" } } } }));
+    fs.writeFileSync(path.join(fdir, "architecture.json"), JSON.stringify({ feature_id: F, nfrs: [], service_backed: true, persistence_invariants: [{ id: "PI6-receipt-stock", type: "unique", table: "stock_receipts", brief: "receipt row" }] }));
+    // S1-receive realizes PI6 (creates stock_receipts); S2-display never migrates it.
+    fs.writeFileSync(path.join(fdir, "db-design.json"), JSON.stringify({ feature_id: F, tables: [], schema_changes: [{ id: "SC1", story_id: "S1-receive", table: "stock_receipts", kind: "create_table" }] }));
+    // Master: BOTH stories tag an item with invariant_id PI6 (S1 legitimately, S2 the duplicate).
+    fs.writeFileSync(path.join(fdir, "test-list.json"), JSON.stringify({ feature_id: F, items: [
+      { id: "T1", description: "a receipt inserts exactly one stock_receipts row", ac_id: "AC1", invariant_id: "PI6-receipt-stock" },
+      { id: "T2", description: "the receive view shows the receipt once", ac_id: "AC2", invariant_id: "PI6-receipt-stock" },
+    ] }));
+    fs.writeFileSync(path.join(fdir, "stories", "S1-receive", "test-list-per-story.json"), JSON.stringify({ feature_id: F, items: [{ id: "T1", ac_id: "AC1", invariant_id: "PI6-receipt-stock" }] }));
+    fs.writeFileSync(path.join(fdir, "stories", "S2-display", "test-list-per-story.json"), JSON.stringify({ feature_id: F, items: [{ id: "T2", ac_id: "AC2", invariant_id: "PI6-receipt-stock" }] }));
+
+    const hits = recordTestListGate(dir, F, "S2-display");
+    const distinct = hits.find((h) => h.detail.includes("DISTINCTNESS") && h.detail.includes("PI6-receipt-stock"));
+    expect(distinct).toBeDefined();
+    expect(distinct!.smell).toBe("reflect-testlist-defect");
+    expect(distinct!.story_id).toBe("S2-display"); // the OFFENDING story drops its duplicate — not a hard HIL
+    expect(distinct!.detail).toContain("belongs to S1-receive");
+  });
+
   it("design-complete SELF-HEALS a WRONG-SHAPE owner-less transactional invariant (the F2/S3 PI1 case) instead of hard-raising", () => {
     // An inherited-table transactional invariant (no schema-change anchor) whose ONLY cover is a STATE
     // assertion, not an atomicity/rollback test. Per-story defers it (writePath off); previously it

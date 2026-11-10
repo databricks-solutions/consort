@@ -539,7 +539,7 @@ export interface GreenResult {
  *  wrapper's isAuthFailure classifier + the Python app's DatabricksAuthExpired. */
 export function isAuthExpiredSummary(summary: string | undefined): boolean {
   if (!summary) return false;
-  return /refresh token is invalid|could not be retrieved because|reauthenticate|databricks auth login|not authenticated|no valid.*(credential|token)|invalid.*(access token|credential)|\bunauthorized\b/i.test(
+  return /refresh token is invalid|could not be retrieved because|reauthenticate|databricks auth login|authentication failed|cached token is (missing|expired)|not authenticated|user is not authorized|no valid.*(credential|token)|invalid.*(access token|credential)|\bunauthorized\b/i.test(
     summary,
   );
 }
@@ -1723,6 +1723,25 @@ export async function refactorStory(
   const verify = opts?.verify ?? defaultGreenVerifier;
   const result = await verify({ projectDir: dirname(consortDir), consortDir, featureId, story, branchId: exp.branch });
   if (!result.passed) {
+    // AUTH-EXPIRED short-circuit (mirrors greenOpenCycle): a refactor-verify that failed because the
+    // Databricks OAuth session is dead / the credential was unauthorized is NOT a supersession or a
+    // driver-fixable regression. Routing the Navigator supersession ASSESS burns a turn and then, with
+    // nothing superseded, mislabels it a "genuine regression" HIL (the live F4/S1 case: the client
+    // Vitest backend boot hit "OAuth: User is not authorized"). Detect the signature in the summary and
+    // escalate IMMEDIATELY (source "auth-expired") with the re-authenticate-then-resume remediation,
+    // BEFORE the assess route — consistent with the green path, so the two never disagree.
+    if (isAuthExpiredSummary(result.summary)) {
+      const escalation = writeEscalation(consortDir, {
+        source: "auth-expired",
+        reason:
+          `Databricks auth session expired/unauthorized during the REFACTOR verify of ${featureId}/${story}. ` +
+          `This is NOT a regression — re-authenticate with \`databricks auth login\` and re-run to resume ` +
+          `(no reset; merged work intact). (verify: ${result.summary})`,
+        feature_id: featureId,
+        story_id: story,
+      });
+      return { refactored: false, escalated: true, escalation, summary: result.summary };
+    }
     // A refactor-verify break may be a PRIOR test the current story legitimately
     // supersedes (e.g. this story retired a field and an earlier story's test
     // still asserts it), which only the full-suite verify reveals. Route a bounded

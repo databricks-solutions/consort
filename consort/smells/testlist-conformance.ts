@@ -54,8 +54,11 @@ import {
   describesAtomicityRollback,
   describesMigrationRoundTrip,
   invariantRealizingStory,
+  invariantDistinctOffenders,
+  type InvariantDistinctOffender,
   extractApiEndpoints,
 } from "../orchestrator/validators/conformance/artifact-conformance.js";
+import { featurePerStoryInvariantIds } from "../test-list/test-list.js";
 import { writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellHit } from "./smells.js";
 
 /** The `reflect-testlist-defect` smell (test-strategist-owned) that the reflect
@@ -398,7 +401,8 @@ export function testListConforms(consortDir: string, featureId: string, story: s
   if (
     isDesignCompletingStory(consortDir, featureId, story) &&
     (featureUncoveredInvariantIds(consortDir, featureId).length > 0 ||
-      featureMisshapedInvariants(consortDir, featureId).length > 0)
+      featureMisshapedInvariants(consortDir, featureId).length > 0 ||
+      featureNonDistinctOffenders(consortDir, featureId).length > 0)
   )
     return false;
   return true;
@@ -561,6 +565,31 @@ function featureMisshapedInvariants(consortDir: string, featureId: string): Arra
   return out;
 }
 
+/** Cross-story DISTINCT-invariant offenders: a story carrying a fitness item for an invariant ANOTHER
+ *  story realizes — it must DROP it. The structured counterpart to the approve-gate's
+ *  invariantCoverageDistinctReason (SAME rule, invariantDistinctOffenders, over the SAME per-story scoping,
+ *  featurePerStoryInvariantIds), surfaced at the design-complete self-heal so a duplicated invariant
+ *  self-heals to the OFFENDING story's test-strategist (drop it) instead of hard-raising at the approve
+ *  gate — the F3/S3 PI6-receipt-stock-atomic case (S3 re-tested S1's invariant). Empty when distinct. */
+function featureNonDistinctOffenders(consortDir: string, featureId: string): InvariantDistinctOffender[] {
+  const perStory = featurePerStoryInvariantIds(consortDir, featureId);
+  if (perStory.length === 0) return [];
+  let archText: string;
+  try {
+    archText = readFileSync(architectureJson(consortDir, featureId), "utf8");
+  } catch {
+    return [];
+  }
+  let dbText: string | undefined;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if (existsSync(p)) dbText = readFileSync(p, "utf8");
+  } catch {
+    /* no db-design → the earliest-S-number fallback owner applies */
+  }
+  return invariantDistinctOffenders(perStory, invariantRealizingStory(archText, dbText));
+}
+
 /** The design-complete coverage SELF-HEAL hits: at the design-completing story, one reflect-testlist
  *  -defect per uncovered OR wrong-shaped feature invariant, flagged against its OWNING story (schema
  *  -change realizer, else the write-path writer — reliable now; falls back to the design-completing story
@@ -571,6 +600,7 @@ function designCompleteCoverageHits(consortDir: string, featureId: string, story
   if (!isDesignCompletingStory(consortDir, featureId, story)) return [];
   const uncovered = featureUncoveredInvariantIds(consortDir, featureId);
   const misshaped = featureMisshapedInvariants(consortDir, featureId);
+  const nonDistinct = featureNonDistinctOffenders(consortDir, featureId);
   const owners = invariantOwnerStories(consortDir, featureId, undefined, { writePath: true });
   // INSTRUMENTATION (visible in the live drive log): show the design-complete coverage decision — the
   // declared-but-uncovered AND covered-but-wrong-shaped invariants, and the owning story the write-path
@@ -579,7 +609,8 @@ function designCompleteCoverageHits(consortDir: string, featureId: string, story
   const ownerOf = (id: string) => owners.get(id) ?? `${story}(fallback)`;
   const uncoveredNote = uncovered.length === 0 ? "none" : uncovered.map((id) => `${id} -> ${ownerOf(id)}`).join(", ");
   const misshapedNote = misshaped.length === 0 ? "none" : misshaped.map((m) => `${m.id}(${m.type}) -> ${ownerOf(m.id)}`).join(", ");
-  process.stdout.write(`[coverage-self-heal] design-complete at ${story}: uncovered={${uncoveredNote}} misshaped={${misshapedNote}}\n`);
+  const distinctNote = nonDistinct.length === 0 ? "none" : nonDistinct.map((o) => `${o.invariant}: drop from ${o.story} (owner ${o.owner})`).join(", ");
+  process.stdout.write(`[coverage-self-heal] design-complete at ${story}: uncovered={${uncoveredNote}} misshaped={${misshapedNote}} non-distinct={${distinctNote}}\n`);
   const hits: SmellHit[] = [];
   for (const id of uncovered) {
     const owner = owners.get(id) ?? story;
@@ -604,6 +635,21 @@ function designCompleteCoverageHits(consortDir: string, featureId: string, story
           ? `a transactional invariant needs an ATOMICITY/ROLLBACK test (force a mid-transaction failure, assert NEITHER write persists — the F2 T19 shape), not a state/persistence assertion`
           : `a migration_reversible invariant needs a downgrade→upgrade ROUND-TRIP, not a forward-only assertion`) +
         `. Re-author ${owner}'s covering item to the right shape, OR retag ${id} onto the item that performs it (see test-strategy.md).`,
+    });
+  }
+  // Cross-story DISTINCTNESS: the OFFENDING story (not the owner) must drop the duplicate — route the
+  // revise to ITS test-strategist. This self-heals the F3/S3 PI6 case that previously hard-raised at the
+  // approve gate (invariantCoverageDistinctReason), with the SAME rule + scoping as that backstop.
+  for (const o of nonDistinct) {
+    hits.push({
+      smell: TESTLIST_SMELL,
+      cycle_ids: [],
+      story_id: o.story,
+      detail:
+        `feature-wide invariant DISTINCTNESS (design-complete): ${o.story} carries a fitness item for persistence ` +
+        `invariant ${o.invariant}, which belongs to ${o.owner} (${o.realized ? "its db-design schema realizer" : "the earliest realizing story"}). ` +
+        `DROP the ${o.invariant} fitness item(s) from ${o.story}'s test-list${o.ownerCovers ? "" : ` and ensure ${o.owner} covers ${o.invariant}`}; a story must ` +
+        `not re-test an invariant it does not realize (anchor by the realizing story, not AC keyword proximity; see test-strategy.md).`,
     });
   }
   return hits;

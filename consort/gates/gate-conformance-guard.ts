@@ -43,7 +43,7 @@ import {
   checkMockPrescription,
   checkSchemaDiffCrossStoryColumnsInAcs,
 } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
-import { acsForStory } from "../test-list/test-list.js";
+import { acsForStory, featurePerStoryInvariantIds } from "../test-list/test-list.js";
 import { enabledAnalysts } from "../test-list/test-analyst-catalogue.js";
 import { featureResolved, architectureJson, dbDesignJson, nfrsMd, featureNfrsMd } from "../../consort/config/consort-paths.js";
 import { readConventions, assertArchitectureConforms } from "../architecture/architecture-conventions.js";
@@ -909,30 +909,14 @@ function schemaChangeCoverageReason(consortDir: string, featureId: string, testL
  * hard-blocks a duplicated invariant. Null when distinct / no test-list.
  */
 function invariantCoverageDistinctReason(consortDir: string, featureId: string, testListJson: string): string | null {
-  let master: { items?: Array<{ ac_id?: string; invariant_id?: string }> };
   try {
-    master = JSON.parse(testListJson);
+    JSON.parse(testListJson); // bad JSON reported by conformanceReason; guard only
   } catch {
-    return null; // bad JSON reported by conformanceReason
+    return null;
   }
-  const items = master.items ?? [];
-  const storiesDir = join(featureDir(consortDir, featureId), "stories");
-  if (!existsSync(storiesDir)) return null;
-  const perStory = readdirSync(storiesDir)
-    .filter((s) => {
-      try {
-        return statSync(join(storiesDir, s)).isDirectory();
-      } catch {
-        return false;
-      }
-    })
-    .map((story) => {
-      const acIds = new Set(acsForStory(consortDir, featureId, story));
-      const invariantIds = items
-        .filter((it) => typeof it.invariant_id === "string" && it.invariant_id.length > 0 && typeof it.ac_id === "string" && acIds.has(it.ac_id))
-        .map((it) => it.invariant_id as string);
-      return { story, invariantIds };
-    });
+  // Per-story fitness-invariant ids, scoped by AC membership — the SHARED builder (one source with the
+  // pre-reflect design-complete self-heal, so the backstop and the self-heal never disagree on scoping).
+  const perStory = featurePerStoryInvariantIds(consortDir, featureId);
   // Ownership by REALIZATION (db-design), not story order: each invariant belongs to the story whose
   // migration creates/alters its table. Lets the check flag a display-only story front-loaded with a
   // write-story's invariant (and name the real owner), instead of the earliest-S-number fallback that

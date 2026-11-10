@@ -6930,6 +6930,55 @@ import { readFileSync as readFileSync8, existsSync as existsSync8, mkdirSync as 
 // consort/lakebase/upgrade.ts
 import { enableE2eForProject } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 var AGENT_SYNC_MARKER = path5.join(".claude", "agents", ".kit-version");
+function refreshKitOwnedInstrumentation(projectDir, kitDir) {
+  const refreshed = [];
+  try {
+    const scmProj = [
+      path5.join(kitDir, "node_modules", "@databricks-solutions", "lakebase-scm-utils", "templates", "project"),
+      path5.join(kitDir, "..", "lakebase-scm-utils", "templates", "project"),
+      path5.join(kitDir, "..", "..", "@databricks-solutions", "lakebase-scm-utils", "templates", "project")
+    ].find((c) => fs5.existsSync(c));
+    if (!scmProj) throw new Error("scm-utils templates not found");
+    const refreshReporter = (srcRel, destRel) => {
+      const src = path5.join(scmProj, srcRel);
+      const dest = path5.join(projectDir, destRel);
+      if (!fs5.existsSync(src) || !fs5.existsSync(path5.dirname(dest))) return;
+      try {
+        fs5.copyFileSync(src, dest);
+        refreshed.push(destRel);
+      } catch {
+      }
+    };
+    refreshReporter(path5.join("common", "tests", "e2e", "conftest.py"), path5.join("tests", "e2e", "conftest.py"));
+    const isPython = fs5.existsSync(path5.join(projectDir, "pyproject.toml")) || fs5.existsSync(path5.join(projectDir, "requirements.txt"));
+    if (isPython) {
+      refreshReporter(path5.join("python", "tests", "conftest.py"), path5.join("tests", "conftest.py"));
+      refreshReporter(path5.join("python", "app", "consort_capture.py"), path5.join("app", "consort_capture.py"));
+    }
+    const hasClient = fs5.existsSync(path5.join(projectDir, "client", "package.json"));
+    if (hasClient) {
+      refreshReporter(path5.join("client", "tests", "setup.ts"), path5.join("client", "tests", "setup.ts"));
+      refreshReporter(path5.join("client", "consort-vitest-reporter.ts"), path5.join("client", "consort-vitest-reporter.ts"));
+      refreshReporter(path5.join("client", "vitest.globalSetup.ts"), path5.join("client", "vitest.globalSetup.ts"));
+      refreshReporter(path5.join("client", "tests", "e2e", "consort-fixtures.ts"), path5.join("client", "tests", "e2e", "consort-fixtures.ts"));
+    }
+  } catch {
+  }
+  try {
+    const commonDir = path5.join(kitDir, "templates", "project", "common");
+    for (const f of ["consort-capture.ts", "consort-test-reporter.ts"]) {
+      const src = path5.join(commonDir, f);
+      if (!fs5.existsSync(src)) continue;
+      try {
+        fs5.copyFileSync(src, path5.join(projectDir, f));
+        refreshed.push(f);
+      } catch {
+      }
+    }
+  } catch {
+  }
+  return refreshed;
+}
 var KIT_SURFACE_PATHS = [".claude/agents", ".claude/commands", ".claude/skills", "scripts", ".github/workflows", ".lakebase/kit-ref", ".lakebase/scm-utils-ref"];
 function commitRefreshedSurface(projectDir, targetVersion, extraPaths = [], removedPaths = [], git = (a) => {
   const r = spawnSync("git", ["-C", projectDir, ...a], { encoding: "utf8" });
@@ -6986,9 +7035,10 @@ function resyncAgentsOnKitDrift(projectDir) {
     }
     if (last === current) return { refreshed: false };
     updateAgents({ projectDir, kitDir: root, force: true });
+    const refreshedInstrumentation = refreshKitOwnedInstrumentation(projectDir, root);
     fs6.mkdirSync(path6.dirname(markerPath), { recursive: true });
     fs6.writeFileSync(markerPath, current + "\n");
-    const commit = commitRefreshedSurface(projectDir, current);
+    const commit = commitRefreshedSurface(projectDir, current, refreshedInstrumentation);
     return { refreshed: true, from: last || void 0, to: current, committed: commit.committed };
   } catch {
     return { refreshed: false };

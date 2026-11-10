@@ -8744,6 +8744,14 @@ function checkAcIndependence(acs) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 function checkInvariantCoverageDistinct(perStory, ownerByInvariant) {
+  const offenders = invariantDistinctOffenders(perStory, ownerByInvariant);
+  if (offenders.length === 0) return { ok: true };
+  const violations = offenders.map(
+    (o) => o.realized ? `${o.story} carries persistence invariant ${o.invariant} but does NOT realize it \u2013 its table/migration is introduced by ${o.owner} (db-design schema_changes). Move the ${o.invariant} fitness item to ${o.owner}${o.ownerCovers ? "" : " (which must add it)"}; a display/read-only story cannot test an invariant whose table it never creates. Anchor by the realizing story, not AC keyword proximity.` : `${o.story} re-tests persistence invariant ${o.invariant} already covered by ${o.owner}. A persistence invariant is realized once per feature and belongs to exactly one story's fitness tests; drop the duplicate fitness item(s) from ${o.story}. If ${o.story}'s migration adds a NEW invariant, cover that new invariant instead.`
+  );
+  return { ok: false, violations };
+}
+function invariantDistinctOffenders(perStory, ownerByInvariant) {
   const carriers = /* @__PURE__ */ new Map();
   for (const s of perStory) {
     const m = /^S(\d+)/.exec(s.story);
@@ -8755,16 +8763,14 @@ function checkInvariantCoverageDistinct(perStory, ownerByInvariant) {
       carriers.set(inv, arr);
     }
   }
-  const violations = [];
+  const offenders = [];
   for (const [inv, stories] of carriers) {
     const realizer = ownerByInvariant?.get(inv);
     if (realizer && stories.some((s) => s.story !== realizer)) {
-      const owns = stories.some((s) => s.story === realizer);
+      const ownerCovers = stories.some((s) => s.story === realizer);
       for (const c of stories) {
         if (c.story === realizer) continue;
-        violations.push(
-          `${c.story} carries persistence invariant ${inv} but does NOT realize it \u2013 its table/migration is introduced by ${realizer} (db-design schema_changes). Move the ${inv} fitness item to ${realizer}${owns ? "" : " (which must add it)"}; a display/read-only story cannot test an invariant whose table it never creates. Anchor by the realizing story, not AC keyword proximity.`
-        );
+        offenders.push({ story: c.story, invariant: inv, owner: realizer, realized: true, ownerCovers });
       }
       continue;
     }
@@ -8772,12 +8778,10 @@ function checkInvariantCoverageDistinct(perStory, ownerByInvariant) {
     const sorted = [...stories].sort((a, b) => a.num - b.num || a.story.localeCompare(b.story));
     const owner = sorted[0].story;
     for (const later of sorted.slice(1)) {
-      violations.push(
-        `${later.story} re-tests persistence invariant ${inv} already covered by ${owner}. A persistence invariant is realized once per feature and belongs to exactly one story's fitness tests; drop the duplicate fitness item(s) from ${later.story}. If ${later.story}'s migration adds a NEW invariant, cover that new invariant instead.`
-      );
+      offenders.push({ story: later.story, invariant: inv, owner, realized: false, ownerCovers: true });
     }
   }
-  return violations.length === 0 ? { ok: true } : { ok: false, violations };
+  return offenders;
 }
 function invariantRealizingStory(architectureJson2, dbDesignJson2) {
   const out = /* @__PURE__ */ new Map();
@@ -12812,6 +12816,35 @@ function acsForStory(tddDir, featureId, storyId) {
   const storyDir2 = findStoryDir(tddDir, featureId, storyId);
   return storyDir2 ? acIdsInStoryDir(storyDir2) : [];
 }
+function featurePerStoryInvariantIds(tddDir, featureId) {
+  let master;
+  try {
+    master = JSON.parse((0, import_fs12.readFileSync)(featureTestListJson(tddDir, featureId), "utf8"));
+  } catch {
+    return [];
+  }
+  const items = master.items ?? [];
+  let sdir;
+  try {
+    sdir = (0, import_path11.join)(requireFeatureDir(tddDir, featureId), "stories");
+  } catch {
+    return [];
+  }
+  if (!(0, import_fs12.existsSync)(sdir)) return [];
+  return (0, import_fs12.readdirSync)(sdir).filter((s) => {
+    try {
+      return (0, import_fs12.statSync)((0, import_path11.join)(sdir, s)).isDirectory();
+    } catch {
+      return false;
+    }
+  }).map((story) => {
+    const acIds = new Set(acsForStory(tddDir, featureId, story));
+    const invariantIds = items.filter(
+      (it) => typeof it.invariant_id === "string" && it.invariant_id.length > 0 && typeof it.ac_id === "string" && acIds.has(it.ac_id)
+    ).map((it) => it.invariant_id);
+    return { story, invariantIds };
+  });
+}
 
 // consort/gates/registered-breakdown.ts
 init_cjs_shims();
@@ -13351,26 +13384,12 @@ function schemaChangeCoverageReason(consortDir, featureId, testListJson) {
   return r.ok ? null : `schema-change coverage failed: ${r.violations.join("; ")}`;
 }
 function invariantCoverageDistinctReason(consortDir, featureId, testListJson) {
-  let master;
   try {
-    master = JSON.parse(testListJson);
+    JSON.parse(testListJson);
   } catch {
     return null;
   }
-  const items = master.items ?? [];
-  const storiesDir2 = (0, import_node_path13.join)(featureDir2(consortDir, featureId), "stories");
-  if (!(0, import_node_fs9.existsSync)(storiesDir2)) return null;
-  const perStory = (0, import_node_fs9.readdirSync)(storiesDir2).filter((s) => {
-    try {
-      return (0, import_node_fs9.statSync)((0, import_node_path13.join)(storiesDir2, s)).isDirectory();
-    } catch {
-      return false;
-    }
-  }).map((story) => {
-    const acIds = new Set(acsForStory(consortDir, featureId, story));
-    const invariantIds = items.filter((it) => typeof it.invariant_id === "string" && it.invariant_id.length > 0 && typeof it.ac_id === "string" && acIds.has(it.ac_id)).map((it) => it.invariant_id);
-    return { story, invariantIds };
-  });
+  const perStory = featurePerStoryInvariantIds(consortDir, featureId);
   const archFile = architectureJson(consortDir, featureId);
   const dbFile = dbDesignJson(consortDir, featureId);
   const owner = invariantRealizingStory(
@@ -13645,7 +13664,7 @@ var import_util2 = require("@databricks-solutions/lakebase-scm-utils/util");
 
 // consort/gates/escalation.ts
 init_cjs_shims();
-var fs13 = __toESM(require("fs"), 1);
+var fs16 = __toESM(require("fs"), 1);
 
 // consort/smells/smells.ts
 init_cjs_shims();
@@ -13915,129 +13934,37 @@ function lastReflectReviseSmell(consortDir, story_id) {
   return reflects.length === 0 ? null : reflects[reflects.length - 1].smell;
 }
 
-// consort/gates/escalation.ts
-var BLOCKING_SMELLS = /* @__PURE__ */ new Set([
-  "test-list-drift",
-  "cycle-stall",
-  "boundary-violation",
-  "test-deletion-attempt",
-  // A missing kit-owned scaffold piece (e.g. the E2E conftest/live_server) must
-  // halt to the HIL, not let the build fabricate it. The driver-wrote-its-own-
-  // conftest defect (2026-06-11 smoke) traced to this not being blocking.
-  "scaffold-defect",
-  // Non-independent ACs (one AC's `then` implied by another) make a faithful RED
-  // impossible. Flagged by the test-strategist at the design gate so it halts
-  // BEFORE a build cycle, not mid-build as a cycle-stall (the 2026-06-11 AC2/AC3
-  // overlap that stalled S1).
-  "ac-overlap",
-  // Pre-build reflection gate: the Navigator (reflect mode) found a spec or
-  // test-list defect BEFORE the build lane. Blocking + spec-level, so it routes
-  // to the owning author (bounded one revise) then HITL, via the revise-route
-  // machinery. Halts the build until the design defect is resolved.
-  "reflect-spec-defect",
-  "reflect-testlist-defect",
-  // The reflect critic found a persistence invariant contradicting the requirement
-  // (e.g. a not_null column the brief renders when absent). Spec-level + architect-owned:
-  // routes to the Architect (re-run the architecture gate) via revise-route, bounded one
-  // revise then HITL. Prevents the avoidable later-story supersession + build refactor.
-  "reflect-architecture-defect",
-  // The reflect critic found a user-facing AC (E2E / client) whose screen/form the IA
-  // (ia.md) does not name. Spec-level + ux-designer-owned: routes to the UX Designer (re-run
-  // the ia refinement) via revise-route, bounded one revise then HITL. The design-lane
-  // backstop to the per-story ia refinement — closes the "AC asserts a form not in the IA" gap.
-  "reflect-ia-defect",
-  // The boundary/routes layer touching persistence directly (a fat controller),
-  // instead of delegating to a service + repository. A build-level structural
-  // defect; the Navigator flags it in REVIEW and the layering fitness test
-  // defends it. Build-level (not spec-level), so it hard-halts to the HIL rather
-  // than routing to a design author.
-  "layering-violation",
-  // The rendered UI does not USE the design tokens at the element level (hardcoded
-  // hex/px, a missing ia.md data-testid seam, or an action with no feedback), even
-  // though the :root tokens exist. The UX Designer flags it in REVIEW and the
-  // element-level design-adherence checks defend it. Build-level (a UI-quality
-  // defect to refactor), so it hard-halts to the HIL rather than routing to an author.
-  "ux-adherence",
-  // The architect-notes projection found a story the canon does not cover
-  // (FEIP-7902). Blocking + spec-level + architect-owned: it routes to the
-  // Architect (re-annotate + amend the canon) via revise-routing, bounded one
-  // revise then HITL. Halts the design lane until the gap is resolved.
-  "architect-canon-gap"
-]);
-function escalationId(parts) {
-  return [parts.source, parts.feature_id, parts.story_id, parts.ac_id].filter(Boolean).join("__").replace(/[^A-Za-z0-9_.-]/g, "-");
+// consort/smells/refactor-verify-assess.ts
+init_cjs_shims();
+var fs13 = __toESM(require("fs"), 1);
+var path8 = __toESM(require("path"), 1);
+function markerPath(consortDir, featureId, storyId) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return path8.join(fdir, "stories", storyId, "refactor-verify-assess.json");
 }
-function writeEscalation(consortDir, esc) {
-  const id = esc.id ?? escalationId(esc);
-  const file = escalationFile(consortDir, id);
-  const existing = readEscalationFile(file);
-  if (existing && !existing.resolved_at) return existing;
-  const full = {
-    id,
-    source: esc.source,
-    reason: esc.reason,
-    ...esc.feature_id ? { feature_id: esc.feature_id } : {},
-    ...esc.story_id ? { story_id: esc.story_id } : {},
-    ...esc.ac_id ? { ac_id: esc.ac_id } : {},
-    raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
-    // A caller MAY supply a source-specific resolution (e.g. feature-conformance names the exact
-    // `consort-pipeline repair` command); otherwise the generic clear-with-resolve-escalation default.
-    how_to_resolve: esc.how_to_resolve ?? `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
-  };
-  fs13.mkdirSync(escalationsDir(consortDir), { recursive: true });
-  fs13.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
-  return full;
-}
-function readEscalationFile(file) {
-  if (!fs13.existsSync(file)) return void 0;
+function readRefactorVerifyAssessMarker(consortDir, featureId, storyId) {
+  const file = markerPath(consortDir, featureId, storyId);
+  if (!file || !fs13.existsSync(file)) return void 0;
   try {
     return JSON.parse(fs13.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
 }
-function readEscalations(consortDir) {
-  const dir = escalationsDir(consortDir);
-  if (!fs13.existsSync(dir)) return [];
-  const out = [];
-  for (const f of fs13.readdirSync(dir)) {
-    if (!f.endsWith(".json")) continue;
-    const e = readEscalationFile(`${dir}/${f}`);
-    if (e) out.push(e);
-  }
-  return out;
+function refactorVerifyNeedsAssess(consortDir, featureId, storyId) {
+  const m = readRefactorVerifyAssessMarker(consortDir, featureId, storyId);
+  return !!m && !m.assessed && m.attempts < 1;
 }
-function escalationsFromSmells(consortDir, featureId) {
-  const log = readSmellsLog(consortDir);
-  return log.detected.filter((d) => !d.resolution && BLOCKING_SMELLS.has(d.smell)).filter((d) => {
-    if (d.smell !== "cycle-stall" || !featureId || !d.story_id) {
-      return true;
-    }
-    return pendingItemKind(consortDir, featureId, d.story_id) !== "fitness";
-  }).map((d) => ({
-    id: escalationId({ source: `smell:${d.smell}`, feature_id: featureId, story_id: d.story_id }),
-    source: `smell:${d.smell}`,
-    reason: `blocking smell "${d.smell}": ${d.detail}`,
-    ...featureId ? { feature_id: featureId } : {},
-    ...d.story_id ? { story_id: d.story_id } : {},
-    ...d.ac_id ? { ac_id: d.ac_id } : {},
-    raised_at: d.detected_at
-  }));
-}
-function firstPendingEscalation(consortDir, featureId) {
-  const explicit = readEscalations(consortDir).filter((e) => !e.resolved_at);
-  const scoped = featureId ? explicit.filter((e) => !e.feature_id || e.feature_id === featureId) : explicit;
-  if (scoped.length > 0) {
-    return [...scoped].sort((a, b) => a.raised_at < b.raised_at ? -1 : 1)[0];
-  }
-  const fromSmells = escalationsFromSmells(consortDir, featureId);
-  return fromSmells.length > 0 ? fromSmells.sort((a, b) => a.raised_at < b.raised_at ? -1 : 1)[0] : null;
+function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
+  const m = readRefactorVerifyAssessMarker(consortDir, featureId, storyId);
+  return !!m && m.assessed === true && (m.flagged_tests?.length ?? 0) > 0 && m.refactored !== true;
 }
 
 // consort/smells/deploy-verify-assess.ts
 init_cjs_shims();
 var fs14 = __toESM(require("fs"), 1);
-var path8 = __toESM(require("path"), 1);
+var path9 = __toESM(require("path"), 1);
 
 // consort/architecture/test-smell-clean.ts
 init_cjs_shims();
@@ -14174,7 +14101,7 @@ function parseFailedNodeIds(output) {
 function scopePath(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
-  return storyId ? path8.join(fdir, "stories", storyId, "deploy-verify-scope.json") : path8.join(fdir, "deploy-verify-scope.json");
+  return storyId ? path9.join(fdir, "stories", storyId, "deploy-verify-scope.json") : path9.join(fdir, "deploy-verify-scope.json");
 }
 function readDeployVerifyScope(consortDir, featureId, storyId) {
   const file = scopePath(consortDir, featureId, storyId);
@@ -14185,13 +14112,13 @@ function readDeployVerifyScope(consortDir, featureId, storyId) {
     return void 0;
   }
 }
-function markerPath(consortDir, featureId, storyId) {
+function markerPath2(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
-  return storyId ? path8.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path8.join(fdir, "deploy-verify-assess.json");
+  return storyId ? path9.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path9.join(fdir, "deploy-verify-assess.json");
 }
 function readDeployVerifyAssessMarker(consortDir, featureId, storyId) {
-  const file = markerPath(consortDir, featureId, storyId);
+  const file = markerPath2(consortDir, featureId, storyId);
   if (!file || !fs14.existsSync(file)) return void 0;
   try {
     return JSON.parse(fs14.readFileSync(file, "utf8"));
@@ -14206,6 +14133,153 @@ function deployVerifyRefactorPending(consortDir, featureId, storyId) {
 function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
   const m = readDeployVerifyAssessMarker(consortDir, featureId, storyId);
   return !!m && !m.assessed && m.attempts < 1;
+}
+
+// consort/smells/reauthor-resilience.ts
+init_cjs_shims();
+var fs15 = __toESM(require("fs"), 1);
+var path10 = __toESM(require("path"), 1);
+function markerPath3(consortDir, featureId, story, ac) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return path10.join(fdir, "stories", story, `reauthor-resilience-${ac}.json`);
+}
+function readReauthorMarker(consortDir, featureId, story, ac) {
+  const file = markerPath3(consortDir, featureId, story, ac);
+  if (!file || !fs15.existsSync(file)) return void 0;
+  try {
+    return JSON.parse(fs15.readFileSync(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function reauthorNeeded(consortDir, featureId, story, ac) {
+  const m = readReauthorMarker(consortDir, featureId, story, ac);
+  return !!m && m.attempts < 1;
+}
+
+// consort/gates/escalation.ts
+var BLOCKING_SMELLS = /* @__PURE__ */ new Set([
+  "test-list-drift",
+  "cycle-stall",
+  "boundary-violation",
+  "test-deletion-attempt",
+  // A missing kit-owned scaffold piece (e.g. the E2E conftest/live_server) must
+  // halt to the HIL, not let the build fabricate it. The driver-wrote-its-own-
+  // conftest defect (2026-06-11 smoke) traced to this not being blocking.
+  "scaffold-defect",
+  // Non-independent ACs (one AC's `then` implied by another) make a faithful RED
+  // impossible. Flagged by the test-strategist at the design gate so it halts
+  // BEFORE a build cycle, not mid-build as a cycle-stall (the 2026-06-11 AC2/AC3
+  // overlap that stalled S1).
+  "ac-overlap",
+  // Pre-build reflection gate: the Navigator (reflect mode) found a spec or
+  // test-list defect BEFORE the build lane. Blocking + spec-level, so it routes
+  // to the owning author (bounded one revise) then HITL, via the revise-route
+  // machinery. Halts the build until the design defect is resolved.
+  "reflect-spec-defect",
+  "reflect-testlist-defect",
+  // The reflect critic found a persistence invariant contradicting the requirement
+  // (e.g. a not_null column the brief renders when absent). Spec-level + architect-owned:
+  // routes to the Architect (re-run the architecture gate) via revise-route, bounded one
+  // revise then HITL. Prevents the avoidable later-story supersession + build refactor.
+  "reflect-architecture-defect",
+  // The reflect critic found a user-facing AC (E2E / client) whose screen/form the IA
+  // (ia.md) does not name. Spec-level + ux-designer-owned: routes to the UX Designer (re-run
+  // the ia refinement) via revise-route, bounded one revise then HITL. The design-lane
+  // backstop to the per-story ia refinement — closes the "AC asserts a form not in the IA" gap.
+  "reflect-ia-defect",
+  // The boundary/routes layer touching persistence directly (a fat controller),
+  // instead of delegating to a service + repository. A build-level structural
+  // defect; the Navigator flags it in REVIEW and the layering fitness test
+  // defends it. Build-level (not spec-level), so it hard-halts to the HIL rather
+  // than routing to a design author.
+  "layering-violation",
+  // The rendered UI does not USE the design tokens at the element level (hardcoded
+  // hex/px, a missing ia.md data-testid seam, or an action with no feedback), even
+  // though the :root tokens exist. The UX Designer flags it in REVIEW and the
+  // element-level design-adherence checks defend it. Build-level (a UI-quality
+  // defect to refactor), so it hard-halts to the HIL rather than routing to an author.
+  "ux-adherence",
+  // The architect-notes projection found a story the canon does not cover
+  // (FEIP-7902). Blocking + spec-level + architect-owned: it routes to the
+  // Architect (re-annotate + amend the canon) via revise-routing, bounded one
+  // revise then HITL. Halts the design lane until the gap is resolved.
+  "architect-canon-gap"
+]);
+function escalationId(parts) {
+  return [parts.source, parts.feature_id, parts.story_id, parts.ac_id].filter(Boolean).join("__").replace(/[^A-Za-z0-9_.-]/g, "-");
+}
+function writeEscalation(consortDir, esc) {
+  const id = esc.id ?? escalationId(esc);
+  const file = escalationFile(consortDir, id);
+  const existing = readEscalationFile(file);
+  if (existing && !existing.resolved_at) return existing;
+  const full = {
+    id,
+    source: esc.source,
+    reason: esc.reason,
+    ...esc.feature_id ? { feature_id: esc.feature_id } : {},
+    ...esc.story_id ? { story_id: esc.story_id } : {},
+    ...esc.ac_id ? { ac_id: esc.ac_id } : {},
+    // Carry the failing command's captured output (deploy-verify et al.) through to the record so a
+    // terminal escalation — the case that needs a HUMAN — names WHICH test failed, not just "verify
+    // failed". The field was declared on the interface but never written here, so the hardest case
+    // carried the least forensics (the lost-failing-client-test defect).
+    ...esc.captured_output ? { captured_output: esc.captured_output } : {},
+    raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
+    // A caller MAY supply a source-specific resolution (e.g. feature-conformance names the exact
+    // `consort-pipeline repair` command); otherwise the generic clear-with-resolve-escalation default.
+    how_to_resolve: esc.how_to_resolve ?? `After fixing the ROOT CAUSE, clear this with: consort-resolve-escalation --id ${id} --resolution "<what you fixed>". That clears this escalation (and any blocking smell) and KEEPS the audit trail. Do NOT hand-edit or delete this file, and do NOT edit smells.json, to move the run forward \u2013 that desyncs on-disk state from the drive.`
+  };
+  fs16.mkdirSync(escalationsDir(consortDir), { recursive: true });
+  fs16.writeFileSync(file, JSON.stringify(full, null, 2) + "\n", "utf8");
+  return full;
+}
+function readEscalationFile(file) {
+  if (!fs16.existsSync(file)) return void 0;
+  try {
+    return JSON.parse(fs16.readFileSync(file, "utf8"));
+  } catch {
+    return void 0;
+  }
+}
+function readEscalations(consortDir) {
+  const dir = escalationsDir(consortDir);
+  if (!fs16.existsSync(dir)) return [];
+  const out = [];
+  for (const f of fs16.readdirSync(dir)) {
+    if (!f.endsWith(".json")) continue;
+    const e = readEscalationFile(`${dir}/${f}`);
+    if (e) out.push(e);
+  }
+  return out;
+}
+function escalationsFromSmells(consortDir, featureId) {
+  const log = readSmellsLog(consortDir);
+  return log.detected.filter((d) => !d.resolution && BLOCKING_SMELLS.has(d.smell)).filter((d) => {
+    if (d.smell !== "cycle-stall" || !featureId || !d.story_id) {
+      return true;
+    }
+    return pendingItemKind(consortDir, featureId, d.story_id) !== "fitness";
+  }).map((d) => ({
+    id: escalationId({ source: `smell:${d.smell}`, feature_id: featureId, story_id: d.story_id }),
+    source: `smell:${d.smell}`,
+    reason: `blocking smell "${d.smell}": ${d.detail}`,
+    ...featureId ? { feature_id: featureId } : {},
+    ...d.story_id ? { story_id: d.story_id } : {},
+    ...d.ac_id ? { ac_id: d.ac_id } : {},
+    raised_at: d.detected_at
+  }));
+}
+function firstPendingEscalation(consortDir, featureId) {
+  const explicit = readEscalations(consortDir).filter((e) => !e.resolved_at);
+  const scoped = featureId ? explicit.filter((e) => !e.feature_id || e.feature_id === featureId) : explicit;
+  if (scoped.length > 0) {
+    return [...scoped].sort((a, b) => a.raised_at < b.raised_at ? -1 : 1)[0];
+  }
+  const fromSmells = escalationsFromSmells(consortDir, featureId);
+  return fromSmells.length > 0 ? fromSmells.sort((a, b) => a.raised_at < b.raised_at ? -1 : 1)[0] : null;
 }
 
 // consort/architecture/contract-clean.ts
@@ -14479,33 +14553,6 @@ var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   ".ruff_cache"
 ]);
 
-// consort/smells/refactor-verify-assess.ts
-init_cjs_shims();
-var fs15 = __toESM(require("fs"), 1);
-var path9 = __toESM(require("path"), 1);
-function markerPath2(consortDir, featureId, storyId) {
-  const fdir = findFeatureDir(consortDir, featureId);
-  if (!fdir) return void 0;
-  return path9.join(fdir, "stories", storyId, "refactor-verify-assess.json");
-}
-function readRefactorVerifyAssessMarker(consortDir, featureId, storyId) {
-  const file = markerPath2(consortDir, featureId, storyId);
-  if (!file || !fs15.existsSync(file)) return void 0;
-  try {
-    return JSON.parse(fs15.readFileSync(file, "utf8"));
-  } catch {
-    return void 0;
-  }
-}
-function refactorVerifyNeedsAssess(consortDir, featureId, storyId) {
-  const m = readRefactorVerifyAssessMarker(consortDir, featureId, storyId);
-  return !!m && !m.assessed && m.attempts < 1;
-}
-function refactorVerifyRefactorPending(consortDir, featureId, storyId) {
-  const m = readRefactorVerifyAssessMarker(consortDir, featureId, storyId);
-  return !!m && m.assessed === true && (m.flagged_tests?.length ?? 0) > 0 && m.refactored !== true;
-}
-
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
 var import_node_fs17 = require("fs");
@@ -14516,29 +14563,6 @@ init_cjs_shims();
 var import_node_child_process8 = require("child_process");
 var import_node_fs18 = require("fs");
 var import_node_path22 = require("path");
-
-// consort/smells/reauthor-resilience.ts
-init_cjs_shims();
-var fs16 = __toESM(require("fs"), 1);
-var path10 = __toESM(require("path"), 1);
-function markerPath3(consortDir, featureId, story, ac) {
-  const fdir = findFeatureDir(consortDir, featureId);
-  if (!fdir) return void 0;
-  return path10.join(fdir, "stories", story, `reauthor-resilience-${ac}.json`);
-}
-function readReauthorMarker(consortDir, featureId, story, ac) {
-  const file = markerPath3(consortDir, featureId, story, ac);
-  if (!file || !fs16.existsSync(file)) return void 0;
-  try {
-    return JSON.parse(fs16.readFileSync(file, "utf8"));
-  } catch {
-    return void 0;
-  }
-}
-function reauthorNeeded(consortDir, featureId, story, ac) {
-  const m = readReauthorMarker(consortDir, featureId, story, ac);
-  return !!m && m.attempts < 1;
-}
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
@@ -15008,7 +15032,10 @@ function readReflectVerdict(consortDir, feature, story) {
   }
 }
 function reflectionPassed(consortDir, feature, story) {
-  return readReflectVerdict(consortDir, feature, story)?.passed === true;
+  const v = readReflectVerdict(consortDir, feature, story);
+  if (!v) return false;
+  if (v.passed === true) return true;
+  return v.findings.length > 0 && v.findings.filter((f) => (f.severity ?? "blocking") === "blocking").length === 0;
 }
 function reflectionVerdictWritten(consortDir, feature, story) {
   return readReflectVerdict(consortDir, feature, story) !== void 0;
@@ -15234,7 +15261,7 @@ function testlistConformanceForContent(consortDir, featureId, story, testListJso
 }
 function testListConforms(consortDir, featureId, story) {
   if (testlistConformanceViolations(consortDir, featureId, story) !== null) return false;
-  if (isDesignCompletingStory(consortDir, featureId, story) && (featureUncoveredInvariantIds(consortDir, featureId).length > 0 || featureMisshapedInvariants(consortDir, featureId).length > 0))
+  if (isDesignCompletingStory(consortDir, featureId, story) && (featureUncoveredInvariantIds(consortDir, featureId).length > 0 || featureMisshapedInvariants(consortDir, featureId).length > 0 || featureNonDistinctOffenders(consortDir, featureId).length > 0))
     return false;
   return true;
 }
@@ -15310,6 +15337,23 @@ function featureMisshapedInvariants(consortDir, featureId) {
     if (!shaped) out.push({ id: inv.id, type: inv.type });
   }
   return out;
+}
+function featureNonDistinctOffenders(consortDir, featureId) {
+  const perStory = featurePerStoryInvariantIds(consortDir, featureId);
+  if (perStory.length === 0) return [];
+  let archText;
+  try {
+    archText = (0, import_fs17.readFileSync)(architectureJson(consortDir, featureId), "utf8");
+  } catch {
+    return [];
+  }
+  let dbText;
+  try {
+    const p = dbDesignJson(consortDir, featureId);
+    if ((0, import_fs17.existsSync)(p)) dbText = (0, import_fs17.readFileSync)(p, "utf8");
+  } catch {
+  }
+  return invariantDistinctOffenders(perStory, invariantRealizingStory(archText, dbText));
 }
 
 // consort/smells/ia-conformance.ts
@@ -22179,6 +22223,9 @@ Apply that fix to the PRODUCTION code. Do NOT edit prior tests to force this reg
 }
 function consumeHandback(action, featureId, consortDir) {
   const story = "story" in action ? action.story : void 0;
+  if (action.role === "spec-author" && story !== void 0) {
+    fs19.rmSync(specReviseScopeJson(consortDir, featureId, story), { force: true });
+  }
   const file = handbackFile(consortDir, featureId, action.role, story);
   if (!fs19.existsSync(file)) return "";
   let note = "";
@@ -22547,8 +22594,59 @@ function buildClaudeCommandWithBody(action, cfg, body) {
     }
   };
 }
+function firstStableReasonToken(...texts) {
+  for (const t of texts) {
+    if (!t) continue;
+    const nodeId = t.match(/[\w./-]+::[\w.[\]/-]+/);
+    if (nodeId) return nodeId[0];
+    const filePath = t.match(/[\w./-]+\.(?:py|tsx?|jsx?)(?:::[\w.[\]/-]+)?/);
+    if (filePath) return filePath[0];
+  }
+  return null;
+}
+function routedReasonProbe(action, cfg) {
+  if (!("buildMode" in action) || !("story" in action)) return null;
+  const { consortDir, featureId } = cfg;
+  const s = action.story;
+  const ac = "ac" in action ? action.ac : void 0;
+  switch (action.buildMode) {
+    case "assess":
+    // navigator: buildGreenFailureAdvisory(green-failure.failureOutput)
+    case "repair":
+      return firstStableReasonToken(ac ? readGreenFailure(consortDir, featureId, s, ac)?.failureOutput : void 0);
+    case "assess-deploy":
+      return firstStableReasonToken(readDeployVerifyAssessMarker(consortDir, featureId, s)?.failure_output);
+    case "refactor-deploy": {
+      const scope = readDeployVerifyScope(consortDir, featureId, s);
+      const fromScope = (scope?.directives ?? []).map((d) => d.node_id).join("\n");
+      return firstStableReasonToken(fromScope, readDeployVerifyAssessMarker(consortDir, featureId, s)?.failure_output);
+    }
+    case "assess-refactor": {
+      const m = readRefactorVerifyAssessMarker(consortDir, featureId, s);
+      return firstStableReasonToken(m?.superseded_advisory, m?.summary);
+    }
+    case "refactor-superseded":
+      return firstStableReasonToken((readRefactorVerifyAssessMarker(consortDir, featureId, s)?.flagged_tests ?? []).join("\n"));
+    case "reauthor":
+      return firstStableReasonToken(ac ? (readReauthorMarker(consortDir, featureId, s, ac)?.flagged_tests ?? []).join("\n") : void 0);
+    default:
+      return null;
+  }
+}
+function assertRoutedReasonInPrompt(action, cfg, task) {
+  if (process.env.NODE_ENV === "production" || process.env.CONSORT_REASON_GUARD === "off") return;
+  const probe = routedReasonProbe(action, cfg);
+  if (probe && !task.includes(probe)) {
+    const mode = "buildMode" in action ? action.buildMode : "?";
+    throw new Error(
+      `consort routed-reason contract: the ${mode} turn for ${action.role}/${"story" in action ? action.story : "?"} assembled a prompt MISSING its routing reason (probe "${probe}" absent from the task). The orchestrator routed to this role for a defect but the diagnosis did not reach the prompt \u2014 the reopen --reason silent-drop class. Inject the reason for this buildMode in buildTaskBody (set CONSORT_REASON_GUARD=off to bypass).`
+    );
+  }
+}
 function buildClaudeCommand(action, cfg) {
-  return buildClaudeCommandWithBody(action, cfg, buildTaskBody(action, cfg));
+  const body = buildTaskBody(action, cfg);
+  assertRoutedReasonInPrompt(action, cfg, body);
+  return buildClaudeCommandWithBody(action, cfg, body);
 }
 function buildCycleCommand(action, cfg) {
   const f = cfg.featureId;

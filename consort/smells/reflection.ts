@@ -105,9 +105,21 @@ export function readReflectVerdict(
 
 /** The design-lane predicate: has this story's reflection PASSED? A missing or
  *  failed verdict is not passed (the design lane runs / re-runs the critic; a
- *  failed verdict drives the smell + escalation elsewhere). */
+ *  failed verdict drives the smell + escalation elsewhere).
+ *
+ *  Severity split (issue #201) — MUST agree with recordReflectionGate + the reconcile gate
+ *  (reconcile.ts): a verdict with ONLY advisory findings (passed:false but zero blocking findings)
+ *  does NOT block the gate (recordReflectionGate returns [] and raises no smell), so it must count as
+ *  PASSED here too. Otherwise the two readers disagree: the gate raises no smell to route, but this
+ *  probe stays false, so the design lane re-dispatches the navigator-reflect turn forever until the
+ *  stall guard hard-halts (F2/S1 live: the navigator wrote passed:false "out of caution" with a single
+ *  advisory finding). A FAILED verdict with NO findings stays blocking (unknown ≠ advisory); an absent
+ *  per-finding severity counts as blocking (a pre-severity verdict never silently passes). */
 export function reflectionPassed(consortDir: string, feature: string, story: string): boolean {
-  return readReflectVerdict(consortDir, feature, story)?.passed === true;
+  const v = readReflectVerdict(consortDir, feature, story);
+  if (!v) return false;
+  if (v.passed === true) return true;
+  return v.findings.length > 0 && v.findings.filter((f) => (f.severity ?? "blocking") === "blocking").length === 0;
 }
 
 /** Did the reflect turn produce a readable verdict at all (pass OR fail)? The

@@ -35,29 +35,26 @@ tracking code retained on purpose.
 - Prove correctness with the parent-aware schema diff on the paired Lakebase
   branch — batch + serial **added**, the combined tracking code **still present** —
   alongside the integrity-probe warning count `R4`.
-- A UI-visible, stepwise walk on an isolated branch (reset → expand + backfill →
-  verify) that pauses between steps so each change is observable, with a "before"
-  seed that includes nonconforming codes so the probe count is visibly non-zero.
 - In the transition UI, the new Batch and Serial columns carry a **new-to-verify**
-  pill AND the combined tracking-code column carries a **to-be-retired** pill; each
-  screen carries a stage label (today / transition-to-verify); a running migration
-  shows an overlay that clears when the step finishes.
+  pill AND the combined tracking-code column carries a **to-be-retired** pill, so
+  the audience sees exactly what was added and what will be eliminated.
 
 ## What I see when it's done
 
-I walk the refactor step by step: reset to a "before" state with nonconforming
-codes seeded in, run the expand + backfill, and watch the home table and SKU detail
-re-render from the live schema with new Batch and Serial columns — each marked with
-a new-to-verify pill — while the combined tracking-code column is still there,
-marked to-be-retired. The app shows me the integrity-probe count of nonconforming
-rows so I can sign off. Each screen tells me which stage I am on, and a running
-step shows a migration overlay that clears when it finishes. The schema diff on the
-paired branch confirms batch + serial added with the combined code retained.
+The home table and SKU detail re-render from the live schema with new Batch and
+Serial columns — each marked with a new-to-verify pill — while the combined
+tracking-code column is still there, marked to-be-retired. The app shows me the
+integrity-probe count of nonconforming rows so I can sign off. The schema diff on
+the paired branch confirms batch + serial added with the combined code retained.
 
 ## Not in this feature
 
 - Dropping the combined tracking-code column — that is deliberately deferred to
   F10. This increment retains it on purpose.
+- The paused, step-by-step *visual walkthrough* of the migration (stage labels, a
+  migration overlay, a reset/expand/verify walk on an isolated branch) — that is
+  the **throwaway F11 demo**, never shipped; this increment delivers the real
+  expand against the paired branch, not the showcase replay.
 - Scoping records by warehouse — that is F7.
 
 ## Builds on

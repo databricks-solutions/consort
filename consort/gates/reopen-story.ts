@@ -31,15 +31,60 @@ import {
   designGuideJson,
   designDir,
   cyclesRootDir,
+  handbackFile,
 } from "../config/consort-paths.js";
 import { updatePipeline } from "../pipeline/story-pipeline.js";
 import { PHASE_OWNER_KEY } from "./workflow-phase.js";
+
+/** A reopen with a `--reason` must DELIVER that reason to the re-authoring role's next turn, else the
+ *  role re-authors BLIND and reproduces the very defect the reopen was meant to fix (the F6/S1 case:
+ *  the test-strategist reported "the revise brief wasn't in the files I could read" and changed nothing).
+ *  Write it where the drive's consumeHandback reads it — handbackFile(role, story) — so it is prepended
+ *  to that role's prompt exactly like the auto-revise-route's brief. No-op for an empty reason. */
+function writeReopenBrief(consortDir: string, feature: string, story: string, role: string, reason?: string): void {
+  const text = (reason ?? "").trim();
+  if (!text) return;
+  try {
+    const hb = handbackFile(consortDir, feature, role, story);
+    fs.mkdirSync(dirname(hb), { recursive: true });
+    fs.writeFileSync(
+      hb,
+      `REOPEN RE-AUTHOR BRIEF (${role}): this story was reopened to you for a genuine re-author. ` +
+        `Address EXACTLY the following, then produce your normal output — do NOT re-emit the same artifact unchanged:\n\n${text}\n`,
+    );
+  } catch {
+    /* best-effort: the brief is observability for the re-author; never fail the reopen on it */
+  }
+}
 
 export interface ReopenResult {
   /** Where the cleared artifacts were copied before removal. */
   backupDir: string;
   /** The story-relative paths that were cleared/reverted. */
   cleared: string[];
+  /** True when the reverted story carried a MIGRATION (a db-design schema_change). Reverting its design
+   *  (and discarding its experiment branch) removes the migration FILE, but the shared feature-branch
+   *  Lakebase DB stays STAMPED at the now-orphaned revision → the next build's `alembic upgrade head`
+   *  fails ("Can't locate revision"). The caller MUST resync the paired DB to the code head before
+   *  rebuilding. Surfaced here (the reopen is filesystem-only and cannot touch Lakebase) so the operator
+   *  /drive acts up front, not after a cryptic alembic failure two turns later (the live F6/S1 case). */
+  dbResyncNeeded?: boolean;
+}
+
+/** True when the story owns a MIGRATION: a db-design.json schema_change (create_table / add_column /
+ *  add_constraint / add_index) attributed to it. Pure; false when there is no db-design / no schema
+ *  change for the story (so a non-persisting reopen never emits the DB-resync step). */
+function storyHasMigration(consortDir: string, feature: string, story: string): boolean {
+  try {
+    const p = dbDesignJson(consortDir, feature);
+    if (!fs.existsSync(p)) return false;
+    const db = JSON.parse(fs.readFileSync(p, "utf8")) as { schema_changes?: Array<{ story_id?: string; kind?: string }> };
+    return (db.schema_changes ?? []).some(
+      (c) => c?.story_id === story && typeof c.kind === "string" && /create_table|add_column|add_constraint|add_index|drop_/.test(c.kind),
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Back up + clear a story's design artifacts so the drive re-dispatches the Spec Author
@@ -49,7 +94,7 @@ export function reopenStoryForRedesign(
   consortDir: string,
   feature: string,
   story: string,
-  opts: { now?: () => Date } = {},
+  opts: { now?: () => Date; reason?: string } = {},
 ): ReopenResult {
   const now = opts.now ?? (() => new Date());
   const storyRoot = storyResolved(consortDir, feature, story);
@@ -98,7 +143,9 @@ export function reopenStoryForRedesign(
   // reopenStoryFromRole (the scoped reopen) so both revisions re-gate cleanly.
   resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared);
 
-  return { backupDir, cleared };
+  // A full reopen re-dispatches the Spec Author (hasAcs=false) — deliver the reason to its turn.
+  writeReopenBrief(consortDir, feature, story, "spec-author", opts.reason);
+  return { backupDir, cleared, dbResyncNeeded: storyHasMigration(consortDir, feature, story) };
 }
 
 /** Drop the feature deploy gate + reset the story's pipeline entry to `designing` (clearing the
@@ -219,7 +266,7 @@ export function reopenStoryFromRole(
   feature: string,
   story: string,
   fromRole: DesignLaneRole,
-  opts: { now?: () => Date } = {},
+  opts: { now?: () => Date; reason?: string } = {},
 ): ReopenResult {
   if (fromRole === "spec-author") return reopenStoryForRedesign(consortDir, feature, story, opts);
 
@@ -278,7 +325,9 @@ export function reopenStoryFromRole(
   clearFile(storyPlanJson(consortDir, feature, story), "plan.json (design-spec)", "plan.json");
 
   resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared);
-  return { backupDir, cleared };
+  // Deliver the reopen reason to the role the drive will resume at, so it re-authors WITH the diagnosis.
+  writeReopenBrief(consortDir, feature, story, fromRole, opts.reason);
+  return { backupDir, cleared, dbResyncNeeded: storyHasMigration(consortDir, feature, story) };
 }
 
 /** Strip the `architectural_notes` field from every AC of a story (backed up), so architectAnnotated

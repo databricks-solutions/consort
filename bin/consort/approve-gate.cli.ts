@@ -37,7 +37,7 @@ import { approveSprintPlanGate } from "../../consort/gates/sprint-gates.js";
 import { approveIntakeGate } from "../../consort/gates/intake-gate.js";
 import { approveBacklogGate } from "../../consort/gates/backlog-gate.js";
 import { drainGatesAsHumanProxy } from "../../consort/gates/human-proxy.js";
-import { approveStoryGateFromDisk, batchedDraftMessage } from "../../consort/pipeline/story-pipeline.js";
+import { approveStoryGateFromDisk } from "../../consort/pipeline/story-pipeline.js";
 import { resolveConsortDir } from "../../consort/config/consort-paths.js";
 import type { GateName } from "../../consort/gates/gates.js";
 
@@ -122,14 +122,10 @@ export function runApproveGateCli(argv: string[]): number {
     const r = approveStoryGateFromDisk(consortDir, p.feature as string, p.story, { approver: p.approver });
     if (p.json) {
       process.stdout.write(`${JSON.stringify(r)}\n`);
-      if (!r.ok) return r.batched ? 3 : 2;
+      if (!r.ok) return 2;
       return 0;
     }
     if (!r.ok) {
-      if (r.batched) {
-        process.stderr.write(batchedDraftMessage(p.story, r.batched) + "\n");
-        return 3;
-      }
       process.stderr.write(`approve-gate: ${r.error}\n`);
       return 2;
     }

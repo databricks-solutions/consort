@@ -162,3 +162,28 @@ describe("consort-drive REFUSES a bare feature drive with no phase bound", () =>
     expect(DRIVE_SRC).not.toMatch(/lane_intents/);
   });
 });
+
+// Step-0 checkout error accuracy: a plain `git checkout <b>` auto-tracks origin/<b> on a
+// fresh clone, so the ONLY non-dirty failure is the claimed branch existing nowhere — a
+// vanished claim (the SCM state names a branch that was deleted out of band). That must
+// report its real cause + remedy, not the generic "conflicting uncommitted changes".
+describe("consort-drive Step 0 distinguishes a VANISHED claimed branch from a dirty tree", () => {
+  it("probes local AND origin reachability before the checkout", () => {
+    expect(DRIVE_SRC).toMatch(/rev-parse",\s*"--verify",\s*"--quiet"/);
+    expect(DRIVE_SRC).toMatch(/refReachable\(`refs\/heads\/\$\{claimedBranch\}`\)/);
+    expect(DRIVE_SRC).toMatch(/refReachable\(`refs\/remotes\/origin\/\$\{claimedBranch\}`\)/);
+  });
+
+  it("gives an accurate vanished-branch message + remedy (recreate from parent / abandon), not a dirty-tree guess", () => {
+    const idx = DRIVE_SRC.indexOf("does not exist locally or on origin");
+    expect(idx).toBeGreaterThan(-1);
+    const region = DRIVE_SRC.slice(idx, idx + 600);
+    expect(region).toMatch(/deleted out of band/);
+    expect(region).toMatch(/git branch \$\{claimedBranch\} \$\{scm\?\.parent_branch/);
+    expect(region).toMatch(/lakebase-scm-abandon-feature/);
+    expect(region).toMatch(/return 2;/);
+    // The generic dirty-tree message survives on the actual checkout-failure catch,
+    // which now comes AFTER the reachability guard (search from the guard onward).
+    expect(DRIVE_SRC.indexOf("conflicting uncommitted changes", idx)).toBeGreaterThan(idx);
+  });
+});

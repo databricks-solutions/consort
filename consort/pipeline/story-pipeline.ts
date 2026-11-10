@@ -9,7 +9,6 @@ import { dirname, join } from "path";
 import {
   pipelineJson,
   storiesDir as storiesDirOf,
-  acsDir as acsDirOf,
   featureSpecJson,
   featureSpecMd,
 } from "../../consort/config/consort-paths.js";
@@ -347,54 +346,15 @@ export function completeActive(pipeline: StoryPipeline): string | null {
   return done;
 }
 
-// --- Per-story draft guard -------------------------------
-//
-// The design lane streams ONE story's acceptance criteria at a time: draft S's
-// ACs, surface S's gate, get it approved, THEN draft S+1. Nothing structural
-// used to enforce that, so the Spec Author could batch every story's ACs in a
-// single pass (observed repeatedly in live runs), which defeats the pipeline.
-// findBatchedDraftStories is the forcing function the gate CLI calls before
-// surfacing/approving a story: it returns every OTHER story that already has
-// ACs on disk while still un-gated (status `designing`, or not in the pipeline
-// at all). A non-empty result means the draft was batched; the CLI turns that
-// into a hard error so the run can't proceed until the draft is one-story-scoped.
-
-/** True when stories/<S>/acs/ holds at least one `*.json` AC artifact. */
-function storyHasAcceptanceCriteria(consortDir: string, featureId: string, storyId: string): boolean {
-  const acsDir = acsDirOf(consortDir, featureId, storyId);
-  if (!existsSync(acsDir)) return false;
-  return readdirSync(acsDir).some((f) => f.endsWith(".json"));
-}
-
-/**
- * Stories (other than `gatingStoryId`) that already have ACs on disk while
- * still un-gated, i.e. the Spec Author drafted more than the one story being
- * gated. A story legitimately has ACs once it is past `designing` (surfaced,
- * approved, building, ...); a story that has ACs while still `designing`, or
- * that has ACs without even being tracked in the pipeline, was drafted out of
- * turn. Scans the on-disk story dirs (not just pipeline.stories) so a batch
- * that never entered the pipeline is still caught. Returns the offending story
- * ids, sorted; empty when the draft is correctly scoped to one story.
- */
-export function findBatchedDraftStories(
-  consortDir: string,
-  featureId: string,
-  pipeline: StoryPipeline,
-  gatingStoryId: string,
-): string[] {
-  const storiesDir = storiesDirOf(consortDir, featureId);
-  if (!existsSync(storiesDir)) return [];
-  const offenders: string[] = [];
-  for (const storyId of readdirSync(storiesDir)) {
-    if (storyId === gatingStoryId) continue;
-    if (!storyHasAcceptanceCriteria(consortDir, featureId, storyId)) continue;
-    const status = pipeline.stories[storyId]?.status;
-    // `designing` = not yet surfaced for its gate; undefined = not even tracked.
-    // Either way ACs for it now means the draft ran ahead of the gate.
-    if (status === undefined || status === "designing") offenders.push(storyId);
-  }
-  return offenders.sort();
-}
+// A faithful Spec Author breakdown may front-load every story's acceptance criteria in one pass
+// rather than drafting them one story at a time. That is NOT a defect: the deterministic design
+// lane (nextDesignAction) iterates stories in breakdown order and surfaces + approves EACH story's
+// spec gate in turn regardless of whether its ACs already exist on disk — it only uses `hasAcs` to
+// decide whether to (re-)invoke the Spec Author, never to skip a gate. So the per-story human review
+// cadence is preserved either way. An earlier "per-story draft invariant" hard-failed the FIRST gate
+// whenever a later story already had ACs, which blocked a front-loaded breakdown for no correctness
+// gain; it has been removed. Divergent breakdowns (an invented story) are still caught by the
+// registration cross-check (registeredBreakdownReason) on this same approve path.
 
 // --- Per-story spec gate (phase 2b) -----------------------------
 
@@ -444,28 +404,10 @@ export function approveStoryGate(
   return pipeline;
 }
 
-/** The per-story-draft-invariant guidance, shared by every per-story spec-gate
- *  entry point (the `consort-pipeline` surface/approve-gate subcommands
- *  AND the human-facing `consort-approve-gate --story`), so all of them
- *  report a batched draft identically. */
-export function batchedDraftMessage(story: string, batched: string[]): string {
-  return (
-    `per-story draft invariant violated: ACs already exist for ${batched.join(", ")}, ` +
-    `but ${story} is the story being gated.\n` +
-    `The design lane drafts ONE story's acceptance criteria at a time ` +
-    `(draft -> surface -> approve), then moves to the next story. Drafting every ` +
-    `story's ACs in one pass defeats the streaming pipeline.\n` +
-    `Remove the out-of-turn ACs (keep only ${story}'s), invoke the Spec Author ` +
-    `once per story, and retry.`
-  );
-}
-
 /** The outcome of approving a per-story spec gate from disk. */
 export interface ApproveStoryGateOutcome {
   ok: boolean;
-  /** Out-of-turn stories whose ACs violate the per-story-draft invariant (ok=false). */
-  batched?: string[];
-  /** A non-invariant failure, e.g. the story is not in the pipeline (ok=false). */
+  /** A failure reason, e.g. the story is not in the pipeline or a divergent breakdown (ok=false). */
   error?: string;
   /** The resulting build queue after a successful approval (ok=true). */
   queue?: string[];
@@ -507,8 +449,6 @@ export function approveStoryGateFromDisk(
   opts: { approver: string; at?: string; specHash?: string },
 ): ApproveStoryGateOutcome {
   const pipeline = readPipeline(consortDir, feature);
-  const batched = findBatchedDraftStories(consortDir, feature, pipeline, story);
-  if (batched.length > 0) return { ok: false, batched };
   // Pre-registered example: the derived story/AC breakdown must match
   // registration.json (fail-closed). This is a FEATURE-level check that must run
   // on the PER-STORY spec gate too — the path an interactive run actually gates

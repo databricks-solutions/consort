@@ -6684,6 +6684,7 @@ function findStoryDir(tdd, f, s) {
 }
 var storyResolved = (tdd, f, s) => findStoryDir(tdd, f, s) ?? storyDir(tdd, f, s);
 var storyTestListJson = (tdd, f, s) => join(storyResolved(tdd, f, s), "test-list-per-story.json");
+var cycleDir = (tdd, f, s, ac) => join(cyclesRootDir(tdd), f, s, ac);
 function findFeatureDir(tdd, featureId) {
   const root = featuresDir(tdd);
   if (!fs.existsSync(root)) return void 0;
@@ -6850,7 +6851,7 @@ function resolveOpenSmells(consortDir, smell, opts) {
 
 // consort/pipeline/cycle-record.ts
 init_esm_shims();
-import { existsSync as existsSync17, readFileSync as readFileSync17, readdirSync as readdirSync11, statSync as statSync9, writeFileSync as writeFileSync9, mkdirSync as mkdirSync8, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync17, readFileSync as readFileSync17, readdirSync as readdirSync12, statSync as statSync9, writeFileSync as writeFileSync9, mkdirSync as mkdirSync8, rmSync as rmSync6 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
 import { join as join20, dirname as dirname10, basename as basename3 } from "path";
 
@@ -6865,7 +6866,7 @@ init_esm_shims();
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync2, statSync as statSync2 } from "fs";
+import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync2 } from "fs";
 import { join as join6, dirname as dirname3 } from "path";
 
 // consort/config/consort-config-file.ts
@@ -6941,6 +6942,17 @@ var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
 // consort/architecture/test-smell-clean.ts
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 
+// consort/smells/deploy-verify-assess.ts
+function markerPath(consortDir, featureId, storyId) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return storyId ? path2.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path2.join(fdir, "deploy-verify-assess.json");
+}
+function clearDeployVerifyAssessMarker(consortDir, featureId, storyId) {
+  const file = markerPath(consortDir, featureId, storyId);
+  if (file && fs2.existsSync(file)) fs2.rmSync(file);
+}
+
 // consort/architecture/contract-clean.ts
 init_esm_shims();
 import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync5, statSync as statSync5 } from "fs";
@@ -7004,6 +7016,9 @@ import * as fs3 from "fs";
 import { execFileSync as execFileSync3 } from "child_process";
 import { createHash } from "crypto";
 import { dirname as dirname7, join as join15 } from "path";
+function greenFailureJson(tdd, feature, story, ac) {
+  return join15(cycleDir(tdd, feature, story, ac), "green-failure.json");
+}
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7013,15 +7028,40 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
   ".venv/",
   "coverage/"
 ];
+function clearGreenFailure(tdd, feature, story, ac) {
+  fs3.rmSync(greenFailureJson(tdd, feature, story, ac), { force: true });
+}
+function clearStoryGreenFailures(tdd, feature, story) {
+  const storyCyclesDir = join15(cyclesRootDir(tdd), feature, story);
+  if (!fs3.existsSync(storyCyclesDir)) return 0;
+  let cleared = 0;
+  for (const acEntry of fs3.readdirSync(storyCyclesDir)) {
+    const gf = join15(storyCyclesDir, acEntry, "green-failure.json");
+    if (fs3.existsSync(gf)) {
+      fs3.rmSync(gf, { force: true });
+      cleared += 1;
+    }
+  }
+  return cleared;
+}
 
 // consort/smells/refactor-verify-assess.ts
 init_esm_shims();
 import * as fs4 from "fs";
 import * as path3 from "path";
+function markerPath2(consortDir, featureId, storyId) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return path3.join(fdir, "stories", storyId, "refactor-verify-assess.json");
+}
+function clearRefactorVerifyAssessMarker(consortDir, featureId, storyId) {
+  const file = markerPath2(consortDir, featureId, storyId);
+  if (file && fs4.existsSync(file)) fs4.rmSync(file);
+}
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync14, readFileSync as readFileSync15, readdirSync as readdirSync10, statSync as statSync8 } from "fs";
+import { existsSync as existsSync14, readFileSync as readFileSync15, readdirSync as readdirSync11, statSync as statSync8 } from "fs";
 import { join as join17, relative as relative3, extname as extname4 } from "path";
 
 // consort/architecture/migration-history-clean.ts
@@ -7034,6 +7074,15 @@ import { join as join18 } from "path";
 init_esm_shims();
 import * as fs5 from "fs";
 import * as path4 from "path";
+function markerPath3(consortDir, featureId, story, ac) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return path4.join(fdir, "stories", story, `reauthor-resilience-${ac}.json`);
+}
+function clearReauthorMarker(consortDir, featureId, story, ac) {
+  const file = markerPath3(consortDir, featureId, story, ac);
+  if (file && fs5.existsSync(file)) fs5.rmSync(file, { force: true });
+}
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
@@ -7055,14 +7104,14 @@ function storyCycles(consortDir, featureId, story) {
   const base = join20(cyclesRootDir(consortDir), featureId, story);
   if (!existsSync17(base)) return [];
   const out = [];
-  for (const acDir of readdirSync11(base)) {
+  for (const acDir of readdirSync12(base)) {
     const dir = join20(base, acDir);
     try {
       if (!statSync9(dir).isDirectory()) continue;
     } catch {
       continue;
     }
-    for (const f of readdirSync11(dir)) {
+    for (const f of readdirSync12(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
         out.push(JSON.parse(readFileSync17(join20(dir, f), "utf8")));
@@ -7237,6 +7286,15 @@ function resolveBlockers(consortDir, scope) {
       ...scope.resolution ? { note: scope.resolution } : {}
     });
     if (n > 0 && !resolved.includes(e.id)) resolved.push(e.id);
+  }
+  for (const e of pending) {
+    if (!resolved.includes(e.id) || !e.feature_id || !e.story_id) continue;
+    if (e.source === "driver-green") {
+      if (e.ac_id) clearGreenFailure(consortDir, e.feature_id, e.story_id, e.ac_id);
+      else clearStoryGreenFailures(consortDir, e.feature_id, e.story_id);
+    } else if (e.source === "driver-refactor") clearRefactorVerifyAssessMarker(consortDir, e.feature_id, e.story_id);
+    else if (e.source === "deploy-verify") clearDeployVerifyAssessMarker(consortDir, e.feature_id, e.story_id);
+    else if (e.source === "test-authoring-smell" && e.ac_id) clearReauthorMarker(consortDir, e.feature_id, e.story_id, e.ac_id);
   }
   return resolved;
 }

@@ -6679,6 +6679,7 @@ function findStoryDir(tdd, f, s) {
 }
 var storyResolved = (tdd, f, s) => findStoryDir(tdd, f, s) ?? storyDir(tdd, f, s);
 var storyTestListJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "test-list-per-story.json");
+var cycleDir = (tdd, f, s, ac) => (0, import_node_path.join)(cyclesRootDir(tdd), f, s, ac);
 function findFeatureDir(tdd, featureId) {
   const root = featuresDir(tdd);
   if (!fs.existsSync(root)) return void 0;
@@ -6936,6 +6937,17 @@ var SA_COLUMN_PY = new RegExp(`sa\\.Column\\(\\s*${COL_ARG}`, "g");
 // consort/architecture/test-smell-clean.ts
 var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 
+// consort/smells/deploy-verify-assess.ts
+function markerPath(consortDir, featureId, storyId) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return storyId ? path.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path.join(fdir, "deploy-verify-assess.json");
+}
+function clearDeployVerifyAssessMarker(consortDir, featureId, storyId) {
+  const file = markerPath(consortDir, featureId, storyId);
+  if (file && fs2.existsSync(file)) fs2.rmSync(file);
+}
+
 // consort/architecture/contract-clean.ts
 init_cjs_shims();
 var import_node_fs4 = require("fs");
@@ -6999,6 +7011,9 @@ var fs3 = __toESM(require("fs"), 1);
 var import_node_child_process3 = require("child_process");
 var import_node_crypto2 = require("crypto");
 var import_node_path10 = require("path");
+function greenFailureJson(tdd, feature, story, ac) {
+  return (0, import_node_path10.join)(cycleDir(tdd, feature, story, ac), "green-failure.json");
+}
 var TREE_STATE_EXCLUDE_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
   ".lakebase/",
@@ -7008,11 +7023,36 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
   ".venv/",
   "coverage/"
 ];
+function clearGreenFailure(tdd, feature, story, ac) {
+  fs3.rmSync(greenFailureJson(tdd, feature, story, ac), { force: true });
+}
+function clearStoryGreenFailures(tdd, feature, story) {
+  const storyCyclesDir = (0, import_node_path10.join)(cyclesRootDir(tdd), feature, story);
+  if (!fs3.existsSync(storyCyclesDir)) return 0;
+  let cleared = 0;
+  for (const acEntry of fs3.readdirSync(storyCyclesDir)) {
+    const gf = (0, import_node_path10.join)(storyCyclesDir, acEntry, "green-failure.json");
+    if (fs3.existsSync(gf)) {
+      fs3.rmSync(gf, { force: true });
+      cleared += 1;
+    }
+  }
+  return cleared;
+}
 
 // consort/smells/refactor-verify-assess.ts
 init_cjs_shims();
 var fs4 = __toESM(require("fs"), 1);
 var path2 = __toESM(require("path"), 1);
+function markerPath2(consortDir, featureId, storyId) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return path2.join(fdir, "stories", storyId, "refactor-verify-assess.json");
+}
+function clearRefactorVerifyAssessMarker(consortDir, featureId, storyId) {
+  const file = markerPath2(consortDir, featureId, storyId);
+  if (file && fs4.existsSync(file)) fs4.rmSync(file);
+}
 
 // consort/architecture/migration-app-clean.ts
 init_cjs_shims();
@@ -7029,6 +7069,15 @@ var import_node_path12 = require("path");
 init_cjs_shims();
 var fs5 = __toESM(require("fs"), 1);
 var path3 = __toESM(require("path"), 1);
+function markerPath3(consortDir, featureId, story, ac) {
+  const fdir = findFeatureDir(consortDir, featureId);
+  if (!fdir) return void 0;
+  return path3.join(fdir, "stories", story, `reauthor-resilience-${ac}.json`);
+}
+function clearReauthorMarker(consortDir, featureId, story, ac) {
+  const file = markerPath3(consortDir, featureId, story, ac);
+  if (file && fs5.existsSync(file)) fs5.rmSync(file, { force: true });
+}
 
 // consort/pipeline/cycle-record.ts
 var import_git = require("@databricks-solutions/lakebase-scm-utils/git");
@@ -7232,6 +7281,15 @@ function resolveBlockers(consortDir, scope) {
       ...scope.resolution ? { note: scope.resolution } : {}
     });
     if (n > 0 && !resolved.includes(e.id)) resolved.push(e.id);
+  }
+  for (const e of pending) {
+    if (!resolved.includes(e.id) || !e.feature_id || !e.story_id) continue;
+    if (e.source === "driver-green") {
+      if (e.ac_id) clearGreenFailure(consortDir, e.feature_id, e.story_id, e.ac_id);
+      else clearStoryGreenFailures(consortDir, e.feature_id, e.story_id);
+    } else if (e.source === "driver-refactor") clearRefactorVerifyAssessMarker(consortDir, e.feature_id, e.story_id);
+    else if (e.source === "deploy-verify") clearDeployVerifyAssessMarker(consortDir, e.feature_id, e.story_id);
+    else if (e.source === "test-authoring-smell" && e.ac_id) clearReauthorMarker(consortDir, e.feature_id, e.story_id, e.ac_id);
   }
   return resolved;
 }

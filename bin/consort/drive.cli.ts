@@ -28,16 +28,18 @@ import {
 import { migrateLegacyArtifactDir } from "../../consort/config/migrate-artifact-dir.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 import { relaunchDetached as spawnDetached } from "../../consort/session/relaunch-detached.js";
 import * as readline from "node:readline";
 
 import { recordTurn, seedRecorderBaseline, recordCorrespondence, recordRoutingDecision, lastRecordedOrdinal, type CorrespondenceEntry } from "../../consort/logging/turn-recorder.js";
 import { readAgentLog } from "../../consort/logging/agent-log.js";
 import { recordBuildTurn, nextBuildTurnNumber } from "../../consort/pipeline/record-build.js";
-import { commitExperimentCode, ProtectedBranchCommitError } from "../../consort/pipeline/cycle-record.js";
+import { commitExperimentCode, ProtectedBranchCommitError, isAuthExpiredSummary } from "../../consort/pipeline/cycle-record.js";
 import { runDriver, driverBoundOptions, ProtocolViolationError, UnexpectedCallbackError, type DriveEffects, type DriverBound, type RunDriverResult, type RunDriverOptions } from "../../consort/orchestrator/drive/orchestrator-run.js";
 import type { DriveState } from "../../consort/orchestrator/workflow/workflow-vocabulary.js";
 import { writeEscalation } from "../../consort/gates/escalation.js";
+import { resyncOffTreeStampIfPresent, defaultRunVerify } from "../../consort/deploy/deploy.js";
 import { RouteContractError } from "../../consort/orchestrator/steps/assert-route-satisfiable.js";
 import { emitNextJson, buildNextSnapshot } from "../../consort/orchestrator/status/next.js";
 import { emitAgentLogEvent } from "../../consort/logging/agent-log.js";
@@ -1535,6 +1537,33 @@ async function main(): Promise<number> {
       );
       return 2;
     }
+    // A plain `git checkout <b>` auto-creates a local tracking branch from origin/<b>
+    // (the fresh-clone case), so the only way it can fail for a NON-dirty tree is the
+    // branch existing NOWHERE — a vanished claim: the SCM workflow state still names it
+    // but the branch was deleted out of band (a restore, a manual delete). Distinguish
+    // that from a dirty tree so the operator gets the real cause + remedy, not a
+    // misleading "conflicting uncommitted changes".
+    const refReachable = (ref: string): boolean => {
+      try {
+        execFileSync("git", ["rev-parse", "--verify", "--quiet", ref], {
+          cwd: cfg.projectDir,
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    if (!refReachable(`refs/heads/${claimedBranch}`) && !refReachable(`refs/remotes/origin/${claimedBranch}`)) {
+      process.stderr.write(
+        `consort-drive: the claimed paired branch "${claimedBranch}" for "${cfg.featureId}" does not exist locally or on origin — ` +
+          `the SCM claim survived but its branch was deleted out of band.\n` +
+          `        Re-create it from its parent and re-run, or reset the stale claim:\n` +
+          `            git branch ${claimedBranch} ${scm?.parent_branch ?? "staging"}\n` +
+          `            # or: lakebase-scm-abandon-feature   (resets the claim to scaffold-complete so the drive re-claims)\n`,
+      );
+      return 2;
+    }
     try {
       await spawnCmd("git", ["checkout", claimedBranch], cfg.projectDir);
     } catch (err) {
@@ -1545,6 +1574,29 @@ async function main(): Promise<number> {
       return 2;
     }
     cfg.featureBranch = claimedBranch;
+    // Step 0 (DB): heal an ORPHAN (off-tree) alembic stamp on the just-checked-out feature-branch DB ONCE,
+    // up front — the SOURCE of the orphan a reopened migration-bearing story leaves (dbResyncNeeded). Left
+    // on the feature branch it propagates to every experiment cut, the per-cycle verify (the #15 resync
+    // only heals that pass's child, not the parent), AND the post-merge `alembic current` gate — so the
+    // halt resurfaces each resume. Healing it here, before any work, means no downstream path sees it.
+    // Conditional (probes first; resets only a genuinely off-tree branch) + python-only; never throws into
+    // the drive. Branch DBs are disposable COW substrate, so the reset is safe.
+    try {
+      const heal = resyncOffTreeStampIfPresent(cfg.projectDir, defaultRunVerify);
+      if (heal.probedOffTree) {
+        process.stderr.write(
+          heal.reset
+            ? `consort-drive: healed an ORPHAN alembic stamp on the feature branch "${claimedBranch}" ` +
+                `(resynced the branch DB to head) — a reopened migration-bearing story left it off-tree.\n`
+            : `consort-drive: detected an ORPHAN alembic stamp on "${claimedBranch}" but the resync did not ` +
+                `complete; migrations may still fail — reset the branch DB to head manually, then re-run.\n`,
+        );
+      }
+    } catch (err) {
+      process.stderr.write(
+        `consort-drive: feature-branch orphan-stamp heal skipped (${err instanceof Error ? err.message : String(err)}).\n`,
+      );
+    }
   }
 
   cfg.runner = execRunner(cfg);
@@ -1714,19 +1766,42 @@ async function main(): Promise<number> {
     // (e.g. "CI failed for PR <url>. Failed checks: …") to the drive log above;
     // consort-diagnose bundles it. Mirrors the deploy-verify escalation pattern.
     if (err instanceof CliEffectError) {
-      const reason = `${err.bin} exited ${err.code}. See the drive log above for the failing checks / cause; fix them (push to the branch) and re-run.`;
+      // A mid-drive Databricks OAuth EXPIRY surfaces as a non-zero CLI effect (consort-cycle / deploy
+      // et al.) whose captured output carries the reauth signature. The up-front checkDatabricksAuth
+      // only catches a token already dead at drive START — a token that expires DURING a long run lands
+      // HERE. The generic "fix the failing checks / push to the branch" reason is MISLEADING for it
+      // (there is no code defect to push; the drive's own work is fine), so detect the signature and
+      // write a CLEAN re-authenticate-then-resume escalation — the human's single action is obvious and
+      // the merged work stays intact. Reuses isAuthExpiredSummary (the same classifier the cycle verify
+      // + the CLI wrapper use), so the three paths never disagree on what "auth expired" means.
+      const authExpired = isAuthExpiredSummary(err.capturedOutput);
+      const profile = process.env.DATABRICKS_CONFIG_PROFILE;
+      const reauthCmd = `databricks auth login${profile ? ` --profile ${profile}` : ""}`;
+      const source = authExpired ? "auth-expired" : `cli:${err.bin}`;
+      const reason = authExpired
+        ? `Databricks auth expired mid-drive (${err.bin} exited ${err.code}): the OAuth session/refresh token is no longer valid, so credential minting was refused. This is NOT a code defect — re-authenticate, then re-run the drive to resume from here (no reset; merged stories are intact).`
+        : `${err.bin} exited ${err.code}. See the drive log above for the failing checks / cause; fix them (push to the branch) and re-run.`;
+      const how_to_resolve = authExpired
+        ? `Re-authenticate: \`${reauthCmd}\`, then re-run the drive to resume. The merged work is untouched; nothing to fix in code. This record is kept (stamped resolved_at) once the auth is restored — do NOT hand-edit or rm it.`
+        : undefined;
       // The failing command's captured stdout/stderr travels WITH the escalation, so a human (or a
       // resuming session) sees the actual error without manually re-running the command.
       const captured_output = err.capturedOutput;
       try {
-        writeEscalation(cfg.consortDir, { source: `cli:${err.bin}`, reason, feature_id: cfg.featureId, captured_output });
+        writeEscalation(cfg.consortDir, {
+          source,
+          reason,
+          feature_id: cfg.featureId,
+          captured_output,
+          ...(how_to_resolve ? { how_to_resolve } : {}),
+        });
         emitAgentLogEvent(
           {
             role: "orchestrator",
             level: "error",
             event: "escalation.raised",
             feature_id: cfg.featureId,
-            slots: { source: `cli:${err.bin}`, reason },
+            slots: { source, reason },
           },
           { consortDir: cfg.consortDir },
         );
@@ -1734,8 +1809,9 @@ async function main(): Promise<number> {
         /* best-effort; the classified halt line below is the load-bearing signal */
       }
       process.stderr.write(
-        `[drive] RAISED TO HIL – ${err.bin} failed.\n` +
+        `[drive] RAISED TO HIL – ${authExpired ? "Databricks auth expired mid-drive" : `${err.bin} failed`}.\n` +
           `        reason: ${reason}\n` +
+          (authExpired ? `        re-authenticate: ${reauthCmd}\n        then re-run the drive to resume (no reset).\n` : "") +
           (captured_output ? `        failing output (tail):\n${captured_output.split("\n").map((l) => "        | " + l).join("\n")}\n` : "") +
           `        recorded under ${path.basename(cfg.consortDir)}/escalations/ ; once the root cause is fixed, clear it with \`consort-resolve-escalation\` (keeps the record – do NOT rm it), then re-run to resume.\n` +
           `        To troubleshoot or share the failure, bundle the local forensics: consort-diagnose\n`,

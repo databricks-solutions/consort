@@ -17,6 +17,9 @@ import {
   defaultRunVerify,
   probeServingOk,
   resolveServeBaseUrl,
+  isOffTreeStampFailure,
+  buildBranchSchemaResetCommand,
+  resyncOffTreeStampIfPresent,
   type DeployResult,
 } from "../../consort/deploy/deploy";
 import { readEscalations } from "../../consort/gates/escalation";
@@ -278,6 +281,58 @@ describe("deployToTarget: pre-serve migrate the deployed branch (gate deploys)",
     expect(ev.verify.passed).toBe(false);
     const escs = readEscalations(consortDir).filter((e) => !e.resolved_at);
     expect(escs.some((e) => e.source === "deploy-verify" && e.story_id === "S1")).toBe(true);
+  });
+
+  it("AUTO-RESYNCS an ORPHAN alembic stamp: resets the branch schema + re-migrates, then serves (the F6/S1 orphan class)", async () => {
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname='x'\n"); // python stack → a reset command exists
+    const order: string[] = [];
+    let migrateCalls = 0;
+    const result = await deployToTarget({
+      projectDir: dir,
+      targetName: "localvm",
+      featureId: "F1",
+      storyId: "S1",
+      lakebaseBranch: "experiment-s1",
+      consortDir: join(dir, ".tdd"),
+      rejectForeignPort: true,
+      reachable: async () => false,
+      runVerify: (cmd) => {
+        order.push(cmd.startsWith("uv run") ? "reset" : cmd);
+        if (cmd === "run-migrate") {
+          migrateCalls += 1;
+          // First migrate hits the orphan stamp; after the reset, the retry succeeds.
+          return migrateCalls === 1 ? { passed: false, output: "FAILED: Can't locate revision identified by '20261109211853'" } : true;
+        }
+        return true; // the reset command
+      },
+      startProcess: () => {
+        order.push("start");
+        return 7;
+      },
+      servingOk: async () => true,
+      sleep: async () => {},
+      now: () => new Date(),
+    });
+    expect(result.ok).toBe(true); // self-healed → served (not refused)
+    // migrate(fail) -> reset -> migrate(pass) -> start, in order.
+    expect(order.slice(0, 4)).toEqual(["run-migrate", "reset", "run-migrate", "start"]);
+    expect(migrateCalls).toBe(2);
+  });
+
+  it("does NOT reset on a NON-orphan migrate failure (a real migration bug still refuses to serve)", async () => {
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname='x'\n");
+    const consortDir = join(dir, ".tdd");
+    mkdirSync(join(consortDir, "features", "F1", "stories", "S1"), { recursive: true });
+    const seen: string[] = [];
+    const result = await deployToTarget({
+      projectDir: dir, targetName: "localvm", featureId: "F1", storyId: "S1",
+      lakebaseBranch: "experiment-s1", consortDir, rejectForeignPort: true,
+      reachable: async () => false,
+      runVerify: (cmd) => { seen.push(cmd); return cmd === "run-migrate" ? { passed: false, output: "sqlalchemy.exc.ProgrammingError: column already exists" } : true; },
+      startProcess: () => 7, servingOk: async () => true, sleep: async () => {}, now: () => new Date(),
+    });
+    expect(result.ok).toBe(false); // a genuine migration error is NOT an orphan stamp → no reset, refuse
+    expect(seen.some((c) => c.startsWith("uv run"))).toBe(false); // the reset never ran
   });
 
   it("does NOT migrate a feature deploy (no experiment branch bound)", async () => {
@@ -941,6 +996,67 @@ describe("ensureDeployedAndVerify: migration-isolation two-pass (Python)", () =>
     expect(markers).toEqual(["not migration", "migration"]); // full pass, same as undefined (refactor/deploy)
   });
 
+  it("AUTO-RESYNCS an ORPHAN alembic stamp in the per-cycle verify: resets the branch schema + re-runs the main pass (the F6/S2 orphan class)", async () => {
+    // The per-cycle GREEN verify (ensureDeployedAndVerify -> run-tests.sh alembic) hits a branch stamped at an
+    // off-tree revision (a reopened migration-bearing story). It must self-heal like the deploy pre-serve migrate:
+    // reset the branch schema + re-run the MAIN pass once, then proceed to the migration pass. NOT routed through
+    // deployToTarget, so it needs its own resync (the gap #15 closed).
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname = 'x'\n"); // python stack -> a reset command exists
+    const order: string[] = [];
+    let mainCalls = 0;
+    const res = await ensureDeployedAndVerify({
+      projectDir: dir,
+      targetName: "localv",
+      startProcess: () => 4242,
+      reachable: async () => true,
+      runVerify: (cmd, _cwd, env) => {
+        if (cmd.startsWith("uv run")) {
+          order.push("reset");
+          return true;
+        }
+        const marker = env?.SFTDD_PYTEST_MARKER ?? "<unset>";
+        order.push(marker);
+        if (marker === "not migration") {
+          mainCalls += 1;
+          // First main pass hits the orphan stamp; after the reset, the retry is green.
+          return mainCalls === 1
+            ? { passed: false, output: "FAILED: Can't locate revision identified by '20261109211853'" }
+            : true;
+        }
+        return true; // the migration pass
+      },
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(res.passed).toBe(true); // self-healed -> green (not a deploy-verify failure)
+    // main(fail) -> reset -> main(pass) -> migration pass, in order.
+    expect(order).toEqual(["not migration", "reset", "not migration", "migration"]);
+    expect(mainCalls).toBe(2);
+  });
+
+  it("does NOT reset the per-cycle verify on a NON-orphan main-pass failure (a real test failure stays a failure)", async () => {
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname = 'x'\n");
+    const seen: string[] = [];
+    const res = await ensureDeployedAndVerify({
+      projectDir: dir,
+      targetName: "localv",
+      startProcess: () => 4242,
+      reachable: async () => true,
+      runVerify: (cmd, _cwd, env) => {
+        seen.push(cmd.startsWith("uv run") ? "reset" : (env?.SFTDD_PYTEST_MARKER ?? "<unset>"));
+        return env?.SFTDD_PYTEST_MARKER === "not migration"
+          ? { passed: false, output: "AssertionError: expected 200 got 500" }
+          : true;
+      },
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(res.passed).toBe(false); // a genuine test failure is NOT an orphan stamp -> no reset, no retry
+    expect(seen).toEqual(["not migration"]); // reset never ran; main pass not retried; migration pass skipped
+  });
+
   it("SCOPE: threads storyTestIds to the verify as SFTDD_TEST_IDS (per-cycle scope); omits it when not given (full)", async () => {
     writeFileSync(join(dir, "pyproject.toml"), "[project]\nname = 'x'\n");
     // per-cycle GREEN: storyTestIds supplied -> the verify env carries SFTDD_TEST_IDS (conftest scopes to them)
@@ -1373,5 +1489,85 @@ describe("deployToTarget: deploy-verify supersession self-heal ROUTER (hardened:
     expect(res.verify?.passed).toBe(false);
     expect(readDeployVerifyAssessMarker(consortDir, FEATURE, STORY)).toBeUndefined();
     expect(readEscalations(consortDir).some((e) => e.source === "deploy-verify")).toBe(true);
+  });
+});
+
+describe("orphan-alembic-stamp resync helpers", () => {
+  it("isOffTreeStampFailure: matches the alembic off-tree signature, not ordinary migrate errors", () => {
+    expect(isOffTreeStampFailure("FAILED: Can't locate revision identified by '20261109211853'")).toBe(true);
+    expect(isOffTreeStampFailure("alembic.util.exc.CommandError: Can't locate revision identified by 'abc'")).toBe(true);
+    expect(isOffTreeStampFailure(undefined)).toBe(false);
+    expect(isOffTreeStampFailure("sqlalchemy.exc.ProgrammingError: column \"batch\" already exists")).toBe(false);
+    expect(isOffTreeStampFailure("alembic: target database is not up to date")).toBe(false);
+  });
+
+  it("resyncOffTreeStampIfPresent: resets ONLY when `alembic current` fails off-tree; heals the feature-branch source once", () => {
+    const pydir = mkdtempSync(join(tmpdir(), "resync-py-"));
+    try {
+      writeFileSync(join(pydir, "pyproject.toml"), "[project]\nname='x'\n");
+
+      // (1) off-tree stamp → probes, then runs the reset (drop+recreate+upgrade-head).
+      const seen1: string[] = [];
+      const r1 = resyncOffTreeStampIfPresent(pydir, (cmd) => {
+        seen1.push(cmd);
+        if (cmd === "uv run alembic current") return { passed: false, output: "FAILED: Can't locate revision identified by '20261109211853'" };
+        return { passed: true, output: "" }; // the reset
+      });
+      expect(r1).toEqual({ probedOffTree: true, reset: true });
+      expect(seen1[0]).toBe("uv run alembic current"); // probed first
+      expect(seen1[1]).toContain("DROP SCHEMA public CASCADE"); // then reset
+      expect(seen1[1]).toContain("command.upgrade(Config('alembic.ini'), 'head')"); // rebuilt to head
+
+      // (2) healthy branch (probe passes) → NO reset.
+      const seen2: string[] = [];
+      const r2 = resyncOffTreeStampIfPresent(pydir, (cmd) => { seen2.push(cmd); return { passed: true, output: "20261109073804 (head)" }; });
+      expect(r2).toEqual({ probedOffTree: false, reset: false });
+      expect(seen2).toEqual(["uv run alembic current"]); // probed, never reset
+
+      // (3) a NON-off-tree probe failure (e.g. a connection error) → NO reset (not our class).
+      const seen3: string[] = [];
+      const r3 = resyncOffTreeStampIfPresent(pydir, (cmd) => { seen3.push(cmd); return { passed: false, output: "could not connect to server" }; });
+      expect(r3).toEqual({ probedOffTree: false, reset: false });
+      expect(seen3).toEqual(["uv run alembic current"]);
+    } finally {
+      rmSync(pydir, { recursive: true, force: true });
+    }
+
+    // (4) non-python → no-op; the probe is never even run.
+    const nondir = mkdtempSync(join(tmpdir(), "resync-non-"));
+    try {
+      let called = false;
+      const r = resyncOffTreeStampIfPresent(nondir, () => { called = true; return { passed: false, output: "" }; });
+      expect(r).toEqual({ probedOffTree: false, reset: false });
+      expect(called).toBe(false);
+    } finally {
+      rmSync(nondir, { recursive: true, force: true });
+    }
+  });
+
+  it("buildBranchSchemaResetCommand: a drop+recreate-public reset for a python stack, undefined otherwise", () => {
+    const pydir = mkdtempSync(join(tmpdir(), "reset-py-"));
+    try {
+      writeFileSync(join(pydir, "pyproject.toml"), "[project]\nname='x'\n");
+      const cmd = buildBranchSchemaResetCommand(pydir);
+      expect(cmd).toBeDefined();
+      expect(cmd).toContain("DROP SCHEMA public CASCADE");
+      expect(cmd).toContain("CREATE SCHEMA public");
+      // Connects through the app's OWN engine door (same as alembic env.py) so it works in both
+      // the explicit-DATABASE_URL and runtime-token-minting modes — not a raw os.environ read.
+      expect(cmd).toContain("from app.database import make_engine");
+      expect(cmd).toContain("sys.path.insert(0, os.getcwd())"); // -I drops cwd; restore it for the `app` import
+      // REBUILDS the parent to head (not just drops): a drop-only reset leaves the parent empty and a
+      // sibling verify pass forks off the empty parent → 500. Leaving it at head makes every child correct.
+      expect(cmd).toContain("command.upgrade(Config('alembic.ini'), 'head')");
+    } finally {
+      rmSync(pydir, { recursive: true, force: true });
+    }
+    const nondir = mkdtempSync(join(tmpdir(), "reset-non-"));
+    try {
+      expect(buildBranchSchemaResetCommand(nondir)).toBeUndefined(); // no pyproject/requirements → no reset
+    } finally {
+      rmSync(nondir, { recursive: true, force: true });
+    }
   });
 });

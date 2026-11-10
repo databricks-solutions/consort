@@ -14,6 +14,10 @@ import * as fs from "node:fs";
 import { escalationsDir, escalationFile } from "../../consort/config/consort-paths.js";
 import { readSmellsLog, writeSmellsLog, hasOpenSmell, resolveOpenSmells, type SmellName } from "../smells/smells.js";
 import { pendingItemKind } from "../pipeline/cycle-record.js";
+import { clearGreenFailure, clearStoryGreenFailures } from "../smells/supersession.js";
+import { clearRefactorVerifyAssessMarker } from "../smells/refactor-verify-assess.js";
+import { clearDeployVerifyAssessMarker } from "../smells/deploy-verify-assess.js";
+import { clearReauthorMarker } from "../smells/reauthor-resilience.js";
 
 /** A blocking problem raised to the HIL. Identity is `id` (derived from source +
  *  scope) so the same condition re-detected across driver iterations is the same
@@ -120,6 +124,11 @@ export function writeEscalation(
     ...(esc.feature_id ? { feature_id: esc.feature_id } : {}),
     ...(esc.story_id ? { story_id: esc.story_id } : {}),
     ...(esc.ac_id ? { ac_id: esc.ac_id } : {}),
+    // Carry the failing command's captured output (deploy-verify et al.) through to the record so a
+    // terminal escalation — the case that needs a HUMAN — names WHICH test failed, not just "verify
+    // failed". The field was declared on the interface but never written here, so the hardest case
+    // carried the least forensics (the lost-failing-client-test defect).
+    ...(esc.captured_output ? { captured_output: esc.captured_output } : {}),
     raised_at: esc.raised_at ?? new Date().toISOString(),
     // A caller MAY supply a source-specific resolution (e.g. feature-conformance names the exact
     // `consort-pipeline repair` command); otherwise the generic clear-with-resolve-escalation default.
@@ -291,6 +300,32 @@ export function resolveBlockers(
       ...(scope.resolution ? { note: scope.resolution } : {}),
     });
     if (n > 0 && !resolved.includes(e.id)) resolved.push(e.id);
+  }
+  // (3) Latched VERIFY-FAILURE markers – the escalation-file half of the dual-source rule is not enough
+  // for a VERIFY escalation (driver-green / driver-refactor / deploy-verify). Those are not routed from the
+  // escalation FILE: the drive's state-derivation routes to raise-to-hil from the LATCHED failure marker
+  // (green-failure.json / refactor-verify-assess.json / deploy-verify-assess.json — assessed + fix-rounds
+  // exhausted), then re-WRITES a fresh escalation. So stamping the file resolved alone leaves the marker,
+  // the next run re-derives raise-to-hil WITHOUT re-running the verify, and this verb's own promise
+  // ("retry the failed action fresh") is false. Clear the matching marker for each resolved verify
+  // escalation so the next run genuinely RE-RUNS the verify — a fresh attempt that can pass after the
+  // human's root-cause fix OR self-heal (e.g. the orphan-stamp auto-resync). The honest verify still gates
+  // every re-run, so this never green-washes; it only lifts the stale latch the resolve already promised to lift.
+  for (const e of pending) {
+    if (!resolved.includes(e.id) || !e.feature_id || !e.story_id) continue;
+    // driver-green latches an AC-keyed green-failure.json. A per-AC escalation (recordGreenResult) carries
+    // ac_id → clear that one; the raise-to-hil shape carries feature + story only → clear ALL the story's
+    // AC markers so the latch lifts either way.
+    if (e.source === "driver-green") {
+      if (e.ac_id) clearGreenFailure(consortDir, e.feature_id, e.story_id, e.ac_id);
+      else clearStoryGreenFailures(consortDir, e.feature_id, e.story_id);
+    } else if (e.source === "driver-refactor") clearRefactorVerifyAssessMarker(consortDir, e.feature_id, e.story_id);
+    else if (e.source === "deploy-verify") clearDeployVerifyAssessMarker(consortDir, e.feature_id, e.story_id);
+    // test-authoring-smell latches a one-shot reauthor-resilience marker (attempts); once spent (attempts>=1)
+    // a still-flagged smell escalates. Resolving the escalation (the author fixed the test, OR a detector
+    // false-positive was fixed in the kit) must clear that marker too, so the next run RE-CHECKS the smell
+    // fresh instead of re-escalating from the spent one-shot — same latch class as the verify markers above.
+    else if (e.source === "test-authoring-smell" && e.ac_id) clearReauthorMarker(consortDir, e.feature_id, e.story_id, e.ac_id);
   }
   return resolved;
 }

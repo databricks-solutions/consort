@@ -4,7 +4,7 @@
 // approval substrate, so it records a genuine, attributed approval.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { runApproveGateCli } from "../../bin/consort/approve-gate.cli.js";
@@ -93,15 +93,18 @@ describe("per-story spec gate approval (--feature --story)", () => {
     expect(runApproveGateCli(["--sprint", SPRINT, "--story", "S1", "--approver", "kevin.hartman", "--tdd-dir", tdd])).toBe(2);
   });
 
-  it("exits 3 (not 0) when the per-story draft invariant is violated (ACs batched ahead)", () => {
+  it("tolerates a front-loaded breakdown: approves S1 even when a later story already has ACs on disk", () => {
     seedGateReady();
-    // A sibling story S2 has ACs on disk but is not gated -> the draft ran ahead.
+    // A faithful Spec Author breakdown front-loaded S2's ACs too. This is NOT a defect: the design
+    // lane surfaces + approves each story's gate in turn regardless of pre-existing ACs. S1's gate
+    // must approve here (exit 0); S2's pre-drafted ACs stay in place for S2's own gate later.
     const s2acs = acsDir(tdd, FEATURE, "S2");
     mkdirSync(s2acs, { recursive: true });
     writeFileSync(join(s2acs, "AC1.json"), JSON.stringify({ id: "AC1", layer: "API" }));
     const code = runApproveGateCli(["--feature", FEATURE, "--story", "S1", "--approver", "kevin.hartman", "--tdd-dir", tdd]);
-    expect(code).toBe(3);
-    // The gate was NOT approved (the invariant blocks it).
-    expect(readPipeline(tdd, FEATURE).stories.S1.gate?.status).toBe("open");
+    expect(code).toBe(0);
+    expect(readPipeline(tdd, FEATURE).stories.S1.gate?.status).toBe("approved");
+    // S2's front-loaded ACs are untouched (left for S2's own gate).
+    expect(existsSync(join(s2acs, "AC1.json"))).toBe(true);
   });
 });

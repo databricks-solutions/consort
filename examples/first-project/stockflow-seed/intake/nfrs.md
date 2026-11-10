@@ -75,3 +75,10 @@
   `databricks_postgres` (a migration creates tables, not databases), so an app
   pointed at any other name cannot connect. Leave the scaffold's connection
   defaults alone; the schema lives in `databricks_postgres` on the paired branch.
+- **Throwaway demo features are outside these Required NFRs.** A disposable
+  showcase that ships nothing into the product (e.g. **F11 — the guided refactor
+  walkthrough**) is not bound by R1/R3/R4/R8 or the rest above. It runs on a
+  throwaway branch, is never merged into the trunk, and proves nothing about
+  production — the shipped features it replays (F6, F10) carry the real
+  guarantees. Its only constraints are isolation (never touch staging/production)
+  and observability (paused, labeled steps).

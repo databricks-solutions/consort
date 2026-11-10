@@ -48,6 +48,31 @@ describe("reflect verdict I/O + reflectionPassed", () => {
     });
     expect(reflectionPassed(tdd, F, "S1")).toBe(false);
   });
+
+  // REGRESSION (F2/S1 reflect stall): reflectionPassed MUST agree with recordReflectionGate on an
+  // ADVISORY-ONLY verdict. The navigator wrote passed:false "out of caution" with a single advisory
+  // finding; the gate raised no smell (nothing to route), but the old probe returned false on the literal
+  // boolean, so the design lane re-dispatched the reflect turn forever → stall guard hard-halt.
+  it("advisory-only verdict (passed:false, no blocking finding) counts as PASSED — matches recordReflectionGate", () => {
+    writeReflectVerdict(tdd, F, "S1", {
+      version: 1,
+      passed: false,
+      findings: [{ owner: "test-strategist", detail: "T15 is mis-anchored to AC3", severity: "advisory" }],
+    });
+    expect(reflectionPassed(tdd, F, "S1")).toBe(true); // advisory-only ⇒ passed (no re-dispatch)
+    expect(recordReflectionGate(tdd, F, "S1")).toEqual([]); // and the gate raises no smell — the two agree
+  });
+
+  it("a blocking finding still fails, and so does a passed:false verdict with NO findings (unknown ≠ advisory)", () => {
+    writeReflectVerdict(tdd, F, "S1", {
+      version: 1,
+      passed: false,
+      findings: [{ owner: "spec-author", detail: "mixed", severity: "advisory" }, { owner: "test-strategist", detail: "real gap", severity: "blocking" }],
+    });
+    expect(reflectionPassed(tdd, F, "S1")).toBe(false); // a blocking finding remains
+    writeReflectVerdict(tdd, F, "S2", { version: 1, passed: false, findings: [] });
+    expect(reflectionPassed(tdd, F, "S2")).toBe(false); // empty-findings failure stays blocking
+  });
 });
 
 describe("recordReflectionGate: failed verdict -> routed spec-level smell(s)", () => {

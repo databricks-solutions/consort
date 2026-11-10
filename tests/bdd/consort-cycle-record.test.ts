@@ -25,6 +25,7 @@ import {
   refactorStory,
   storyReviewState,
   resetStoryBuildState,
+  isAuthExpiredSummary,
   type GreenVerifier,
 } from "../../consort/pipeline/cycle-record.js";
 import { readAgentLog } from "../../consort/logging/agent-log.js";
@@ -530,5 +531,44 @@ describe("cycle-record: story-level review/refactor (story granularity)", async 
     expect(second.refactored).toBe(false);
     expect(second.escalated).toBe(true);
     expect(refactorPending(tdd, F, S)).toBe(true);
+  });
+
+  it("an AUTH-EXPIRED post-refactor verify escalates CLEANLY (source auth-expired), NOT a supersession assess / regression HIL (the F4/S1 case)", async () => {
+    await greenWholeStory();
+    writeJson(join(tdd, "cycles", F, S, "review-verdict.json"), { refactor: true, notes: "extract mixin" });
+    reviewStory(tdd, F, S);
+    // The client Vitest backend boot couldn't connect to Lakebase: "OAuth: User is not authorized".
+    const authFail: GreenVerifier = async () => ({ passed: false, summary: "client backend boot failed: OAuth: User is not authorized" });
+    const r = await refactorStory(tdd, F, S, { verify: authFail });
+    expect(r.refactored).toBe(false);
+    expect(r.needsAssess).toBeFalsy(); // short-circuits BEFORE the assess route — no wasted turn
+    expect(r.escalated).toBe(true);
+    expect(r.escalation?.source).toBe("auth-expired"); // clean re-auth escalation, not "driver-refactor"
+    expect(r.escalation?.reason).toMatch(/re-authenticate|databricks auth login/i);
+  });
+});
+
+// The single Databricks auth-expiry classifier, reused by the cycle verify escalation, the CLI wrapper,
+// AND the drive's CliEffectError handler (a mid-drive OAuth expiry → a clean re-authenticate escalation,
+// not the misleading "fix the checks / push the branch" generic). All three MUST agree on what counts.
+describe("isAuthExpiredSummary", () => {
+  it("matches the real mid-drive OAuth-expiry signatures (the F4 consort-cycle exit)", () => {
+    for (const s of [
+      "Error: A new access token could not be retrieved because the refresh token is invalid.",
+      'Databricks authentication failed for profile "fevm-stockflow": the cached token is missing or expired.',
+      "To reauthenticate, run the following command: databricks auth login --profile fevm-stockflow",
+      "ERROR: not authenticated",
+      "request failed: 401 Unauthorized",
+      "backend boot failed: OAuth: User is not authorized", // the F4/S1 Lakebase-connection phrasing
+    ]) {
+      expect(isAuthExpiredSummary(s)).toBe(true);
+    }
+  });
+
+  it("does NOT match an ordinary test/verify failure or empty output (no false re-auth escalation)", () => {
+    expect(isAuthExpiredSummary(undefined)).toBe(false);
+    expect(isAuthExpiredSummary("")).toBe(false);
+    expect(isAuthExpiredSummary("1 failed | 41 passed — AssertionError: expected 7 to be 4")).toBe(false);
+    expect(isAuthExpiredSummary("FAILED tests/test_pick.py::test_drawdown")).toBe(false);
   });
 });

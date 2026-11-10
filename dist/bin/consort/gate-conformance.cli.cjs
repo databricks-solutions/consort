@@ -7397,7 +7397,7 @@ function scanFeatureConformance(consortDir, featureId) {
         ok: fit.ok,
         violations: fit.ok ? [] : fit.violations
       });
-      const persist = checkPersistenceCoverage(testListContent, archContent);
+      const persist = checkPersistenceCoverage(testListContent, archContent, dbDesignContent);
       entries.push({
         artifact: "test-list.json -> architecture.json (persistence-invariant coverage)",
         ok: persist.ok,
@@ -7806,6 +7806,11 @@ function writeEscalation(consortDir, esc) {
     ...esc.feature_id ? { feature_id: esc.feature_id } : {},
     ...esc.story_id ? { story_id: esc.story_id } : {},
     ...esc.ac_id ? { ac_id: esc.ac_id } : {},
+    // Carry the failing command's captured output (deploy-verify et al.) through to the record so a
+    // terminal escalation — the case that needs a HUMAN — names WHICH test failed, not just "verify
+    // failed". The field was declared on the interface but never written here, so the hardest case
+    // carried the least forensics (the lost-failing-client-test defect).
+    ...esc.captured_output ? { captured_output: esc.captured_output } : {},
     raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
     // A caller MAY supply a source-specific resolution (e.g. feature-conformance names the exact
     // `consort-pipeline repair` command); otherwise the generic clear-with-resolve-escalation default.

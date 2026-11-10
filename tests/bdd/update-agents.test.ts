@@ -114,6 +114,23 @@ describe("resyncAgentsOnKitDrift: version-aware auto refresh", () => {
     expect(fs.readFileSync(markerPath(p), "utf-8").trim()).toBe(r.to);
   });
 
+  it("ALSO refreshes kit-owned CLIENT instrumentation (setup.ts) on the same drift trigger, not just agents", () => {
+    const p = mkProject();
+    fs.mkdirSync(projectAgentsDir(p), { recursive: true });
+    fs.writeFileSync(markerPath(p), "0.0.1-old\n"); // drift
+    // A client project whose setup.ts is STALE (missing asyncUtilTimeout — the F9 CI gap).
+    fs.mkdirSync(path.join(p, "client", "tests"), { recursive: true });
+    fs.writeFileSync(path.join(p, "client", "package.json"), "{}");
+    fs.writeFileSync(path.join(p, "client", "tests", "setup.ts"), "// STALE setup — no asyncUtilTimeout\n");
+
+    const r = resyncAgentsOnKitDrift(p);
+    expect(r.refreshed).toBe(true);
+    // The drift now propagates the kit-owned client instrumentation too — no explicit consort-upgrade.
+    const setup = fs.readFileSync(path.join(p, "client", "tests", "setup.ts"), "utf-8");
+    expect(setup).not.toContain("STALE setup");
+    expect(setup).toContain("asyncUtilTimeout"); // the fix reaches the project via a plain drive kit-move
+  });
+
   it("is a no-op when the marker already matches the current kit version", () => {
     const p = mkProject();
     // First call seeds + writes the marker at the current version.
@@ -147,6 +164,12 @@ describe("resyncAgentsOnKitDrift: version-aware auto refresh", () => {
     fs.mkdirSync(projectAgentsDir(p), { recursive: true });
     fs.writeFileSync(path.join(projectAgentsDir(p), "dba.md"), "STALE\n");
     fs.writeFileSync(markerPath(p), "0.0.1-old\n");
+    // A client project with a STALE setup.ts committed at baseline — the refreshed instrumentation must be
+    // COMMITTED too (threaded as extraPaths), else it sits uncommitted and the promote push never carries
+    // it to CI (the F9 "No Items to push" failure).
+    fs.mkdirSync(path.join(p, "client", "tests"), { recursive: true });
+    fs.writeFileSync(path.join(p, "client", "package.json"), "{}");
+    fs.writeFileSync(path.join(p, "client", "tests", "setup.ts"), "// STALE setup — no asyncUtilTimeout\n");
     execFileSync("git", ["-C", p, "add", "-A"]);
     execFileSync("git", ["-C", p, "commit", "-q", "-m", "baseline"]);
 
@@ -156,6 +179,13 @@ describe("resyncAgentsOnKitDrift: version-aware auto refresh", () => {
     // No uncommitted tracked .claude/agents remain – the fork guard would NOT refuse.
     const dirty = execFileSync("git", ["-C", p, "status", "--porcelain", "--", ".claude/agents"], { encoding: "utf8" }).trim();
     expect(dirty).toBe("");
+    // The refreshed client setup.ts is COMMITTED (clean working tree) with the kit's fix — so a subsequent
+    // push carries it to CI, not left dangling in the working tree.
+    const setupDirty = execFileSync("git", ["-C", p, "status", "--porcelain", "--", "client/tests/setup.ts"], { encoding: "utf8" }).trim();
+    expect(setupDirty).toBe("");
+    const committedSetup = execFileSync("git", ["-C", p, "show", "HEAD:client/tests/setup.ts"], { encoding: "utf8" });
+    expect(committedSetup).toContain("asyncUtilTimeout");
+    expect(committedSetup).not.toContain("STALE setup");
   });
 
   it("still refreshes (no throw) when the project is NOT a git repo – commit is a no-op", () => {

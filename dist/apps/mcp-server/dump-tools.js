@@ -7012,7 +7012,7 @@ import {
 
 // consort/orchestrator/status/feature-status.ts
 init_esm_shims();
-import { existsSync as existsSync33, readFileSync as readFileSync34, readdirSync as readdirSync22, statSync as statSync14 } from "fs";
+import { existsSync as existsSync33, readFileSync as readFileSync34, readdirSync as readdirSync23, statSync as statSync14 } from "fs";
 import { dirname as dirname18, join as join31 } from "path";
 
 // consort/orchestrator/state/orchestrator-probe.ts
@@ -7278,7 +7278,7 @@ function validateGateRecord(parsed, gateName, file) {
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync14, readFileSync as readFileSync14, readdirSync as readdirSync10, statSync as statSync5 } from "fs";
+import { existsSync as existsSync14, readFileSync as readFileSync14, readdirSync as readdirSync10 } from "fs";
 import { join as join14, dirname as dirname10 } from "path";
 
 // consort/orchestrator/validators/conformance/artifact-conformance.ts
@@ -7305,16 +7305,16 @@ init_esm_shims();
 
 // consort/deploy/deploy.ts
 init_esm_shims();
-import { execSync, execFileSync as execFileSync2, spawn } from "child_process";
+import { execSync, execFileSync as execFileSync3, spawn } from "child_process";
 import { randomBytes } from "crypto";
-import { existsSync as existsSync21, mkdirSync as mkdirSync14, readFileSync as readFileSync22, rmSync as rmSync3, writeFileSync as writeFileSync15 } from "fs";
-import { dirname as dirname12, join as join21 } from "path";
+import { existsSync as existsSync24, mkdirSync as mkdirSync17, readFileSync as readFileSync25, rmSync as rmSync6, writeFileSync as writeFileSync18 } from "fs";
+import { dirname as dirname15, join as join24 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
 // consort/gates/escalation.ts
 init_esm_shims();
-import * as fs7 from "fs";
+import * as fs11 from "fs";
 
 // consort/smells/smells.ts
 init_esm_shims();
@@ -7326,20 +7326,41 @@ function readSmellsLog(consortDir) {
   return JSON.parse(readFileSync15(file, "utf8"));
 }
 
-// consort/smells/deploy-verify-assess.ts
+// consort/smells/supersession.ts
+init_esm_shims();
+import * as fs7 from "fs";
+import { execFileSync as execFileSync2 } from "child_process";
+import { createHash } from "crypto";
+import { dirname as dirname11, join as join16 } from "path";
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+
+// consort/smells/refactor-verify-assess.ts
 init_esm_shims();
 import * as fs8 from "fs";
 import * as path7 from "path";
 
+// consort/smells/deploy-verify-assess.ts
+init_esm_shims();
+import * as fs9 from "fs";
+import * as path8 from "path";
+
 // consort/architecture/test-smell-clean.ts
 init_esm_shims();
-import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync13, statSync as statSync7 } from "fs";
-import { join as join17, relative, extname as extname2 } from "path";
+import { existsSync as existsSync19, readFileSync as readFileSync19, readdirSync as readdirSync13, statSync as statSync7 } from "fs";
+import { join as join19, relative, extname as extname2 } from "path";
 
 // consort/architecture/migration-columns.ts
 init_esm_shims();
-import { existsSync as existsSync17, readFileSync as readFileSync17, readdirSync as readdirSync12, statSync as statSync6 } from "fs";
-import { join as join16, extname } from "path";
+import { existsSync as existsSync18, readFileSync as readFileSync18, readdirSync as readdirSync12, statSync as statSync6 } from "fs";
+import { join as join18, extname } from "path";
 var IDENT = `[A-Za-z_][A-Za-z0-9_]*`;
 var TABLE_ARG = `(?:['"][^'"]+['"]|${IDENT})`;
 var COL_ARG = `(?:['"](${IDENT})['"]|(${IDENT}))`;
@@ -7354,13 +7375,13 @@ var ARTIFACT_ROOTS_RE = artifactRootsRegexAlternation();
 function markerPath(consortDir, featureId, storyId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return void 0;
-  return storyId ? path7.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path7.join(fdir, "deploy-verify-assess.json");
+  return storyId ? path8.join(fdir, "stories", storyId, "deploy-verify-assess.json") : path8.join(fdir, "deploy-verify-assess.json");
 }
 function readDeployVerifyAssessMarker(consortDir, featureId, storyId) {
   const file = markerPath(consortDir, featureId, storyId);
-  if (!file || !fs8.existsSync(file)) return void 0;
+  if (!file || !fs9.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs8.readFileSync(file, "utf8"));
+    return JSON.parse(fs9.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -7374,10 +7395,15 @@ function deployVerifyNeedsAssess(consortDir, featureId, storyId) {
   return !!m && !m.assessed && m.attempts < 1;
 }
 
+// consort/smells/reauthor-resilience.ts
+init_esm_shims();
+import * as fs10 from "fs";
+import * as path9 from "path";
+
 // consort/architecture/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync20, readFileSync as readFileSync20, readdirSync as readdirSync14, statSync as statSync8 } from "fs";
-import { join as join19, relative as relative2, extname as extname3, basename } from "path";
+import { existsSync as existsSync23, readFileSync as readFileSync23, readdirSync as readdirSync15, statSync as statSync8 } from "fs";
+import { join as join22, relative as relative2, extname as extname3, basename } from "path";
 
 // consort/experiment/py-source.ts
 init_esm_shims();
@@ -7393,8 +7419,8 @@ var EXCLUDE_DIR_JUNK = new RegExp(
 
 // consort/architecture/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync15, readFileSync as readFileSync21, statSync as statSync9 } from "fs";
-import { join as join20 } from "path";
+import { readdirSync as readdirSync16, readFileSync as readFileSync24, statSync as statSync9 } from "fs";
+import { join as join23 } from "path";
 
 // consort/smells/ephemeral-verify.ts
 init_esm_shims();
@@ -7405,13 +7431,13 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 
 // consort/architecture/design-adherence.ts
 init_esm_shims();
-import { existsSync as existsSync22, readFileSync as readFileSync23, readdirSync as readdirSync17, writeFileSync as writeFileSync16, mkdirSync as mkdirSync15, copyFileSync as copyFileSync4 } from "fs";
-import { join as join22, dirname as dirname13, basename as basename2 } from "path";
+import { existsSync as existsSync25, readFileSync as readFileSync26, readdirSync as readdirSync18, writeFileSync as writeFileSync19, mkdirSync as mkdirSync18, copyFileSync as copyFileSync4 } from "fs";
+import { join as join25, dirname as dirname16, basename as basename2 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
-import { existsSync as existsSync23, readFileSync as readFileSync24, readdirSync as readdirSync18, statSync as statSync10 } from "fs";
-import { join as join23 } from "path";
+import { existsSync as existsSync26, readFileSync as readFileSync27, readdirSync as readdirSync19, statSync as statSync10 } from "fs";
+import { join as join26 } from "path";
 var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   "node_modules",
   "__pycache__",
@@ -7431,42 +7457,16 @@ var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   ".ruff_cache"
 ]);
 
-// consort/smells/supersession.ts
-init_esm_shims();
-import * as fs9 from "fs";
-import { execFileSync as execFileSync3 } from "child_process";
-import { createHash } from "crypto";
-import { dirname as dirname14, join as join24 } from "path";
-var TREE_STATE_EXCLUDE_PREFIXES = [
-  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
-  ".lakebase/",
-  ".claude/agent-memory/",
-  "node_modules/",
-  "dist/",
-  ".venv/",
-  "coverage/"
-];
-
-// consort/smells/refactor-verify-assess.ts
-init_esm_shims();
-import * as fs10 from "fs";
-import * as path8 from "path";
-
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync26, readFileSync as readFileSync27, readdirSync as readdirSync19, statSync as statSync11 } from "fs";
-import { join as join26, relative as relative3, extname as extname4 } from "path";
+import { existsSync as existsSync27, readFileSync as readFileSync28, readdirSync as readdirSync20, statSync as statSync11 } from "fs";
+import { join as join27, relative as relative3, extname as extname4 } from "path";
 
 // consort/architecture/migration-history-clean.ts
 init_esm_shims();
 import { execFileSync as execFileSync4 } from "child_process";
-import { existsSync as existsSync27 } from "fs";
-import { join as join27 } from "path";
-
-// consort/smells/reauthor-resilience.ts
-init_esm_shims();
-import * as fs11 from "fs";
-import * as path9 from "path";
+import { existsSync as existsSync28 } from "fs";
+import { join as join28 } from "path";
 
 // consort/pipeline/cycle-record.ts
 import { commitAllIfChanged } from "@databricks-solutions/lakebase-scm-utils/git";
@@ -7670,7 +7670,7 @@ function readPlan(consortDir, featureId, storyId) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync32, readFileSync as readFileSync33, writeFileSync as writeFileSync22, mkdirSync as mkdirSync21, readdirSync as readdirSync21, statSync as statSync13, rmSync as rmSync7 } from "fs";
+import { existsSync as existsSync32, readFileSync as readFileSync33, writeFileSync as writeFileSync22, mkdirSync as mkdirSync21, readdirSync as readdirSync22, statSync as statSync13, rmSync as rmSync7 } from "fs";
 
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
@@ -7700,7 +7700,7 @@ function readJsonIfExists(path11) {
 function listFeatureStories(consortDir, featureId) {
   const storiesDir2 = storiesDir(consortDir, featureId);
   if (!existsSync33(storiesDir2)) return [];
-  return readdirSync22(storiesDir2).filter((d) => statSync14(join31(storiesDir2, d)).isDirectory()).sort();
+  return readdirSync23(storiesDir2).filter((d) => statSync14(join31(storiesDir2, d)).isDirectory()).sort();
 }
 function timelineCycleCount(experimentDir2) {
   const timeline = readJsonIfExists(

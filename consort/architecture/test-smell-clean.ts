@@ -525,23 +525,83 @@ export function e2eRereadWithoutConfirmation(lines: string[]): number[] {
   // A durable-write CONFIRMATION the app only shows AFTER the server responds.
   const CONFIRM =
     /data-flash|getByTestId\(\s*["'`][^"'`]*(?:success|error|confirm|saved|toast|status)[^"'`]*["'`]|waitForResponse|waitForLoadState/i;
+  // A CALL to a local helper whose BODY awaits a CONFIRM is itself a confirmation — the resilient
+  // ENCAPSULATION pattern (a `file()`/`submit()` helper that POSTs + awaits the success seam, then the
+  // test re-reads). The detector scans only the test block's own lines, so without crediting these calls
+  // it false-positives on a correctly-resilient test whose write is confirmed inside the helper, not inline
+  // — a spurious HIL no re-author can ever clear (bed F6/S1 T29: the write is confirmed in `file()`).
+  const confirmHelpers = confirmingHelperNames(lines, CONFIRM);
+  const HELPER_CALL = confirmHelpers.size
+    ? new RegExp(`\\b(?:${[...confirmHelpers].map(escapeRegExp).join("|")})\\s*\\(`)
+    : null;
+  const confirms = (line: string): boolean => CONFIRM.test(line) || (HELPER_CALL !== null && HELPER_CALL.test(line));
   for (const [from, to] of testBlockRanges(lines)) {
     for (let i = from; i < to; i++) {
       if (!REREAD.test(lines[i])) continue;
       let confirmedBefore = false;
       let valueBefore = false;
       for (let j = from; j < i; j++) {
-        if (CONFIRM.test(lines[j])) confirmedBefore = true;
+        if (confirms(lines[j])) confirmedBefore = true;
         if (VALUE_ASSERT.test(lines[j])) valueBefore = true;
       }
-      if (confirmedBefore) continue; // resilient: a confirmed signal was awaited first
+      if (confirmedBefore) continue; // resilient: a confirmed signal (inline or via a helper) was awaited first
       if (!valueBefore) continue; // setup nav / read-only reload (no optimistic pre-assert) — not this smell
+      // The re-assert must TIGHTLY follow THIS re-read to be the raced round-trip. If a confirmed
+      // signal OR a SUBSEQUENT re-read appears before the next value assertion, this goto/reload is
+      // not the one being raced — it is a FORWARD navigation to perform the write, whose real
+      // (confirmed) re-read comes later. Without this the detector pairs the initial pre-write read
+      // with the final post-confirm re-assert and false-positives on a resilient test (bed F6/S2 T49).
       let valueAfter = false;
-      for (let j = i + 1; j < to; j++) if (VALUE_ASSERT.test(lines[j])) valueAfter = true;
+      for (let j = i + 1; j < to; j++) {
+        if (confirms(lines[j]) || REREAD.test(lines[j])) break;
+        if (VALUE_ASSERT.test(lines[j])) { valueAfter = true; break; }
+      }
       if (valueAfter) out.push(i + 1); // persistence round-trip with no confirmation before the re-read
     }
   }
   return out;
+}
+
+/** Escape a string for literal use inside a RegExp (helper names → an alternation). */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** The source of the function whose definition starts at `defLine` — from its opening `{` to the matching
+ *  `}` (brace-count, string-naive: good enough for a resilience heuristic). Empty when the def has no block
+ *  body within a couple of lines (an expression arrow, which never encloses an awaited CONFIRM). */
+function functionBodyFrom(lines: string[], defLine: number): string {
+  let depth = 0;
+  let started = false;
+  const out: string[] = [];
+  for (let i = defLine; i < lines.length; i++) {
+    if (!started && i > defLine + 2) break; // no block body near the def → nothing to scan
+    for (const ch of lines[i]) {
+      if (ch === "{") { depth++; started = true; }
+      else if (ch === "}") depth--;
+    }
+    if (started) out.push(lines[i]);
+    if (started && depth <= 0) break;
+  }
+  return out.join("\n");
+}
+
+/** Names of local helper functions in the file whose BODY awaits a durable-write CONFIRMATION. A test that
+ *  CALLS one before a re-read has confirmed the write even though the signal is not inline (the resilient
+ *  `file()`/`submit()` encapsulation). Crediting these trades a rare false-negative for removing a class of
+ *  false-POSITIVE the detector cannot otherwise clear — the direction this family already prefers. Pure. */
+function confirmingHelperNames(lines: string[], CONFIRM: RegExp): Set<string> {
+  const names = new Set<string>();
+  const DEF =
+    /(?:async\s+)?function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = DEF.exec(lines[i]);
+    if (!m) continue;
+    const name = m[1] || m[2] || m[3];
+    if (!name) continue;
+    if (CONFIRM.test(functionBodyFrom(lines, i))) names.add(name);
+  }
+  return names;
 }
 
 /**
@@ -777,13 +837,21 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
         }
       });
 
-      // migration-marker-presence (file level, Python): a schema-MUTATING migration
-      // test (downgrade and/or upgrade) without @pytest.mark.migration – without the
-      // isolation tag it runs on the SHARED verify DB and drops/alters its live
-      // schema for every other test in the suite (the F6/S1 T14 class). The marker
-      // routes it to its own ephemeral branch.
-      if (isPy && /command\.downgrade|alembic\s+downgrade|\.downgrade\(|downgrade\s+-1|run_downgrade/i.test(body) && !/pytest\.mark\.migration|mark\.migration/.test(body)) {
-        push("migration-marker-presence", rel, 1, "(file)", "a downgrade test without @pytest.mark.migration (drops schema on the shared verify DB)");
+      // migration-marker-presence (file level, Python): a schema-MUTATING migration test — a downgrade
+      // OR an upgrade/ALTER (e.g. `h.upgrade_head()` running an ADD COLUMN, the F6/S1 NFR8 T67 class) —
+      // without @pytest.mark.migration. Without the marker it runs in the MAIN `not migration` verify pass
+      // alongside the live app + its concurrent connections, so its DDL (ACCESS EXCLUSIVE) blocks on an
+      // open connection and HANGS to the 15-min verify SIGTERM (instead of running in its own isolated
+      // ephemeral-branch pass). The earlier regex caught only DOWNGRADEs, so an upgrade/ALTER test slipped
+      // the marker and deadlocked. conftest.py is EXCLUDED: its `command.upgrade("head")` is the per-test
+      // restore fixture, not a test.
+      if (
+        isPy &&
+        !file.endsWith("conftest.py") &&
+        /command\.(down|up)grade|alembic\s+(down|up)grade|\.downgrade\(|downgrade\s+-1|run_downgrade|run_upgrade|upgrade_head/i.test(body) &&
+        !/pytest\.mark\.migration|mark\.migration/.test(body)
+      ) {
+        push("migration-marker-presence", rel, 1, "(file)", "a schema-mutating migration test (downgrade OR upgrade/ALTER) without @pytest.mark.migration — runs in the main verify pass + deadlocks on a concurrent-connection lock");
       }
 
       // relative-migration-revision (file level, Python): a reversibility test that

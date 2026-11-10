@@ -461,7 +461,7 @@ describe("checkTestSmells: the migration/aggregate detectors", () => {
     expect(checkTestSmells({ projectDir: dir3 }).clean).toBe(true);
   });
 
-  it("migration-marker-presence: flags a downgrade without @pytest.mark.migration, not a marked or forward-only test", () => {
+  it("migration-marker-presence: flags a downgrade OR an upgrade/ALTER without @pytest.mark.migration (not a marked test, not conftest)", () => {
     const dir = mkProject();
     write(dir, "tests/test_reversible.py",
       `def test_reversible():\n    command.downgrade(Config(ini), "-1")\n    command.upgrade(Config(ini), "head")\n`);
@@ -474,7 +474,24 @@ describe("checkTestSmells: the migration/aggregate detectors", () => {
       `import pytest\n\n@pytest.mark.migration\ndef test_reversible():\n    command.downgrade(Config(ini), "-1")\n`);
     expect(checkTestSmells({ projectDir: dir2 }).clean).toBe(true);
 
-    // A forward-only restore (upgrade head, no downgrade) is idempotent – NOT the smell.
+    // UPGRADE/ALTER migration test (the F6/S1 NFR8 T67 class: read, then h.upgrade_head() runs an
+    // ADD COLUMN, then read again) WITHOUT the marker — previously MISSED by the downgrade-only regex,
+    // so it ran in the main `not migration` verify pass and deadlocked on a concurrent-connection lock.
+    // Now flagged, so it is routed to the isolated ephemeral-branch pass.
+    const dir4 = mkProject();
+    write(dir4, "tests/test_expand_backfill.py",
+      `def test_nfr8_reads_same(client):\n    before = client.get("/api/stock-records")\n    h.upgrade_head()\n    after = client.get("/api/stock-records")\n`);
+    const up = checkTestSmells({ projectDir: dir4 });
+    expect(up.clean).toBe(false);
+    expect(up.violations.some((v) => v.smell === "migration-marker-presence")).toBe(true);
+
+    // The SAME upgrade test WITH the marker is clean (the verify harness routes it to its own branch).
+    const dir5 = mkProject();
+    write(dir5, "tests/test_expand_backfill.py",
+      `import pytest\n\n@pytest.mark.migration\ndef test_nfr8_reads_same(client):\n    h.upgrade_head()\n`);
+    expect(checkTestSmells({ projectDir: dir5 }).clean).toBe(true);
+
+    // conftest.py's command.upgrade("head") is the per-test restore FIXTURE, not a test — EXCLUDED.
     const dir3 = mkProject();
     write(dir3, "tests/conftest.py",
       `def restore():\n    command.upgrade(Config(ini), "head")\n`);
@@ -767,6 +784,73 @@ describe("e2e-reread-without-confirmation (resilience family — the F5 -> F2 @T
       `});`,
     ];
     expect(e2eRereadWithoutConfirmation(T91)).toEqual([]);
+  });
+
+  it("does NOT flag a FORWARD navigation to perform a write, when the real re-read IS confirmed (T49 shape, verbatim from the bed F6/S2)", () => {
+    // A resilient persistence test: read an initial count on "/", navigate to the form, write,
+    // AWAIT the server-confirmed signal (waitForResponse 201 + success flash), THEN go back to "/"
+    // and re-assert. The `goto("/stock/new")` is forward navigation to do the write — NOT a re-read.
+    // The detector must not pair that goto's "before" (the initial count read) with the final
+    // re-assert that belongs to the confirmed re-read: a confirm / a later re-read sits between them.
+    const T49 = [
+      `test("filing a nonconforming record raises integrity-count by exactly one after reload @T49", async ({ page }) => {`,
+      `  await page.goto("/");`,
+      `  const count = page.getByTestId("integrity-probe").getByTestId("integrity-count");`,
+      `  await expect(count).toHaveText(/^\\d+$/);`,
+      `  const prior = Number(await count.textContent());`,
+      `  await page.goto("/stock/new");`,
+      `  await page.getByTestId("stock-record-sku").fill("PRB-x");`,
+      `  const written = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/stock-records");`,
+      `  await page.getByTestId("stock-record-submit").click();`,
+      `  expect((await written).status()).toBe(201);`,
+      `  await expect(page.getByTestId("stock-record-success")).toBeVisible();`,
+      `  await page.goto("/");`,
+      `  await expect(page.getByTestId("integrity-probe").getByTestId("integrity-count")).toHaveText(String(prior + 1));`,
+      `});`,
+    ];
+    expect(e2eRereadWithoutConfirmation(T49)).toEqual([]);
+  });
+
+  it("does NOT flag when the write is confirmed inside a CALLED HELPER before the re-read (bed F6/S1 T29: file() awaits the success seam)", () => {
+    // The resilient ENCAPSULATION pattern: a `file()` helper POSTs + awaits waitForResponse + the
+    // *-success seam, the test calls it, then re-reads. The confirmation is in the helper, not inline —
+    // the detector must credit the helper call or it false-positives on a correctly-resilient test (the
+    // spurious HIL no re-author could clear). Verbatim shape from the bed.
+    const helperConfirmed = [
+      `async function file(page, sku, code = "") {`,
+      `  await page.goto("/stock/new");`,
+      `  const written = page.waitForResponse((r) => r.request().method() === "POST" && r.ok());`,
+      `  await page.getByTestId("stock-record-submit").click();`,
+      `  await written;`,
+      `  await expect(page.getByTestId("stock-record-success")).toBeVisible();`,
+      `}`,
+      `test("row with tracking code loads on / and detail @T29", async ({ page }) => {`,
+      `  await file(page, sku, code);`,
+      `  await page.goto("/");`,
+      `  await expect(row.getByTestId("row-tracking-code")).toContainText(code);`,
+      `  await page.goto(\`/sku/\${sku}?location=A-01\`);`,
+      `  await expect(page.getByTestId("detail-tracking-code")).toContainText(code);`,
+      `});`,
+    ];
+    expect(e2eRereadWithoutConfirmation(helperConfirmed)).toEqual([]);
+  });
+
+  it("STILL flags a non-resilient test even when some confirming helper is DEFINED but NOT called before the re-read", () => {
+    // Crediting helpers must not blind the detector: the confirming helper exists in the file but this
+    // test never calls it before the raced re-read, so the round-trip is still non-resilient.
+    const definedbutUncalled = [
+      `async function file(page, sku) {`,
+      `  await page.getByTestId("stock-record-submit").click();`,
+      `  await expect(page.getByTestId("stock-record-success")).toBeVisible();`,
+      `}`,
+      `test("inline adjust persists across reload @T78", async ({ page }) => {`,
+      `  const row = await adjustInline(page, sku);`,
+      `  await expect(row.getByTestId("stock-cell-quantity")).toHaveText("7");`,
+      `  await page.reload();`,
+      `  await expect(rowFor(page, sku).getByTestId("stock-cell-quantity")).toHaveText("7");`,
+      `});`,
+    ];
+    expect(e2eRereadWithoutConfirmation(definedbutUncalled)).toEqual([8]); // the `await page.reload();` line
   });
 
   it("does NOT flag a setup goto / read-only reload with no optimistic pre-assertion (a reachability check)", () => {

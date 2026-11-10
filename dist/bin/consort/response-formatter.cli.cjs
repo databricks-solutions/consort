@@ -8617,23 +8617,64 @@ function e2eRereadWithoutConfirmation(lines) {
   const REREAD = /\bpage\s*\.\s*(?:reload|goto)\s*\(/;
   const VALUE_ASSERT = /\b(?:toHaveText|toHaveValue|toContainText)\s*\(/;
   const CONFIRM = /data-flash|getByTestId\(\s*["'`][^"'`]*(?:success|error|confirm|saved|toast|status)[^"'`]*["'`]|waitForResponse|waitForLoadState/i;
+  const confirmHelpers = confirmingHelperNames(lines, CONFIRM);
+  const HELPER_CALL = confirmHelpers.size ? new RegExp(`\\b(?:${[...confirmHelpers].map(escapeRegExp).join("|")})\\s*\\(`) : null;
+  const confirms = (line) => CONFIRM.test(line) || HELPER_CALL !== null && HELPER_CALL.test(line);
   for (const [from, to] of testBlockRanges(lines)) {
     for (let i = from; i < to; i++) {
       if (!REREAD.test(lines[i])) continue;
       let confirmedBefore = false;
       let valueBefore = false;
       for (let j = from; j < i; j++) {
-        if (CONFIRM.test(lines[j])) confirmedBefore = true;
+        if (confirms(lines[j])) confirmedBefore = true;
         if (VALUE_ASSERT.test(lines[j])) valueBefore = true;
       }
       if (confirmedBefore) continue;
       if (!valueBefore) continue;
       let valueAfter = false;
-      for (let j = i + 1; j < to; j++) if (VALUE_ASSERT.test(lines[j])) valueAfter = true;
+      for (let j = i + 1; j < to; j++) {
+        if (confirms(lines[j]) || REREAD.test(lines[j])) break;
+        if (VALUE_ASSERT.test(lines[j])) {
+          valueAfter = true;
+          break;
+        }
+      }
       if (valueAfter) out.push(i + 1);
     }
   }
   return out;
+}
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function functionBodyFrom(lines, defLine) {
+  let depth = 0;
+  let started = false;
+  const out = [];
+  for (let i = defLine; i < lines.length; i++) {
+    if (!started && i > defLine + 2) break;
+    for (const ch of lines[i]) {
+      if (ch === "{") {
+        depth++;
+        started = true;
+      } else if (ch === "}") depth--;
+    }
+    if (started) out.push(lines[i]);
+    if (started && depth <= 0) break;
+  }
+  return out.join("\n");
+}
+function confirmingHelperNames(lines, CONFIRM) {
+  const names = /* @__PURE__ */ new Set();
+  const DEF = /(?:async\s+)?function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = DEF.exec(lines[i]);
+    if (!m) continue;
+    const name = m[1] || m[2] || m[3];
+    if (!name) continue;
+    if (CONFIRM.test(functionBodyFrom(lines, i))) names.add(name);
+  }
+  return names;
 }
 function e2eTimingDependentWait(lines) {
   const out = [];
@@ -8759,8 +8800,8 @@ function checkTestSmells(args) {
           }
         }
       });
-      if (isPy && /command\.downgrade|alembic\s+downgrade|\.downgrade\(|downgrade\s+-1|run_downgrade/i.test(body) && !/pytest\.mark\.migration|mark\.migration/.test(body)) {
-        push("migration-marker-presence", rel, 1, "(file)", "a downgrade test without @pytest.mark.migration (drops schema on the shared verify DB)");
+      if (isPy && !file.endsWith("conftest.py") && /command\.(down|up)grade|alembic\s+(down|up)grade|\.downgrade\(|downgrade\s+-1|run_downgrade|run_upgrade|upgrade_head/i.test(body) && !/pytest\.mark\.migration|mark\.migration/.test(body)) {
+        push("migration-marker-presence", rel, 1, "(file)", "a schema-mutating migration test (downgrade OR upgrade/ALTER) without @pytest.mark.migration \u2014 runs in the main verify pass + deadlocks on a concurrent-connection lock");
       }
       const relativeDowngrade = /(?:["']downgrade["']\s*,\s*|alembic\s+downgrade\s+|downgrade\s+)["']?-\d+["']?/i.test(body);
       const namedColumnAbsent = /["'`]\w+["'`]\s+not\s+in\s+\w*col/i.test(body);
@@ -8826,6 +8867,9 @@ ${list}`;
 init_cjs_shims();
 var import_fs2 = require("fs");
 var import_path3 = require("path");
+
+// consort/test-list/test-list.ts
+init_cjs_shims();
 
 // consort/smells/smells.ts
 init_cjs_shims();

@@ -96,17 +96,13 @@ fixed by this roadmap.
    - Proof is the parent-aware schema diff (batch + serial **added**, the
      combined tracking code still present) plus the integrity-probe warning
      count, run against the paired Lakebase branch.
-   - It is a **UI-visible** refactor walked step by step on an isolated branch
-     (never touching staging/production): the home table and SKU detail render
-     from the live schema, the new Batch and Serial columns carry a
-     **new-to-verify** pill, the combined tracking-code column carries a
-     **to-be-retired** pill, the integrity-probe nonconforming-row count is shown
-     **in the app** for sign-off, each screen carries a stage label (today /
-     transition-to-verify), and a running migration shows an overlay that clears
-     when the step finishes. The stepwise walk (reset → expand + backfill →
-     verify) pauses between steps so each change is observable, with a "before"
-     seed that includes nonconforming codes so the probe count is visibly
-     non-zero.
+   - It is a **UI-visible** refactor: the home table and SKU detail render from
+     the live schema, the new Batch and Serial columns carry a **new-to-verify**
+     pill, the combined tracking-code column carries a **to-be-retired** pill, and
+     the integrity-probe nonconforming-row count is shown **in the app** for
+     sign-off. (The paused, step-by-step *visual walkthrough* of the migration —
+     stage labels and a migration overlay replayed on an isolated branch — is a
+     separate **throwaway demo, F11**, not part of this shipped increment.)
 7. **F9 — Stock search (sprint 2).** Find stock by SKU and location from the home
    view; read-only, reusing existing records with no new write path.
 8. **F7 — Multi-warehouse (sprint 3).** Operate several warehouses from one
@@ -127,6 +123,19 @@ fixed by this roadmap.
     down migration. Proof is the parent-aware schema diff showing the combined
     tracking code **removed** alongside batch + serial present, on the paired
     Lakebase branch. **Gated on F6 being deployed and signed off first.**
+11. **F11 — Guided refactor walkthrough (throwaway demo, sprint 3).** A
+    **disposable demo that is never shipped into the product.** On a throwaway
+    isolated branch it recreates a "before" state (seeded with nonconforming
+    codes so the probe count is visibly non-zero) and replays the whole
+    tracking-code refactor as paused, observable steps — reset → expand +
+    backfill → verify → drop (the reversible contract) — with a stage label on
+    each screen (today / transition-to-verify) and a migration overlay that
+    clears when a step finishes, so stakeholders can see how **F6 (expand)** and
+    **F10 (drop)** fit together end to end. It proves nothing about production —
+    F6 and F10 carry the real data-survival, reversibility, and schema-diff
+    guarantees; F11 only *visualizes* their journey, then is discarded. **Gated
+    on F6 and F10; not part of the final product, and deliberately outside the
+    Required NFRs.**
 
 ## How the product grows
 

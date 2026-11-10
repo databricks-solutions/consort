@@ -787,6 +787,57 @@ describe("scanFeatureConformance: checks every artifact that exists on disk", ()
     normalizeStoryJson(tdd, "F1-initial-domain"); // nothing to backfill – story.md has no narrative
     expect(badStoryJson()).toBe(true);
   });
+
+  // REGRESSION (F2 PI1-adjust-updates-in-place deploy halt): the full scan must thread db-design into
+  // checkPersistenceCoverage so an INHERITED schema-constraint invariant (declared on a table this feature
+  // does NOT migrate – no schema_change for it) is EXEMPT, exactly as the gate-guard's persistenceCoverageReason
+  // already does. Before the fix the scan called checkPersistenceCoverage WITHOUT db-design → demand-all →
+  // the inherited PI false-flagged → design passed (guard exempts) but deploy's full scan failed.
+  const persistEntry = () =>
+    scanFeatureConformance(tdd, "F1-initial-domain").entries.find((e) =>
+      e.artifact.endsWith("(persistence-invariant coverage)"),
+    )!;
+  const writeServiceFeature = (arch: object, db: object, items: object[]): void => {
+    writeFileSync(join(fdir, "feature-spec.json"), FEATURE_JSON);
+    writeFileSync(join(fdir, "feature-spec.md"), FEATURE_MD);
+    writeFileSync(join(fdir, "architecture.json"), JSON.stringify(arch));
+    writeFileSync(join(fdir, "db-design.json"), JSON.stringify(db));
+    writeFileSync(join(fdir, "test-list.json"), JSON.stringify({ feature_id: "F1-initial-domain", items }));
+  };
+  // This feature OWNS `audits` (it creates it) and INHERITS `stock_records` (no schema_change touches it).
+  const ARCH = {
+    feature_id: "F1-initial-domain",
+    service_backed: true,
+    layers: [
+      { role: "boundary", module: "app/routes" },
+      { role: "service", module: "app/services" },
+      { role: "repository", module: "app/repositories" },
+    ],
+    persistence_invariants: [
+      { id: "PI1-inherited", type: "unique", table: "stock_records" }, // inherited: F2's PI1 class
+      { id: "PI2-own", type: "not_null", table: "audits" }, // this feature creates `audits`
+    ],
+  };
+  const DB = { schema_changes: [{ story_id: "S1-audit", kind: "create_table", table: "audits" }] };
+
+  it("EXEMPTS an inherited schema-constraint invariant when db-design is present (the deploy-gate fix)", () => {
+    // Covers only the OWN invariant; the INHERITED PI1 has no covering item — yet must NOT be demanded.
+    writeServiceFeature(ARCH, DB, [
+      { id: "T1", description: "audits NOT NULL holds", ac_id: "AC1", status: "pending", kind: "fitness", invariant_id: "PI2-own" },
+    ]);
+    expect(persistEntry().ok).toBe(true);
+  });
+
+  it("STILL demands an OWN invariant this feature realizes (the exemption is scoped to inherited only)", () => {
+    // Nothing covers PI2-own, whose table `audits` THIS feature migrates → it is realized here → demanded.
+    writeServiceFeature(ARCH, DB, [
+      { id: "T1", description: "unrelated behavior", ac_id: "AC1", status: "pending", kind: "fitness" },
+    ]);
+    const e = persistEntry();
+    expect(e.ok).toBe(false);
+    expect(e.violations.join(" ")).toContain("PI2-own");
+    expect(e.violations.join(" ")).not.toContain("PI1-inherited");
+  });
 });
 
 describe("checkLayeringDeclared (Gate 2: a service-backed feature must declare its layers)", () => {

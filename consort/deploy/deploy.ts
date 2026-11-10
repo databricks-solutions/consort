@@ -22,6 +22,7 @@ import { resolveConsortDir, findFeatureDir } from "../../consort/config/consort-
 import { writeEscalation } from "../../consort/gates/escalation.js";
 import {
   parseFailedNodeIds,
+  verifyFailureDigest,
   classifyDeployVerifyFailure,
   classifyDeployVerifyTestSmell,
   writeDeployVerifyAssessMarker,
@@ -41,10 +42,24 @@ import {
 import { consortEnv } from "../../consort/config/consort-env.js";
 
 /** Read the Lakebase project id from the project's .env (LAKEBASE_PROJECT_ID). */
-function readProjectInstance(projectDir: string): string | undefined {
+export function readProjectInstance(projectDir: string): string | undefined {
+  // Primary: the app's .env (LAKEBASE_PROJECT_ID). FALLBACK: the authoritative SCM workflow state
+  // (.lakebase/workflow-state.json `project_id`) — the project id's real source of truth. Without the
+  // fallback, a project whose .env omits LAKEBASE_PROJECT_ID (older scaffold / hand-rehydrated) resolves
+  // NO instance, so the ephemeral verify SILENTLY degrades to an in-place run on the shared branch and
+  // rows accumulate across cycles. Reading the SCM state closes that one-source-of-truth gap.
   try {
     const m = readFileSync(join(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
-    return m ? m[1].replace(/^["']|["']$/g, "").trim() : undefined;
+    const fromEnv = m ? m[1].replace(/^["']|["']$/g, "").trim() : "";
+    if (fromEnv) return fromEnv;
+  } catch {
+    /* fall through to the SCM workflow state */
+  }
+  try {
+    const ws = JSON.parse(readFileSync(join(projectDir, ".lakebase", "workflow-state.json"), "utf8")) as {
+      project_id?: string;
+    };
+    return ws.project_id?.trim() || undefined;
   } catch {
     return undefined;
   }
@@ -111,9 +126,20 @@ async function runVerifyMaybeEphemeral(
   now: () => Date,
   ops?: EphemeralVerifyOps,
 ): Promise<VerifyRun> {
-  const instance =
-    lakebaseBranch && consortEnv("EPHEMERAL_VERIFY") !== "0" ? readProjectInstance(projectDir) : undefined;
+  const optedOut = consortEnv("EPHEMERAL_VERIFY") === "0";
+  const instance = lakebaseBranch && !optedOut ? readProjectInstance(projectDir) : undefined;
   if (!instance || !lakebaseBranch) {
+    // Make the degradation LOUD: a verify bound to a branch but with no resolvable instance (and not
+    // explicitly opted out) runs IN-PLACE on the shared branch — cross-run state bleeds and rows
+    // accumulate, which silently masks test-owns-state bugs that then only surface in CI. Never silent.
+    if (lakebaseBranch && !optedOut && !instance) {
+      process.stderr.write(
+        `consort: ephemeral verify could NOT resolve a Lakebase instance for ${projectDir} ` +
+          `(no LAKEBASE_PROJECT_ID in .env, no project_id in .lakebase/workflow-state.json) — running IN-PLACE ` +
+          `on the shared branch "${lakebaseBranch}". Isolation is OFF (rows accumulate; CI may diverge). ` +
+          `Set LAKEBASE_PROJECT_ID, or LAKEBASE_CONSORT_EPHEMERAL_VERIFY=0 to silence this.\n`,
+      );
+    }
     return normalizeVerifyRun(runVerify(cmd, projectDir, env));
   }
   // Unique per attempt: a time prefix (debuggable) plus a random suffix, so a
@@ -573,6 +599,49 @@ function verifyTimeoutMs(): number {
   return Math.max(1, Number(process.env.LAKEBASE_VERIFY_TIMEOUT_MS) || 900_000);
 }
 
+/** True when a migrate FAILED because the branch DB is stamped at a revision that exists in NO migration
+ *  file — an ORPHAN alembic stamp (alembic: "Can't locate revision identified by '<rev>'"). The typical
+ *  cause: a story reopened after its migration was applied to the shared branch DB, so the file is gone
+ *  but the stamp remains (consort-reopen-story's dbResyncNeeded). alembic cannot upgrade from an off-tree
+ *  revision, so a forward `upgrade head` is unrecoverable without first resetting the branch schema. */
+export function isOffTreeStampFailure(output: string | undefined): boolean {
+  return !!output && /can'?t locate revision|no such revision|revision .* is not present/i.test(output);
+}
+
+/** The command that RESETS a branch's app schema to a clean base AND REBUILDS it to the code head — the
+ *  recovery for an orphan stamp (isOffTreeStampFailure). Drop + recreate `public` (taking the off-tree
+ *  alembic_version stamp + any orphan DDL with it), THEN `alembic upgrade head` so the branch is left AT
+ *  HEAD, not empty. Python/alembic stacks only (the orphan-stamp failure is alembic-specific); undefined
+ *  otherwise, so a non-python deploy never runs it. Branch DBs here are disposable COW test substrate
+ *  (feature/experiment children off staging), so a schema reset is safe — it mirrors the harness's own
+ *  staging rebuild.
+ *
+ *  REBUILDING to head (not just dropping) is load-bearing: the reset targets the PARENT branch
+ *  (LAKEBASE_BRANCH_ID), but each verify PASS runs against its own ephemeral COW CHILD forked off that
+ *  parent. A drop-only reset leaves the parent EMPTY; the pass that hit the orphan rebuilds its own child,
+ *  but a SIBLING pass (e.g. the client/e2e pass, forked separately) then forks off the empty parent and its
+ *  seed writes fail (POST → 500: relation absent / wrong schema). Leaving the parent AT HEAD means every
+ *  child — this pass's retry AND every sibling pass's fork — inherits a correct schema regardless of timing.
+ *
+ *  Connects through the APP'S OWN engine (`app.database.make_engine`, poolclass=NullPool) — the SAME door
+ *  alembic's env.py uses — so it works in BOTH connection modes with no reimplementation: an explicit
+ *  DATABASE_URL (CI / ephemeral-verify DSN) is used verbatim, and the default scaffold's runtime
+ *  token-minting (no DATABASE_URL in .env) mints a fresh Lakebase token per connect via do_connect. A raw
+ *  `os.environ['DATABASE_URL']` would KeyError in the (preferred) runtime-mint setup. `alembic upgrade head`
+ *  runs via alembic's command API against the project's alembic.ini (same env.py → same engine). Isolated
+ *  python (-I) drops cwd from sys.path, so prepend the project root for the `app` import (as env.py does). */
+export function buildBranchSchemaResetCommand(projectDir: string): string | undefined {
+  const isPython = existsSync(join(projectDir, "pyproject.toml")) || existsSync(join(projectDir, "requirements.txt"));
+  if (!isPython) return undefined;
+  const py =
+    "import os, sys; sys.path.insert(0, os.getcwd()); " +
+    "from app.database import make_engine; from sqlalchemy import pool; " +
+    "e=make_engine(poolclass=pool.NullPool); c=e.connect(); " +
+    "c.exec_driver_sql('DROP SCHEMA public CASCADE'); c.exec_driver_sql('CREATE SCHEMA public'); c.commit(); c.close(); " +
+    "from alembic.config import Config; from alembic import command; command.upgrade(Config('alembic.ini'), 'head')";
+  return `uv run --extra dev python -I -c ${JSON.stringify(py)}`;
+}
+
 export function defaultRunVerify(cmd: string, cwd: string, env?: NodeJS.ProcessEnv): VerifyRun {
   const timeout = verifyTimeoutMs();
   try {
@@ -583,12 +652,45 @@ export function defaultRunVerify(cmd: string, cwd: string, env?: NodeJS.ProcessE
     // A timeout kill (killed/signal SIGTERM, or ETIMEDOUT) is a FAILED verify with a clear reason – not a
     // silent hang. Surface it distinctly so a wedged pass is obvious in the log.
     const timedOut = e.killed === true || e.signal === "SIGTERM" || e.code === "ETIMEDOUT";
-    const output = `${e.stdout?.toString() ?? ""}${e.stderr?.toString() ?? ""}`.trimEnd()
+    // ORDER MATTERS: the downstream consumer keeps only the TAIL of this output (failureOutput =
+    // slice(-4000)). Test runners (vitest/pytest/mvn/dotnet) write the FAILING-test details + result
+    // summary to STDOUT, while incidental per-render warnings flood STDERR (e.g. a client suite emits
+    // ~2 React-Router future-flag warnings per test → hundreds of stderr lines). With stdout FIRST the
+    // tail was pure stderr noise and the FAIL summary was dropped, leaving the Navigator unable to name
+    // the failing assertion → it loops "can't reproduce" → HIL on an undiagnosable verify. Put the
+    // diagnostic STDOUT LAST so the retained tail carries the FAIL summary, not the warning flood.
+    const output = `${e.stderr?.toString() ?? ""}${e.stdout?.toString() ?? ""}`.trimEnd()
       + (timedOut ? `\n[deploy] VERIFY TIMED OUT after ${timeout}ms (SIGTERM) – failing this pass rather than hanging.` : "");
     const tail = output.split("\n").slice(-30).join("\n");
     process.stderr.write(`\n[deploy] feature-verify ${timedOut ? "TIMED OUT" : "failed"}; last output:\n${tail}\n`);
     return { passed: false, output };
   }
+}
+
+/** Heal an ORPHAN (off-tree) alembic stamp on the branch the project's `.env` points at (the claimed
+ *  FEATURE branch at a drive's Step-0 checkout) ONCE, up front — the SOURCE-level counterpart to the
+ *  per-pass verify resync (#15). The orphan is BORN on the feature-branch DB: a reopened migration-bearing
+ *  story discards its migration file while the feature-branch Lakebase DB stays stamped at it
+ *  (consort-reopen-story's dbResyncNeeded). Left unhealed there it propagates to EVERY downstream path —
+ *  each experiment cut inherits it, the per-cycle verify hits it (the #15 resync only heals THAT pass's
+ *  child), and the post-merge `alembic current` gate fails — so the halt keeps resurfacing. Healing it ONCE
+ *  at the source (drop + recreate + `alembic upgrade head` the feature branch) means no downstream path ever
+ *  sees it. Probes `alembic current` first (cheap, read-only) and resets ONLY when it fails with the
+ *  off-tree signature — a healthy branch is never touched. Python/alembic stacks only
+ *  (buildBranchSchemaResetCommand undefined otherwise → no-op). Branch DBs are disposable COW substrate, so
+ *  the reset is safe. Returns what it observed/did (for logging + tests); `runVerify` is injected so the
+ *  probe+reset are testable without a live DB. */
+export function resyncOffTreeStampIfPresent(
+  projectDir: string,
+  runVerify: (cmd: string, cwd: string, env?: NodeJS.ProcessEnv) => VerifyRun,
+  env?: NodeJS.ProcessEnv,
+): { probedOffTree: boolean; reset: boolean } {
+  const resetCmd = buildBranchSchemaResetCommand(projectDir);
+  if (!resetCmd) return { probedOffTree: false, reset: false }; // non-python → nothing to heal
+  const probe = runVerify("uv run alembic current", projectDir, env);
+  if (probe.passed || !isOffTreeStampFailure(probe.output)) return { probedOffTree: false, reset: false };
+  const res = runVerify(resetCmd, projectDir, env);
+  return { probedOffTree: true, reset: res.passed };
 }
 
 /** Write the deploy-evidence.json. Feature scope: features/<F>/. Story scope
@@ -836,7 +938,25 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
   // "reachable". Only for a gate deploy bound to a branch with a migrate command.
   if (args.rejectForeignPort && args.lakebaseBranch && cfg.migrate) {
     const runVerify = args.runVerify ?? defaultRunVerify;
-    const mig = normalizeVerifyRun(runVerify(cfg.migrate, args.projectDir, env));
+    let mig = normalizeVerifyRun(runVerify(cfg.migrate, args.projectDir, env));
+    // AUTO-RESYNC an ORPHAN alembic stamp (consort-reopen-story's dbResyncNeeded, now self-healed): the
+    // branch DB is stamped at an off-tree revision (a reopened story's migration was applied then its file
+    // reverted), so `alembic upgrade head` cannot proceed. Reset the branch's app schema to base + re-run
+    // the forward migrate ONCE — the branch is a disposable COW test substrate, so the drop is safe, and a
+    // repeat failure still refuses to serve (below). This also heals the client Vitest globalSetup, which
+    // migrates the SAME branch DB. One-shot (a reset still-failing migrate is a real defect, not a stamp).
+    if (!mig.passed && isOffTreeStampFailure(mig.output)) {
+      const reset = buildBranchSchemaResetCommand(args.projectDir);
+      if (reset) {
+        process.stderr.write(
+          `[deploy] ORPHAN alembic stamp on branch ${args.lakebaseBranch} (off-tree revision); resetting the ` +
+            `branch schema to base + re-running the forward migrate (consort-reopen-story leaves this when a ` +
+            `migration-bearing story is reverted).\n`,
+        );
+        runVerify(reset, args.projectDir, env);
+        mig = normalizeVerifyRun(runVerify(cfg.migrate, args.projectDir, env));
+      }
+    }
     if (!mig.passed) {
       const reason = `pre-serve migrate FAILED against branch ${args.lakebaseBranch} (\`${cfg.migrate}\`); refusing to serve an unmigrated app. ${mig.output.split("\n").slice(-8).join(" ").slice(-600)}`;
       const verify: VerifyResult = { passed: false, summary: reason };
@@ -1080,13 +1200,28 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
         }
       }
       if (!contamination && !superseded && !testSmell) {
+        // Carry FORENSICS into the terminal escalation — the case that needs a HUMAN. A CLIENT (vitest)
+        // or Playwright failure yields no pytest-shaped node-id, so the self-heal block above was skipped
+        // (failing.length===0) AND the record used to name no test; the kit's own blind output-tail then
+        // scrolled the failure out behind later passing-file output, leaving the failing test's identity
+        // UNRECOVERABLE at the HIL. verifyFailureDigest scans the WHOLE output for every runner's failure
+        // markers, so the escalation names WHICH test(s) failed (+ a bounded tail as backstop). NOTE: the
+        // vitest/Playwright self-heal classification itself is a separate, larger gap (parseFailedNodeIds
+        // + an isolation re-run are pytest-only) — observability first, so the next occurrence is diagnosable.
+        const digest = reachableNow ? verifyFailureDigest(verifyOutput) : [];
+        const tail = verifyOutput.length > 3000 ? verifyOutput.slice(-3000) : verifyOutput;
+        const captured =
+          reachableNow && verifyOutput
+            ? `failing tests (digest):\n${digest.length > 0 ? digest.join("\n") : "(no runner failure markers parsed — see output tail below)"}\n\n--- verify output (tail) ---\n${tail}`
+            : undefined;
         writeEscalation(consortDir, {
           source: "deploy-verify",
           reason: `deploy of ${args.featureId}${args.storyId ? `/${args.storyId}` : ""} did not prove working software: ${
             reachableNow ? verify.summary ?? "verify failed" : `app not reachable at ${url}`
-          }`,
+          }${reachableNow && digest.length > 0 ? ` [failing: ${digest.slice(0, 3).join(" | ")}${digest.length > 3 ? ` | +${digest.length - 3} more` : ""}]` : ""}`,
           feature_id: args.featureId,
           ...(args.storyId ? { story_id: args.storyId } : {}),
+          ...(captured ? { captured_output: captured } : {}),
         });
       }
     } else if (args.featureId) {
@@ -1316,7 +1451,7 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
   try {
     if (isPython) {
       const tMain = nowFn();
-      const mainRun = await runVerifyMaybeEphemeral(
+      let mainRun = await runVerifyMaybeEphemeral(
         runVerify,
         cfg.verify,
         args.projectDir,
@@ -1326,6 +1461,31 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
         args.verifyBranchOps,
       );
       mainMs = elapsed(tMain);
+      // AUTO-RESYNC an ORPHAN alembic stamp in the per-cycle verify (mirrors the deploy pre-serve migrate,
+      // #15): the branch this verify migrates is stamped at an off-tree revision (a reopened story's
+      // reverted migration — consort-reopen-story's dbResyncNeeded), so run-tests.sh's `alembic upgrade
+      // head` cannot proceed. Reset the branch schema to base + re-run the verify ONCE; the next ephemeral
+      // fork is cut from the clean base, so the migrate rebuilds to head. Bounded (one reset+retry) — a
+      // repeat failure stands as a real defect. Branch DBs are disposable COW test substrate, so the drop is safe.
+      if (!mainRun.passed && isOffTreeStampFailure(mainRun.output)) {
+        const reset = buildBranchSchemaResetCommand(args.projectDir);
+        if (reset) {
+          process.stderr.write(
+            `[verify] ORPHAN alembic stamp on branch ${args.lakebaseBranch ?? "(app DB)"} (off-tree revision); ` +
+              `resetting the branch schema to base + re-running the verify (consort-reopen-story leaves this when a migration-bearing story is reverted).\n`,
+          );
+          runVerify(reset, args.projectDir, env);
+          mainRun = await runVerifyMaybeEphemeral(
+            runVerify,
+            cfg.verify,
+            args.projectDir,
+            { ...env, SFTDD_PYTEST_MARKER: "not migration" },
+            args.lakebaseBranch,
+            nowFn,
+            args.verifyBranchOps,
+          );
+        }
+      }
       const mainPassed = mainRun.passed;
       if (!mainPassed) failOut = mainRun.output;
       // TIERED VERIFY: run the slow isolated-branch `migration` pass only when the main suite is green

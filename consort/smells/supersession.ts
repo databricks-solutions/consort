@@ -11,7 +11,7 @@
 import * as fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cycleDir, ALL_ARTIFACT_ROOTS } from "../../consort/config/consort-paths.js";
+import { cycleDir, cyclesRootDir, ALL_ARTIFACT_ROOTS } from "../../consort/config/consort-paths.js";
 import { dirname, join } from "node:path";
 
 export interface SupersededTests {
@@ -329,6 +329,24 @@ export function clearGreenFailure(
   ac: string,
 ): void {
   fs.rmSync(greenFailureJson(tdd, feature, story, ac), { force: true });
+}
+
+/** Clear EVERY green-failure.json under a story (across all its AC cycle dirs), returning the count
+ *  removed. The AC-less counterpart to clearGreenFailure: a story-scoped driver-green escalation (the
+ *  shape raise-to-hil writes — feature + story, no ac_id) must still lift the AC-keyed latch so the GREEN
+ *  verify re-runs. Best-effort: a missing cycles dir / unreadable entry is a no-op (nothing to clear). */
+export function clearStoryGreenFailures(tdd: string, feature: string, story: string): number {
+  const storyCyclesDir = join(cyclesRootDir(tdd), feature, story);
+  if (!fs.existsSync(storyCyclesDir)) return 0;
+  let cleared = 0;
+  for (const acEntry of fs.readdirSync(storyCyclesDir)) {
+    const gf = join(storyCyclesDir, acEntry, "green-failure.json");
+    if (fs.existsSync(gf)) {
+      fs.rmSync(gf, { force: true });
+      cleared += 1;
+    }
+  }
+  return cleared;
 }
 
 /** An AC whose GREEN verify failed and has NOT yet been assessed by the

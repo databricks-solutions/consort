@@ -195,6 +195,52 @@ export function acsForStory(tddDir: string, featureId: string, storyId: string):
   return storyDir ? acIdsInStoryDir(storyDir) : [];
 }
 
+/** Each story's set of fitness-invariant ids, scoped from the FEATURE master test-list by AC membership
+ *  (acsForStory) — the input to the cross-story distinct-invariant rule (invariantDistinctOffenders). ONE
+ *  source so the approve-gate reason AND the pre-reflect design-complete self-heal scope stories
+ *  identically (no drift between the backstop and the self-heal). Empty when no master test-list / no
+ *  stories dir. Pure (file reads only). */
+export function featurePerStoryInvariantIds(
+  tddDir: string,
+  featureId: string,
+): Array<{ story: string; invariantIds: string[] }> {
+  let master: { items?: Array<{ ac_id?: string; invariant_id?: string }> };
+  try {
+    master = JSON.parse(readFileSync(featureTestListJson(tddDir, featureId), "utf8"));
+  } catch {
+    return [];
+  }
+  const items = master.items ?? [];
+  let sdir: string;
+  try {
+    sdir = join(findFeatureDir(tddDir, featureId), "stories");
+  } catch {
+    return [];
+  }
+  if (!existsSync(sdir)) return [];
+  return readdirSync(sdir)
+    .filter((s) => {
+      try {
+        return statSync(join(sdir, s)).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .map((story) => {
+      const acIds = new Set(acsForStory(tddDir, featureId, story));
+      const invariantIds = items
+        .filter(
+          (it) =>
+            typeof it.invariant_id === "string" &&
+            it.invariant_id.length > 0 &&
+            typeof it.ac_id === "string" &&
+            acIds.has(it.ac_id),
+        )
+        .map((it) => it.invariant_id as string);
+      return { story, invariantIds };
+    });
+}
+
 /**
  * Scope a master test list to the given AC ids, GROUPED BY AC.
  *

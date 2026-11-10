@@ -97,10 +97,10 @@ the PO authors each `feature-request.md` and sets final priority.
 - **Size:** XL
 - **Priority:** P1 (showcase refactor; prerequisite for F10)
 - **Sprint:** 2
-- **Needs E2E (UI) story:** yes — UI-visible stepwise walk (reset → expand +
-  backfill → verify) with new-to-verify and to-be-retired pills, in-app
-  nonconforming-row count for sign-off, stage labels, and a migration overlay
-  that clears per step; home table and SKU detail render from the live schema.
+- **Needs E2E (UI) story:** yes — new-to-verify and to-be-retired pills on the
+  batch/serial and tracking-code columns, in-app nonconforming-row count for
+  sign-off; home table and SKU detail render from the live schema. (The paused
+  stepwise *walkthrough* of the migration is the throwaway F11 demo, not F6.)
 
 ## F9-stock-search
 
@@ -168,3 +168,30 @@ the PO authors each `feature-request.md` and sets final priority.
   only, the combined-code column gone, "not tracked" per empty field.
 - **Dependency:** gated on **F6-split-tracking-code-expand** (expand + verify) being
   deployed and signed off; F6 and F10 are deliberately distinct increments.
+
+## F11-refactor-walkthrough
+
+- **Ask:** A **throwaway demo** — never shipped into the product — that on a
+  disposable isolated branch recreates a "before" state (nonconforming codes
+  seeded) and replays the whole refactor as paused, observable steps: reset →
+  expand + backfill → verify → drop, with per-screen stage labels and a migration
+  overlay that clears per step, to show how F6 (expand) and F10 (drop) fit
+  together.
+- **Rationale:** Stakeholder showcase only. It proves nothing about production —
+  F6 and F10 carry the real data-survival, reversibility, and schema-diff
+  guarantees (R1, R8, R4); F11 only *visualizes* their journey and is then
+  discarded. The paused stepwise walk + stage labels + migration overlay that were
+  originally bundled into F6 live here instead, so F6 and F10 stay clean,
+  shippable migrations.
+- **Size:** S
+- **Priority:** P3 (demo; no product value shipped)
+- **Sprint:** 3
+- **NFRs:** **deliberately outside the Required NFRs** — a throwaway demo on a
+  disposable branch. Only isolation (never touches staging/production, never
+  merged into the trunk, so it never enters the production CI merge gate) and
+  observability (paused, labeled steps) apply.
+- **Needs E2E (UI) story:** the walkthrough itself is the UI — the stepwise replay
+  with stage labels and the migration overlay on the demo branch.
+- **Dependency:** gated on **F6-split-tracking-code-expand** AND
+  **F10-retire-tracking-code** being deployed and signed off; F11 replays the
+  journey they delivered and ships nothing of its own.

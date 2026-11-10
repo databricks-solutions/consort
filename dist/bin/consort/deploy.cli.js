@@ -6964,7 +6964,7 @@ init_esm_shims();
 
 // consort/gates/gate-conformance-guard.ts
 init_esm_shims();
-import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync2, statSync as statSync2 } from "fs";
+import { existsSync as existsSync4, readFileSync as readFileSync4, readdirSync as readdirSync2 } from "fs";
 import { join as join6, dirname as dirname4 } from "path";
 
 // consort/config/consort-config-file.ts
@@ -7060,7 +7060,7 @@ var TREE_STATE_EXCLUDE_PREFIXES = [
 
 // consort/architecture/contract-clean.ts
 init_esm_shims();
-import { existsSync as existsSync9, readFileSync as readFileSync9, readdirSync as readdirSync6, statSync as statSync5 } from "fs";
+import { existsSync as existsSync9, readFileSync as readFileSync9, readdirSync as readdirSync7, statSync as statSync5 } from "fs";
 import { join as join11, relative, extname as extname2, basename as basename2 } from "path";
 
 // consort/experiment/py-source.ts
@@ -7068,7 +7068,7 @@ init_esm_shims();
 
 // consort/architecture/migration-columns.ts
 init_esm_shims();
-import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync5, statSync as statSync4 } from "fs";
+import { existsSync as existsSync8, readFileSync as readFileSync8, readdirSync as readdirSync6, statSync as statSync4 } from "fs";
 import { join as join10, extname } from "path";
 var DEFAULT_MIGRATION_DIRS = ["alembic/versions", "migrations", "db/migrations", "src/migrations"];
 var MIGRATION_EXTS = /* @__PURE__ */ new Set([".py", ".sql", ".js", ".ts"]);
@@ -7085,7 +7085,7 @@ var ADD_COLUMN_SQL = /add\s+column\s+(?:if\s+not\s+exists\s+)?["'`]?([a-zA-Z_][a
 function walk(dir, out = []) {
   let entries;
   try {
-    entries = readdirSync5(dir);
+    entries = readdirSync6(dir);
   } catch {
     return out;
   }
@@ -7190,7 +7190,7 @@ import * as path2 from "path";
 
 // consort/architecture/migration-app-clean.ts
 init_esm_shims();
-import { existsSync as existsSync11, readFileSync as readFileSync11, readdirSync as readdirSync7, statSync as statSync6 } from "fs";
+import { existsSync as existsSync11, readFileSync as readFileSync11, readdirSync as readdirSync8, statSync as statSync6 } from "fs";
 import { join as join13, relative as relative2, extname as extname3 } from "path";
 
 // consort/architecture/migration-history-clean.ts
@@ -7201,7 +7201,7 @@ import { join as join14 } from "path";
 
 // consort/architecture/test-smell-clean.ts
 init_esm_shims();
-import { existsSync as existsSync13, readFileSync as readFileSync12, readdirSync as readdirSync8, statSync as statSync7 } from "fs";
+import { existsSync as existsSync13, readFileSync as readFileSync12, readdirSync as readdirSync9, statSync as statSync7 } from "fs";
 import { join as join15, relative as relative3, extname as extname4 } from "path";
 var ARTIFACT_ROOTS_RE2 = artifactRootsRegexAlternation();
 var AUTHOR_LAYER_TEST_SMELLS = /* @__PURE__ */ new Set([
@@ -7221,7 +7221,7 @@ var TEST_FILE = /\.(spec|test)\.(ts|tsx|js|jsx|mjs)$|\.py$/;
 function walk2(dir, keep, out = []) {
   let entries;
   try {
-    entries = readdirSync8(dir);
+    entries = readdirSync9(dir);
   } catch {
     return out;
   }
@@ -7419,7 +7419,7 @@ function checkReversibleInvariantRoundTrip(projectDir) {
   const featsDir = featuresDir(tdd);
   const out = [];
   if (!existsSync13(featsDir)) return out;
-  for (const feature of readdirSync8(featsDir)) {
+  for (const feature of readdirSync9(featsDir)) {
     const archPath = architectureJson(tdd, feature);
     if (!existsSync13(archPath)) continue;
     let arch;
@@ -7435,7 +7435,7 @@ function checkReversibleInvariantRoundTrip(projectDir) {
     const itemSources = [join15(featureDir(tdd, feature), "test-list.json")];
     const stDir = storiesDir(tdd, feature);
     if (existsSync13(stDir)) {
-      for (const s of readdirSync8(stDir)) {
+      for (const s of readdirSync9(stDir)) {
         const p = storyTestListJson(tdd, feature, s);
         if (existsSync13(p)) itemSources.push(p);
       }
@@ -7486,23 +7486,64 @@ function e2eRereadWithoutConfirmation(lines) {
   const REREAD = /\bpage\s*\.\s*(?:reload|goto)\s*\(/;
   const VALUE_ASSERT = /\b(?:toHaveText|toHaveValue|toContainText)\s*\(/;
   const CONFIRM = /data-flash|getByTestId\(\s*["'`][^"'`]*(?:success|error|confirm|saved|toast|status)[^"'`]*["'`]|waitForResponse|waitForLoadState/i;
+  const confirmHelpers = confirmingHelperNames(lines, CONFIRM);
+  const HELPER_CALL = confirmHelpers.size ? new RegExp(`\\b(?:${[...confirmHelpers].map(escapeRegExp).join("|")})\\s*\\(`) : null;
+  const confirms = (line) => CONFIRM.test(line) || HELPER_CALL !== null && HELPER_CALL.test(line);
   for (const [from, to] of testBlockRanges(lines)) {
     for (let i = from; i < to; i++) {
       if (!REREAD.test(lines[i])) continue;
       let confirmedBefore = false;
       let valueBefore = false;
       for (let j = from; j < i; j++) {
-        if (CONFIRM.test(lines[j])) confirmedBefore = true;
+        if (confirms(lines[j])) confirmedBefore = true;
         if (VALUE_ASSERT.test(lines[j])) valueBefore = true;
       }
       if (confirmedBefore) continue;
       if (!valueBefore) continue;
       let valueAfter = false;
-      for (let j = i + 1; j < to; j++) if (VALUE_ASSERT.test(lines[j])) valueAfter = true;
+      for (let j = i + 1; j < to; j++) {
+        if (confirms(lines[j]) || REREAD.test(lines[j])) break;
+        if (VALUE_ASSERT.test(lines[j])) {
+          valueAfter = true;
+          break;
+        }
+      }
       if (valueAfter) out.push(i + 1);
     }
   }
   return out;
+}
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function functionBodyFrom(lines, defLine) {
+  let depth = 0;
+  let started = false;
+  const out = [];
+  for (let i = defLine; i < lines.length; i++) {
+    if (!started && i > defLine + 2) break;
+    for (const ch of lines[i]) {
+      if (ch === "{") {
+        depth++;
+        started = true;
+      } else if (ch === "}") depth--;
+    }
+    if (started) out.push(lines[i]);
+    if (started && depth <= 0) break;
+  }
+  return out.join("\n");
+}
+function confirmingHelperNames(lines, CONFIRM) {
+  const names = /* @__PURE__ */ new Set();
+  const DEF = /(?:async\s+)?function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = DEF.exec(lines[i]);
+    if (!m) continue;
+    const name = m[1] || m[2] || m[3];
+    if (!name) continue;
+    if (CONFIRM.test(functionBodyFrom(lines, i))) names.add(name);
+  }
+  return names;
 }
 function e2eTimingDependentWait(lines) {
   const out = [];
@@ -7628,8 +7669,8 @@ function checkTestSmells(args) {
           }
         }
       });
-      if (isPy && /command\.downgrade|alembic\s+downgrade|\.downgrade\(|downgrade\s+-1|run_downgrade/i.test(body) && !/pytest\.mark\.migration|mark\.migration/.test(body)) {
-        push("migration-marker-presence", rel, 1, "(file)", "a downgrade test without @pytest.mark.migration (drops schema on the shared verify DB)");
+      if (isPy && !file.endsWith("conftest.py") && /command\.(down|up)grade|alembic\s+(down|up)grade|\.downgrade\(|downgrade\s+-1|run_downgrade|run_upgrade|upgrade_head/i.test(body) && !/pytest\.mark\.migration|mark\.migration/.test(body)) {
+        push("migration-marker-presence", rel, 1, "(file)", "a schema-mutating migration test (downgrade OR upgrade/ALTER) without @pytest.mark.migration \u2014 runs in the main verify pass + deadlocks on a concurrent-connection lock");
       }
       const relativeDowngrade = /(?:["']downgrade["']\s*,\s*|alembic\s+downgrade\s+|downgrade\s+)["']?-\d+["']?/i.test(body);
       const namedColumnAbsent = /["'`]\w+["'`]\s+not\s+in\s+\w*col/i.test(body);
@@ -7719,6 +7760,34 @@ function parseFailedNodeIds(output) {
   }
   return ids;
 }
+function verifyFailureDigest(output, cap = 60) {
+  const markers = [
+    /^(?:FAILED|ERROR)\s+\S+::/,
+    // pytest node id
+    /^\s*FAIL\s+\S+\.(?:tsx?|jsx?|spec\.[a-z]+)/i,
+    // vitest/playwright file-level fail
+    /^\s*❯\s+\S+\.(?:tsx?|jsx?)/,
+    // vitest failed-file pointer
+    /^\s*(?:×|✗|✘)\s+\S/,
+    // per-test fail glyph
+    /Failed Tests/,
+    // vitest failed-tests banner
+    /\bAssertionError\b|\bExpected\b.*\bReceived\b|Unable to find|Timed out .*waiting/
+    // assertion detail
+  ];
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const raw of output.split("\n")) {
+    const line = raw.replace(/\u001b\[[0-9;]*m/g, "").trim();
+    if (!line) continue;
+    if (markers.some((re) => re.test(line)) && !seen.has(line)) {
+      seen.add(line);
+      out.push(line);
+      if (out.length >= cap) break;
+    }
+  }
+  return out;
+}
 function classifyDeployVerifyTestSmell(failingNodeIds, projectDir, migrationDirs) {
   if (failingNodeIds.length === 0) return [];
   let violations;
@@ -7803,6 +7872,11 @@ function writeEscalation(consortDir, esc) {
     ...esc.feature_id ? { feature_id: esc.feature_id } : {},
     ...esc.story_id ? { story_id: esc.story_id } : {},
     ...esc.ac_id ? { ac_id: esc.ac_id } : {},
+    // Carry the failing command's captured output (deploy-verify et al.) through to the record so a
+    // terminal escalation — the case that needs a HUMAN — names WHICH test failed, not just "verify
+    // failed". The field was declared on the interface but never written here, so the hardest case
+    // carried the least forensics (the lost-failing-client-test defect).
+    ...esc.captured_output ? { captured_output: esc.captured_output } : {},
     raised_at: esc.raised_at ?? (/* @__PURE__ */ new Date()).toISOString(),
     // A caller MAY supply a source-specific resolution (e.g. feature-conformance names the exact
     // `consort-pipeline repair` command); otherwise the generic clear-with-resolve-escalation default.
@@ -7823,7 +7897,7 @@ function readEscalationFile(file) {
 
 // consort/architecture/e2e-regex-clean.ts
 init_esm_shims();
-import { readdirSync as readdirSync10, readFileSync as readFileSync16, statSync as statSync8 } from "fs";
+import { readdirSync as readdirSync11, readFileSync as readFileSync16, statSync as statSync8 } from "fs";
 import { join as join18 } from "path";
 
 // consort/smells/ephemeral-verify.ts
@@ -7869,7 +7943,13 @@ function ephemeralVerifyBranchName(experimentBranch, nonce) {
 function readProjectInstance(projectDir) {
   try {
     const m = readFileSync17(join19(projectDir, ".env"), "utf8").match(/^\s*LAKEBASE_PROJECT_ID\s*=\s*(.+?)\s*$/m);
-    return m ? m[1].replace(/^["']|["']$/g, "").trim() : void 0;
+    const fromEnv = m ? m[1].replace(/^["']|["']$/g, "").trim() : "";
+    if (fromEnv) return fromEnv;
+  } catch {
+  }
+  try {
+    const ws = JSON.parse(readFileSync17(join19(projectDir, ".lakebase", "workflow-state.json"), "utf8"));
+    return ws.project_id?.trim() || void 0;
   } catch {
     return void 0;
   }
@@ -7895,8 +7975,15 @@ function readAppDatabaseName(projectDir) {
   return name || void 0;
 }
 async function runVerifyMaybeEphemeral(runVerify, cmd, projectDir, env, lakebaseBranch, now, ops) {
-  const instance = lakebaseBranch && consortEnv("EPHEMERAL_VERIFY") !== "0" ? readProjectInstance(projectDir) : void 0;
+  const optedOut = consortEnv("EPHEMERAL_VERIFY") === "0";
+  const instance = lakebaseBranch && !optedOut ? readProjectInstance(projectDir) : void 0;
   if (!instance || !lakebaseBranch) {
+    if (lakebaseBranch && !optedOut && !instance) {
+      process.stderr.write(
+        `consort: ephemeral verify could NOT resolve a Lakebase instance for ${projectDir} (no LAKEBASE_PROJECT_ID in .env, no project_id in .lakebase/workflow-state.json) \u2014 running IN-PLACE on the shared branch "${lakebaseBranch}". Isolation is OFF (rows accumulate; CI may diverge). Set LAKEBASE_PROJECT_ID, or LAKEBASE_CONSORT_EPHEMERAL_VERIFY=0 to silence this.
+`
+      );
+    }
     return normalizeVerifyRun(runVerify(cmd, projectDir, env));
   }
   const nonce = `${String(now().getTime()).slice(-7)}-${randomBytes(3).toString("hex")}`;
@@ -8028,6 +8115,15 @@ function normalizeVerifyRun(raw) {
 function verifyTimeoutMs() {
   return Math.max(1, Number(process.env.LAKEBASE_VERIFY_TIMEOUT_MS) || 9e5);
 }
+function isOffTreeStampFailure(output) {
+  return !!output && /can'?t locate revision|no such revision|revision .* is not present/i.test(output);
+}
+function buildBranchSchemaResetCommand(projectDir) {
+  const isPython = existsSync17(join19(projectDir, "pyproject.toml")) || existsSync17(join19(projectDir, "requirements.txt"));
+  if (!isPython) return void 0;
+  const py = "import os, sys; sys.path.insert(0, os.getcwd()); from app.database import make_engine; from sqlalchemy import pool; e=make_engine(poolclass=pool.NullPool); c=e.connect(); c.exec_driver_sql('DROP SCHEMA public CASCADE'); c.exec_driver_sql('CREATE SCHEMA public'); c.commit(); c.close(); from alembic.config import Config; from alembic import command; command.upgrade(Config('alembic.ini'), 'head')";
+  return `uv run --extra dev python -I -c ${JSON.stringify(py)}`;
+}
 function defaultRunVerify(cmd, cwd, env) {
   const timeout = verifyTimeoutMs();
   try {
@@ -8036,7 +8132,7 @@ function defaultRunVerify(cmd, cwd, env) {
   } catch (err) {
     const e = err;
     const timedOut = e.killed === true || e.signal === "SIGTERM" || e.code === "ETIMEDOUT";
-    const output = `${e.stdout?.toString() ?? ""}${e.stderr?.toString() ?? ""}`.trimEnd() + (timedOut ? `
+    const output = `${e.stderr?.toString() ?? ""}${e.stdout?.toString() ?? ""}`.trimEnd() + (timedOut ? `
 [deploy] VERIFY TIMED OUT after ${timeout}ms (SIGTERM) \u2013 failing this pass rather than hanging.` : "");
     const tail = output.split("\n").slice(-30).join("\n");
     process.stderr.write(`
@@ -8154,7 +8250,18 @@ async function deployToTarget(args) {
   };
   if (args.rejectForeignPort && args.lakebaseBranch && cfg.migrate) {
     const runVerify = args.runVerify ?? defaultRunVerify;
-    const mig = normalizeVerifyRun(runVerify(cfg.migrate, args.projectDir, env));
+    let mig = normalizeVerifyRun(runVerify(cfg.migrate, args.projectDir, env));
+    if (!mig.passed && isOffTreeStampFailure(mig.output)) {
+      const reset = buildBranchSchemaResetCommand(args.projectDir);
+      if (reset) {
+        process.stderr.write(
+          `[deploy] ORPHAN alembic stamp on branch ${args.lakebaseBranch} (off-tree revision); resetting the branch schema to base + re-running the forward migrate (consort-reopen-story leaves this when a migration-bearing story is reverted).
+`
+        );
+        runVerify(reset, args.projectDir, env);
+        mig = normalizeVerifyRun(runVerify(cfg.migrate, args.projectDir, env));
+      }
+    }
     if (!mig.passed) {
       const reason = `pre-serve migrate FAILED against branch ${args.lakebaseBranch} (\`${cfg.migrate}\`); refusing to serve an unmigrated app. ${mig.output.split("\n").slice(-8).join(" ").slice(-600)}`;
       const verify2 = { passed: false, summary: reason };
@@ -8311,11 +8418,19 @@ async function deployToTarget(args) {
         }
       }
       if (!contamination && !superseded && !testSmell) {
+        const digest = reachableNow ? verifyFailureDigest(verifyOutput) : [];
+        const tail = verifyOutput.length > 3e3 ? verifyOutput.slice(-3e3) : verifyOutput;
+        const captured = reachableNow && verifyOutput ? `failing tests (digest):
+${digest.length > 0 ? digest.join("\n") : "(no runner failure markers parsed \u2014 see output tail below)"}
+
+--- verify output (tail) ---
+${tail}` : void 0;
         writeEscalation(consortDir, {
           source: "deploy-verify",
-          reason: `deploy of ${args.featureId}${args.storyId ? `/${args.storyId}` : ""} did not prove working software: ${reachableNow ? verify.summary ?? "verify failed" : `app not reachable at ${url}`}`,
+          reason: `deploy of ${args.featureId}${args.storyId ? `/${args.storyId}` : ""} did not prove working software: ${reachableNow ? verify.summary ?? "verify failed" : `app not reachable at ${url}`}${reachableNow && digest.length > 0 ? ` [failing: ${digest.slice(0, 3).join(" | ")}${digest.length > 3 ? ` | +${digest.length - 3} more` : ""}]` : ""}`,
           feature_id: args.featureId,
-          ...args.storyId ? { story_id: args.storyId } : {}
+          ...args.storyId ? { story_id: args.storyId } : {},
+          ...captured ? { captured_output: captured } : {}
         });
       }
     } else if (args.featureId) {

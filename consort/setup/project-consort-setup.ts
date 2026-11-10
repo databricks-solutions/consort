@@ -17,7 +17,7 @@ import { ARTIFACT_ROOT } from "../../consort/config/consort-paths.js";
 import { defaultConsortConfig, writeConsortConfig } from "../../consort/config/consort-config-file.js";
 import { adoptTdd } from "../lakebase/adopt-consort.js";
 import { updateAgents } from "../lakebase/update-agents.js";
-import { commitRefreshedSurface } from "../lakebase/upgrade.js";
+import { commitRefreshedSurface, refreshKitOwnedInstrumentation } from "../lakebase/upgrade.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -215,6 +215,15 @@ export function resyncAgentsOnKitDrift(projectDir: string): {
     }
     if (last === current) return { refreshed: false };
     updateAgents({ projectDir, kitDir: root, force: true });
+    // ALSO refresh the kit-owned per-test INSTRUMENTATION (client setup.ts/globalSetup/reporter, conftests,
+    // backend capture + coupled root consort-capture.ts) on the SAME kit-move trigger — not just the agents.
+    // Historically the drive refreshed only .claude/agents/, so a project on a newer kit kept running stale
+    // instrumentation (the F9 CI asyncUtilTimeout failure: setup.ts lagged the template fix because no
+    // explicit consort-upgrade ran). Same force-overwrite set consort-upgrade uses, so a dev kit
+    // (LAKEBASE_KIT_DIR) or a release both self-heal the instrumentation here. The refreshed paths are
+    // threaded into the commit below (KIT_SURFACE_PATHS does NOT cover them), so the fix is COMMITTED — and
+    // the promote/push step then carries it to the branch CI runs against. Best-effort ([] if unresolvable).
+    const refreshedInstrumentation = refreshKitOwnedInstrumentation(projectDir, root);
     fs.mkdirSync(path.dirname(markerPath), { recursive: true });
     fs.writeFileSync(markerPath, current + "\n");
     // Commit the refreshed agent surface so a drift-resync leaves a CLEAN working tree. Otherwise
@@ -223,7 +232,7 @@ export function resyncAgentsOnKitDrift(projectDir: string): {
     // class v0.3.46 fixed for consort-upgrade, but triggered by the drive's own on-resume resync
     // (e.g. after a branch checkout drifts the committed surface from the run pin). No-op outside a
     // git repo; never throws (commitRefreshedSurface returns a result).
-    const commit = commitRefreshedSurface(projectDir, current);
+    const commit = commitRefreshedSurface(projectDir, current, refreshedInstrumentation);
     return { refreshed: true, from: last || undefined, to: current, committed: commit.committed };
   } catch {
     return { refreshed: false };
