@@ -25,7 +25,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { DriveState, WorkflowAction } from "../../../consort/orchestrator/drive/orchestrator-drive.js";
-import { nextTransition } from "../../../consort/orchestrator/drive/orchestrator-drive.js";
+import { nextTransition, actionLane } from "../../../consort/orchestrator/drive/orchestrator-drive.js";
 import { driverBoundOptions, type DriverBound } from "../../../consort/orchestrator/drive/orchestrator-run.js";
 import { describeAction, gateEnactCommand, type EnactCommand } from "../../../consort/logging/orchestrator-logging.js";
 import { deriveFeaturePhase, summarizeStories, type StoryStatusEntry } from "./feature-status.js";
@@ -168,10 +168,22 @@ function boundTransition(bound: string | undefined): ((s: DriveState) => Workflo
 /** The universal "resume the drive to the next stop" enact for a scope. Threads the run's
  *  durable `--only <phase>` bound back in so a resume stays in the phase the run was launched
  *  in (a `/design` run keeps designing + stops at design-complete; it never jumps into build). */
-function resumeCommand(ctx: NextContext): EnactCommand {
+function resumeCommand(ctx: NextContext, action?: WorkflowAction): EnactCommand {
   if (ctx.sprint && !ctx.featureId) return { bin: "consort-drive", args: ["--sprint", ctx.sprint] };
   const args = ["--feature", ctx.featureId ?? "<feature-id>"];
-  if (ctx.bound && DRIVE_ONLY_BOUNDS.has(ctx.bound)) args.push("--only", ctx.bound);
+  // Thread `--only <phase>` ONLY for a run launched with a drive-only bound (design|build|deploy); a
+  // full/unbounded run stays unbounded (no `--only`). WITHIN a bound, prefer the NEXT ACTION's own lane
+  // so the resume actually carries out the named action. The bug this fixes: a `--only build` run that
+  // reaches a not-yet-designed story's "dispatch spec-author for design" action re-emitted the stale
+  // `--only build` bound, which no-ops ("build already complete") on a design action — the action's lane
+  // is `design`, so emit `--only design`. When the action's lane and the bound agree (the common case)
+  // this is identical to before.
+  let phase: string | undefined;
+  if (ctx.bound && DRIVE_ONLY_BOUNDS.has(ctx.bound)) {
+    const actionPhase = action ? actionLane(action) : undefined;
+    phase = actionPhase && DRIVE_ONLY_BOUNDS.has(actionPhase) ? actionPhase : ctx.bound;
+  }
+  if (phase) args.push("--only", phase);
   return { bin: "consort-drive", args };
 }
 
@@ -358,7 +370,7 @@ export function buildNextOptions(action: WorkflowAction, ctx: NextContext): Next
           title: "Resume the drive (after resolving the blocker below)",
           hil_prompt: "Once the blocker under `blockers` is resolved, resume the drive?",
           kind: "action",
-          enact: resumeCommand(ctx),
+          enact: resumeCommand(ctx, action),
           note: "Clear the escalation (and any blocking smell) named in blockers first; the drive will re-derive and retry.",
         },
         holdOption(),
@@ -374,7 +386,7 @@ export function buildNextOptions(action: WorkflowAction, ctx: NextContext): Next
           title: "Resume the drive (promotion)",
           hil_prompt: `Continue promotion (${describeAction(action, { featureId: ctx.featureId })})?`,
           kind: "action",
-          enact: resumeCommand(ctx),
+          enact: resumeCommand(ctx, action),
           outward_facing: true,
         },
         holdOption(),
@@ -396,7 +408,7 @@ export function buildNextOptions(action: WorkflowAction, ctx: NextContext): Next
           title: "Deploy the feature",
           hil_prompt: "Every story is built + accepted. Deploy the feature (local working-software check) and enter promotion?",
           kind: "action",
-          enact: resumeCommand(ctx),
+          enact: resumeCommand(ctx, action),
         },
         holdOption(),
       ];
@@ -409,7 +421,7 @@ export function buildNextOptions(action: WorkflowAction, ctx: NextContext): Next
           title: "Resume the drive",
           hil_prompt: `Resume the drive to carry out: ${describeAction(action, { featureId: ctx.featureId })}?`,
           kind: "action",
-          enact: resumeCommand(ctx),
+          enact: resumeCommand(ctx, action),
         },
         holdOption(),
       ];

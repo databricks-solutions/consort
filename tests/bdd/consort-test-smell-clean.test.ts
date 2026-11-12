@@ -11,7 +11,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { checkTestSmells, AUTHOR_LAYER_TEST_SMELLS, RESILIENCE_TEST_SMELLS, resilienceViolations, e2eRereadWithoutConfirmation, e2eTimingDependentWait } from "../../consort/architecture/test-smell-clean.js";
+import { checkTestSmells, AUTHOR_LAYER_TEST_SMELLS, RESILIENCE_TEST_SMELLS, resilienceViolations, e2eRereadWithoutConfirmation, e2eTimingDependentWait, e2eOutOfBandDbRead, pyMigrationIdleTransaction } from "../../consort/architecture/test-smell-clean.js";
 import { beginNextPendingCycle, greenOpenCycle, type GreenVerifier } from "../../consort/pipeline/cycle-record.js";
 
 const tmpDirs: string[] = [];
@@ -889,13 +889,168 @@ describe("e2e-timing-dependent-wait (resilience family — sleep-and-hope)", () 
   });
 });
 
+describe("e2e-out-of-band-db-read (resilience family — the F6/S2 @T36 integrity-probe cross-DB shape)", () => {
+  it("FLAGS a dbCount() that shells out via `uv run python` + SessionLocal (verbatim from the bed)", () => {
+    // The exact T36 shape: a child-process shell-out reads a SEPARATE DB to get the expected value.
+    const T36 = [
+      `const dbCount = (): number =>`,
+      `  Number(`,
+      `    execFileSync(`,
+      `      "uv",`,
+      `      ["run", "--project", "..", "python", "-c",`,
+      `       "from app.database import SessionLocal; import sqlalchemy as sa; print(SessionLocal().execute(sa.text('SELECT COUNT(*) FROM stock_records WHERE batch IS NULL')).scalar_one())"],`,
+      `      { encoding: "utf8", cwd: ".." },`,
+      `    ).trim(),`,
+      `  );`,
+    ];
+    // The exec call line (line 3) is flagged — its region reaches a DB (uv/python/SessionLocal/SELECT).
+    expect(e2eOutOfBandDbRead(T36)).toContain(3);
+  });
+
+  it("FLAGS a direct node-postgres client opened inside the spec", () => {
+    const directPg = [
+      `import { Pool } from "pg";`,
+      `test("count matches @T99", async ({ page }) => {`,
+      `  const pool = new Pool({ connectionString: process.env.DATABASE_URL });`,
+      `  const { rows } = await pool.query("SELECT COUNT(*) FROM stock_records");`,
+      `  await expect(page.getByTestId("count")).toHaveText(String(rows[0].count));`,
+      `});`,
+    ];
+    expect(e2eOutOfBandDbRead(directPg)).toContain(3); // the `new Pool(` line
+  });
+
+  it("does NOT flag the resilient sibling that reads expected from the /api response (the T38 shape)", () => {
+    const T38 = [
+      `test("integrity-total shows the live total @T38", async ({ page, request, baseURL }) => {`,
+      `  await seed(request, baseURL);`,
+      `  const respP = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/integrity-probe");`,
+      `  await page.goto("/integrity");`,
+      `  const body = await (await respP).json();`,
+      `  await expect(page.getByTestId("integrity-total")).toHaveText(\`of \${body.total} records\`);`,
+      `});`,
+    ];
+    expect(e2eOutOfBandDbRead(T38)).toEqual([]);
+  });
+
+  it("does NOT flag seeding/asserting through the app over /api (request.post, fetch)", () => {
+    const throughApp = [
+      `test("seeds then shows @T40", async ({ page, request, baseURL }) => {`,
+      `  const r = await request.post(\`\${baseURL}/api/stock-records\`, { data: { sku: "X" } });`,
+      `  expect(r.status()).toBe(201);`,
+      `  await page.goto("/");`,
+      `  await expect(page.getByTestId("row")).toBeVisible();`,
+      `});`,
+    ];
+    expect(e2eOutOfBandDbRead(throughApp)).toEqual([]);
+  });
+
+  it("does NOT flag spawning the app server (uvicorn) — the legit Playwright webServer boot, not a DB read", () => {
+    // The false positive the live reprove surfaced: `uv run uvicorn app.main:app --port N` STARTS the app.
+    const serverBoot = [
+      `const server = spawn("uv", ["run", "--project", "..", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(bp)], {`,
+      `  encoding: "utf8",`,
+      `});`,
+    ];
+    expect(e2eOutOfBandDbRead(serverBoot)).toEqual([]);
+  });
+
+  it("FLAGS a `python -c` probe even when the SQL lives in a referenced variable", () => {
+    // integrity-probe-zero.spec.ts:9 shape — the args region shows only `"python", "-c", code`.
+    const varScript = [
+      `const code = "from app.database import SessionLocal; print(...)";`,
+      `const n = execFileSync("uv", ["run", "--project", "..", "python", "-c", code], { encoding: "utf8", cwd: ".." });`,
+    ];
+    expect(e2eOutOfBandDbRead(varScript)).toContain(2); // the execFileSync line
+  });
+});
+
+describe("migration-idle-transaction (resilience family — the F2/S1 T13 IdleInTransactionSessionTimeout shape)", () => {
+  it("FLAGS a round-trip test that holds a snapshot() read open across command.upgrade (verbatim from the bed)", () => {
+    const lines = [
+      `def snapshot(session):`,
+      `    return session.execute(text("select count(*) from stock_records")).all()`,
+      ``,
+      `def test_stock_records_survive_adjustments_migration_round_trip(db_session):`,
+      `    before = snapshot(db_session)`,
+      `    command.upgrade(cfg, "head")`,
+      `    command.downgrade(cfg, "-1")`,
+      `    after = snapshot(db_session)`,
+      `    assert before == after`,
+    ];
+    // the open read (via snapshot, which never commits) races the upgrade at line 6
+    expect(pyMigrationIdleTransaction(lines)).toEqual([6]);
+  });
+
+  it("also flags an INLINE session read held across the migration", () => {
+    const lines = [
+      `def test_round_trip(db_session):`,
+      `    rows = db_session.execute(text("select 1")).all()`,
+      `    command.upgrade(cfg, "head")`,
+      `    assert rows`,
+    ];
+    expect(pyMigrationIdleTransaction(lines)).toEqual([3]);
+  });
+
+  it("does NOT flag when the read is rolled back before the migration (inline hygiene)", () => {
+    const lines = [
+      `def test_round_trip(db_session):`,
+      `    before = db_session.execute(text("select count(*) from stock_records")).all()`,
+      `    db_session.rollback()`,
+      `    command.upgrade(cfg, "head")`,
+      `    command.downgrade(cfg, "-1")`,
+      `    assert before is not None`,
+    ];
+    expect(pyMigrationIdleTransaction(lines)).toEqual([]);
+  });
+
+  it("does NOT flag when snapshot() rolls back internally (the resilient helper the re-author produces)", () => {
+    const lines = [
+      `def snapshot(session):`,
+      `    rows = session.execute(text("select count(*) from stock_records")).all()`,
+      `    session.rollback()`,
+      `    return rows`,
+      ``,
+      `def test_round_trip(db_session):`,
+      `    before = snapshot(db_session)`,
+      `    command.upgrade(cfg, "head")`,
+      `    after = snapshot(db_session)`,
+      `    assert before == after`,
+    ];
+    expect(pyMigrationIdleTransaction(lines)).toEqual([]);
+  });
+
+  it("does NOT flag a short-lived `with engine.connect()` read (auto-closed, no idle tx)", () => {
+    const lines = [
+      `def test_round_trip(engine):`,
+      `    with engine.connect() as c:`,
+      `        before = c.execute(text("select 1")).all()`,
+      `    command.upgrade(cfg, "head")`,
+      `    assert before`,
+    ];
+    expect(pyMigrationIdleTransaction(lines)).toEqual([]);
+  });
+
+  it("does NOT flag a non-migration test that reads a session (needs BOTH a migration + an open read)", () => {
+    const lines = [
+      `def test_adjust_level(db_session):`,
+      `    db_session.execute(text("insert into stock_records ..."))`,
+      `    db_session.commit()`,
+      `    assert db_session.execute(text("select 1")).scalar() == 1`,
+    ];
+    expect(pyMigrationIdleTransaction(lines)).toEqual([]);
+  });
+});
+
 describe("the test-RESILIENCE family routes the AUTO Navigator reauthor turn (NOT HIL / author-layer, NOT Driver)", () => {
   it("the resilience smells are in RESILIENCE_TEST_SMELLS and NOT in AUTHOR_LAYER_TEST_SMELLS", () => {
     expect(RESILIENCE_TEST_SMELLS.has("e2e-reread-without-confirmation")).toBe(true);
     expect(RESILIENCE_TEST_SMELLS.has("e2e-timing-dependent-wait")).toBe(true);
+    expect(RESILIENCE_TEST_SMELLS.has("migration-idle-transaction")).toBe(true);
+    expect(RESILIENCE_TEST_SMELLS.has("e2e-out-of-band-db-read")).toBe(true);
     // NOT author-layer: author-layer HIL-escalates; resilience smells auto-route the Navigator reauthor turn.
     expect(AUTHOR_LAYER_TEST_SMELLS.has("e2e-reread-without-confirmation")).toBe(false);
     expect(AUTHOR_LAYER_TEST_SMELLS.has("e2e-timing-dependent-wait")).toBe(false);
+    expect(AUTHOR_LAYER_TEST_SMELLS.has("e2e-out-of-band-db-read")).toBe(false);
   });
   it("resilienceViolations filters a scan to just the resilience smells", () => {
     const result = {

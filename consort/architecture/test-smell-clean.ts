@@ -70,7 +70,18 @@ export type TestSmellName =
   // Test-RESILIENCE family: a test that trusts a transient/optimistic value or a timing
   // assumption instead of awaiting a confirmed CONDITION — flaky by construction.
   | "e2e-reread-without-confirmation"
-  | "e2e-timing-dependent-wait";
+  | "e2e-timing-dependent-wait"
+  // An e2e that computes its EXPECTED value by reading a database OUT-OF-BAND (a child-process
+  // shell-out — execFileSync/spawn of `uv run python`/`psql` — or a direct pg/SessionLocal client
+  // inside the spec) instead of the app's own /api response. That second connection re-resolves its
+  // own DATABASE_URL, so it reads a DIFFERENT database than the Playwright webServer serves; the
+  // assertion compares the UI (backend's DB) against an unrelated DB (and is a racy out-of-band read).
+  | "e2e-out-of-band-db-read"
+  // A migration round-trip test that holds a DB session's read transaction open ACROSS the
+  // slow Alembic up/down DDL — the idle connection is terminated by Postgres'
+  // idle_in_transaction_session_timeout, so the test fails on any migration slower than the
+  // timeout. Non-resilient by construction; the read must be committed/rolled-back before the migration.
+  | "migration-idle-transaction";
 
 /** Test-smell classes that CANNOT be closed by a surgical Driver repair (narrow a catch,
  *  drop a teardown): they require RE-AUTHORING the test's mechanics, which a Driver
@@ -107,6 +118,12 @@ export const AUTHOR_LAYER_TEST_SMELLS: ReadonlySet<TestSmellName> = new Set<Test
 export const RESILIENCE_TEST_SMELLS: ReadonlySet<TestSmellName> = new Set<TestSmellName>([
   "e2e-reread-without-confirmation",
   "e2e-timing-dependent-wait",
+  "migration-idle-transaction",
+  // The fix is a test RE-AUTHOR (read the expected value from the /api response the UI consumes,
+  // like the resilient sibling), never a Driver surgical repair — a scoped/delta'd whole-table-aggregate
+  // repair can't green a count read from the WRONG database. So it routes a one-shot Navigator re-author
+  // instead of churning assess->repair rounds and HIL'ing (the F6/S2 @T36 integrity-probe class).
+  "e2e-out-of-band-db-read",
 ]);
 
 export interface TestSmellViolation {
@@ -249,6 +266,10 @@ const SMELL_FIX: Record<TestSmellName, string> = {
     "this Playwright e2e asserts a value, RE-READS it (page.reload() or a page.goto() back to the view), then re-asserts the same value to prove PERSISTENCE — but it never awaits a SERVER-CONFIRMED signal before the re-read, so it races the still-in-flight write. The pre-re-read assertion is satisfied by the OPTIMISTIC UI (the row shows the new value before the write resolves), then the reload/goto fetches from the DB; when the re-read beats the commit the DB still has the OLD value and the test fails — intermittently in isolation (the write is fast), DETERMINISTICALLY under full-suite/CI load (the write is slow). A test that only passes on a retry is not resilient and gives the gate no signal (the F5 -> F2 @T78 class). Make it RESILIENT: before the re-read, await the server-CONFIRMED signal the app emits on a durable write — the success flash / a `*-success` (or `*-error`) status element / `page.waitForResponse(<the write endpoint>)` — exactly as the resilient sibling test does; THEN reload and re-assert. Never assert on an optimistic value and immediately re-read.",
   "e2e-timing-dependent-wait":
     "this test waits a FIXED DURATION (page.waitForTimeout(n) / a bare setTimeout/sleep) instead of awaiting a CONDITION. A hardcoded sleep is flaky by construction: too short under load (the thing never happened yet -> fails) and wasteful otherwise — 'sleep and hope'. It passes on a fast/idle machine and fails under full-suite/CI load, the same non-deterministic signal as a flaky test. Replace the fixed wait with an await of the actual condition: `await expect(locator).toBeVisible()` / `toHaveText(...)` (Playwright auto-waits with a timeout), `page.waitForResponse(<endpoint>)`, `page.waitForURL(...)`, or `page.waitForLoadState('networkidle')`. Never gate a test on wall-clock time.",
+  "e2e-out-of-band-db-read":
+    "this Playwright e2e computes its EXPECTED value by reading a database OUT-OF-BAND — a child-process shell-out (`execFileSync`/`spawn` of `uv run python` or `psql`) or a direct `pg`/`SessionLocal` client opened inside the spec — instead of the app's own `/api` response. That second connection re-resolves DATABASE_URL from its own env/.env, so it reads a DIFFERENT database than the Playwright webServer backend serves: the UI renders the backend's value and the assertion compares it against an UNRELATED database, so the two counts drift apart (the UI count climbs as the test seeds while the out-of-band count sits frozen — the F6/S2 @T36 integrity-probe class). It is also an out-of-band whole-table read, racy under the full suite. A `whole-table-aggregate` scope/delta repair CANNOT green it — the count is from the wrong DB — so it needs the test RE-AUTHORED, not a surgical repair. Take the expected value from the SAME `/api` response the UI consumes: `const body = await (await page.waitForResponse(r => new URL(r.url()).pathname === '<endpoint>')).json()`, then assert the UI renders ITS value — exactly as the resilient sibling test does. Never open a second DB connection from an e2e test; the backend's own SQL count is a backend integration test's job.",
+  "migration-idle-transaction":
+    "this migration round-trip test reads through a DB session (a SELECT / .execute / .query — directly or via a read helper like snapshot()) and then runs the slow Alembic DDL (`command.upgrade`/`command.downgrade`, or `alembic upgrade/downgrade`) WITHOUT committing/rolling-back that read first. A non-autocommit session leaves its connection `idle in transaction` across the migration; Postgres' `idle_in_transaction_session_timeout` (the app's runtime safety net) then TERMINATES it, so the next read raises `IdleInTransactionSessionTimeout` — intermittently when the migration is fast, DETERMINISTICALLY when it is slow (full-suite/CI load, or a big DDL). The migration's up/down may be perfectly reversible; the flaw is transaction hygiene. Make it RESILIENT: commit or roll back (or close) the read transaction BEFORE each migration call — e.g. have snapshot() do `rows = session.execute(...).all(); session.rollback(); return rows`, or read each snapshot through a fresh short-lived `with engine.connect() as c:` connection. Never hold a session's read transaction open across a migration. The assertion (data survives the round-trip) is unchanged.",
   "psycopg2-pgcode-attr":
     "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) — a psycopg2 attribute — but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap — no production/driver shim.",
 };
@@ -620,6 +641,116 @@ export function e2eTimingDependentWait(lines: string[]): number[] {
   return out;
 }
 
+/**
+ * e2e-out-of-band-db-read (test-resilience family). An e2e that reads a database OUT-OF-BAND to get an
+ * expected value, instead of the app's own `/api` response:
+ *  - a child-process exec (`execFileSync`/`execSync`/`spawnSync`/`spawn`) whose command/args reach a DB
+ *    (`uv`/`python`/`psql`, or an embedded `SessionLocal`/`sqlalchemy`/`psycopg`/SQL `SELECT`/`COUNT`); or
+ *  - a direct JS Postgres client opened in the spec (`new pg.Pool/Client`, `new Pool/Client`,
+ *    `createConnection(`, `require('pg')`, `knex(`).
+ * That second connection re-resolves its own DATABASE_URL -> a DIFFERENT database than the Playwright
+ * webServer serves, so the assert compares two databases (and is a racy out-of-band whole-table read).
+ * Returns the 1-based line of each occurrence. Pure: string-only. Reading through the app over `/api`
+ * (`request.post`, `page.waitForResponse`, `fetch`) is the resilient pattern and is NOT flagged.
+ */
+export function e2eOutOfBandDbRead(lines: string[]): number[] {
+  const out = new Set<number>();
+  const EXEC = /\b(?:execFileSync|execSync|spawnSync|spawn)\s*\(/;
+  // A DB ACCESS inside the exec'd command: a DB driver/SQL token, or a `python -c` one-liner (which in an
+  // e2e spec is a DB probe). NOT a bare `uv`/`python`: `uv run uvicorn app.main:app` STARTS the app server
+  // (the legit Playwright webServer boot), which is not an out-of-band read.
+  const DB_IN_EXEC = /\bpsql\b|\bSessionLocal\b|\bsqlalchemy\b|\bpsycopg\b|SELECT\s|COUNT\s*\(/i;
+  // A server/app LAUNCH (uvicorn/gunicorn/app.main:app/--port/runserver) is not a DB read — exclude it so
+  // the webServer boot `spawn("uv", ["run", "uvicorn", "app.main:app", "--port", ...])` is NOT flagged.
+  const SERVER_SPAWN = /\buvicorn\b|\bgunicorn\b|app\.main:app|\b--port\b|\brunserver\b/i;
+  // A direct JS Postgres driver opened IN the spec (not the embedded python shell-out string, which the
+  // EXEC region already catches). node-postgres `new Pool/Client`, a bare `pg` require, knex, or a raw
+  // `createConnection(`.
+  const DIRECT_DB = /\bnew\s+(?:pg\.)?(?:Client|Pool)\s*\(|require\(\s*['"]pg['"]\s*\)|\bknex\s*\(|\bcreateConnection\s*\(/;
+  lines.forEach((l, i) => {
+    if (EXEC.test(l)) {
+      // The exec args (command, argv, the `-c` script) often span several lines — scan a small region.
+      const region = lines.slice(i, Math.min(lines.length, i + 8)).join("\n");
+      // `python -c <script>` is a DB probe even when the SQL lives in a referenced variable (the args
+      // region shows only `"python", "-c", code`): require python AND a `-c` flag.
+      const pyDashC = /\bpython\d?\b/i.test(region) && /["'`]-c["'`]/.test(region);
+      if ((DB_IN_EXEC.test(region) || pyDashC) && !SERVER_SPAWN.test(region)) out.add(i + 1);
+    }
+    if (DIRECT_DB.test(l)) out.add(i + 1);
+  });
+  return [...out].sort((a, b) => a - b);
+}
+
+const PY_INDENT = (s: string): number => s.length - s.replace(/^\s*/, "").length;
+
+/** The source of the Python `def` block starting at `defLine` — the def line plus every MORE-indented
+ *  line until the indentation returns to the def's own level (string-naive; fine for a heuristic). */
+function pyBlockBody(lines: string[], defLine: number): string {
+  const defIndent = PY_INDENT(lines[defLine]);
+  const out = [lines[defLine]];
+  for (let i = defLine + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.trim() === "") { out.push(l); continue; }
+    if (PY_INDENT(l) <= defIndent) break;
+    out.push(l);
+  }
+  return out.join("\n");
+}
+
+// A read through a (non-autocommit) ORM session that opens a transaction, and the hygiene calls that
+// close it. "session"-named receivers only, so a short-lived `with engine.connect() as c: c.execute(...)`
+// (auto-closed, no idle tx) is NOT flagged — that is exactly the resilient pattern.
+const PY_SESSION_READ = /\b\w*session\w*\s*\.\s*(?:execute|query|scalar|scalars|all|get|first|one|one_or_none)\s*\(/i;
+const PY_SESSION_HYGIENE = /\b\w*session\w*\s*\.\s*(?:commit|rollback|close)\s*\(|\bwith\b[^\n]*\bsession\b/i;
+const PY_MIGRATION_CALL = /\bcommand\s*\.\s*(?:upgrade|downgrade)\s*\(|\balembic\b[^\n]*\b(?:upgrade|downgrade)\b/;
+
+/** Local helpers that READ through a session and leave the transaction OPEN (no commit/rollback/close
+ *  in the helper body) — the `snapshot()` shape. A CALL to one before a migration leaves an idle tx, so
+ *  it counts as an open read. Mirrors confirmingHelperNames; crediting a helper that DOES roll back keeps
+ *  the detector from flagging the resilient form. */
+function idleReadHelperNames(lines: string[]): Set<string> {
+  const names = new Set<string>();
+  const DEF = /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = DEF.exec(lines[i]);
+    if (!m) continue;
+    const body = pyBlockBody(lines, i);
+    if (PY_SESSION_READ.test(body) && !PY_SESSION_HYGIENE.test(body)) names.add(m[1]);
+  }
+  return names;
+}
+
+/**
+ * migration-idle-transaction (test-RESILIENCE family, Python). Within a `def test_*` body, an ORM
+ * session READ (inline, or via an idle-read helper like snapshot()) is left OPEN — no commit/rollback/
+ * close — when a slow Alembic DDL (`command.upgrade`/`command.downgrade`, or `alembic upgrade/downgrade`)
+ * then runs. The idle connection is killed by Postgres' idle_in_transaction_session_timeout, so the test
+ * fails on any migration slower than the timeout. Returns the 1-based line of each raced migration call.
+ * Pure: string-only. A read AFTER the migration, or one committed/rolled-back first, is not flagged.
+ */
+export function pyMigrationIdleTransaction(lines: string[]): number[] {
+  const out: number[] = [];
+  const idleHelpers = idleReadHelperNames(lines);
+  const HELPER_CALL = idleHelpers.size
+    ? new RegExp(`\\b(?:${[...idleHelpers].map(escapeRegExp).join("|")})\\s*\\(`)
+    : null;
+  const isRead = (l: string): boolean => PY_SESSION_READ.test(l) || (HELPER_CALL !== null && HELPER_CALL.test(l));
+  const TEST_DEF = /^\s*(?:async\s+)?def\s+(test_\w+)\s*\(/;
+  for (let d = 0; d < lines.length; d++) {
+    if (!TEST_DEF.test(lines[d])) continue;
+    const defIndent = PY_INDENT(lines[d]);
+    let openRead = false; // a session read's transaction is currently open (uncommitted)
+    for (let i = d + 1; i < lines.length; i++) {
+      const l = lines[i];
+      if (l.trim() !== "" && PY_INDENT(l) <= defIndent) break; // end of this test function
+      if (PY_SESSION_HYGIENE.test(l)) openRead = false; // committed/rolled-back/closed first — resilient
+      if (isRead(l)) openRead = true; // a read opened/renewed the transaction
+      if (PY_MIGRATION_CALL.test(l) && openRead) { out.push(i + 1); openRead = false; } // raced the migration
+    }
+  }
+  return out;
+}
+
 /** Scan the project's test files for the authoring-smell catalog. */
 export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
   const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
@@ -662,6 +793,19 @@ export function checkTestSmells(args: TestSmellArgs): TestSmellCleanResult {
         }
         for (const ln of e2eTimingDependentWait(lines)) {
           push("e2e-timing-dependent-wait", rel, ln, lines[ln - 1] ?? "waitForTimeout(...)");
+        }
+        for (const ln of e2eOutOfBandDbRead(lines)) {
+          push("e2e-out-of-band-db-read", rel, ln, lines[ln - 1] ?? "execFileSync(... SELECT COUNT(*) ...)");
+        }
+      }
+
+      // Test-RESILIENCE family (Python): a migration round-trip test that holds a session read open
+      // across the slow Alembic DDL, so idle_in_transaction_session_timeout kills the connection. The
+      // detector requires BOTH a migration call and an open session read, so non-migration py tests
+      // never match. Routed to the Navigator RE-AUTHOR like the e2e resilience smells.
+      if (isPy) {
+        for (const ln of pyMigrationIdleTransaction(lines)) {
+          push("migration-idle-transaction", rel, ln, lines[ln - 1] ?? "command.upgrade(...)");
         }
       }
 

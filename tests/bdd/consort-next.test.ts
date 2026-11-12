@@ -191,6 +191,21 @@ describe("durable phase bound: a /design resume stays design-bound (no silent ju
     expect(none.enact).toEqual({ bin: "consort-drive", args: ["--feature", "F1-checkout"] });
   });
 
+  it("emits --only matching the NEXT ACTION's lane, not a stale run bound (build-bound run reaching a not-yet-designed story)", () => {
+    // The real bug: a `--only build` run (bound=build) reaches S3's "dispatch spec-author for design"
+    // (a design-lane action). The stale `--only build` would no-op ("build already complete"); the
+    // resume must say `--only design` so it actually designs the pulled story. (spec-author breakdown =
+    // design lane; a design-lane action under a build bound resumes design-bound.)
+    const BUILD_CTX: NextContext = { ...CTX, bound: "build" };
+    const designAction = { kind: "invoke-role", role: "spec-author", mode: "breakdown" } as WorkflowAction;
+    const resume = buildNextOptions(designAction, BUILD_CTX)[0];
+    expect(resume.enact).toEqual({ bin: "consort-drive", args: ["--feature", "F1-checkout", "--only", "design"] });
+    // A build-lane action under the same bound stays --only build (lane agrees with bound).
+    const buildAction = { kind: "invoke-role", role: "driver" } as WorkflowAction;
+    const buildResume = buildNextOptions(buildAction, BUILD_CTX)[0];
+    expect(buildResume.enact).toEqual({ bin: "consort-drive", args: ["--feature", "F1-checkout", "--only", "build"] });
+  });
+
   it("the spec-gate prompt is unambiguous + self-contained per bound (design = NO build; full = builds)", () => {
     const design = buildNextOptions({ kind: "approve-gate", story: "S1" } as WorkflowAction, DESIGN_CTX)[0];
     // Design-only: states it continues design + NO build starts (both halves, so the presenter adds nothing).

@@ -11831,10 +11831,15 @@ function boundTransition(bound) {
   if (!["design", "build", "deploy"].includes(bound)) return void 0;
   return driverBoundOptions(bound).transition;
 }
-function resumeCommand(ctx) {
+function resumeCommand(ctx, action) {
   if (ctx.sprint && !ctx.featureId) return { bin: "consort-drive", args: ["--sprint", ctx.sprint] };
   const args = ["--feature", ctx.featureId ?? "<feature-id>"];
-  if (ctx.bound && DRIVE_ONLY_BOUNDS.has(ctx.bound)) args.push("--only", ctx.bound);
+  let phase;
+  if (ctx.bound && DRIVE_ONLY_BOUNDS.has(ctx.bound)) {
+    const actionPhase = action ? actionLane(action) : void 0;
+    phase = actionPhase && DRIVE_ONLY_BOUNDS.has(actionPhase) ? actionPhase : ctx.bound;
+  }
+  if (phase) args.push("--only", phase);
   return { bin: "consort-drive", args };
 }
 function holdOption() {
@@ -11973,7 +11978,7 @@ function buildNextOptions(action, ctx) {
           title: "Resume the drive (after resolving the blocker below)",
           hil_prompt: "Once the blocker under `blockers` is resolved, resume the drive?",
           kind: "action",
-          enact: resumeCommand(ctx),
+          enact: resumeCommand(ctx, action),
           note: "Clear the escalation (and any blocking smell) named in blockers first; the drive will re-derive and retry."
         },
         holdOption()
@@ -11987,7 +11992,7 @@ function buildNextOptions(action, ctx) {
           title: "Resume the drive (promotion)",
           hil_prompt: `Continue promotion (${describeAction(action, { featureId: ctx.featureId })})?`,
           kind: "action",
-          enact: resumeCommand(ctx),
+          enact: resumeCommand(ctx, action),
           outward_facing: true
         },
         holdOption()
@@ -12009,7 +12014,7 @@ function buildNextOptions(action, ctx) {
           title: "Deploy the feature",
           hil_prompt: "Every story is built + accepted. Deploy the feature (local working-software check) and enter promotion?",
           kind: "action",
-          enact: resumeCommand(ctx)
+          enact: resumeCommand(ctx, action)
         },
         holdOption()
       ];
@@ -12020,7 +12025,7 @@ function buildNextOptions(action, ctx) {
           title: "Resume the drive",
           hil_prompt: `Resume the drive to carry out: ${describeAction(action, { featureId: ctx.featureId })}?`,
           kind: "action",
-          enact: resumeCommand(ctx)
+          enact: resumeCommand(ctx, action)
         },
         holdOption()
       ];

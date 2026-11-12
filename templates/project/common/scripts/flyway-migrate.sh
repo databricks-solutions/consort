@@ -65,6 +65,29 @@ elif [ -f "$REPO_ROOT/requirements.txt" ] || [ -f "$REPO_ROOT/pyproject.toml" ];
   if [ -d ".venv" ]; then
     source .venv/bin/activate
   fi
+  # When bound to a Lakebase paired branch by METADATA (LAKEBASE_PROJECT_ID + LAKEBASE_BRANCH_ID, no
+  # explicit DATABASE_URL), mint a FRESH short-lived credential via the kit's get-connection seam and
+  # export it so alembic connects to the BRANCH. If the mint fails (expired auth, revoked grant, missing
+  # branch) do NOT fall through: alembic would otherwise resolve no Lakebase URL and SQLAlchemy would try
+  # its localhost:5432 default, dying "connection refused" — a cryptic error that MASKS the real cause
+  # (the auth/DSN-mint failure). Fail LOUDLY with the actual error + the re-auth hint instead.
+  if [ -z "${DATABASE_URL:-}" ] && [ -x "$SCRIPT_DIR/lk" ] \
+      && [ -n "${LAKEBASE_PROJECT_ID:-}" ] && [ -n "${LAKEBASE_BRANCH_ID:-}" ]; then
+    _mint_err="$(mktemp)"
+    if _DSN="$("$SCRIPT_DIR/lk" lakebase-get-connection --output dsn \
+        --instance "$LAKEBASE_PROJECT_ID" --branch "$LAKEBASE_BRANCH_ID" 2>"$_mint_err")" && [ -n "$_DSN" ]; then
+      export DATABASE_URL="$_DSN"
+    else
+      echo "Could not mint a Lakebase credential for '${LAKEBASE_PROJECT_ID}/${LAKEBASE_BRANCH_ID}'." >&2
+      echo "NOT falling back to localhost:5432 (that would die 'connection refused' and hide this). The Databricks auth has most likely expired — re-authenticate with:" >&2
+      echo "  databricks auth login --profile \"\${DATABRICKS_CONFIG_PROFILE:-<your-profile>}\"" >&2
+      echo "Underlying lakebase-get-connection error:" >&2
+      sed 's/^/  /' "$_mint_err" >&2
+      rm -f "$_mint_err"
+      exit 1
+    fi
+    rm -f "$_mint_err"
+  fi
   alembic upgrade head "$@"
 elif [ -n "$(find "$REPO_ROOT" -maxdepth 1 \( -name '*.sln' -o -name '*.slnx' -o -name '*.csproj' \) -print -quit 2>/dev/null)" ]; then
   # .NET: EF Core or Flyway (db/migrations/).

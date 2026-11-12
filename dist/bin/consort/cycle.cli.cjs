@@ -10493,7 +10493,13 @@ var AUTHOR_LAYER_TEST_SMELLS = /* @__PURE__ */ new Set([
 ]);
 var RESILIENCE_TEST_SMELLS = /* @__PURE__ */ new Set([
   "e2e-reread-without-confirmation",
-  "e2e-timing-dependent-wait"
+  "e2e-timing-dependent-wait",
+  "migration-idle-transaction",
+  // The fix is a test RE-AUTHOR (read the expected value from the /api response the UI consumes,
+  // like the resilient sibling), never a Driver surgical repair — a scoped/delta'd whole-table-aggregate
+  // repair can't green a count read from the WRONG database. So it routes a one-shot Navigator re-author
+  // instead of churning assess->repair rounds and HIL'ing (the F6/S2 @T36 integrity-probe class).
+  "e2e-out-of-band-db-read"
 ]);
 function resilienceViolations(result) {
   return result.violations.filter((v) => RESILIENCE_TEST_SMELLS.has(v.smell));
@@ -10588,6 +10594,8 @@ var SMELL_FIX = {
   "dropped-column-test-reference": "this TEST inserts into / selects / asserts a column that a CONTRACT migration in this feature DROPPED, and the file performs no downgrade \u2014 so it runs against HEAD where the column no longer exists and dies with a ProgrammingError ('column does not exist'), even though the app is correct (the F6/S3 cross-story supersession class: a prior story's test still references tracking_code after S3 drops it). `opt2` scopes the per-cycle backend suite to the current story, so a prior-story test like this is NOT run per-cycle and only fails LATER at the full deploy-verify as a HALT. Refactor the superseded reference: drop the dropped column from the INSERT/SELECT/assertion, or retarget it to the surviving columns (e.g. batch_number/serial_number). Do NOT re-add the column to the model or edit the migration to hide it. (A migration round-trip test that re-adds the column via its own downgrade is legitimate and is not flagged \u2014 this only flags pure-HEAD references.)",
   "e2e-reread-without-confirmation": "this Playwright e2e asserts a value, RE-READS it (page.reload() or a page.goto() back to the view), then re-asserts the same value to prove PERSISTENCE \u2014 but it never awaits a SERVER-CONFIRMED signal before the re-read, so it races the still-in-flight write. The pre-re-read assertion is satisfied by the OPTIMISTIC UI (the row shows the new value before the write resolves), then the reload/goto fetches from the DB; when the re-read beats the commit the DB still has the OLD value and the test fails \u2014 intermittently in isolation (the write is fast), DETERMINISTICALLY under full-suite/CI load (the write is slow). A test that only passes on a retry is not resilient and gives the gate no signal (the F5 -> F2 @T78 class). Make it RESILIENT: before the re-read, await the server-CONFIRMED signal the app emits on a durable write \u2014 the success flash / a `*-success` (or `*-error`) status element / `page.waitForResponse(<the write endpoint>)` \u2014 exactly as the resilient sibling test does; THEN reload and re-assert. Never assert on an optimistic value and immediately re-read.",
   "e2e-timing-dependent-wait": "this test waits a FIXED DURATION (page.waitForTimeout(n) / a bare setTimeout/sleep) instead of awaiting a CONDITION. A hardcoded sleep is flaky by construction: too short under load (the thing never happened yet -> fails) and wasteful otherwise \u2014 'sleep and hope'. It passes on a fast/idle machine and fails under full-suite/CI load, the same non-deterministic signal as a flaky test. Replace the fixed wait with an await of the actual condition: `await expect(locator).toBeVisible()` / `toHaveText(...)` (Playwright auto-waits with a timeout), `page.waitForResponse(<endpoint>)`, `page.waitForURL(...)`, or `page.waitForLoadState('networkidle')`. Never gate a test on wall-clock time.",
+  "e2e-out-of-band-db-read": "this Playwright e2e computes its EXPECTED value by reading a database OUT-OF-BAND \u2014 a child-process shell-out (`execFileSync`/`spawn` of `uv run python` or `psql`) or a direct `pg`/`SessionLocal` client opened inside the spec \u2014 instead of the app's own `/api` response. That second connection re-resolves DATABASE_URL from its own env/.env, so it reads a DIFFERENT database than the Playwright webServer backend serves: the UI renders the backend's value and the assertion compares it against an UNRELATED database, so the two counts drift apart (the UI count climbs as the test seeds while the out-of-band count sits frozen \u2014 the F6/S2 @T36 integrity-probe class). It is also an out-of-band whole-table read, racy under the full suite. A `whole-table-aggregate` scope/delta repair CANNOT green it \u2014 the count is from the wrong DB \u2014 so it needs the test RE-AUTHORED, not a surgical repair. Take the expected value from the SAME `/api` response the UI consumes: `const body = await (await page.waitForResponse(r => new URL(r.url()).pathname === '<endpoint>')).json()`, then assert the UI renders ITS value \u2014 exactly as the resilient sibling test does. Never open a second DB connection from an e2e test; the backend's own SQL count is a backend integration test's job.",
+  "migration-idle-transaction": "this migration round-trip test reads through a DB session (a SELECT / .execute / .query \u2014 directly or via a read helper like snapshot()) and then runs the slow Alembic DDL (`command.upgrade`/`command.downgrade`, or `alembic upgrade/downgrade`) WITHOUT committing/rolling-back that read first. A non-autocommit session leaves its connection `idle in transaction` across the migration; Postgres' `idle_in_transaction_session_timeout` (the app's runtime safety net) then TERMINATES it, so the next read raises `IdleInTransactionSessionTimeout` \u2014 intermittently when the migration is fast, DETERMINISTICALLY when it is slow (full-suite/CI load, or a big DDL). The migration's up/down may be perfectly reversible; the flaw is transaction hygiene. Make it RESILIENT: commit or roll back (or close) the read transaction BEFORE each migration call \u2014 e.g. have snapshot() do `rows = session.execute(...).all(); session.rollback(); return rows`, or read each snapshot through a fresh short-lived `with engine.connect() as c:` connection. Never hold a session's read transaction open across a migration. The assertion (data survives the round-trip) is unchanged.",
   "psycopg2-pgcode-attr": "this test reads the SQLSTATE off a DB exception via `.pgcode` (e.g. `exc.value.orig.pgcode`) \u2014 a psycopg2 attribute \u2014 but the scaffold runs psycopg3, where a raised DBAPIError's SQLSTATE is `.sqlstate` and `.pgcode` does NOT exist, so the assertion dies with `AttributeError: '<X>Violation' object has no attribute 'pgcode'` even though the constraint fired correctly. The verify then reads as a FAILURE on a working app (the F6/S1 T12/T18 class). Use the psycopg3 attribute: `exc.value.sqlstate` (preferred) or `exc.value.orig.sqlstate` / `exc.value.diag.sqlstate`; compare it to the SQLSTATE string (e.g. '23505' unique, '23514' check). A surgical attribute swap \u2014 no production/driver shim."
 };
 function collectDroppedColumns(projectDir, migrationDirs) {
@@ -10837,6 +10845,74 @@ function e2eTimingDependentWait(lines) {
   });
   return out;
 }
+function e2eOutOfBandDbRead(lines) {
+  const out = /* @__PURE__ */ new Set();
+  const EXEC = /\b(?:execFileSync|execSync|spawnSync|spawn)\s*\(/;
+  const DB_IN_EXEC = /\bpsql\b|\bSessionLocal\b|\bsqlalchemy\b|\bpsycopg\b|SELECT\s|COUNT\s*\(/i;
+  const SERVER_SPAWN = /\buvicorn\b|\bgunicorn\b|app\.main:app|\b--port\b|\brunserver\b/i;
+  const DIRECT_DB = /\bnew\s+(?:pg\.)?(?:Client|Pool)\s*\(|require\(\s*['"]pg['"]\s*\)|\bknex\s*\(|\bcreateConnection\s*\(/;
+  lines.forEach((l, i) => {
+    if (EXEC.test(l)) {
+      const region = lines.slice(i, Math.min(lines.length, i + 8)).join("\n");
+      const pyDashC = /\bpython\d?\b/i.test(region) && /["'`]-c["'`]/.test(region);
+      if ((DB_IN_EXEC.test(region) || pyDashC) && !SERVER_SPAWN.test(region)) out.add(i + 1);
+    }
+    if (DIRECT_DB.test(l)) out.add(i + 1);
+  });
+  return [...out].sort((a, b) => a - b);
+}
+var PY_INDENT = (s) => s.length - s.replace(/^\s*/, "").length;
+function pyBlockBody(lines, defLine) {
+  const defIndent = PY_INDENT(lines[defLine]);
+  const out = [lines[defLine]];
+  for (let i = defLine + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.trim() === "") {
+      out.push(l);
+      continue;
+    }
+    if (PY_INDENT(l) <= defIndent) break;
+    out.push(l);
+  }
+  return out.join("\n");
+}
+var PY_SESSION_READ = /\b\w*session\w*\s*\.\s*(?:execute|query|scalar|scalars|all|get|first|one|one_or_none)\s*\(/i;
+var PY_SESSION_HYGIENE = /\b\w*session\w*\s*\.\s*(?:commit|rollback|close)\s*\(|\bwith\b[^\n]*\bsession\b/i;
+var PY_MIGRATION_CALL = /\bcommand\s*\.\s*(?:upgrade|downgrade)\s*\(|\balembic\b[^\n]*\b(?:upgrade|downgrade)\b/;
+function idleReadHelperNames(lines) {
+  const names = /* @__PURE__ */ new Set();
+  const DEF = /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = DEF.exec(lines[i]);
+    if (!m) continue;
+    const body = pyBlockBody(lines, i);
+    if (PY_SESSION_READ.test(body) && !PY_SESSION_HYGIENE.test(body)) names.add(m[1]);
+  }
+  return names;
+}
+function pyMigrationIdleTransaction(lines) {
+  const out = [];
+  const idleHelpers = idleReadHelperNames(lines);
+  const HELPER_CALL = idleHelpers.size ? new RegExp(`\\b(?:${[...idleHelpers].map(escapeRegExp).join("|")})\\s*\\(`) : null;
+  const isRead = (l) => PY_SESSION_READ.test(l) || HELPER_CALL !== null && HELPER_CALL.test(l);
+  const TEST_DEF = /^\s*(?:async\s+)?def\s+(test_\w+)\s*\(/;
+  for (let d = 0; d < lines.length; d++) {
+    if (!TEST_DEF.test(lines[d])) continue;
+    const defIndent = PY_INDENT(lines[d]);
+    let openRead = false;
+    for (let i = d + 1; i < lines.length; i++) {
+      const l = lines[i];
+      if (l.trim() !== "" && PY_INDENT(l) <= defIndent) break;
+      if (PY_SESSION_HYGIENE.test(l)) openRead = false;
+      if (isRead(l)) openRead = true;
+      if (PY_MIGRATION_CALL.test(l) && openRead) {
+        out.push(i + 1);
+        openRead = false;
+      }
+    }
+  }
+  return out;
+}
 function checkTestSmells(args) {
   const testDirs = args.testDirs ?? DEFAULT_TEST_DIRS;
   const knownTables = collectKnownTables(args.projectDir, args.migrationDirs ?? DEFAULT_MIGRATION_DIRS2);
@@ -10865,6 +10941,14 @@ function checkTestSmells(args) {
         }
         for (const ln of e2eTimingDependentWait(lines)) {
           push("e2e-timing-dependent-wait", rel, ln, lines[ln - 1] ?? "waitForTimeout(...)");
+        }
+        for (const ln of e2eOutOfBandDbRead(lines)) {
+          push("e2e-out-of-band-db-read", rel, ln, lines[ln - 1] ?? "execFileSync(... SELECT COUNT(*) ...)");
+        }
+      }
+      if (isPy) {
+        for (const ln of pyMigrationIdleTransaction(lines)) {
+          push("migration-idle-transaction", rel, ln, lines[ln - 1] ?? "command.upgrade(...)");
         }
       }
       if (isPy && droppedCols.size > 0 && !/\bdowngrade\b/.test(body)) {
