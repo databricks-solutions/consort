@@ -698,3 +698,12 @@ snapshot_date,referrer,count,uniques
 "2026-11-11","lakebase-cookbook.com",1,1
 "2026-11-11","search.brave.com",1,1
 "2026-11-11","teams.public.onecdn.static.microsoft",19,14
+"2026-11-12","Bing",4,3
+"2026-11-12","DuckDuckGo",1,1
+"2026-11-12","Google",31,24
+"2026-11-12","aocr.org",107,107
+"2026-11-12","claude.ai",7,2
+"2026-11-12","github.com",43,30
+"2026-11-12","lakebase-cookbook.com",1,1
+"2026-11-12","search.brave.com",1,1
+"2026-11-12","teams.public.onecdn.static.microsoft",17,13
