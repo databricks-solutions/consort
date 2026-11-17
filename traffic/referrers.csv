@@ -736,3 +736,12 @@ snapshot_date,referrer,count,uniques
 "2026-11-16","lakebase-cookbook.com",2,2
 "2026-11-16","search.brave.com",2,2
 "2026-11-16","teams.public.onecdn.static.microsoft",13,10
+"2026-11-17","Bing",2,2
+"2026-11-17","Google",25,20
+"2026-11-17","aocr.org",71,71
+"2026-11-17","claude.ai",11,2
+"2026-11-17","github.com",29,25
+"2026-11-17","kevin-hartman.io",6,3
+"2026-11-17","lakebase-cookbook.com",1,1
+"2026-11-17","search.brave.com",2,2
+"2026-11-17","teams.public.onecdn.static.microsoft",10,8
