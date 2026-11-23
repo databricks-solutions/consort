@@ -420,31 +420,23 @@ COPILOT_CLI=""
 if have copilot; then COPILOT_CLI="copilot"
 elif have gh && gh copilot --help >/dev/null 2>&1; then COPILOT_CLI="gh copilot"; fi
 if [ -n "$COPILOT_CLI" ]; then
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
-  # Resolve the plugin dir: a consort CHECKOUT first, else the copy BUNDLED in the npm package
-  # (npm root -g). The Copilot CLI has no marketplace, so the plugin always installs from a
-  # bundled path; shipping it in the npm package (package.json `files`) is what lets a curl|bash
-  # run with no checkout install it, symmetric with the Claude marketplace install.
-  NPM_PLUGIN_DIR="$(npm root -g 2>/dev/null)/@databricks-solutions/consort/integrations/copilot/consort-copilot"
-  COPILOT_PLUGIN_DIR="$SCRIPT_DIR/integrations/copilot/consort-copilot"
-  [ -f "$COPILOT_PLUGIN_DIR/plugin.json" ] || COPILOT_PLUGIN_DIR="$NPM_PLUGIN_DIR"
-  COPILOT_HINT="npm i -g @databricks-solutions/consort && $COPILOT_CLI plugin install \"\$(npm root -g)/@databricks-solutions/consort/integrations/copilot/consort-copilot\""
+  # Install via the Consort MARKETPLACE (the GitHub repo's .github/plugin/marketplace.json),
+  # symmetric with the Claude marketplace and NON-deprecated (the Copilot CLI is phasing out
+  # direct repo/URL/local-path installs in favor of plugin@marketplace). Works over curl|bash with
+  # no checkout and no npm: Copilot fetches the plugin from the repo.
+  COPILOT_HINT="$COPILOT_CLI plugin marketplace add databricks-solutions/consort && $COPILOT_CLI plugin install consort@databricks-solutions"
   if [ "$CHECK_ONLY" = true ]; then
     if $COPILOT_CLI plugin list 2>/dev/null | grep -qi consort; then
       echo -e "  ${GREEN}✓${NC} Consort Copilot plugin installed"
     else
       echo -e "  ${YELLOW}!${NC} Consort Copilot plugin not installed (re-run without --check-only to install it)"
     fi
-  elif confirm "Install the Consort plugin for GitHub Copilot CLI?"; then
-    # No bundled dir on disk yet (curl|bash, consort not npm-installed): npm-install the package
-    # so the plugin is present, then install it from there. Best-effort; degrades to a hint.
-    if [ ! -f "$COPILOT_PLUGIN_DIR/plugin.json" ] && have npm; then
-      echo "  Installing @databricks-solutions/consort from npm (for the bundled Copilot plugin)…"
-      npm i -g @databricks-solutions/consort >/dev/null 2>&1 || true
-      COPILOT_PLUGIN_DIR="$NPM_PLUGIN_DIR"
-    fi
-    if [ -f "$COPILOT_PLUGIN_DIR/plugin.json" ] && $COPILOT_CLI plugin install "$COPILOT_PLUGIN_DIR"; then
-      echo -e "  ${GREEN}✓${NC} Consort Copilot plugin installed (re-run after editing the skill/agents; the CLI caches at install)"
+  elif confirm "Install the Consort plugin for GitHub Copilot CLI (from the marketplace)?"; then
+    # Add-or-refresh the Consort marketplace, then install the plugin from it.
+    $COPILOT_CLI plugin marketplace add databricks-solutions/consort >/dev/null 2>&1 \
+      || $COPILOT_CLI plugin marketplace update databricks-solutions >/dev/null 2>&1 || true
+    if $COPILOT_CLI plugin install consort@databricks-solutions; then
+      echo -e "  ${GREEN}✓${NC} Consort Copilot plugin installed"
     else
       echo -e "  ${YELLOW}!${NC} Copilot plugin install failed. Retry: $COPILOT_HINT"
     fi

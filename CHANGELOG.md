@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.53] - 2026-11-23
+
+- **Copilot plugin installs from a marketplace.** Added `.github/plugin/marketplace.json` (marketplace name `databricks-solutions`, plugin `consort` sourced from `integrations/copilot/consort-copilot`), so the Copilot plugin installs the same way as the Claude Code plugin and via the Copilot CLI's **non-deprecated** path: `copilot plugin marketplace add databricks-solutions/consort` then `copilot plugin install consort@databricks-solutions` (direct repo/URL/local-path installs are being phased out). `bootstrap.sh` + README now use the marketplace (works over `curl|bash`, no checkout or npm). The `consort-copilot` plugin version is synced to the release (was `0.0.1`).
+
 ## [0.4.52] - 2026-11-23
 
 - **Ship the Copilot plugin on npm.** `integrations/copilot/consort-copilot` is now in `package.json` `files`, so `npm i -g @databricks-solutions/consort` carries the Copilot coordinator skill + agents. `bootstrap.sh` installs the Copilot plugin over `curl|bash` (npm-installs the package, then `copilot plugin install`s the bundled path) when a Copilot CLI is present, symmetric with the Claude marketplace install, instead of only printing a hint. README "Running on GitHub Copilot" corrected to match.

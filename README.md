@@ -152,17 +152,15 @@ npm install   # the prepare script builds dist/
 
 Consort can drive its role turns through the **GitHub Copilot CLI** instead of Claude Code: the same deterministic orchestrator, gates, and test-driven loop, with each role run as `copilot -p` (routed to Databricks models). The executor is chosen once, when the project is created.
 
-**Install the Copilot plugin** (the Consort coordinator skill, the role agents, and the MCP server). Unlike the Claude Code marketplace plugin, this is a local-path install:
+**Install the Copilot plugin** (the Consort coordinator skill, the role agents, and the MCP server) from the Consort marketplace — the same shape as the Claude Code plugin, and the Copilot CLI's non-deprecated path (direct repo/URL/local-path installs are being phased out in favor of `plugin@marketplace`):
 
 ```bash
-# from an npm-global install of consort
-copilot plugin install "$(npm root -g)/@databricks-solutions/consort/integrations/copilot/consort-copilot"
-# or from a clone of this repo
-copilot plugin install integrations/copilot/consort-copilot
-# (use `gh copilot plugin install …` if you run Copilot as the gh extension)
+copilot plugin marketplace add databricks-solutions/consort
+copilot plugin install consort@databricks-solutions
+# (use `gh copilot …` if you run Copilot as the gh extension)
 ```
 
-The bootstrap in [step 0](#getting-started) offers to install it whenever a Copilot CLI is present: over `curl|bash` it `npm i -g @databricks-solutions/consort` first (the plugin ships bundled in that package), then installs it; from a checkout it installs the local path directly. Re-run the install after you edit the skill or any agent; the CLI caches them at install time.
+The bootstrap in [step 0](#getting-started) does this for you when a Copilot CLI is present (it works over `curl|bash` — Copilot fetches the plugin from the repo, no checkout or npm needed). After a new release, pick it up with `copilot plugin marketplace update databricks-solutions && copilot plugin install consort@databricks-solutions`.
 
 **Create a project on the Copilot executor.** Pass `--executor copilot` at creation. It is persisted to `.lakebase/consort-config.json` (`project.executor`) as the single source of truth and is fixed for the life of the project (default: `claude`):
 

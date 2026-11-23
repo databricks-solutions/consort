@@ -1,0 +1,18 @@
+{
+  "name": "databricks-solutions",
+  "metadata": {
+    "description": "Consort: a Spec-First Branched-Database TDD agent framework, running on paired Lakebase branches with human-in-the-loop gates.",
+    "version": "1.0.0"
+  },
+  "owner": {
+    "name": "databricks-solutions"
+  },
+  "plugins": [
+    {
+      "name": "consort",
+      "source": "integrations/copilot/consort-copilot",
+      "version": "0.4.53",
+      "description": "Consort on GitHub Copilot: the coordinator skill + role agents that drive the Spec-First Branched-Database TDD workflow (plan -> design -> build -> deploy) through the deterministic consort-drive orchestrator, with human-in-the-loop gates. Create a project with `lakebase-create-project --executor copilot`, then run the coordinator."
+    }
+  ]
+}
