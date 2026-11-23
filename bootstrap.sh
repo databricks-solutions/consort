@@ -421,26 +421,35 @@ if have copilot; then COPILOT_CLI="copilot"
 elif have gh && gh copilot --help >/dev/null 2>&1; then COPILOT_CLI="gh copilot"; fi
 if [ -n "$COPILOT_CLI" ]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+  # Resolve the plugin dir: a consort CHECKOUT first, else the copy BUNDLED in the npm package
+  # (npm root -g). The Copilot CLI has no marketplace, so the plugin always installs from a
+  # bundled path; shipping it in the npm package (package.json `files`) is what lets a curl|bash
+  # run with no checkout install it, symmetric with the Claude marketplace install.
+  NPM_PLUGIN_DIR="$(npm root -g 2>/dev/null)/@databricks-solutions/consort/integrations/copilot/consort-copilot"
   COPILOT_PLUGIN_DIR="$SCRIPT_DIR/integrations/copilot/consort-copilot"
+  [ -f "$COPILOT_PLUGIN_DIR/plugin.json" ] || COPILOT_PLUGIN_DIR="$NPM_PLUGIN_DIR"
+  COPILOT_HINT="npm i -g @databricks-solutions/consort && $COPILOT_CLI plugin install \"\$(npm root -g)/@databricks-solutions/consort/integrations/copilot/consort-copilot\""
   if [ "$CHECK_ONLY" = true ]; then
     if $COPILOT_CLI plugin list 2>/dev/null | grep -qi consort; then
       echo -e "  ${GREEN}✓${NC} Consort Copilot plugin installed"
     else
       echo -e "  ${YELLOW}!${NC} Consort Copilot plugin not installed (re-run without --check-only to install it)"
     fi
-  elif [ ! -f "$COPILOT_PLUGIN_DIR/plugin.json" ]; then
-    # curl|bash or not run from a consort checkout: no local plugin dir to install from.
-    echo -e "  ${YELLOW}!${NC} Consort Copilot plugin: run this from a consort checkout to auto-install, or:"
-    echo "      npm i -g @databricks-solutions/consort   # the kit + the bundled Copilot plugin"
-    echo "      $COPILOT_CLI plugin install \"\$(npm root -g)/@databricks-solutions/consort/integrations/copilot/consort-copilot\""
-  elif confirm "Install the Consort plugin for GitHub Copilot CLI (from this checkout)?"; then
-    if $COPILOT_CLI plugin install "$COPILOT_PLUGIN_DIR"; then
-      echo -e "  ${GREEN}✓${NC} Consort Copilot plugin installed (re-run this after editing the skill/agents — the CLI caches at install)"
+  elif confirm "Install the Consort plugin for GitHub Copilot CLI?"; then
+    # No bundled dir on disk yet (curl|bash, consort not npm-installed): npm-install the package
+    # so the plugin is present, then install it from there. Best-effort; degrades to a hint.
+    if [ ! -f "$COPILOT_PLUGIN_DIR/plugin.json" ] && have npm; then
+      echo "  Installing @databricks-solutions/consort from npm (for the bundled Copilot plugin)…"
+      npm i -g @databricks-solutions/consort >/dev/null 2>&1 || true
+      COPILOT_PLUGIN_DIR="$NPM_PLUGIN_DIR"
+    fi
+    if [ -f "$COPILOT_PLUGIN_DIR/plugin.json" ] && $COPILOT_CLI plugin install "$COPILOT_PLUGIN_DIR"; then
+      echo -e "  ${GREEN}✓${NC} Consort Copilot plugin installed (re-run after editing the skill/agents; the CLI caches at install)"
     else
-      echo -e "  ${YELLOW}!${NC} Copilot plugin install failed. Retry: $COPILOT_CLI plugin install \"$COPILOT_PLUGIN_DIR\""
+      echo -e "  ${YELLOW}!${NC} Copilot plugin install failed. Retry: $COPILOT_HINT"
     fi
   else
-    echo "  Skipped. When you are ready: $COPILOT_CLI plugin install \"$COPILOT_PLUGIN_DIR\""
+    echo "  Skipped. When you are ready: $COPILOT_HINT"
   fi
 else
   echo -e "  ${BLUE}·${NC} GitHub Copilot CLI not found — skipping the Copilot plugin (needed only for the copilot executor)."

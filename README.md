@@ -162,7 +162,7 @@ copilot plugin install integrations/copilot/consort-copilot
 # (use `gh copilot plugin install …` if you run Copilot as the gh extension)
 ```
 
-The bootstrap in [step 0](#getting-started) installs this automatically whenever a Copilot CLI is present. Re-run the install after you edit the skill or any agent; the CLI caches them at install time.
+The bootstrap in [step 0](#getting-started) offers to install it whenever a Copilot CLI is present: over `curl|bash` it `npm i -g @databricks-solutions/consort` first (the plugin ships bundled in that package), then installs it; from a checkout it installs the local path directly. Re-run the install after you edit the skill or any agent; the CLI caches them at install time.
 
 **Create a project on the Copilot executor.** Pass `--executor copilot` at creation. It is persisted to `.lakebase/consort-config.json` (`project.executor`) as the single source of truth and is fixed for the life of the project (default: `claude`):
 

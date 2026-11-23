@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.52] - 2026-11-23
+
+- **Ship the Copilot plugin on npm.** `integrations/copilot/consort-copilot` is now in `package.json` `files`, so `npm i -g @databricks-solutions/consort` carries the Copilot coordinator skill + agents. `bootstrap.sh` installs the Copilot plugin over `curl|bash` (npm-installs the package, then `copilot plugin install`s the bundled path) when a Copilot CLI is present, symmetric with the Claude marketplace install, instead of only printing a hint. README "Running on GitHub Copilot" corrected to match.
+
+## [0.4.51] - 2026-11-23
+
+- **Consort on GitHub Copilot.** Role turns can run through the GitHub Copilot CLI (`ug copilot` / `copilot`) instead of Claude Code, selected per project with `lakebase-create-project --executor copilot` (persisted to `.lakebase/consort-config.json`). The executor adapter injects each role's full `.claude/agents/<role>.md` contract into every Copilot turn.
+- **Concurrent-project port isolation.** Each project serves on a stable per-project port (two projects no longer contend for `:8000`), and the deploy poll + client E2E refuse a foreign backend via a `/health` `serve_id` check.
+- **Dashboard** serves the prebuilt standalone bundle by default (no on-demand `next dev` compile to hang); verify-light / STOPPED / stale-band fixes.
+- **psycopg v3** `.errors` pin in the test-authoring canon (navigator / test-strategist).
+- db-design null-strip conformance; `package.json` exports cleanup (#206).
+- Repoint `@databricks-solutions/lakebase-scm-utils` 0.3.17 → 0.3.18.
+
+> Entries for 0.4.4–0.4.50 are catalogued in the [GitHub releases](https://github.com/databricks-solutions/consort/releases); the in-repo changelog was not maintained across that range.
+
 ## [0.4.3] - 2026-10-14
 
 - **Migration-reversibility test-list gate.** A new deterministic pre-reflect check flags a migration-reversibility / data-preservation test that downgrades by a *relative* step (`alembic downgrade -1`, "single-step downgrade") instead of pinning the migration-under-test's own revision. A relative `-1` reverts whatever is `head`, so it passes on the isolated experiment branch but silently targets the wrong migration once a later story adds one — the churn that cost an extra assess + superseded-green lap in a live run. Fail-open (a pinned `down_revision` / explicit revision escapes).
