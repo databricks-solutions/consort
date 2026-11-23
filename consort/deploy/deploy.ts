@@ -15,7 +15,7 @@
 import { execSync, execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 import { resolveConsortDir, findFeatureDir } from "../../consort/config/consort-paths.js";
@@ -734,16 +734,67 @@ function defaultStart(cmd: string, cwd: string, env?: NodeJS.ProcessEnv): number
 export async function resolveServeBaseUrl(
   baseUrl: string,
   probe: (url: string) => Promise<boolean>,
+  startPortOverride?: number,
 ): Promise<{ baseUrl: string; port: number }> {
   const u = new URL(baseUrl);
-  const startPort = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
+  const startPort = startPortOverride ?? (Number(u.port) || (u.protocol === "https:" ? 443 : 80));
   for (let p = startPort, tries = 0; tries < 20; p++, tries++) {
     u.port = String(p);
     if (!(await probe(`${u.origin}/`))) return { baseUrl: u.origin, port: p };
   }
-  // Every probed port answered — fall back to the configured one (the caller then behaves
+  // Every probed port answered — fall back to the start port (the caller then behaves
   // exactly as before: it will contend, but we never silently pick an unusable port).
-  return { baseUrl: new URL(baseUrl).origin, port: startPort };
+  u.port = String(startPort);
+  return { baseUrl: u.origin, port: startPort };
+}
+
+/** The TCP port of a base URL, defaulting by scheme when the URL omits one. */
+export function portOfUrl(b: string): number {
+  const u = new URL(b);
+  return Number(u.port) || (u.protocol === "https:" ? 443 : 80);
+}
+
+/** FNV-1a 32-bit string hash — stable and dependency-free, used only to derive a
+ *  deterministic per-project serve port (NOT security-sensitive). */
+function fnv1a(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/** The identity a project's app echoes on /health (and the key the per-project port is
+ *  derived from): the Lakebase instance when resolvable, else the project dir name. Stable
+ *  across runs, distinct across projects — the two things the collision fix needs. */
+export function projectServeId(projectDir: string): string {
+  return readProjectInstance(projectDir) || basename(projectDir);
+}
+
+/** The port THIS project prefers to serve on. An explicit (non-8000) base_url port is honored
+ *  verbatim — explicit config stays the one door. The shared default :8000 is mapped to a
+ *  STABLE per-project port in 8000–8499 (FNV-1a of the project identity), so two projects
+ *  running at once never contend for :8000 — the TOCTOU race that let one project's e2e proxy
+ *  silently hit the other's backend. resolveServeBaseUrl still probes upward from here, so a
+ *  residual collision relocates exactly as before. Deterministic: the same project always
+ *  resolves the same port across runs/reconnects. */
+export function preferredServePort(projectDir: string, configuredPort: number): number {
+  if (configuredPort !== 8000) return configuredPort;
+  return 8000 + (fnv1a(projectServeId(projectDir)) % 500);
+}
+
+/** Fetch /health and return the app's echoed `serve_id`, or undefined when absent/unparseable.
+ *  Lets the deploy + the client e2e confirm the backend answering a port is OURS, not a foreign
+ *  process squatting the same port. Best-effort: any error ⇒ undefined (cannot verify). */
+export async function probeServeId(url: string): Promise<string | undefined> {
+  try {
+    const r = await fetch(url, { method: "GET" });
+    const body = (await r.json()) as { serve_id?: unknown };
+    return typeof body.serve_id === "string" ? body.serve_id : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface DeployArgs {
@@ -776,6 +827,8 @@ export interface DeployArgs {
   reachable?: (url: string) => Promise<boolean>;
   /** Inject for tests: strict serving probe (non-5xx = ok; the gate-deploy readiness teeth). */
   servingOk?: (url: string) => Promise<boolean>;
+  /** Inject for tests: read the backend's /health serve_id (foreign-port identity guard). */
+  serveId?: (url: string) => Promise<string | undefined>;
   /** Inject for tests: run the feature-verify command; true = passed (exit 0). */
   runVerify?: (cmd: string, cwd: string, env?: NodeJS.ProcessEnv) => boolean | { passed: boolean; output?: string };
   /** Stop the running local app (default stopLocal). Injectable for hermetic tests. */
@@ -834,12 +887,20 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
   // The base_url/port we will serve on: the configured one, unless a FOREIGN listener holds it
   // (relocated to a free port by the guard below, so a busy :8000 moves the deploy instead of
   // blocking it). Mutable because the guard may relocate it.
-  const portOf = (b: string): number => {
-    const u = new URL(b);
-    return Number(u.port) || (u.protocol === "https:" ? 443 : 80);
-  };
-  let serveBaseUrl = cfg.baseUrl;
-  let servePort = portOf(cfg.baseUrl);
+  // Start from this project's PREFERRED port, not the raw configured one: a shared :8000
+  // default is mapped to a stable per-project port so two concurrent projects never contend
+  // for the same socket (see preferredServePort). The foreign-port guard below still probes
+  // upward from here for any residual collision.
+  const preferredPort = preferredServePort(args.projectDir, portOfUrl(cfg.baseUrl));
+  const preferredBase = ((): string => {
+    const u = new URL(cfg.baseUrl);
+    u.port = String(preferredPort);
+    return u.origin;
+  })();
+  const serveId = projectServeId(args.projectDir);
+  const serveIdProbe = args.serveId ?? probeServeId;
+  let serveBaseUrl = preferredBase;
+  let servePort = preferredPort;
   let url = serveBaseUrl + cfg.healthPath;
 
   // Foreign-port guard (gate deploys): if something is ALREADY serving the port
@@ -869,7 +930,7 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
       // Still held by a FOREIGN process after stopping our own. Do NOT halt the deploy:
       // relocate to a free port (run-dev.sh / CI's move-off-a-busy-port, never kill). Only
       // refuse when NO free port exists in the probe window — genuinely nowhere to serve.
-      const bumped = await resolveServeBaseUrl(cfg.baseUrl, reachable);
+      const bumped = await resolveServeBaseUrl(cfg.baseUrl, reachable, preferredPort);
       if (bumped.baseUrl === serveBaseUrl) {
         const reason = `target port ${url} is held by a foreign process and no free port was found nearby; stop it (consort-deploy --target ${args.targetName} --stop) or free a port.`;
         const verify: VerifyResult = { passed: false, summary: reason };
@@ -921,6 +982,9 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
     BASE_URL: serveBaseUrl,
     PORT: String(servePort),
     E2E_BACKEND_PORT: String(servePort),
+    // Echoed on /health so the readiness poll (and the client e2e) can confirm the backend
+    // answering this port is OURS, not a foreign process that grabbed the same port.
+    CONSORT_SERVE_ID: serveId,
     // Per-story deploy: bind the run command to the experiment branch's Lakebase DB so the PO
     // reviews the story on its own branch. Unset = the ambient env (the per-sprint deploy).
     ...(args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {}),
@@ -1010,6 +1074,44 @@ export async function deployToTarget(args: DeployArgs): Promise<DeployResult> {
     now: args.now,
   });
   const reachableNow = poll.outcome === "done";
+
+  // Fail-loud foreign-backend guard: if the app on this port answers /health with a serve_id
+  // that is NOT ours, a DIFFERENT project squats the port (two projects both defaulting to
+  // :8000). Verifying against it would record another project's behaviour as our evidence —
+  // the exact silent bleed that gave one project's e2e the other's responses. Refuse, do not
+  // certify. A MISSING serve_id (older scaffold) is "cannot verify" ⇒ proceed with a warning,
+  // never hard-fail. Only applies once reachable (nothing to check otherwise).
+  if (reachableNow) {
+    const seenServeId = await serveIdProbe(url);
+    if (seenServeId !== undefined && seenServeId !== serveId) {
+      stop(args.projectDir, args.targetName);
+      const reason = `the app answering ${url} is a FOREIGN backend (serve_id "${seenServeId}", expected "${serveId}") — another project is holding this port; refusing to verify against it. Relocate this project's deploy-targets.yaml local base_url to a free port or stop the other server.`;
+      const verify: VerifyResult = { passed: false, summary: reason };
+      let evidencePath: string | undefined;
+      if (args.featureId) {
+        const consortDir = args.consortDir ?? resolveConsortDir(args.projectDir);
+        const at = (args.now ?? (() => new Date()))().toISOString();
+        evidencePath = writeDeployEvidence(consortDir, {
+          schema_version: DEPLOY_EVIDENCE_SCHEMA_VERSION,
+          feature_id: args.featureId,
+          ...(args.storyId ? { story_id: args.storyId } : {}),
+          target: args.targetName,
+          url,
+          reachable: false,
+          verify,
+          ...(args.lakebaseBranch ? { lakebase_branch: args.lakebaseBranch } : {}),
+          deployed_at: at,
+        });
+        writeEscalation(consortDir, {
+          source: "deploy-verify",
+          reason: `deploy of ${args.featureId}${args.storyId ? `/${args.storyId}` : ""} blocked: ${reason}`,
+          feature_id: args.featureId,
+          ...(args.storyId ? { story_id: args.storyId } : {}),
+        });
+      }
+      return { ok: false, reason, verify, evidencePath };
+    }
+  }
 
   // Feature-verify against the RUNNING app (the deploy gate's teeth): only
   // meaningful once reachable. No verify command configured -> passed:false,
@@ -1278,6 +1380,8 @@ export interface CycleVerifyArgs {
   storyHasClientTests?: boolean;
   startProcess?: (cmd: string, cwd: string, env?: NodeJS.ProcessEnv) => number;
   reachable?: (url: string) => Promise<boolean>;
+  /** Inject for tests: read the backend's /health serve_id (foreign-port identity guard). */
+  serveId?: (url: string) => Promise<string | undefined>;
   runVerify?: (cmd: string, cwd: string, env?: NodeJS.ProcessEnv) => boolean | { passed: boolean; output?: string };
   /** Stop the running local app (default stopLocal). Injectable for hermetic tests. */
   stop?: (projectDir: string, targetName: string) => void;
@@ -1406,9 +1510,26 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
     // instead of halting it — the run-dev.sh / CI (E2E_BACKEND_PORT) rule, move-not-kill. One
     // port flows to the served app (PORT/E2E_BACKEND_PORT), the health poll, and the verify's
     // Playwright — the E2E AND the UX-adherence check both read BASE_URL.
-    const { baseUrl: serveUrl, port: servePort } = await resolveServeBaseUrl(cfg.baseUrl, reachable);
+    // Start from this project's PREFERRED port (a shared :8000 maps to a stable per-project
+    // port), so two concurrent projects never contend; resolveServeBaseUrl still probes upward
+    // from there for any residual collision.
+    const serveId = projectServeId(args.projectDir);
+    const serveIdProbe = args.serveId ?? probeServeId;
+    const { baseUrl: serveUrl, port: servePort } = await resolveServeBaseUrl(
+      cfg.baseUrl,
+      reachable,
+      preferredServePort(args.projectDir, portOfUrl(cfg.baseUrl)),
+    );
     const url = serveUrl + cfg.healthPath;
-    env = { ...baseEnv, BASE_URL: serveUrl, PORT: String(servePort), E2E_BACKEND_PORT: String(servePort) };
+    // CONSORT_SERVE_ID is echoed on /health so the identity check below (and the client e2e)
+    // can confirm the backend is OURS, not a foreign process on the same port.
+    env = {
+      ...baseEnv,
+      BASE_URL: serveUrl,
+      PORT: String(servePort),
+      E2E_BACKEND_PORT: String(servePort),
+      CONSORT_SERVE_ID: serveId,
+    };
     const pid = start(cfg.run, args.projectDir, env);
     const pf = pidFile(args.projectDir, targetName);
     mkdirSync(dirname(pf), { recursive: true });
@@ -1429,6 +1550,18 @@ export async function ensureDeployedAndVerify(args: CycleVerifyArgs): Promise<Cy
         passed: false,
         reachable: false,
         summary: `app not reachable at ${url} after ${cfg.readyTimeoutSeconds}s; cannot run GREEN verify`,
+      };
+    }
+    // Fail-loud foreign-backend guard: a serve_id that is not ours means a DIFFERENT project
+    // holds this port — running the verify would test (and proxy the client e2e into) another
+    // project's backend. Refuse. A missing serve_id (older scaffold) ⇒ cannot verify, proceed.
+    const seenServeId = await serveIdProbe(url);
+    if (seenServeId !== undefined && seenServeId !== serveId) {
+      stop(args.projectDir, targetName);
+      return {
+        passed: false,
+        reachable: false,
+        summary: `GREEN verify aborted: the app at ${url} is a FOREIGN backend (serve_id "${seenServeId}", expected "${serveId}") — another project holds this port. Relocate this project's deploy-targets.yaml local base_url to a free port or stop the other server.`,
       };
     }
     serverReachable = true;

@@ -293,6 +293,10 @@ export interface AgentLogEvent {
 // against the log, which is append-only and cannot lie about the past.
 export interface NextJson {
   feature?: string;
+  // Authoritative "the drive has parked for a human" flag, written by the orchestrator alongside the
+  // frontier gate. When true the run is at rest waiting on a decision even if a (possibly stale) pid
+  // still probes alive — the dashboard trusts this over the liveness heuristic.
+  awaiting_human?: boolean;
   state?: {
     derived_phase?: string | null;
     stories?: Record<string, string>;
@@ -474,6 +478,10 @@ export interface DashboardState {
   atEventIndex: number;
   totalEventCount: number;
   atLive: boolean;
+  // Whether the drive process is LIVE (`.consort/drive.pid` names a running process). Surfaced from
+  // SnapshotInputs so surfaces can tell a genuinely-RUNNING step from one whose drive has EXITED
+  // mid-turn (the transport's STOPPED readout). false in replay / when no drive is running.
+  driveAlive: boolean;
   // next.json's generated_at (else generatedAt); null when no snapshot. Describes when the
   // disk snapshot was taken, which is only meaningful at the live edge.
   snapshotAsOf: string | null;

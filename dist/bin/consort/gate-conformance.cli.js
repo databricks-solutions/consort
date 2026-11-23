@@ -6734,6 +6734,9 @@ var ARTIFACT_FORMATS = {
   "story.json": { kind: "json-schema", schema: "story.schema.json" },
   "ac.json": { kind: "json-schema", schema: "ac.schema.json" },
   "test-list.json": { kind: "json-schema", schema: "test-list.schema.json" },
+  // Architect Reviewer's t-shirt sizing (planning/estimates.json). Requires feature_id + size per entry;
+  // the consumer (readEstimates) drops entries missing them, so an `id`-keyed file silently empties the backlog.
+  "estimates.json": { kind: "json-schema", schema: "estimates.schema.json" },
   "plan.json": { kind: "json-schema", schema: "plan.schema.json" },
   "architecture.json": { kind: "json-schema", schema: "architecture.schema.json" },
   // DBA's physical schema (tables/DDL + per-story migration plan) that realizes
@@ -6838,6 +6841,18 @@ function checkArtifactConformance(name, content) {
 function finalize(violations) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
+function stripNullProps(node) {
+  if (Array.isArray(node)) return node.map(stripNullProps);
+  if (node !== null && typeof node === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(node)) {
+      if (v === null) continue;
+      out[k] = stripNullProps(v);
+    }
+    return out;
+  }
+  return node;
+}
 function checkJsonSchema(name, content, schemaFile) {
   let parsed;
   try {
@@ -6847,7 +6862,7 @@ function checkJsonSchema(name, content, schemaFile) {
     return { ok: false, violations: [`${name} is not valid JSON: ${cause}`] };
   }
   const validate = getValidator(schemaFile);
-  if (validate(parsed)) return { ok: true };
+  if (validate(stripNullProps(parsed))) return { ok: true };
   return { ok: false, violations: formatSchemaErrors(validate).map((e) => `${name} ${e}`) };
 }
 var HEADING_RE = /^(#{1,6})\s+(.*\S)\s*$/;
@@ -7653,7 +7668,7 @@ init_esm_shims();
 import { execSync, execFileSync as execFileSync2, spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync10, mkdirSync as mkdirSync3, readFileSync as readFileSync11, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "fs";
-import { dirname as dirname6, join as join13 } from "path";
+import { basename as basename4, dirname as dirname6, join as join13 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -7713,7 +7728,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync11, readFileSync as readFileSync12, readdirSync as readdirSync10, writeFileSync as writeFileSync5, mkdirSync as mkdirSync4, copyFileSync } from "fs";
-import { join as join14, dirname as dirname7, basename as basename4 } from "path";
+import { join as join14, dirname as dirname7, basename as basename5 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();

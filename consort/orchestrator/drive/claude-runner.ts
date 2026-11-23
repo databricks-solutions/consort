@@ -16,7 +16,6 @@ import { resolveConsortDir, syncBacklog } from "../../config/consort-paths.js";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as readline from "node:readline";
 
 import { replayDesignTurn, REPLAYABLE_DESIGN_ROLES, restoreReflectVerdict } from "../../logging/replay-artifacts.js";
 import { replayBuildTurn } from "../../logging/replay-build.js";
@@ -32,7 +31,7 @@ import {
 } from "./orchestrator-effects.js";
 import { resolveModelForRole } from "../../config/agent-models.js";
 import { resolveConsortSettings } from "../settings/project-settings.js";
-import { parseTurnUsage, assistantTextFromLine, assistantEventSummary, type TurnUsage } from "../../session/claude-usage.js";
+import { parseTurnUsage, assistantEventSummary, type TurnUsage } from "../../session/claude-usage.js";
 import { resumeFitsBudget, turnContextTokens, CONTEXT_FREE_FRACTION_REQUIRED, isPromptTooLongSignal, isTransientApiErrorSignal, startsFreshEachTurn } from "../../session/context-budget.js";
 import type { AgentRole } from "../../logging/agent-log.js";
 import { makeOnAction, describeAction } from "../../logging/orchestrator-logging.js";
@@ -40,7 +39,9 @@ import { resolveKitBinJs, kitRoot } from "../../config/kit-bin.js";
 import { readWorkflowState } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { relocateStrayDesignArtifacts, malformedSiblingRoot } from "../../setup/stray-artifact-recovery.js";
 import type { WorkflowAction } from "./orchestrator-drive.js";
-import { createMonitorController, type TurnMonitor } from "../turns/turn-monitor.js";
+import { type TurnMonitor } from "../turns/turn-monitor.js";
+import { spawnStreamingTurn, type StreamBackend } from "./streaming-turn.js";
+import { spawnCopilotStreaming, copilotBaseArgs, CopilotTurnError } from "../agents/copilot-runner.js";
 
 // How many times a single role turn that overflows the model window mid-turn
 // ("Prompt is too long") is retried on a FRESH session before the failure
@@ -54,21 +55,8 @@ const MAX_PROMPT_TOO_LONG_RETRIES = 2;
 // cannot kill a multi-hour unattended capture. Overridable for tests.
 const MAX_TRANSIENT_RETRIES = Number(consortEnv("MAX_TRANSIENT_RETRIES") ?? "5");
 const TRANSIENT_BACKOFF_MS = Number(consortEnv("TRANSIENT_BACKOFF_MS") ?? "5000");
-// Per-turn INACTIVITY timeout: how long the agent stream may go completely silent
-// (no stdout/stderr line) before we treat the turn as wedged, tree-kill the child,
-// and re-run it as a transient failure. This is the fix for the stalled-API-stream
-// wedge: the child stays alive with an open TLS socket but no bytes ever arrive, so
-// `close` never fires and the await hangs forever. Silence, not duration, is the
-// signal – a turn that keeps streaming (a 45-min driver-green doing `uv sync` + live
-// pytest) re-arms the timer on every tool marker and never trips. The threshold must
-// exceed the longest SINGLE quiet tool step (a cold dependency sync, a long test run);
-// 10 min is comfortably past that while still catching a true stall in one heartbeat
-// window. 0/empty disables (byte-identical to before). Overridable for tests + ops.
-const TURN_INACTIVITY_TIMEOUT_MS = Number(consortEnv("TURN_INACTIVITY_TIMEOUT_MS") ?? String(10 * 60 * 1000));
-// How long the stream may be silent before we EMIT a heartbeat line to the sidecar
-// (liveness marker, not a kill). Shorter than the kill deadline so a watcher sees
-// "still alive, waiting" beats before any timeout. 0/empty disables.
-const TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1000));
+// The per-turn INACTIVITY timeout + heartbeat windows + defaultTurnMonitor now live in the
+// shared streaming engine (streaming-turn.ts), which owns the stall monitor for both runners.
 
 export interface ParsedArgs {
   feature?: string;
@@ -120,7 +108,9 @@ export function spawnCmd(bin: string, args: string[], cwd: string): Promise<void
     // PIPE stdout/stderr so a non-zero exit can attach the failing output to the escalation, but TEE
     // it straight back to the parent's streams so live tailing (drive-live.log) + console output are
     // unchanged – the failure is both surfaced live AND captured for the escalation record.
-    const child = spawn(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
+    // stdin = /dev/null ("ignore"): a headless drive has no interactive input; an INHERITED TTY stdin
+    // lets a spawned command that reads stdin (e.g. an agent's `cat > file`) block the whole drive on EOF.
+    const child = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     const chunks: string[] = [];
     child.stdout?.on("data", (d: Buffer) => { process.stdout.write(d); chunks.push(d.toString()); });
     child.stderr?.on("data", (d: Buffer) => { process.stderr.write(d); chunks.push(d.toString()); });
@@ -209,60 +199,12 @@ export class ArtifactOutOfRootError extends Error {
   }
 }
 
-/** The prompt + final reasoning + tool list captured from ONE agent turn, for
- *  the recorder to persist (demo transcript). Not the raw stream (that includes
- *  every interstitial "let me check" delta); just the outcome-level trace. */
-export interface TurnTranscript {
-  /** The task prompt the agent was dispatched with (`claude -p <task>`). */
-  prompt: string;
-  role?: string;
-  model?: string;
-  /** The turn's FINAL assistant text (the outcome/rationale). */
-  finalText: string;
-  /** Each tool action in order (name + a clipped target), as they streamed. */
-  tools: string[];
-}
-
-/** Set by spawnClaudeStreaming on each turn's close; read + cleared by the
- *  recorder wrapper (withTurnRecording) so it lands in that turn's dir. Module-
- *  level for the same reason `sessions`/`sessionContext` are: the spawn and the
- *  record wrapper are separated by the effects boundary. */
-let lastAgentTranscript: TurnTranscript | undefined;
-/** Per-cwd (per-worktree) transcript index, set alongside the global on each turn's close. CONCURRENCY
- *  SAFETY: the bare `lastAgentTranscript` global is a RACE when candidates run in parallel (each spawn
- *  overwrites it, so a peek returns whoever flushed last – cross-candidate transcript crosstalk). A
- *  concurrent caller (the optimize sweep, one worktree per candidate) peeks BY ITS cwd to get its OWN
- *  turn, never a sibling's. The serial drive keeps using the no-arg global path unchanged. */
-const lastAgentTranscriptByCwd = new Map<string, TurnTranscript>();
-export function takeLastAgentTranscript(cwd?: string): TurnTranscript | undefined {
-  if (cwd !== undefined) {
-    const t = lastAgentTranscriptByCwd.get(cwd);
-    lastAgentTranscriptByCwd.delete(cwd);
-    return t;
-  }
-  const t = lastAgentTranscript;
-  lastAgentTranscript = undefined;
-  return t;
-}
-/** PEEK the last turn's transcript WITHOUT clearing it – for an intermediate consumer (the
- *  ClaudeStepAgent reads finalText for its lastResult) that must NOT rob the recorder wrapper's
- *  take() of the transcript. The take()-clears contract is a single-consumer design; when TWO
- *  consumers run per turn (the agent's lastResult + the record wrapper), the earlier one MUST peek,
- *  or the wrapper gets undefined and transcript.md is silently never written (the bug this fixes:
- *  every executor-dispatched agent turn lost its transcript to the double-consume race). The record
- *  wrapper remains the sole take()-clearer, at end of turn.
- *  Pass `cwd` to read the transcript for THAT worktree – the concurrency-safe path (see
- *  lastAgentTranscriptByCwd); omit it for the serial global. */
-export function peekLastAgentTranscript(cwd?: string): TurnTranscript | undefined {
-  return cwd !== undefined ? lastAgentTranscriptByCwd.get(cwd) : lastAgentTranscript;
-}
-/** Record a turn's transcript as both the global last AND the per-cwd entry. Exported so the crosstalk
- *  safety (peek-by-cwd returns THIS cwd's turn, never a concurrent sibling's) is unit-testable without
- *  spawning claude. Called by spawnClaudeStreaming on each turn's close. */
-export function recordAgentTranscript(cwd: string, tx: TurnTranscript): void {
-  lastAgentTranscript = tx;
-  lastAgentTranscriptByCwd.set(cwd, tx);
-}
+// The per-turn transcript sink (TurnTranscript + record/peek/take) now lives in its own
+// dependency-free module so copilot-runner can record into it WITHOUT importing claude-runner
+// (breaking the cycle that routing copilot through execRunner would create). Re-exported here so
+// every existing importer (claude-step-agent, the stall test, the recorder wrapper) is unchanged.
+import { recordAgentTranscript, peekLastAgentTranscript, takeLastAgentTranscript, type TurnTranscript } from "./agent-transcript.js";
+export { recordAgentTranscript, peekLastAgentTranscript, takeLastAgentTranscript, type TurnTranscript };
 
 // Per-cwd last-turn USAGE (cost + tokens + numTurns + duration), the SAME crosstalk-safe mechanism as
 // the transcript: an optimize sweep peeks its OWN worktree's turn usage so EVERY run can record cost with
@@ -323,207 +265,45 @@ export function recordTurnMeta(cwd: string, meta: TurnMeta): void {
   lastTurnMetaByCwd.set(cwd, meta);
 }
 
-/** Build the default per-turn monitor from the module timeout constants. A turn with
- *  neither an inactivity nor a heartbeat window returns undefined (a byte-identical
- *  no-op controller). Exposed as its own function so tests can assert the mapping and
- *  callers can override. */
-export function defaultTurnMonitor(sink: (p: import("../turns/turn-monitor.js").TurnProgress) => void): TurnMonitor | undefined {
-  const heartbeatMs = TURN_HEARTBEAT_MS > 0 ? TURN_HEARTBEAT_MS : undefined;
-  const inactivityTimeoutMs = TURN_INACTIVITY_TIMEOUT_MS > 0 ? TURN_INACTIVITY_TIMEOUT_MS : undefined;
-  if (heartbeatMs === undefined && inactivityTimeoutMs === undefined) return undefined;
-  return { onProgress: sink, heartbeatMs, inactivityTimeoutMs };
-}
+// defaultTurnMonitor + the TURN_* inactivity/heartbeat constants now live in the shared
+// streaming engine (streaming-turn.ts); re-export defaultTurnMonitor so existing importers
+// (e.g. the claude-runner-stall test) keep resolving it from here.
+export { defaultTurnMonitor } from "./streaming-turn.js";
 
+/**
+ * Spawn a `claude` turn and resolve its usage. A THIN wrapper over the shared
+ * `spawnStreamingTurn` engine (streaming-turn.ts): the engine owns the agent-live.log
+ * sidecar, the inactivity/heartbeat monitor + tree-kill, and the stderr tee. This backend
+ * supplies only the Claude-specific parts — stream-json line parsing, retry-signal
+ * detection, and the close semantics (ClaudeTurnError reject + transcript/usage recording).
+ * Behavior is identical to the pre-extraction inline function.
+ */
 export function spawnClaudeStreaming(
   args: string[],
   cwd: string,
   /** Override the per-turn liveness monitor (tests inject a fake-clock-driven one).
-   *  Omitted => the default built from TURN_INACTIVITY_TIMEOUT_MS / TURN_HEARTBEAT_MS. */
+   *  Omitted => the engine builds the default from the timeout envs. */
   monitorOverride?: TurnMonitor,
 ): Promise<TurnUsage | undefined> {
-  return new Promise((resolve, reject) => {
-    // Capture BOTH stdout (the stream-json events) and stderr (claude's own
-    // errors), teeing the human-readable parts to the console, so a context-
-    // overflow message printed to either stream is detectable for the retry.
-    const child = spawn("claude", args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
-    const lines: string[] = [];
-    let sawTooLong = false;
-    let sawTransient = false;
-    // Tee a COMPACT trace: each tool action (liveness) as it streams, and the
-    // turn's FINAL assistant text (the outcome) at close. The interstitial
-    // "now I'll... / let me check..." prose is buffered and overwritten, so only
-    // the last text (the result line) survives – the deliberation never hits the
-    // log. Set LAKEBASE_CONSORT_VERBOSE_AGENT=1 to tee every assistant text delta.
-    const verboseAgent = !!consortEnv("VERBOSE_AGENT");
-    // Liveness sidecar: ALWAYS stream the agent's intermediate reasoning + each tool action to
-    // agent-live.log as it arrives, timestamped. This is the "is it working or spinning?" + "what is
-    // it doing right now" channel – a monitor (or the dashboard's driver-activity ticker) can
-    // `tail -f` it and see fresh prose + tool actions the moment the agent acts, WITHOUT polluting the
-    // compact capture log (which still shows only `· tool` markers + the final outcome). Independent
-    // of VERBOSE_AGENT (that tees to the console). Written on EVERY run, not only recorded ones: the
-    // explicit capture dir (RECORD_DIR) when set, else the project's OWN `.consort` – so the live
-    // activity stream always exists (the dashboard ticker must not depend on a config flag). Append-
-    // only, one line per delta, best-effort (a sidecar write must never break a turn). The file is
-    // per-run (all turns append); the turn boundary is marked at open below.
-    const liveLogDir = consortEnv("RECORD_DIR")?.trim() || resolveConsortDir(cwd);
-    let liveLog: number | undefined;
-    if (liveLogDir) {
-      try {
-        fs.mkdirSync(liveLogDir, { recursive: true });
-        liveLog = fs.openSync(path.join(liveLogDir, "agent-live.log"), "a");
-        const pIdxL = args.indexOf("-p"), rIdxL = args.indexOf("--agent");
-        const role = rIdxL >= 0 ? args[rIdxL + 1] : "agent";
-        const task = pIdxL >= 0 ? (args[pIdxL + 1] ?? "") : "";
-        fs.writeSync(liveLog, `\n=== ${new Date().toISOString()} TURN START role=${role} :: ${task}\n`);
-      } catch {
-        liveLog = undefined; // sidecar is observability, never a gate
-      }
-    }
-    const liveWrite = (s: string): void => {
-      if (liveLog === undefined) return;
-      try {
-        fs.writeSync(liveLog, s);
-      } catch {
-        /* best-effort: a failed sidecar write must never break the turn */
-      }
-    };
-    let lastText = "";
-    // ATTRIBUTION instrumentation: stamp each sidecar tool/text line with wall-clock + seconds since
-    // the PREVIOUS sidecar emission. A long-running tool (a 500s e2e pytest, a `sleep`, a stalled
-    // playwright) otherwise looks identical to an instant one — the turn total is logged but nothing
-    // says WHICH call ate it. The delta on the line AFTER a `· Bash {...}` is that call's duration, so
-    // a turn's time is attributable to the exact operation from the log alone (no transcript spelunking).
-    let lastEmitMs = Date.now();
-    const stamp = (): string => {
-      const now = Date.now();
-      const dSec = Math.round((now - lastEmitMs) / 1000);
-      lastEmitMs = now;
-      return `${new Date(now).toISOString().slice(11, 19)} +${dSec}s`;
-    };
-    // Accumulate ALL assistant text this turn. The ```agent-report block may precede a closing message
-    // and/or stream across events, so the LAST message alone can miss it; the full text always contains
-    // the complete block. Used (below) as finalText WHEN a report block is present, so the record/log
-    // phase can extract it (formatAgentReport reads finalText); otherwise finalText stays the last message.
-    let allText = "";
-    const allTools: string[] = []; // accumulate for the recorded transcript
-    // Per-turn liveness monitor (Slice 3): fed one progress event per stream line, it
-    // re-arms an inactivity deadline on every line and, after a stretch of total silence
-    // (a stalled API stream: child alive, socket open, no bytes, so `close` never fires),
-    // tree-kills the child and lets the close handler reject with a STALLED transient
-    // ClaudeTurnError – which the existing transient-retry envelope re-runs on a fresh
-    // session. Heartbeats are written to the sidecar so a `tail -f` sees "still waiting"
-    // beats before any kill. Default no-op when both windows are disabled.
-    let stalled = false;
-    const monitor = monitorOverride ?? defaultTurnMonitor((p) => {
-      if (p.kind === "heartbeat") {
-        liveWrite(`  ⏳ ${new Date().toISOString()} no agent output for ~${Math.round((TURN_HEARTBEAT_MS || 0) / 1000)}s (waiting; kills at ${Math.round((TURN_INACTIVITY_TIMEOUT_MS || 0) / 1000)}s of silence)\n`);
-      }
-    });
-    const monitorCtl = createMonitorController(monitor, () => {
-      // Inactivity deadline hit: the stream has been silent past the threshold. Kill the
-      // whole child process group (a stalled `claude` may have live child procs holding
-      // the socket) so `close` fires; the close handler then rejects as STALLED.
-      stalled = true;
-      liveWrite(`  ✖ ${new Date().toISOString()} INACTIVITY TIMEOUT (~${Math.round((TURN_INACTIVITY_TIMEOUT_MS || 0) / 1000)}s silent) – tree-killing pid ${child.pid} for a fresh-session retry\n`);
-      process.stderr.write(`[drive] turn stalled: no agent output for ~${Math.round((TURN_INACTIVITY_TIMEOUT_MS || 0) / 1000)}s; killing pid ${child.pid} and retrying on a fresh session\n`);
-      try {
-        // Negative pid => kill the process GROUP. spawn() puts the child in its own group
-        // only with detached; without it, SIGKILL the pid directly (its children are
-        // reparented but the socket dies with the main process, unblocking the await).
-        child.kill("SIGKILL");
-      } catch {
-        /* best-effort: if the kill races the natural close, close still fires */
-      }
-    });
-    monitorCtl.start();
-    const rl = readline.createInterface({ input: child.stdout! });
-    rl.on("line", (line) => {
-      lines.push(line);
-      if (isPromptTooLongSignal(line)) sawTooLong = true;
-      if (isTransientApiErrorSignal(line)) sawTransient = true;
-      if (verboseAgent) {
-        const text = assistantTextFromLine(line);
-        if (text) process.stderr.write(text);
-        if (text) liveWrite(text); // intermediate reasoning -> sidecar (liveness)
-        if (text) monitorCtl.progress({ kind: "text" }); // MEANINGFUL content only re-arms the silence clock
-        // still collect tools for the transcript even in verbose mode
-        for (const t of assistantEventSummary(line).tools) {
-          allTools.push(t);
-          liveWrite(`  · ${stamp()} ${t}\n`);
-          monitorCtl.progress({ kind: "tool", tool: t });
-        }
-        return;
-      }
+  const pIdxH = args.indexOf("-p");
+  const rIdxH = args.indexOf("--agent");
+  const backend: StreamBackend<TurnUsage | undefined> = {
+    target: { command: "claude", args },
+    // stdin = /dev/null and the sidecar/monitor are the engine's; header feeds its TURN START line.
+    header: { role: rIdxH >= 0 ? args[rIdxH + 1] : "agent", task: pIdxH >= 0 ? (args[pIdxH + 1] ?? "") : "" },
+    onLine: (line) => {
       const { text, tools } = assistantEventSummary(line);
-      for (const t of tools) {
-        // One stamp per tool, used for BOTH the stderr line and the sidecar line: stderr is what the
-        // parallel-lane adapter funnels (prefixed) into the MAIN agent-live.log, so the timing must ride
-        // the stderr line too — else per-tool durations only exist in each lane's isolated worktree
-        // sidecar, invisible to a monitor tailing the main log. Compute once so the delta is not
-        // double-advanced by two stamp() calls.
-        const st = stamp();
-        process.stderr.write(`  · ${st} ${t}\n`);
-        allTools.push(t);
-        liveWrite(`  · ${st} ${t}\n`);
-        monitorCtl.progress({ kind: "tool", tool: t }); // a tool marker = real liveness; re-arm
+      return { ...(text ? { text } : {}), tools, tooLong: isPromptTooLongSignal(line), transient: isTransientApiErrorSignal(line) };
+    },
+    onStderrLine: (line) => ({ tooLong: isPromptTooLongSignal(line), transient: isTransientApiErrorSignal(line) }),
+    onClose: (ctx) => {
+      // A stall killed the child: reject as a STALLED transient so the retry envelope re-runs on a
+      // fresh session. Take this branch regardless of the (kill-induced) code, BEFORE the non-zero branch.
+      if (ctx.stalled) {
+        throw new ClaudeTurnError(`claude turn stalled (inactivity timeout); killed for retry`, false, true, true);
       }
-      // Intermediate reasoning goes to the sidecar as it streams (liveness), even though the compact
-      // console log holds only the final text. This is the whole point: the sidecar shows the agent is
-      // thinking, not spinning, mid-turn.
-      if (text) {
-        lastText = text; // hold for the console; only the final one is printed at close
-        allText += (allText ? "\n" : "") + text; // full assistant text (report block may not be the last message / may stream)
-        liveWrite(text.endsWith("\n") ? text : `${text}\n`);
-        monitorCtl.progress({ kind: "text" }); // assistant text = real liveness; re-arm
-      }
-      // CRITICAL: do NOT re-arm the silence clock on non-content lines. A stalled API stream
-      // still dribbles stream-json keepalive/ping/system events that fire this handler but
-      // carry no assistant text or tool call. Re-arming on those defeats the whole timeout (the
-      // wedge that made this fix miss on its first live test: raw lines kept the timer alive while
-      // the agent produced nothing for 11+min). Liveness == the SAME events that advance the
-      // sidecar (assistant text + tool markers), nothing else.
-    });
-    const erl = readline.createInterface({ input: child.stderr! });
-    erl.on("line", (line) => {
-      // stderr carries claude's own error/status prose (not stream-json keepalive), so a stderr
-      // line IS meaningful activity – re-arm on it.
-      monitorCtl.progress({ kind: "text" });
-      if (isPromptTooLongSignal(line)) sawTooLong = true;
-      if (isTransientApiErrorSignal(line)) sawTransient = true;
-      process.stderr.write(`${line}\n`); // tee: keep claude's own errors visible
-    });
-    const closeLiveLog = (): void => {
-      if (liveLog === undefined) return;
-      try {
-        fs.closeSync(liveLog);
-      } catch {
-        /* best-effort */
-      }
-      liveLog = undefined;
-    };
-    child.on("error", (err) => {
-      monitorCtl.stop();
-      closeLiveLog();
-      reject(err);
-    });
-    child.on("close", (code) => {
-      monitorCtl.stop(); // clear the inactivity/heartbeat timers; safe after a timeout too
-      rl.close();
-      erl.close();
-      // The turn's final assistant text = the outcome (rule 5). Print it once,
-      // after the tool trace, so the log shows actions + result, not the prose.
-      if (!verboseAgent && lastText) process.stderr.write(`${lastText}\n`);
-      liveWrite(`--- ${new Date().toISOString()} TURN CLOSE code=${code}${lastText ? ` :: ${lastText}` : ""}\n`);
-      closeLiveLog();
-      // A stall killed the child: reject as a STALLED transient so the retry envelope
-      // re-runs on a fresh session. Take this branch regardless of the (kill-induced)
-      // exit code, and BEFORE the generic non-zero branch.
-      if (stalled) {
-        return reject(new ClaudeTurnError(`claude turn stalled (inactivity timeout); killed for retry`, false, true, true));
-      }
-      if (code !== 0) return reject(new ClaudeTurnError(`claude exited ${code}`, sawTooLong, sawTransient));
-      // Stash this turn's outcome-level transcript for the recorder. `-p <task>`
-      // and `--agent <role>` / `--model <m>` are positional in the args we built.
+      if (ctx.code !== 0) throw new ClaudeTurnError(`claude exited ${ctx.code}`, ctx.sawTooLong, ctx.sawTransient);
+      // `-p <task>` / `--agent <role>` / `--model <m>` are positional in the args we built.
       const pIdx = args.indexOf("-p");
       const rIdx = args.indexOf("--agent");
       const mIdx = args.indexOf("--model");
@@ -531,22 +311,19 @@ export function spawnClaudeStreaming(
         prompt: pIdx >= 0 ? args[pIdx + 1] ?? "" : "",
         role: rIdx >= 0 ? args[rIdx + 1] : undefined,
         model: mIdx >= 0 ? args[mIdx + 1] : undefined,
-        // When the turn emitted a ```agent-report block, use the FULL assistant text as finalText so the
-        // record/log phase can extract the (possibly non-final / streamed) block; otherwise keep the last
-        // message (unchanged for turns that emit no report block).
-        finalText: allText.includes("```agent-report") ? allText : lastText,
-        tools: allTools,
+        // When the turn emitted a report block, use the FULL assistant text as finalText so the record/log
+        // phase can extract the (possibly non-final / streamed) block; otherwise keep the last message.
+        finalText: ctx.allText.includes("```agent-report") ? ctx.allText : ctx.lastText,
+        tools: ctx.allTools,
       };
-      // Record as global last AND per-cwd (the worktree), so a concurrent peek gets ITS OWN turn, not a
-      // sibling's – the fix for cross-candidate transcript crosstalk in parallel sweeps (global is a race).
+      // Record global last AND per-cwd (the worktree), crosstalk-safe for parallel sweeps.
       recordAgentTranscript(cwd, tx);
-      // Record the turn's usage (cost + tokens + numTurns + duration) the SAME crosstalk-safe way, so a
-      // concurrent optimize sweep can peek ITS worktree's cost and record it (cost parity across runs).
-      const parsed = parseTurnUsage(lines);
+      const parsed = parseTurnUsage(ctx.lines);
       if (parsed) recordAgentUsage(cwd, parsed);
-      resolve(parsed);
-    });
-  });
+      return parsed;
+    },
+  };
+  return spawnStreamingTurn(backend, cwd, monitorOverride);
 }
 
 /**
@@ -825,32 +602,39 @@ export function execRunner(cfg: DriveEffectsConfig): CommandRunner {
               `output. Replay will NOT run the agent live – put the recorded artifact in the corpus (check .gitignore is not dropping it).`,
           );
         }
-        // stream-json (requires --verbose with --print) lets us capture the turn's
-        // token usage from the result event while teeing readable text to the console.
-        const baseArgs = claudeBaseArgs(cmd);
-        // Per-role/turn model-side knobs (consort-config.json): effort (set on judgment
-        // turns to run fast), fallback model (auto-failover when the primary is
-        // overloaded), and a per-invocation dollar cap.
-        if (cmd.effort) baseArgs.push("--effort", cmd.effort);
-        if (cmd.fallbackModel) baseArgs.push("--fallback-model", cmd.fallbackModel);
-        if (typeof cmd.maxBudgetUsd === "number") baseArgs.push("--max-budget-usd", String(cmd.maxBudgetUsd));
-        // Per-role MCP server (ux-designer's headless browser). Under the base
-        // --strict-mcp-config, ONLY this file's servers load, for this turn only. A
-        // server that fails to start is non-fatal (the agent runs without those tools);
-        // absent on every other role, so their spawn is byte-identical.
-        if (cmd.mcpConfig) {
-          // The ux-designer's browser MCP (@playwright/mcp) needs Chromium present, and it does
-          // not install one itself — ensure it up front (outside the MCP's startup timeout) so the
-          // browser actually launches instead of the ux-designer degrading to the brief.
-          if (cmd.role === "ux-designer") ensureUxBrowserChromium();
-          baseArgs.push("--mcp-config", cmd.mcpConfig);
+        // The executor selects which CLI the shared envelope spawns: "copilot" routes to the Copilot
+        // CLI (copilotBaseArgs + spawnCopilotStreaming), everything else is Claude (default/absent).
+        const isCopilot = cmd.executor === "copilot";
+        // stream-json (requires --verbose with --print) lets us capture the turn's token usage from the
+        // result event while teeing readable text to the console. The Copilot CLI uses its own arg vector.
+        const baseArgs = isCopilot ? copilotBaseArgs(cmd) : claudeBaseArgs(cmd);
+        // Per-role/turn model-side knobs are Claude-CLI flags (effort, fallback model, dollar cap,
+        // per-role MCP server). The Copilot CLI has no equivalents (its model alias is mapped to a ug id
+        // inside copilotBaseArgs), so these are claude-only — byte-identical to before for a claude turn.
+        if (!isCopilot) {
+          if (cmd.effort) baseArgs.push("--effort", cmd.effort);
+          if (cmd.fallbackModel) baseArgs.push("--fallback-model", cmd.fallbackModel);
+          if (typeof cmd.maxBudgetUsd === "number") baseArgs.push("--max-budget-usd", String(cmd.maxBudgetUsd));
+          // Per-role MCP server (ux-designer's headless browser). Under the base --strict-mcp-config,
+          // ONLY this file's servers load, for this turn only. A server that fails to start is non-fatal;
+          // absent on every other role, so their spawn is byte-identical.
+          if (cmd.mcpConfig) {
+            // The ux-designer's browser MCP (@playwright/mcp) needs Chromium present, and it does not
+            // install one itself — ensure it up front so the browser launches instead of degrading.
+            if (cmd.role === "ux-designer") ensureUxBrowserChromium();
+            baseArgs.push("--mcp-config", cmd.mcpConfig);
+          }
+          // Optional tool-scope restriction (optimize harness Family-2 lever). A normal drive sets
+          // neither field, so this is a no-op there.
+          baseArgs.push(...claudeToolArgs(cmd));
         }
-        // Optional tool-scope restriction (optimize harness Family-2 lever). A
-        // normal drive sets neither field, so this is a no-op there.
-        baseArgs.push(...claudeToolArgs(cmd));
         // Resolve this attempt's session flags. `forceFresh` ignores the warm
         // session (used when retrying after a mid-turn "Prompt is too long").
         const sessionArgsFor = (forceFresh: boolean): string[] => {
+          // Copilot: start FRESH each turn (no --resume/--session-id). The token-based context-budget
+          // guard can't apply (the Copilot JSONL reports no token usage), and warm-session reuse over
+          // headless `-p` is unconfirmed — so this is a deliberate, named parity gap, not a silent one.
+          if (isCopilot) return [];
           if (!cmd.resumeKey) return [];
           // Proactive per-turn context cap: a HEAVY role (Driver/Navigator) starts
           // EVERY turn on a fresh session, so no turn inherits a prior turn's
@@ -908,10 +692,22 @@ export function execRunner(cfg: DriveEffectsConfig): CommandRunner {
           const args = [...baseArgs, ...sessionArgsFor(overflowRetries > 0 || forceFreshAfterStall)];
           forceFreshAfterStall = false;
           try {
-            usage = await spawnClaudeStreaming(args, cfg.projectDir);
+            // The copilot result carries usage on `.usage` (same TurnUsage shape the envelope records);
+            // the claude spawn resolves TurnUsage directly. Both reject a typed TurnError for retry.
+            usage = isCopilot
+              ? (await spawnCopilotStreaming(args, cfg.projectDir))?.usage
+              : await spawnClaudeStreaming(args, cfg.projectDir);
             break;
           } catch (e) {
-            if (e instanceof ClaudeTurnError && e.promptTooLong && overflowRetries < MAX_PROMPT_TOO_LONG_RETRIES) {
+            // Normalize the two typed turn errors (claude has prompt-too-long; copilot does not) into
+            // one retry-signal shape so the SAME retry loop serves both executors.
+            const te =
+              e instanceof ClaudeTurnError
+                ? { promptTooLong: e.promptTooLong, transient: e.transient, stalled: e.stalled }
+                : e instanceof CopilotTurnError
+                  ? { promptTooLong: false, transient: e.transient, stalled: e.stalled }
+                  : undefined;
+            if (te?.promptTooLong && overflowRetries < MAX_PROMPT_TOO_LONG_RETRIES) {
               overflowRetries++;
               process.stderr.write(
                 `[drive] context guard (mid-turn): ${cmd.role} overflowed ${cmd.model}; ` +
@@ -919,16 +715,16 @@ export function execRunner(cfg: DriveEffectsConfig): CommandRunner {
               );
               continue;
             }
-            if (e instanceof ClaudeTurnError && e.transient && transientRetries < MAX_TRANSIENT_RETRIES) {
+            if (te?.transient && transientRetries < MAX_TRANSIENT_RETRIES) {
               transientRetries++;
               const backoff = TRANSIENT_BACKOFF_MS * transientRetries;
               // A stall was already tree-killed, so force its retry onto a FRESH session
               // (the killed session is suspect) and name it a stall in the log.
-              const kind = e.stalled ? "stalled turn (inactivity timeout)" : "transient API error";
-              if (e.stalled) forceFreshAfterStall = true;
+              const kind = te.stalled ? "stalled turn (inactivity timeout)" : "transient API error";
+              if (te.stalled) forceFreshAfterStall = true;
               process.stderr.write(
                 `[drive] ${kind} on ${cmd.role} (${cmd.model}); ` +
-                  `retry ${transientRetries}/${MAX_TRANSIENT_RETRIES} after ${(backoff / 1000).toFixed(0)}s${e.stalled ? " on a FRESH session" : ""}\n`,
+                  `retry ${transientRetries}/${MAX_TRANSIENT_RETRIES} after ${(backoff / 1000).toFixed(0)}s${te.stalled ? " on a FRESH session" : ""}\n`,
               );
               await new Promise((r) => setTimeout(r, backoff));
               continue;

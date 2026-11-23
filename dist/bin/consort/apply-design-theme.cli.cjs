@@ -118,6 +118,40 @@ function applyNavbarBranding(projectDir, branding) {
     return false;
   }
 }
+var CONSORT_FOOTER_IMPORT = `import { MadeWithConsort } from "./components/MadeWithConsort";`;
+var CONSORT_FOOTER_ELEMENT = `<MadeWithConsort />`;
+function ensureConsortFooter(projectDir) {
+  const appTsx = (0, import_node_path2.join)(projectDir, "client", "src", "App.tsx");
+  if (!(0, import_node_fs.existsSync)(appTsx)) return false;
+  const footerComponent = (0, import_node_path2.join)(projectDir, "client", "src", "components", "MadeWithConsort.tsx");
+  if (!(0, import_node_fs.existsSync)(footerComponent)) return false;
+  try {
+    const src = (0, import_node_fs.readFileSync)(appTsx, "utf8");
+    if (src.includes("MadeWithConsort")) return false;
+    if (!src.includes("</Routes>")) return false;
+    let next = src;
+    const importRe = /^import .*;$/gm;
+    let lastImportEnd = -1;
+    let m;
+    while ((m = importRe.exec(src)) !== null) lastImportEnd = m.index + m[0].length;
+    if (lastImportEnd >= 0) {
+      next = next.slice(0, lastImportEnd) + `
+${CONSORT_FOOTER_IMPORT}` + next.slice(lastImportEnd);
+    } else {
+      next = `${CONSORT_FOOTER_IMPORT}
+` + next;
+    }
+    next = next.replace(/(<\/Routes>)/, `$1
+      ${CONSORT_FOOTER_ELEMENT}`);
+    if (next !== src) {
+      (0, import_node_fs.writeFileSync)(appTsx, next);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 function designGuideToCssVars(guide) {
   const vars = {};
   vars["--font-sans"] = guide.typography.font_family;
@@ -149,10 +183,32 @@ function designGuideToCssVars(guide) {
 function renderThemeRootCss(guide) {
   const vars = designGuideToCssVars(guide);
   const lines = Object.entries(vars).map(([name, value]) => `  ${name}: ${value};`);
+  lines.push(`  --consort-lockup: ${consortLockupForSurface(pageSurfaceColor(vars))};`);
   return `:root {
 ${lines.join("\n")}
 }
 `;
+}
+function pageSurfaceColor(vars) {
+  for (const key of ["--color-surface", "--color-page", "--color-bg", "--color-background", "--color-canvas"]) {
+    if (vars[key]) return vars[key];
+  }
+  return void 0;
+}
+function hexLuminance(hex) {
+  if (!hex) return null;
+  const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return null;
+  let h = m[1];
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+function consortLockupForSurface(surface) {
+  const lum = hexLuminance(surface);
+  return lum !== null && lum < 0.5 ? 'url("/consort-lockup-white.svg")' : 'url("/consort-lockup.svg")';
 }
 
 // consort/architecture/apply-theme.ts
@@ -195,6 +251,7 @@ function applyDesignGuideTheme(projectDir, opts = {}) {
       ...guide.app_name ? { appName: guide.app_name } : {}
     });
   }
+  ensureConsortFooter(projectDir);
   return { themePath, varCount: (css.match(/--[\w-]+:/g) ?? []).length, iconInstalled };
 }
 

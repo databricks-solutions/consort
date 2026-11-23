@@ -6804,7 +6804,7 @@ function warnLegacyEnv(legacyName, suffix) {
 }
 
 // consort/pipeline/cycle-record.ts
-import { join as join27, dirname as dirname13, basename as basename4 } from "path";
+import { join as join27, dirname as dirname13, basename as basename5 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -7023,7 +7023,10 @@ function resolveProjectSettings(projectDir) {
     // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
     // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
     // default only affects config-less/legacy trees.
-    language: file?.project?.language ?? "python"
+    language: file?.project?.language ?? "python",
+    // The executor backend for role turns. Default "claude"; a project created with --executor copilot
+    // persists "copilot" here (the ONE door — no env override). Legacy/config-less projects are claude.
+    executor: file?.project?.executor ?? "claude"
   };
   const plan = { sizing: file?.plan?.sizing ?? true };
   return { build, plan, project };
@@ -7081,6 +7084,9 @@ var ARTIFACT_FORMATS = {
   "story.json": { kind: "json-schema", schema: "story.schema.json" },
   "ac.json": { kind: "json-schema", schema: "ac.schema.json" },
   "test-list.json": { kind: "json-schema", schema: "test-list.schema.json" },
+  // Architect Reviewer's t-shirt sizing (planning/estimates.json). Requires feature_id + size per entry;
+  // the consumer (readEstimates) drops entries missing them, so an `id`-keyed file silently empties the backlog.
+  "estimates.json": { kind: "json-schema", schema: "estimates.schema.json" },
   "plan.json": { kind: "json-schema", schema: "plan.schema.json" },
   "architecture.json": { kind: "json-schema", schema: "architecture.schema.json" },
   // DBA's physical schema (tables/DDL + per-story migration plan) that realizes
@@ -7185,6 +7191,18 @@ function checkArtifactConformance(name, content) {
 function finalize(violations) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
+function stripNullProps(node) {
+  if (Array.isArray(node)) return node.map(stripNullProps);
+  if (node !== null && typeof node === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(node)) {
+      if (v === null) continue;
+      out[k] = stripNullProps(v);
+    }
+    return out;
+  }
+  return node;
+}
 function checkJsonSchema(name, content, schemaFile) {
   let parsed;
   try {
@@ -7194,7 +7212,7 @@ function checkJsonSchema(name, content, schemaFile) {
     return { ok: false, violations: [`${name} is not valid JSON: ${cause}`] };
   }
   const validate = getValidator(schemaFile);
-  if (validate(parsed)) return { ok: true };
+  if (validate(stripNullProps(parsed))) return { ok: true };
   return { ok: false, violations: formatSchemaErrors(validate).map((e) => `${name} ${e}`) };
 }
 var HEADING_RE = /^(#{1,6})\s+(.*\S)\s*$/;
@@ -9674,7 +9692,7 @@ init_esm_shims();
 import { execSync, execFileSync as execFileSync3, spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync22, mkdirSync as mkdirSync13, readFileSync as readFileSync23, rmSync as rmSync5, writeFileSync as writeFileSync14 } from "fs";
-import { dirname as dirname11, join as join22 } from "path";
+import { basename as basename3, dirname as dirname11, join as join22 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -11686,14 +11704,43 @@ function defaultStart(cmd, cwd, env) {
   child.unref();
   return child.pid ?? -1;
 }
-async function resolveServeBaseUrl(baseUrl, probe) {
+async function resolveServeBaseUrl(baseUrl, probe, startPortOverride) {
   const u = new URL(baseUrl);
-  const startPort = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
+  const startPort = startPortOverride ?? (Number(u.port) || (u.protocol === "https:" ? 443 : 80));
   for (let p = startPort, tries = 0; tries < 20; p++, tries++) {
     u.port = String(p);
     if (!await probe(`${u.origin}/`)) return { baseUrl: u.origin, port: p };
   }
-  return { baseUrl: new URL(baseUrl).origin, port: startPort };
+  u.port = String(startPort);
+  return { baseUrl: u.origin, port: startPort };
+}
+function portOfUrl(b) {
+  const u = new URL(b);
+  return Number(u.port) || (u.protocol === "https:" ? 443 : 80);
+}
+function fnv1a(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function projectServeId(projectDir) {
+  return readProjectInstance(projectDir) || basename3(projectDir);
+}
+function preferredServePort(projectDir, configuredPort) {
+  if (configuredPort !== 8e3) return configuredPort;
+  return 8e3 + fnv1a(projectServeId(projectDir)) % 500;
+}
+async function probeServeId(url) {
+  try {
+    const r = await fetch(url, { method: "GET" });
+    const body = await r.json();
+    return typeof body.serve_id === "string" ? body.serve_id : void 0;
+  } catch {
+    return void 0;
+  }
 }
 async function ensureDeployedAndVerify(args) {
   const targetName = args.targetName ?? "local";
@@ -11726,9 +11773,21 @@ async function ensureDeployedAndVerify(args) {
   if (serveNeeded) {
     stop(args.projectDir, targetName);
     reapOrphanServers(args.projectDir);
-    const { baseUrl: serveUrl, port: servePort } = await resolveServeBaseUrl(cfg.baseUrl, reachable);
+    const serveId = projectServeId(args.projectDir);
+    const serveIdProbe = args.serveId ?? probeServeId;
+    const { baseUrl: serveUrl, port: servePort } = await resolveServeBaseUrl(
+      cfg.baseUrl,
+      reachable,
+      preferredServePort(args.projectDir, portOfUrl(cfg.baseUrl))
+    );
     const url = serveUrl + cfg.healthPath;
-    env = { ...baseEnv, BASE_URL: serveUrl, PORT: String(servePort), E2E_BACKEND_PORT: String(servePort) };
+    env = {
+      ...baseEnv,
+      BASE_URL: serveUrl,
+      PORT: String(servePort),
+      E2E_BACKEND_PORT: String(servePort),
+      CONSORT_SERVE_ID: serveId
+    };
     const pid = start(cfg.run, args.projectDir, env);
     const pf = pidFile(args.projectDir, targetName);
     mkdirSync13(dirname11(pf), { recursive: true });
@@ -11747,6 +11806,15 @@ async function ensureDeployedAndVerify(args) {
         passed: false,
         reachable: false,
         summary: `app not reachable at ${url} after ${cfg.readyTimeoutSeconds}s; cannot run GREEN verify`
+      };
+    }
+    const seenServeId = await serveIdProbe(url);
+    if (seenServeId !== void 0 && seenServeId !== serveId) {
+      stop(args.projectDir, targetName);
+      return {
+        passed: false,
+        reachable: false,
+        summary: `GREEN verify aborted: the app at ${url} is a FOREIGN backend (serve_id "${seenServeId}", expected "${serveId}") \u2014 another project holds this port. Relocate this project's deploy-targets.yaml local base_url to a free port or stop the other server.`
       };
     }
     serverReachable = true;
@@ -11896,7 +11964,7 @@ function stopLocal(projectDir, targetName) {
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync23, readFileSync as readFileSync24, readdirSync as readdirSync16, writeFileSync as writeFileSync15, mkdirSync as mkdirSync14, copyFileSync } from "fs";
-import { join as join23, dirname as dirname12, basename as basename3 } from "path";
+import { join as join23, dirname as dirname12, basename as basename4 } from "path";
 function readAppIconFromGuide(consortDir) {
   try {
     const gp = designGuideJson(consortDir);
@@ -11910,7 +11978,7 @@ function readAppIconFromGuide(consortDir) {
 }
 function installBrandAsset(projectDir, consortDir, appIcon) {
   try {
-    const base = basename3(appIcon.install_to);
+    const base = basename4(appIcon.install_to);
     const src = [
       join23(designAssetsDir(consortDir), base),
       join23(projectDir, appIcon.source),
@@ -11929,7 +11997,7 @@ function applyBrandIconReference(projectDir, installTo) {
   const indexHtml = join23(projectDir, "client", "index.html");
   if (!existsSync23(indexHtml)) return false;
   try {
-    const href = `/${basename3(installTo)}`;
+    const href = `/${basename4(installTo)}`;
     const src = readFileSync24(indexHtml, "utf8");
     const linkRe = /<link\s+rel="icon"([^>]*?)href="[^"]*"([^>]*)>/;
     if (linkRe.test(src)) {
@@ -12649,7 +12717,7 @@ function detectCycleTouchedMigrations(projectDir) {
     const files = [...list(["diff", "--name-only", "HEAD"]), ...list(["ls-files", "--others", "--exclude-standard"])];
     if (files.some((f) => /(^|\/)(alembic\/versions|migrations|db\/migrations|src\/migrations)\//.test(f))) return true;
     for (const f of files) {
-      if (!/(^|\/)tests?\//.test(f) && !/(^|\/)(test_|.*_test\.)/.test(basename4(f))) continue;
+      if (!/(^|\/)tests?\//.test(f) && !/(^|\/)(test_|.*_test\.)/.test(basename5(f))) continue;
       try {
         if (/\bmark\.migration\b/.test(readFileSync27(join27(projectDir, f), "utf8"))) return true;
       } catch {

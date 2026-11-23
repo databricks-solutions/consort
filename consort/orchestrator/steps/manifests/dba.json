@@ -4,10 +4,11 @@
   "agent": { "kind": "claude", "config": { "role": "dba" } },
   "match": { "kind": "invoke-role", "role": "dba" },
   "inputs": [
-    { "id": "architecture", "source": "feature:features/{feature}/architecture.json", "description": "The Architect's logical contract (service_backed, layers, persistence_invariants) the DBA physically realizes , NOT re-authored. Feature-scoped: the {feature} placeholder expands to the run's feature id (the real on-disk location, features/<F>/architecture.json)." }
+    { "id": "architecture", "source": "feature:features/{feature}/architecture.json", "description": "The Architect's logical contract (service_backed, layers, persistence_invariants) the DBA physically realizes , NOT re-authored. Feature-scoped: the {feature} placeholder expands to the run's feature id (the real on-disk location, features/<F>/architecture.json)." },
+    { "id": "db-design-schema", "source": "schema:db-design.schema.json", "description": "db-design.schema.json — the contract db-design.json is gated against (dbDesignConformant) and that the spec-gate conformance guard reads for column ownership. Requires feature_id; conform to it exactly." }
   ],
   "outputs": [
-    { "id": "db-design", "filename": "db-design.json", "channel": "artifact", "validator": "nonEmptyFile", "description": "The physical schema (tables + per-story schema_changes + realizes_invariants). A non-persisting or non-service-backed feature may leave this empty, so there is NO post-turn verify-artifact for the DBA (designArtifactExpectation returns null)." },
+    { "id": "db-design", "filename": "db-design.json", "channel": "artifact", "validator": "dbDesignConformant", "description": "The physical schema (tables + per-story schema_changes + realizes_invariants). dbDesignConformant gates it against db-design.schema.json AT the turn (required feature_id) when the DBA runs, so a shape deviation fails here with a clear error instead of a late conformance-guard block. A non-persisting / non-service-backed feature runs no DBA step at all (designArtifactExpectation returns null), so this validator only applies to a real db-design the DBA actually wrote." },
     { "id": "agent-log", "filename": "agent-log.jsonl", "channel": "meta", "validator": "dbaLoggedAuthoring", "description": "The DBA's structured log of the physical schema it realized." }
   ],
   "routing": {

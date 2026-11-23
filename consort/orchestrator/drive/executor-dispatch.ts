@@ -32,16 +32,20 @@ import {
   featureProposalsMd,
   planningEstimatesJson,
 } from "../../config/consort-paths.js";
+import { writeConformanceHandback } from "./conformance-handback.js";
 import { manifestForAction, type StepManifest } from "../steps/manifest.js";
 import { emitAgentLogEvent } from "../../logging/agent-log.js";
 import { execute, type StepExecutorDeps } from "../turns/step-executor.js";
 import { Step } from "../steps/step.js";
 import { buildAgent, type AgentSpec } from "../agents/agent-catalogue.js";
+import { schemaPath, loadSchema } from "../validators/schema-loader.js";
+import { ARTIFACT_FORMATS } from "../validators/conformance/artifact-conformance.js";
 import { wrapWithRecorder } from "../agents/replay-recorder-wrapper.js";
 import { isBuildTurn, lastSyncedBuildTurnIndex } from "../agents/mock-replay-agent.js";
 import { assertReplayBuildVerdictMatch } from "../../logging/replay-build.js";
 import { consortEnv } from "../../config/consort-env.js";
-import { productDirForLanguage, projectLanguage } from "../../config/consort-config-file.js";
+import type { TurnUsage } from "../../session/claude-usage.js";
+import { productDirForLanguage, projectLanguage, resolveProjectSettings } from "../../config/consort-config-file.js";
 import type { WorkflowAction, DriveState } from "./orchestrator-drive.js";
 import type { BoundedRoute, ValidateBoundDeps } from "../steps/step-contract.js";
 // Types only (erased at compile) – so this module never imports orchestrator-effects at runtime.
@@ -219,6 +223,36 @@ export function isPlanningMode(action: WorkflowAction): boolean {
 }
 
 /**
+ * True when the project selects the GitHub Copilot CLI executor for its role turns — read from the
+ * ONE door, `project.executor` in `.lakebase/consort-config.json` (set at create-project via
+ * `--executor copilot`). Default "claude" (byte-identical to before). No env override: the project
+ * config is the single source of truth, so the choice survives + is deterministic (an env var would
+ * be a second door AND would not persist across a per-call shell).
+ */
+export function copilotExecutorSelected(projectDir: string): boolean {
+  return resolveProjectSettings(projectDir).project.executor === "copilot";
+}
+
+/**
+ * Remap a manifest's agent spec (shipped as kind:"claude") to the `copilot` executor: carry the role
+ * (from the manifest agent config) + the model (from agentOptions.model, the per-step model lever)
+ * into CopilotLevers. Pure; no manifest edit — the swap is at resolution time, exactly like the
+ * replay-kind swap. The Copilot CLI's `--model` accepts a provider/model (it can route to Claude or
+ * GPT), so the per-step model lever still applies.
+ */
+export function copilotExecutorSpec(manifest: StepManifest): AgentSpec {
+  const cfg = (manifest.agent?.config ?? {}) as { role?: string };
+  const model = (manifest.agentOptions as { model?: unknown } | undefined)?.model;
+  return {
+    kind: "copilot",
+    config: {
+      ...(typeof cfg.role === "string" ? { role: cfg.role } : {}),
+      ...(typeof model === "string" ? { model } : {}),
+    },
+  };
+}
+
+/**
  * HARD-STOP GUARD (#732): a live drive must never run an AGENT turn on the legacy (non-executor)
  * path. Every invoke-role action is EITHER executor-dispatched (an agent turn through the
  * StepExecutor) OR a sanctioned deterministic-agentless action (author-requests / estimate-committed,
@@ -306,6 +340,43 @@ export function manifestPostTurnCommands(
  *  entry both omits its inline block AND re-injects it, keeping the assembled prompt byte-identical. */
 export function declaredPreconditionKinds(manifest: StepManifest): ReadonlySet<string> {
   return new Set((manifest.preconditions ?? []).map((p) => p.kind));
+}
+
+/** Memoized: does `<filename>`'s gating schema (per ARTIFACT_FORMATS) REQUIRE a root `feature_id`?
+ *  True for test-list.json / db-design.json / architecture.json. Drives the materialize-phase stamp. */
+const _featureIdRequired = new Map<string, boolean>();
+function schemaRequiresFeatureId(filename: string): boolean {
+  const cached = _featureIdRequired.get(filename);
+  if (cached !== undefined) return cached;
+  let req = false;
+  const spec = ARTIFACT_FORMATS[filename];
+  if (spec && spec.kind === "json-schema") {
+    try {
+      const schema = loadSchema(spec.schema) as { required?: unknown };
+      req = Array.isArray(schema.required) && schema.required.includes("feature_id");
+    } catch {
+      req = false;
+    }
+  }
+  _featureIdRequired.set(filename, req);
+  return req;
+}
+
+/** If `abs` is a JSON OBJECT missing a STRING root `feature_id`, add `feature_id = <featureId>` and
+ *  rewrite — nothing else, no other field touched. No-op when the file is absent, unparseable, not a
+ *  plain object, or already carries a string feature_id. Best-effort (never breaks the drive). */
+function stampRootFeatureId(abs: string, featureId: string): void {
+  try {
+    if (!fs.existsSync(abs)) return;
+    const obj: unknown = JSON.parse(fs.readFileSync(abs, "utf8"));
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return;
+    const rec = obj as Record<string, unknown>;
+    if (typeof rec.feature_id === "string") return;
+    rec.feature_id = featureId;
+    fs.writeFileSync(abs, JSON.stringify(rec, null, 2) + "\n", "utf8");
+  } catch {
+    /* best-effort: the deterministic stamp must never break the turn */
+  }
 }
 
 export function outputPathsForAction(action: WorkflowAction, consortDir: string, featureId: string, projectDir?: string): Record<string, string> {
@@ -411,7 +482,12 @@ export function liveDispatchSeam(cfg: DriveEffectsConfig, deps: ExecutorDispatch
     // wraps it in the envelope (handback + suffixes + levers). For an un-migrated turn (no
     // preconditions) the assembled prompt IS the full inline body, so this is byte-identical to legacy.
     const body = invocation.instructions?.prompt ?? deps.buildTaskBody(a, cfg);
-    await cfg.runner.run(deps.buildClaudeCommandWithBody(a, cfg, body));
+    // The command shape is identical for both executors; for a copilot-executor project, tag it so the
+    // shared execRunner envelope dispatches this turn to the Copilot CLI (spawnCopilotStreaming) instead
+    // of claude — same session/retry/monitor/transcript machinery, different binary + arg vector.
+    const cmd = deps.buildClaudeCommandWithBody(a, cfg, body);
+    if (cmd.kind === "claude" && copilotExecutorSelected(cfg.projectDir)) cmd.executor = "copilot";
+    await cfg.runner.run(cmd);
   };
 }
 
@@ -468,7 +544,14 @@ export async function performTurnViaExecutor(
   const replayDir = consortEnv("REPLAY_DIR")?.trim();
   const replayBuildDir = consortEnv("REPLAY_BUILD_DIR")?.trim();
   const recordDir = consortEnv("RECORD_DIR")?.trim();
-  const spec: AgentSpec = replayDir ? { ...manifest.agent!, kind: "replay", config: {} } : manifest.agent!;
+  // REPLAY wins (corpus is the input); else the COPILOT executor override (swap the manifest's
+  // claude kind to copilot, carrying role + model); else the shipped claude kind. The copilot kind
+  // is CONTAINED (buildCopilot ignores the claude liveDispatch seam below and spawns the CLI itself).
+  const spec: AgentSpec = replayDir
+    ? { ...manifest.agent!, kind: "replay", config: {} }
+    : copilotExecutorSelected(cfg.projectDir)
+      ? copilotExecutorSpec(manifest)
+      : manifest.agent!;
   let agent = buildAgent(spec, {
     workspaceDir: cfg.projectDir,
     liveDispatch: liveDispatchSeam(cfg, deps),
@@ -524,6 +607,10 @@ export async function performTurnViaExecutor(
   const expandRel = (rel: string): string =>
     rel.replace(/\{feature\}/g, f).replace(/\{story\}/g, story ?? "");
   const inputPath = (source: string): string => {
+    // `schema:` – a kit JSON schema (consort/config/schemas/<name>), NOT a project-tree file. Hands the
+    // authoring turn the exact schema its output is gated against (one source of truth); feature/story
+    // independent, so it resolves before the tree-scoped prefixes.
+    if (source.startsWith("schema:")) return schemaPath(source.slice("schema:".length));
     // `cycle:`/`ac:` – the per-cycle dir (cycleDir(f, s, ac)), where the build lane's process-event
     // markers live (green-failure.json / superseded-tests.json / regression-assessment.json). An AC and
     // its cycle share a dir; both prefixes read naturally at a call site and resolve identically. This
@@ -606,7 +693,23 @@ export async function performTurnViaExecutor(
     // DESIGN-lane establish has a feature, so it still reconciles. (The legacy path's `f &&` guard
     // already covered this; this mirrors it on the executor path.)
     materializeOutputs: async () => {
-      if (isPlanningMode(action) || !f) return;
+      if (!f) return;
+      // STAMP the orchestrator-known root feature_id onto any produced artifact whose schema REQUIRES
+      // it (test-list.json / db-design.json / architecture.json) but the agent omitted it. The
+      // orchestrator OWNS the feature id, so a missing root feature_id is a deterministic fill — not a
+      // blind re-run. Runs BETWEEN capture + validate (both executors), so validate-outputs then sees a
+      // conformant file; no-op when feature_id is already a string / the file is absent / not a JSON
+      // object. This is why agents dropping the root feature_id (estimates → db-design → test-list) no
+      // longer escalates.
+      const outPaths = outputPathsForAction(action, cfg.consortDir, f, cfg.projectDir);
+      for (const out of manifest.outputs) {
+        if (out.channel !== "artifact" || !schemaRequiresFeatureId(out.filename)) continue;
+        stampRootFeatureId(join(cfg.consortDir, outPaths[out.id] ?? out.filename), f);
+      }
+      // Phase 4.5 reconcile MATERIALIZES the agent-log (the legacy LOG_BIN --reconcile). SKIPPED for the
+      // sprint-scoped PLANNING modes (they write no feature agent-log) — the same `!isPlanningMode` guard
+      // the legacy path used; `!f` was already handled above.
+      if (isPlanningMode(action)) return;
       await cfg.runner.run({ kind: "cli", bin: deps.logBin, args: ["--reconcile", "--feature", f, "--tdd-dir", cfg.consortDir] });
     },
     // Phase 6.5: the manifest's `after` CLIs – gated on clean validation by the executor. For
@@ -640,6 +743,25 @@ export async function performTurnViaExecutor(
   const ctx = { action, cfg, state, validateBoundDeps: freshRouterDeps };
   const turnStart = Date.now();
   const result = await execute(step, ctx, executorDeps);
+
+  // INFORMED RETRY on an output-validation failure. When the turn's outputs failed validation (phase 5
+  // → a BLOCKED re-issue), thread the EXACT violations into the re-issued turn via the EXISTING handback
+  // channel: handbackFile(role[,story]) is read+deleted and prepended to the next prompt by
+  // buildClaudeCommandWithBody's consumeHandback — for BOTH the claude and copilot executors. Without
+  // this, a schema-conformance failure re-ran BLIND (same prompt, no error feedback) past its retry
+  // budget → escalation (the DBA db-design.schema.json HIL). Keyed by role (+ story) so it reaches
+  // exactly the re-issued turn; consumeHandback clears it, so a passing turn leaves no stale note. Only
+  // fires on the live drive path (unit tests call execute() directly, not this). Best-effort.
+  if (action.kind === "invoke-role" && f && result.violations.length > 0) {
+    writeConformanceHandback({
+      consortDir: cfg.consortDir,
+      featureId: f,
+      role: action.role,
+      story,
+      violations: result.violations,
+      artifacts: manifest.outputs.filter((o) => o.channel === "artifact").map((o) => o.filename),
+    });
+  }
 
   // Per-turn completion line for the log narrator — the SINGLE "[drive] <role> turn <N>s" emit, so a
   // finished agent turn appears in drive-live.log and consort-watch's turn-done rule + its per-turn IDE
@@ -681,6 +803,9 @@ export async function performTurnViaExecutor(
     } catch {
       /* observability only */
     }
+    // NOTE: turn.usage for a COPILOT turn is now emitted by the shared execRunner envelope (claude-runner),
+    // the SAME place the claude path emits it — copilot routes through that envelope via executor:"copilot".
+    // The previous copilot-only emission here (from the old contained path) is gone to avoid a double-emit.
   }
 
   // Divergence guard (replay-only, build turns): the turn synced the recorded snapshot + the postTurn

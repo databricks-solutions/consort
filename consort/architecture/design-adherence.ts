@@ -155,6 +155,62 @@ export function applyNavbarBranding(
   }
 }
 
+/** The App.tsx wiring for the fixed "Made with Consort" footer — the ONE import + render-site
+ *  strings, shared by this injector and asserted against the scaffold template so the two never
+ *  drift. The component itself (components/MadeWithConsort.tsx) + the public lockups are delivered
+ *  by the scaffold (new apps) and refreshKitOwnedInstrumentation (existing apps). */
+export const CONSORT_FOOTER_IMPORT = `import { MadeWithConsort } from "./components/MadeWithConsort";`;
+export const CONSORT_FOOTER_ELEMENT = `<MadeWithConsort />`;
+
+/**
+ * Idempotently ensure the "Made with Consort" footer is wired into an existing project's App.tsx:
+ * add the import (after the last top-of-file import) and render `<MadeWithConsort />` right after
+ * `</Routes>`. New scaffolds already carry both from the template, so this is a no-op there; it
+ * exists to back-fill projects scaffolded before the footer shipped (runs from consort-apply-design-
+ * theme, which also runs on upgrade). Anchors on the scaffold's stable `</Routes>` seam. Best-effort:
+ * no App.tsx, already wired, or the seam is gone (a heavily-restructured shell) -> no-op. Returns
+ * true iff it wrote a change. The component file + lockups land via the kit-owned refresh, not here.
+ */
+export function ensureConsortFooter(projectDir: string): boolean {
+  const appTsx = join(projectDir, "client", "src", "App.tsx");
+  if (!existsSync(appTsx)) return false;
+  // ATOMICITY: never wire an import to a component that isn't there. The footer COMPONENT +
+  // its lockups are delivered SEPARATELY (refreshKitOwnedInstrumentation, from the pinned
+  // scm-utils); the footer is a coordinated scm-utils+consort change, so when that kit is
+  // BEHIND this one the component may not have landed yet. Injecting the import here with no
+  // component to back it breaks the client typecheck (import of a missing module), which then
+  // gets mis-diagnosed as an app regression and "fixed" with a text-only stub. Only wire the
+  // footer once its component is actually present; a later apply-theme pass re-runs this and
+  // wires it the moment the kit-owned refresh has delivered the component.
+  const footerComponent = join(projectDir, "client", "src", "components", "MadeWithConsort.tsx");
+  if (!existsSync(footerComponent)) return false;
+  try {
+    const src = readFileSync(appTsx, "utf8");
+    if (src.includes("MadeWithConsort")) return false; // already wired (idempotent)
+    if (!src.includes("</Routes>")) return false; // no stable seam to anchor on
+    let next = src;
+    // Import: insert after the LAST top-of-file import line so it sits with the other imports.
+    const importRe = /^import .*;$/gm;
+    let lastImportEnd = -1;
+    let m: RegExpExecArray | null;
+    while ((m = importRe.exec(src)) !== null) lastImportEnd = m.index + m[0].length;
+    if (lastImportEnd >= 0) {
+      next = next.slice(0, lastImportEnd) + `\n${CONSORT_FOOTER_IMPORT}` + next.slice(lastImportEnd);
+    } else {
+      next = `${CONSORT_FOOTER_IMPORT}\n` + next;
+    }
+    // Render: drop the element on its own line right after the closing </Routes>.
+    next = next.replace(/(<\/Routes>)/, `$1\n      ${CONSORT_FOOTER_ELEMENT}`);
+    if (next !== src) {
+      writeFileSync(appTsx, next);
+      return true;
+    }
+    return false;
+  } catch {
+    return false; // best-effort; new scaffolds carry the footer from the template regardless
+  }
+}
+
 export interface DesignGuide {
   typography: {
     font_family: string;
@@ -248,7 +304,47 @@ export function designGuideToCssVars(guide: DesignGuide): Record<string, string>
 export function renderThemeRootCss(guide: DesignGuide): string {
   const vars = designGuideToCssVars(guide);
   const lines = Object.entries(vars).map(([name, value]) => `  ${name}: ${value};`);
+  // Fixed "Made with Consort" footer (components/MadeWithConsort): pick the wordmark lockup that
+  // CONTRASTS with the app's own page surface — white on a dark theme, dark on light. These apps
+  // each render ONE palette, so the surface luminance (not the viewer's OS theme) is the signal.
+  // The page-surface token is named by the guide, so probe the common keys (guides use `surface`,
+  // `page`, `bg`, `background`, or `canvas`); an unknown surface defaults to light (the dark mark).
+  // NOT a guide-declared token (so it is never added to designGuideToCssVars, the adherence
+  // contract); it is appended to the RENDERED sheet only, and the adherence gate ignores extra vars.
+  lines.push(`  --consort-lockup: ${consortLockupForSurface(pageSurfaceColor(vars))};`);
   return `:root {\n${lines.join("\n")}\n}\n`;
+}
+
+/** The app's page-surface color from the rendered token map, probing the color keys guides use for
+ *  the body/page background (`surface` first, then `page`/`bg`/`background`/`canvas`). Undefined when
+ *  none is present — the caller then defaults to a light surface (the scaffold baseline). */
+export function pageSurfaceColor(vars: Record<string, string>): string | undefined {
+  for (const key of ["--color-surface", "--color-page", "--color-bg", "--color-background", "--color-canvas"]) {
+    if (vars[key]) return vars[key];
+  }
+  return undefined;
+}
+
+/** Relative luminance (0..1) of a `#rgb`/`#rrggbb` hex, or null when unparseable (e.g. a
+ *  `rgb()`/named color — treated as light by the caller, the safe default for these apps). */
+export function hexLuminance(hex: string | undefined): number | null {
+  if (!hex) return null;
+  const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return null;
+  let h = m[1];
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/** The `--consort-lockup` url for a page surface: the WHITE wordmark on a dark surface
+ *  (luminance < 0.5), the dark wordmark otherwise. An unparseable/absent surface defaults to
+ *  light (the scaffold baseline), so the dark wordmark — never a white mark on a light page. */
+export function consortLockupForSurface(surface: string | undefined): string {
+  const lum = hexLuminance(surface);
+  return lum !== null && lum < 0.5 ? 'url("/consort-lockup-white.svg")' : 'url("/consort-lockup.svg")';
 }
 
 export interface TokenMismatch {

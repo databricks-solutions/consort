@@ -56,15 +56,23 @@ export class Step implements StepContract {
     this.exists = exists ?? existsSync;
   }
 
-  /** WHAT this step needs (logical), from the manifest. The orchestrator resolves these. */
+  /** WHAT this step needs (logical), from the manifest. The orchestrator resolves these.
+   *  `schema:`-sourced inputs are EXCLUDED here: they are kit-resolved contract context (the exact
+   *  JSON schema the output is gated against), always available (the kit ships the schema file), not
+   *  an orchestrator-provided artifact — so they must not appear in the LOGICAL-input contract nor
+   *  trip run()'s `spec.id in inputs` presence gate. The live resolveInputs (executor-dispatch /
+   *  manifest-runner) iterates `manifest.inputs` directly, so it still resolves + hands the schema to
+   *  the agent; this filter only governs the logical-input contract + the presence gate. */
   inputs(_action: WorkflowAction): StepInputSpec[] {
-    return this.manifest.inputs.map((i) => ({
-      id: i.id,
-      description: i.description ?? `${i.id} (from ${i.source})`,
-      // Carry `optional` through so run()'s presence re-check honors it (an optional-absent input
-      // is skipped by resolveInputs and MUST NOT trip run's `spec.id in inputs` gate).
-      ...(i.optional ? { optional: true } : {}),
-    }));
+    return this.manifest.inputs
+      .filter((i) => !i.source.startsWith("schema:"))
+      .map((i) => ({
+        id: i.id,
+        description: i.description ?? `${i.id} (from ${i.source})`,
+        // Carry `optional` through so run()'s presence re-check honors it (an optional-absent input
+        // is skipped by resolveInputs and MUST NOT trip run's `spec.id in inputs` gate).
+        ...(i.optional ? { optional: true } : {}),
+      }));
   }
 
   /** WHAT this step needs PRE-CONDITIONED (logical), from the manifest. The orchestrator's

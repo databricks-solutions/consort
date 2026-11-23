@@ -83,6 +83,10 @@ export interface ConsortConfigFile {
     gates?: "interactive" | "proxy";
     deployTarget?: string;
     clientFramework?: "react" | "none";
+    /** The agent executor backend that runs role turns: "claude" (default) or "copilot" (GitHub
+     *  Copilot CLI). The ONE door for executor selection — set at create-project (--executor), read
+     *  by the drive; there is NO env override. */
+    executor?: "claude" | "copilot";
     // The backend language of the scaffolded project. The build lane resolves the product dir
     // + source/test file extensions from this (python/java/kotlin -> app/ + .py; nodejs -> src/ +
     // .ts/.tsx/.js). create-project persists it; absent (legacy projects) resolves to "java".
@@ -101,6 +105,7 @@ export interface ProjectFileSettings {
     deployTarget: string;
     clientFramework: "react" | "none";
     language: "java" | "kotlin" | "python" | "nodejs";
+    executor: "claude" | "copilot";
   };
 }
 
@@ -152,6 +157,9 @@ export function resolveProjectSettings(projectDir: string): ProjectFileSettings 
     // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
     // default only affects config-less/legacy trees.
     language: (file?.project?.language ?? "python") as "java" | "kotlin" | "python" | "nodejs",
+    // The executor backend for role turns. Default "claude"; a project created with --executor copilot
+    // persists "copilot" here (the ONE door — no env override). Legacy/config-less projects are claude.
+    executor: (file?.project?.executor ?? "claude") as "claude" | "copilot",
   };
   const plan = { sizing: file?.plan?.sizing ?? true };
   return { build, plan, project };
@@ -242,5 +250,17 @@ export function applyProjectOverrides(
   if (over.deployTarget !== undefined) cfg.project.deployTarget = over.deployTarget;
   cfg.plan = cfg.plan ?? {};
   if (over.sizing !== undefined) cfg.plan.sizing = over.sizing;
+  writeConsortConfig(projectDir, cfg, { force: true });
+}
+
+/** Persist the agent EXECUTOR backend (claude | copilot) into consort-config.json — the ONE door for
+ *  executor selection, written at create-project (`--executor`). The drive reads it via
+ *  resolveProjectSettings; there is NO env override (one source of truth). No-op when executor is
+ *  undefined (a plain create leaves the "claude" default). */
+export function setProjectExecutor(projectDir: string, executor?: "claude" | "copilot"): void {
+  if (!executor) return;
+  const cfg = loadConsortConfig(projectDir) ?? defaultConsortConfig();
+  cfg.project = cfg.project ?? {};
+  cfg.project.executor = executor;
   writeConsortConfig(projectDir, cfg, { force: true });
 }

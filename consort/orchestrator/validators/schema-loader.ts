@@ -57,6 +57,13 @@ export function loadSchema(name: string): object {
   return JSON.parse(readFileSync(join(SCHEMA_DIR, name), "utf8"));
 }
 
+/** Absolute path to a schema file (the SAME dir the validators compile from). Lets a step manifest
+ *  hand an authoring turn the exact schema its output is gated against, via a `schema:` input source —
+ *  one source of truth, so the contract the agent reads is byte-identical to the one the gate enforces. */
+export function schemaPath(name: string): string {
+  return join(SCHEMA_DIR, name);
+}
+
 /**
  * Return a cached, compiled Ajv validator for a schema filename
  * (e.g. "feature.schema.json"). Compiles on first use, then memoizes.

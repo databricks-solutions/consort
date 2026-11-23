@@ -7474,7 +7474,7 @@ init_esm_shims();
 import { execSync, execFileSync as execFileSync2, spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync15, mkdirSync as mkdirSync6, readFileSync as readFileSync15, rmSync as rmSync2, writeFileSync as writeFileSync8 } from "fs";
-import { dirname as dirname9, join as join16 } from "path";
+import { basename as basename3, dirname as dirname9, join as join16 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -7534,7 +7534,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync16, readFileSync as readFileSync16, readdirSync as readdirSync11, writeFileSync as writeFileSync9, mkdirSync as mkdirSync7, copyFileSync } from "fs";
-import { join as join17, dirname as dirname10, basename as basename3 } from "path";
+import { join as join17, dirname as dirname10, basename as basename4 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();

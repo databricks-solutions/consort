@@ -6,7 +6,9 @@
   "inputs": [
     { "id": "product-overview", "source": "feature:product-overview.md", "description": "The PO's product overview (product-overview.md)." },
     { "id": "nfrs", "source": "feature:nfrs.md", "description": "The PO's non-functional requirements brief (nfrs.md)." },
-    { "id": "feature-request", "source": "feature:features/{feature}/feature-request.md", "description": "The PO's feature request for this feature (features/<feature>/feature-request.md; {feature} expands to the run's feature id)." }
+    { "id": "feature-request", "source": "feature:features/{feature}/feature-request.md", "description": "The PO's feature request for this feature (features/<feature>/feature-request.md; {feature} expands to the run's feature id)." },
+    { "id": "feature-spec-schema", "source": "schema:feature.schema.json", "description": "feature.schema.json — the EXACT contract feature-spec.json is gated against (featureSpecNonEmptyStories). Emit feature-spec.json conforming to this schema precisely, with a non-empty stories[]; add no keys it does not define." },
+    { "id": "story-schema", "source": "schema:story.schema.json", "description": "story.schema.json — the contract EACH story stub (story.json / story.md) is gated against downstream by sync-breakdown. Every story you break out MUST carry the required narrative keys asA / iWantTo / soThat (plus id); a stub missing them fails the design pipeline. Write the 'As a / I want / So that' for every story, not just the feature-spec index." }
   ],
   "outputs": [
     { "id": "feature-spec", "filename": "feature-spec.json", "channel": "artifact", "validator": "featureSpecNonEmptyStories", "description": "The feature breakdown index (feature-spec.json + a story stub per story). A .consort design document , the artifact channel." },

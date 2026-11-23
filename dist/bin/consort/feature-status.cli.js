@@ -6652,11 +6652,11 @@ init_esm_shims();
 // consort/orchestrator/status/feature-status.ts
 init_esm_shims();
 import { existsSync as existsSync26, readFileSync as readFileSync27, readdirSync as readdirSync18, statSync as statSync13 } from "fs";
-import { dirname as dirname11, join as join24 } from "path";
+import { dirname as dirname12, join as join24 } from "path";
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_esm_shims();
-import * as fs8 from "fs";
+import * as fs9 from "fs";
 import * as path5 from "path";
 
 // consort/pipeline/run-cycle.ts
@@ -7065,7 +7065,10 @@ function resolveProjectSettings(projectDir) {
     // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
     // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
     // default only affects config-less/legacy trees.
-    language: file?.project?.language ?? "python"
+    language: file?.project?.language ?? "python",
+    // The executor backend for role turns. Default "claude"; a project created with --executor copilot
+    // persists "copilot" here (the ONE door — no env override). Legacy/config-less projects are claude.
+    executor: file?.project?.executor ?? "claude"
   };
   const plan = { sizing: file?.plan?.sizing ?? true };
   return { build, plan, project };
@@ -7098,7 +7101,7 @@ init_esm_shims();
 import { execSync, execFileSync as execFileSync3, spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync17, mkdirSync as mkdirSync10, readFileSync as readFileSync18, rmSync as rmSync5, writeFileSync as writeFileSync12 } from "fs";
-import { dirname as dirname8, join as join17 } from "path";
+import { basename as basename2, dirname as dirname8, join as join17 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -7222,7 +7225,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync18, readFileSync as readFileSync19, readdirSync as readdirSync13, writeFileSync as writeFileSync13, mkdirSync as mkdirSync11, copyFileSync } from "fs";
-import { join as join18, dirname as dirname9, basename as basename2 } from "path";
+import { join as join18, dirname as dirname9, basename as basename3 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();
@@ -7370,11 +7373,16 @@ var TEST_ANALYST_CATALOGUE = {
   }
 };
 
+// consort/orchestrator/drive/conformance-handback.ts
+init_esm_shims();
+import * as fs8 from "fs";
+import { dirname as dirname10 } from "path";
+
 // consort/orchestrator/state/orchestrator-probe.ts
 function readJson(file) {
-  if (!fs8.existsSync(file)) return void 0;
+  if (!fs9.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs8.readFileSync(file, "utf8"));
+    return JSON.parse(fs9.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -7389,12 +7397,12 @@ function readDriveContext(consortDir, featureId, projectDir) {
   const proposed = spec !== void 0;
   const intakeReady = intakeReadyOnDisk(consortDir);
   const breakdownDone = Array.isArray(spec?.stories) && spec.stories.length > 0;
-  const requestsAuthored = fs8.existsSync(featureRequestMd(consortDir, featureId));
+  const requestsAuthored = fs9.existsSync(featureRequestMd(consortDir, featureId));
   const backlogCommitted = requestsAuthored;
-  const deployed = fs8.existsSync(featureDeployEvidenceJson(consortDir, featureId));
+  const deployed = fs9.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
   const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
-  const reverifyAttempted = fs8.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
+  const reverifyAttempted = fs9.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   const verifyAssessEligible = deployVerifyNeedsAssess(consortDir, featureId);
   const verifyRefactorPending = deployVerifyRefactorPending(consortDir, featureId);
   const proj = projectDir ?? path5.dirname(consortDir);
@@ -7430,7 +7438,7 @@ function readDriveContext(consortDir, featureId, projectDir) {
 }
 function readDeployVerifyPassed(consortDir, featureId) {
   try {
-    const ev = JSON.parse(fs8.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
+    const ev = JSON.parse(fs9.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
     return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : void 0;
   } catch {
     return void 0;
@@ -7446,7 +7454,7 @@ function readGateApproved(featureId, consortDir, gate) {
 
 // consort/gates/design-spec-gate.ts
 init_esm_shims();
-import { appendFileSync, existsSync as existsSync24, readFileSync as readFileSync25, writeFileSync as writeFileSync15, mkdirSync as mkdirSync13 } from "fs";
+import { appendFileSync, existsSync as existsSync24, readFileSync as readFileSync25, writeFileSync as writeFileSync16, mkdirSync as mkdirSync14 } from "fs";
 
 // consort/experiment/spike-carryforward.ts
 init_esm_shims();
@@ -7460,7 +7468,7 @@ function readPlan(consortDir, featureId, storyId) {
 
 // consort/pipeline/story-pipeline.ts
 init_esm_shims();
-import { existsSync as existsSync25, readFileSync as readFileSync26, writeFileSync as writeFileSync16, mkdirSync as mkdirSync14, readdirSync as readdirSync17, statSync as statSync12, rmSync as rmSync6 } from "fs";
+import { existsSync as existsSync25, readFileSync as readFileSync26, writeFileSync as writeFileSync17, mkdirSync as mkdirSync15, readdirSync as readdirSync17, statSync as statSync12, rmSync as rmSync6 } from "fs";
 
 // consort/logging/gate-decision-log.ts
 init_esm_shims();
@@ -7597,7 +7605,7 @@ function readProgression(consortDir, featureId, projectDir) {
     return null;
   }
 }
-function getFeatureStatus(consortDir, featureId, projectDir = dirname11(consortDir)) {
+function getFeatureStatus(consortDir, featureId, projectDir = dirname12(consortDir)) {
   const plans = [];
   for (const storyId of listFeatureStories(consortDir, featureId)) {
     const p = readPlan(consortDir, featureId, storyId);

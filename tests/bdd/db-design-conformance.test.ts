@@ -70,6 +70,48 @@ describe("db-design.json schema conformance", () => {
     });
     expect(checkArtifactConformance("db-design.json", bad).ok).toBe(false);
   });
+
+  it("TOLERATES a column's `default: null` (normalizer strips null-valued optionals before validation)", () => {
+    // LLM roles reliably emit `"default": null` for a no-default column; the schema types `default` as a
+    // string, so strict validation rejected it and bounced the design lane on every retry even though the
+    // prompt forbids it. A null optional now normalizes to ABSENT → valid (the authored file is untouched).
+    const withNullDefault = JSON.stringify({
+      feature_id: "F1",
+      tables: [{ name: "users", columns: [{ name: "id", type: "uuid", nullable: false, default: null }], primary_key: ["id"] }],
+      realizes_invariants: [],
+    });
+    expect(checkArtifactConformance("db-design.json", withNullDefault)).toEqual({ ok: true });
+  });
+
+  it("allows an index `description` (what the index serves) — consistent with columns/tables/checks", () => {
+    const withIndexDesc = JSON.stringify({
+      feature_id: "F1",
+      tables: [{
+        name: "stock_records",
+        columns: [{ name: "sku", type: "text", nullable: false }],
+        primary_key: ["sku"],
+        indexes: [{ name: "ix_stock_sku", columns: ["sku"], unique: true, description: "serves the per-SKU lookup on the home table" }],
+      }],
+      realizes_invariants: [],
+    });
+    expect(checkArtifactConformance("db-design.json", withIndexDesc)).toEqual({ ok: true });
+  });
+
+  it("STILL rejects an invented non-null index key (e.g. `serves`) — null-strip must not mask real drift", () => {
+    // The DBA's `serves` key is redirected to `description`, NOT tolerated wholesale: a NON-null unknown key
+    // must still fail additionalProperties:false, so genuine schema drift is still caught.
+    const withServes = JSON.stringify({
+      feature_id: "F1",
+      tables: [{
+        name: "stock_records",
+        columns: [{ name: "sku", type: "text", nullable: false }],
+        primary_key: ["sku"],
+        indexes: [{ name: "ix_stock_sku", columns: ["sku"], unique: true, serves: "per-SKU lookup" }],
+      }],
+      realizes_invariants: [],
+    });
+    expect(checkArtifactConformance("db-design.json", withServes).ok).toBe(false);
+  });
 });
 
 describe("checkDbDesign: invariant realization (physical counterpart to checkPersistenceCoverage)", () => {

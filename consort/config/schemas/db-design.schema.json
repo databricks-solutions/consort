@@ -77,7 +77,8 @@
               "properties": {
                 "name": { "type": "string" },
                 "columns": { "type": "array", "items": { "type": "string" } },
-                "unique": { "type": "boolean" }
+                "unique": { "type": "boolean" },
+                "description": { "type": "string", "description": "What this index serves — the access pattern, invariant, or query it supports." }
               }
             }
           }

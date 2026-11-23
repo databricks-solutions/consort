@@ -6651,7 +6651,7 @@ var import_path7 = require("path");
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_cjs_shims();
-var fs8 = __toESM(require("fs"), 1);
+var fs9 = __toESM(require("fs"), 1);
 var path4 = __toESM(require("path"), 1);
 
 // consort/pipeline/run-cycle.ts
@@ -7060,7 +7060,10 @@ function resolveProjectSettings(projectDir) {
     // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
     // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
     // default only affects config-less/legacy trees.
-    language: file?.project?.language ?? "python"
+    language: file?.project?.language ?? "python",
+    // The executor backend for role turns. Default "claude"; a project created with --executor copilot
+    // persists "copilot" here (the ONE door — no env override). Legacy/config-less projects are claude.
+    executor: file?.project?.executor ?? "claude"
   };
   const plan = { sizing: file?.plan?.sizing ?? true };
   return { build, plan, project };
@@ -7365,11 +7368,16 @@ var TEST_ANALYST_CATALOGUE = {
   }
 };
 
+// consort/orchestrator/drive/conformance-handback.ts
+init_cjs_shims();
+var fs8 = __toESM(require("fs"), 1);
+var import_node_path14 = require("path");
+
 // consort/orchestrator/state/orchestrator-probe.ts
 function readJson(file) {
-  if (!fs8.existsSync(file)) return void 0;
+  if (!fs9.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs8.readFileSync(file, "utf8"));
+    return JSON.parse(fs9.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -7384,12 +7392,12 @@ function readDriveContext(consortDir, featureId, projectDir) {
   const proposed = spec !== void 0;
   const intakeReady = intakeReadyOnDisk(consortDir);
   const breakdownDone = Array.isArray(spec?.stories) && spec.stories.length > 0;
-  const requestsAuthored = fs8.existsSync(featureRequestMd(consortDir, featureId));
+  const requestsAuthored = fs9.existsSync(featureRequestMd(consortDir, featureId));
   const backlogCommitted = requestsAuthored;
-  const deployed = fs8.existsSync(featureDeployEvidenceJson(consortDir, featureId));
+  const deployed = fs9.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
   const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
-  const reverifyAttempted = fs8.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
+  const reverifyAttempted = fs9.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   const verifyAssessEligible = deployVerifyNeedsAssess(consortDir, featureId);
   const verifyRefactorPending = deployVerifyRefactorPending(consortDir, featureId);
   const proj = projectDir ?? path4.dirname(consortDir);
@@ -7425,7 +7433,7 @@ function readDriveContext(consortDir, featureId, projectDir) {
 }
 function readDeployVerifyPassed(consortDir, featureId) {
   try {
-    const ev = JSON.parse(fs8.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
+    const ev = JSON.parse(fs9.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
     return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : void 0;
   } catch {
     return void 0;

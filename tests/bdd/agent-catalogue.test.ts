@@ -38,9 +38,9 @@ function ctx(over: Partial<AgentBuildContext> = {}): AgentBuildContext {
 }
 
 describe("agent-catalogue: the catalogue is a named, documented set of StepAgent kinds", () => {
-  it("catalogues claude, replay, and mock – each with a description + config summary", () => {
+  it("catalogues claude, copilot, replay, and mock – each with a description + config summary", () => {
     const kinds = Object.keys(AGENT_CATALOGUE).sort();
-    expect(kinds).toEqual(["claude", "mock", "replay"]);
+    expect(kinds).toEqual(["claude", "copilot", "mock", "replay"]);
     for (const k of kinds) {
       expect(AGENT_CATALOGUE[k].description.length).toBeGreaterThan(0);
       expect(typeof AGENT_CATALOGUE[k].build).toBe("function");

@@ -1,6 +1,6 @@
 {
   "name": "@databricks-solutions/consort",
-  "version": "0.4.50",
+  "version": "0.4.51",
   "description": "Consort: a deterministic, spec-first and test-driven agent framework for building transactional applications on Lakebase (Databricks' serverless Postgres/OLTP database, not the Delta Lakehouse). Every build cycle runs against a live copy-on-write branch of a real Postgres database; human-approval gates fail closed. Not an ETL, analytics, or data-pipeline tool. Ships shared scripts, agent skills (SCM and SFTDD), an MCP server, and an OpenAI Foundry tool spec; consumed by lakebase-scm-extension and coding agents (Claude Code, Claude Desktop, OpenAI Codex, Cursor, Databricks Genie Code).",
   "type": "module",
   "private": false,
@@ -36,46 +36,6 @@
       "require": {
         "types": "./dist/scripts/index.d.cts",
         "default": "./dist/scripts/index.cjs"
-      }
-    },
-    "./github": {
-      "import": {
-        "types": "./dist/scripts/github/index.d.ts",
-        "default": "./dist/scripts/github/index.js"
-      },
-      "require": {
-        "types": "./dist/scripts/github/index.d.cts",
-        "default": "./dist/scripts/github/index.cjs"
-      }
-    },
-    "./lakebase": {
-      "import": {
-        "types": "./dist/scripts/lakebase/index.d.ts",
-        "default": "./dist/scripts/lakebase/index.js"
-      },
-      "require": {
-        "types": "./dist/scripts/lakebase/index.d.cts",
-        "default": "./dist/scripts/lakebase/index.cjs"
-      }
-    },
-    "./git": {
-      "import": {
-        "types": "./dist/scripts/git/index.d.ts",
-        "default": "./dist/scripts/git/index.js"
-      },
-      "require": {
-        "types": "./dist/scripts/git/index.d.cts",
-        "default": "./dist/scripts/git/index.cjs"
-      }
-    },
-    "./util": {
-      "import": {
-        "types": "./dist/scripts/util/index.d.ts",
-        "default": "./dist/scripts/util/index.js"
-      },
-      "require": {
-        "types": "./dist/scripts/util/index.d.cts",
-        "default": "./dist/scripts/util/index.cjs"
       }
     }
   },
@@ -212,7 +172,7 @@
     "simulate-run": "tsx tools/telemetry-collector/simulate-run.ts"
   },
   "dependencies": {
-    "@databricks-solutions/lakebase-scm-utils": "0.3.17",
+    "@databricks-solutions/lakebase-scm-utils": "0.3.18",
     "@databricks/appkit": "^0.38.1",
     "@databricks/lakebase": "^0.4.0",
     "adm-zip": "^0.5.16",

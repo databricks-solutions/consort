@@ -34,8 +34,10 @@ describe("refreshSurface re-wires the E2E block for a UI project (upgrade must n
 
     const r = refreshSurface(dir, KIT_ROOT, "v0.3.52-test");
     expect(r.e2e).toBe(true);
-    // The template run-tests.sh has NO Playwright block; after the re-wire it does.
-    expect(runTests()).toMatch(/playwright test/);
+    // The template run-tests.sh has NO appended Playwright block; after the re-wire it does.
+    // Key off the appended-block marker, NOT the words "playwright test" (which also appear in the
+    // base template's doc comments — an unreliable discriminator).
+    expect(runTests()).toMatch(/# run Playwright E2E suite when configured/);
   });
 
   it("a backend-only project is left untouched (no E2E block, e2e=false)", () => {
@@ -47,9 +49,9 @@ describe("refreshSurface re-wires the E2E block for a UI project (upgrade must n
 
     const r = refreshSurface(dir, KIT_ROOT, "v0.3.52-test");
     expect(r.e2e).toBe(false);
-    expect(runTests()).not.toMatch(/playwright test/);
+    expect(runTests()).not.toMatch(/# run Playwright E2E suite when configured/);
     // ...but the orphan-client-tests false-green guard IS ported into the template (it carries no
-    // `playwright test` string), so a backend-only upgrade still gets the hollow-pass fail-fast.
+    // appended-E2E marker), so a backend-only upgrade still gets the hollow-pass fail-fast.
     expect(runTests()).toMatch(/FALSE-GREEN GUARD/);
   });
 

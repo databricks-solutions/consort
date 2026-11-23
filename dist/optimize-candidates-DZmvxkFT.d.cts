@@ -61,6 +61,10 @@ interface ConsortConfigFile {
         gates?: "interactive" | "proxy";
         deployTarget?: string;
         clientFramework?: "react" | "none";
+        /** The agent executor backend that runs role turns: "claude" (default) or "copilot" (GitHub
+         *  Copilot CLI). The ONE door for executor selection — set at create-project (--executor), read
+         *  by the drive; there is NO env override. */
+        executor?: "claude" | "copilot";
         language?: "java" | "kotlin" | "python" | "nodejs";
     };
 }

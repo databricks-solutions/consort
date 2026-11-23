@@ -38,6 +38,7 @@ type DriveCommand = {
         buildMode?: string;
         story?: string;
     };
+    executor?: "claude" | "copilot";
 } | {
     kind: "cli";
     bin: string;
@@ -241,6 +242,36 @@ interface TurnMonitor {
     timeoutMs?: number;
 }
 
+/** The prompt + final reasoning + tool list captured from ONE agent turn, for
+ *  the recorder to persist (demo transcript). Not the raw stream (that includes
+ *  every interstitial "let me check" delta); just the outcome-level trace. */
+interface TurnTranscript {
+    /** The task prompt the agent was dispatched with (`claude -p <task>`). */
+    prompt: string;
+    role?: string;
+    model?: string;
+    /** The turn's FINAL assistant text (the outcome/rationale). */
+    finalText: string;
+    /** Each tool action in order (name + a clipped target), as they streamed. */
+    tools: string[];
+}
+declare function takeLastAgentTranscript(cwd?: string): TurnTranscript | undefined;
+/** PEEK the last turn's transcript WITHOUT clearing it – for an intermediate consumer (the step agent
+ *  reads finalText for its lastResult) that must NOT rob the recorder wrapper's take() of the
+ *  transcript. The take()-clears contract is a single-consumer design; when TWO consumers run per turn
+ *  (the agent's lastResult + the record wrapper), the earlier one MUST peek, or the wrapper gets
+ *  undefined and transcript.md is silently never written. The record wrapper remains the sole
+ *  take()-clearer, at end of turn. Pass `cwd` for the concurrency-safe per-worktree read. */
+declare function peekLastAgentTranscript(cwd?: string): TurnTranscript | undefined;
+/** Record a turn's transcript as both the global last AND the per-cwd entry. Exported so the crosstalk
+ *  safety (peek-by-cwd returns THIS cwd's turn, never a concurrent sibling's) is unit-testable without
+ *  spawning a CLI. Called by each runner's backend on the turn's close. */
+declare function recordAgentTranscript(cwd: string, tx: TurnTranscript): void;
+
+/** Build the per-turn liveness monitor from the env-configured windows (tests inject
+ *  a fake-clock-driven one instead). Omitted => no-op when both windows are disabled. */
+declare function defaultTurnMonitor(sink: (p: TurnProgress) => void): TurnMonitor | undefined;
+
 interface ParsedArgs {
     feature?: string;
     sprint?: string;
@@ -343,34 +374,7 @@ declare class ArtifactOutOfRootError extends Error {
      *  relocate from). Named so the human knows exactly where to look. */
     checkedSibling?: string | undefined);
 }
-/** The prompt + final reasoning + tool list captured from ONE agent turn, for
- *  the recorder to persist (demo transcript). Not the raw stream (that includes
- *  every interstitial "let me check" delta); just the outcome-level trace. */
-interface TurnTranscript {
-    /** The task prompt the agent was dispatched with (`claude -p <task>`). */
-    prompt: string;
-    role?: string;
-    model?: string;
-    /** The turn's FINAL assistant text (the outcome/rationale). */
-    finalText: string;
-    /** Each tool action in order (name + a clipped target), as they streamed. */
-    tools: string[];
-}
-declare function takeLastAgentTranscript(cwd?: string): TurnTranscript | undefined;
-/** PEEK the last turn's transcript WITHOUT clearing it – for an intermediate consumer (the
- *  ClaudeStepAgent reads finalText for its lastResult) that must NOT rob the recorder wrapper's
- *  take() of the transcript. The take()-clears contract is a single-consumer design; when TWO
- *  consumers run per turn (the agent's lastResult + the record wrapper), the earlier one MUST peek,
- *  or the wrapper gets undefined and transcript.md is silently never written (the bug this fixes:
- *  every executor-dispatched agent turn lost its transcript to the double-consume race). The record
- *  wrapper remains the sole take()-clearer, at end of turn.
- *  Pass `cwd` to read the transcript for THAT worktree – the concurrency-safe path (see
- *  lastAgentTranscriptByCwd); omit it for the serial global. */
-declare function peekLastAgentTranscript(cwd?: string): TurnTranscript | undefined;
-/** Record a turn's transcript as both the global last AND the per-cwd entry. Exported so the crosstalk
- *  safety (peek-by-cwd returns THIS cwd's turn, never a concurrent sibling's) is unit-testable without
- *  spawning claude. Called by spawnClaudeStreaming on each turn's close. */
-declare function recordAgentTranscript(cwd: string, tx: TurnTranscript): void;
+
 /** PEEK the last turn's usage WITHOUT clearing it. Pass `cwd` for the concurrency-safe per-worktree read. */
 declare function peekLastAgentUsage(cwd?: string): TurnUsage | undefined;
 /** Record a turn's usage as both the global last AND the per-cwd entry (mirrors recordAgentTranscript). */
@@ -400,14 +404,18 @@ declare function takeLastTurnMeta(cwd?: string): TurnMeta | undefined;
 declare function peekLastTurnMeta(cwd?: string): TurnMeta | undefined;
 /** Record a turn's meta as both the global last AND the per-cwd entry (mirrors recordAgentUsage). */
 declare function recordTurnMeta(cwd: string, meta: TurnMeta): void;
-/** Build the default per-turn monitor from the module timeout constants. A turn with
- *  neither an inactivity nor a heartbeat window returns undefined (a byte-identical
- *  no-op controller). Exposed as its own function so tests can assert the mapping and
- *  callers can override. */
-declare function defaultTurnMonitor(sink: (p: TurnProgress) => void): TurnMonitor | undefined;
+
+/**
+ * Spawn a `claude` turn and resolve its usage. A THIN wrapper over the shared
+ * `spawnStreamingTurn` engine (streaming-turn.ts): the engine owns the agent-live.log
+ * sidecar, the inactivity/heartbeat monitor + tree-kill, and the stderr tee. This backend
+ * supplies only the Claude-specific parts — stream-json line parsing, retry-signal
+ * detection, and the close semantics (ClaudeTurnError reject + transcript/usage recording).
+ * Behavior is identical to the pre-extraction inline function.
+ */
 declare function spawnClaudeStreaming(args: string[], cwd: string, 
 /** Override the per-turn liveness monitor (tests inject a fake-clock-driven one).
- *  Omitted => the default built from TURN_INACTIVITY_TIMEOUT_MS / TURN_HEARTBEAT_MS. */
+ *  Omitted => the engine builds the default from the timeout envs. */
 monitorOverride?: TurnMonitor): Promise<TurnUsage | undefined>;
 /**
  * The spawn flags for a claude command's optional tool-scope levers (the

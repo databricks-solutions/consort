@@ -6715,7 +6715,10 @@ function resolveProjectSettings(projectDir) {
     // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
     // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
     // default only affects config-less/legacy trees.
-    language: file?.project?.language ?? "python"
+    language: file?.project?.language ?? "python",
+    // The executor backend for role turns. Default "claude"; a project created with --executor copilot
+    // persists "copilot" here (the ONE door — no env override). Legacy/config-less projects are claude.
+    executor: file?.project?.executor ?? "claude"
   };
   const plan = { sizing: file?.plan?.sizing ?? true };
   return { build, plan, project };

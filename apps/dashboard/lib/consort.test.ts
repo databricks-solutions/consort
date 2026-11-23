@@ -13,6 +13,7 @@ import {
   consortDir,
   sftddDir,
   mergeFeatureStatus,
+  drivePidStartMatches,
 } from "./consort";
 import type { AgentLogEvent, FeatureStatus } from "./types";
 
@@ -312,6 +313,33 @@ describe("consortDir — artifact-root resolution (v0.3.7 .sftdd → .consort re
   it("sftddDir alias resolves identically", () => {
     projectWith([".consort"]);
     expect(sftddDir()).toBe(consortDir());
+  });
+});
+
+describe("drivePidStartMatches — the recycled-pid guard (drive.pid liveness identity)", () => {
+  const startedAt = Date.parse("2026-11-21T10:00:00.000Z");
+
+  it("treats a RECYCLED pid (process started well AFTER started_at) as NOT the drive", () => {
+    // The drive exited; its number was handed to an unrelated process minutes later. That process's
+    // kernel start time lands far past started_at → it is NOT the drive, so the board must not read it
+    // as a live run (the out-of-sync bug).
+    const osStart = startedAt + 5 * 60_000; // 5 minutes later
+    expect(drivePidStartMatches(startedAt, osStart)).toBe(false);
+  });
+
+  it("treats the genuine drive (start at/just-before started_at) as alive", () => {
+    // The kernel clocks the drive's start a hair BEFORE it records started_at, and within a few seconds
+    // after is still the same process (ps 1s resolution + node boot jitter).
+    expect(drivePidStartMatches(startedAt, startedAt - 2_000)).toBe(true); // clocked just before
+    expect(drivePidStartMatches(startedAt, startedAt)).toBe(true); // exact
+    expect(drivePidStartMatches(startedAt, startedAt + 3_000)).toBe(true); // within tolerance
+  });
+
+  it("falls back to live when the start time can't be obtained or started_at is unparseable", () => {
+    // Never regress a genuinely-running drive to dead: with no verifiable start time, the plain liveness
+    // probe stands (the caller already confirmed the pid is live).
+    expect(drivePidStartMatches(startedAt, null)).toBe(true); // no `ps`/unparseable ps output
+    expect(drivePidStartMatches(NaN, startedAt + 5 * 60_000)).toBe(true); // started_at unparseable
   });
 });
 

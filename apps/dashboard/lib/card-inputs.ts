@@ -48,6 +48,7 @@ export const FIELD_KIND = {
   atEventIndex: "view",
   totalEventCount: "view",
   atLive: "view",
+  driveAlive: "view",
   snapshotAsOf: "view",
   source: "view",
   topology: "durable", // pure timeline, slice-scoped
@@ -94,7 +95,7 @@ export const CARD_INPUTS = {
   // locus/glow derive from it, so those fields are part of each card's real input set.
   workflowGraph: { binding: "live", reads: ["feature", "features", "focus", "gates", "phase", "pinnedFeature", "stories", "topology", "atLive"] },
   laneGraph: { binding: "live", reads: ["agents", "focus", "gates", "lane", "laneStepMeta", "topology", "atLive", "phase"] },
-  transport: { binding: "live", reads: ["focus", "totalEventCount", "atLive", "source", "topology"] },
+  transport: { binding: "live", reads: ["focus", "totalEventCount", "atLive", "driveAlive", "source", "topology"] },
   activityDock: { binding: "live", reads: ["eventCount", "recentEvents", "source"] },
   eventTicker: { binding: "live", reads: ["eventCount", "recentEvents", "source"] },
   agentLogReplay: { binding: "live", reads: [] },

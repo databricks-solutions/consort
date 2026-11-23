@@ -314,6 +314,10 @@ export const acConformant = conformsTo("ac.json");
 export const architectureConformant = conformsTo("architecture.json");
 export const dbDesignConformant = conformsTo("db-design.json");
 export const testListConformant = conformsTo("test-list.json");
+// The Architect Reviewer's t-shirt estimates (planning/estimates.json): each entry MUST carry feature_id
+// + a t-shirt size (what readEstimates keys on). Gates the `estimate` turn AT the turn with a clear
+// error, instead of a wrong-key file passing nonEmptyFile and silently emptying the backlog downstream.
+export const estimatesConformant = conformsTo("estimates.json");
 // The Product Owner's intake deliverables (the metered `intake` turn's outputs), each gated to its
 // artifact-conformance kind: product-overview.md / nfrs.md (md-narrative + required sections).
 // design-brief.md is UI-only, so it is declared OPTIONAL on the manifest.
@@ -366,6 +370,7 @@ export const VALIDATOR_REGISTRY: Record<string, OutputValidator> = {
   architectureConformant,
   dbDesignConformant,
   testListConformant,
+  estimatesConformant,
   // The PO intake turn's deliverables (product-overview.md / nfrs.md required; design-brief.md
   // optional, UI-only).
   productOverviewConformant,

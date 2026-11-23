@@ -195,6 +195,7 @@ export function emptyState(projectDir: string, generatedAt: string): DashboardSt
     atEventIndex: 0,
     totalEventCount: 0,
     atLive: true,
+    driveAlive: false,
     snapshotAsOf: null,
     topology: {
       passedNodes: [],
@@ -650,8 +651,13 @@ export function fold(
   // "complete" while a later feature was still building). When it does not name the live feature,
   // ignore it and use the log lane. (`next.feature === rp.feature` is the single guard.)
   const snapshotDescribesLive = atLive && next?.feature != null && next.feature === rp.feature;
+  // next.json's authoritative terminal signal for the live feature: `primary_action.kind === "done"`
+  // means the workflow for THIS feature ended, even though its frozen `derived_phase` still reads
+  // "build". Trust it as run-complete independently of the pid probe, so a stale/recycled drive.pid
+  // can't hold a finished run on the Build lane.
+  const nextTerminal = snapshotDescribesLive && next?.primary_action?.kind === "done";
   const derived =
-    (runEnded && !snap.driveAlive) || pinnedDone
+    (runEnded && !snap.driveAlive) || pinnedDone || nextTerminal
       ? "complete"
       : snapshotDescribesLive
         ? (derivedSnapshot ?? logLane)
@@ -711,11 +717,27 @@ export function fold(
   // It also replaces the 15s session-quiet fallback, which mistook a long quiet turn (model thinking, no
   // streamed events) for a stopped drive. NEVER set mid-batch-`/design` (drive alive the whole time), so
   // it cannot reintroduce the between-turns flicker the carry prevents.
+  // next.json's `awaiting_human` is the orchestrator's own "parked for a decision" flag; trust it as an
+  // authoritative park even if the pid still probes alive (a stale/recycled drive.pid, or the brief
+  // window before exit). OR'd with the original drive-gone-and-idle path so neither signal alone can
+  // miss a real park.
+  //
+  // BUT next.json is a STOP-STATE snapshot — rewritten only when the drive pauses — so during an active
+  // run it LAGS the log. A drive restarted PAST a gate keeps building while next.json still reads the old
+  // park; trusting its stale `awaiting_human` froze the top band on an old "awaiting your decision" while
+  // the lane/timeline streamed the live build (the "top part is completely stale" split). So trust
+  // `awaiting_human` only when the snapshot is NOT superseded: the newest log event is not AFTER
+  // next.json's `generated_at`. A genuine park writes next.json LAST (after the final phase.end), so it
+  // is never superseded there — and the independent drive-gone+idle branch still catches a real stop even
+  // when the snapshot is stale, so no real park is missed.
+  const newestLogTs = slice.length > 0 ? slice[slice.length - 1].timestamp : null;
+  const snapshotSuperseded =
+    next?.generated_at != null && newestLogTs != null && newestLogTs > next.generated_at;
   const restingAtGate =
     atLive &&
     frontierGate !== null &&
-    !snap.driveAlive &&
-    !agents.some((a) => a.status === "working");
+    ((next?.awaiting_human === true && !snapshotSuperseded) ||
+      (!snap.driveAlive && !agents.some((a) => a.status === "working")));
   // The active role step to hold focus on while NOT parked, carried across the between-turn hand-offs
   // where laneCurrent blinks to null. Only the lanes the derived `lane` can name (deploy folds under
   // build for focus); null in complete/idle phases, where there is no running step to carry.
@@ -808,6 +830,7 @@ export function fold(
     atEventIndex: at,
     totalEventCount: total,
     atLive,
+    driveAlive: snap.driveAlive,
     snapshotAsOf: next?.generated_at ?? (status ? snap.generatedAt : null),
     topology,
   };

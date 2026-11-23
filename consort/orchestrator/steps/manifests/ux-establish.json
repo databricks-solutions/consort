@@ -5,7 +5,8 @@
   "match": { "kind": "invoke-role", "role": "ux-designer", "mode": "establish" },
   "inputs": [
     { "id": "design-guideline", "source": "feature:design/design-brief.md", "description": "The HIL design brief the UX Designer extracts the look FROM. Lives under design/ on the real tree (design/design-brief.md, per intake.ts). A planning/intake artifact, human-approved at the intake gate." },
-    { "id": "product-overview", "source": "feature:product-overview.md", "description": "The PO's product overview , which stories produce screens (product-overview.md)." }
+    { "id": "product-overview", "source": "feature:product-overview.md", "description": "The PO's product overview , which stories produce screens (product-overview.md)." },
+    { "id": "design-guide-schema", "source": "schema:design-guide.schema.json", "description": "design-guide.schema.json — the EXACT contract design-guide.json is gated against (designGuideConformant). These are the ONLY allowed top-level keys and additionalProperties is false: emit design-guide.json conforming to this schema precisely, adding no keys it does not define." }
   ],
   "outputs": [
     { "id": "design-guide", "filename": "design-guide.json", "channel": "artifact", "validator": "designGuideConformant", "description": "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + the initial ia.md skeleton are authored alongside; the JSON is the gated artifact. One-time bootstrap of the project style system." },

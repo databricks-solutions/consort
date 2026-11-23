@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "consort",
+  "version": "0.0.1",
+  "description": "Consort on GitHub Copilot (PROTOTYPE skeleton): a spec-first, test-driven agent framework for building transactional apps on Lakebase-paired branches. Bundles the role SKILLS + AGENTS + the Lakebase MCP server; the deterministic orchestrator runs as a bundled CLI (consort-start) that executes each role turn through `copilot -p`. Pairs with the kit's kind:\"copilot\" executor.",
+  "author": {
+    "name": "Databricks"
+  },
+  "repository": "https://github.com/databricks-solutions/consort",
+  "keywords": [
+    "lakebase",
+    "databricks",
+    "postgres",
+    "branch-pairing",
+    "tdd",
+    "agentic-development",
+    "human-in-the-loop"
+  ]
+}

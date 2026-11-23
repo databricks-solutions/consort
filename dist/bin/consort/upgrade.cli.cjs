@@ -439,6 +439,9 @@ function refreshKitOwnedInstrumentation(projectDir, kitDir) {
       refreshReporter(path4.join("client", "consort-vitest-reporter.ts"), path4.join("client", "consort-vitest-reporter.ts"));
       refreshReporter(path4.join("client", "vitest.globalSetup.ts"), path4.join("client", "vitest.globalSetup.ts"));
       refreshReporter(path4.join("client", "tests", "e2e", "consort-fixtures.ts"), path4.join("client", "tests", "e2e", "consort-fixtures.ts"));
+      refreshReporter(path4.join("client", "src", "components", "MadeWithConsort.tsx"), path4.join("client", "src", "components", "MadeWithConsort.tsx"));
+      refreshReporter(path4.join("client", "public", "consort-lockup.svg"), path4.join("client", "public", "consort-lockup.svg"));
+      refreshReporter(path4.join("client", "public", "consort-lockup-white.svg"), path4.join("client", "public", "consort-lockup-white.svg"));
     }
   } catch {
   }

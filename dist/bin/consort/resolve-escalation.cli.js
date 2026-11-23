@@ -6853,7 +6853,7 @@ function resolveOpenSmells(consortDir, smell, opts) {
 init_esm_shims();
 import { existsSync as existsSync17, readFileSync as readFileSync17, readdirSync as readdirSync12, statSync as statSync9, writeFileSync as writeFileSync9, mkdirSync as mkdirSync8, rmSync as rmSync6 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
-import { join as join20, dirname as dirname10, basename as basename3 } from "path";
+import { join as join20, dirname as dirname10, basename as basename4 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -6914,7 +6914,7 @@ init_esm_shims();
 import { execSync, execFileSync as execFileSync2, spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync9, mkdirSync as mkdirSync3, readFileSync as readFileSync10, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "fs";
-import { dirname as dirname5, join as join12 } from "path";
+import { basename as basename2, dirname as dirname5, join as join12 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -6985,7 +6985,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync10, readFileSync as readFileSync11, readdirSync as readdirSync8, writeFileSync as writeFileSync5, mkdirSync as mkdirSync4, copyFileSync } from "fs";
-import { join as join13, dirname as dirname6, basename as basename2 } from "path";
+import { join as join13, dirname as dirname6, basename as basename3 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();

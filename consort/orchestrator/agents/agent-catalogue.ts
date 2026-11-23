@@ -20,6 +20,8 @@
 import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { ClaudeStepAgent, type AgentLevers, type LiveDispatchFn } from "./claude-step-agent.js";
+import { CopilotStepAgent, type CopilotLevers } from "./copilot-step-agent.js";
+import { spawnCopilotStreaming } from "./copilot-runner.js";
 import { makeMockReplayAgent, makeStepReplayAgent, type RecordedSeed } from "./mock-replay-agent.js";
 import type { StepAgent, AgentInvocation } from "./agent-types.js";
 
@@ -80,6 +82,17 @@ function buildClaude(config: Record<string, unknown>, context: AgentBuildContext
   return new ClaudeStepAgent(c as AgentLevers, undefined, context.liveDispatch);
 }
 
+/** The `copilot` kind's config = CopilotLevers (role required). PARITY with buildClaude: pass
+ *  context.liveDispatch so a LIVE drive routes the turn through the SAME execRunner envelope
+ *  (session/retry/monitor/transcript) as Claude — the envelope dispatches to the Copilot CLI via the
+ *  command's executor:"copilot". The injected spawnCopilotStreaming is the CONTAINED fallback (tests
+ *  inject their own; the live path uses liveDispatch). */
+function buildCopilot(config: Record<string, unknown>, context: AgentBuildContext): StepAgent {
+  const c = config as Partial<CopilotLevers> & { role?: string };
+  if (!c.role) throw new Error(`agent-catalogue: kind "copilot" requires config.role.`);
+  return new CopilotStepAgent(c as CopilotLevers, spawnCopilotStreaming, context.liveDispatch);
+}
+
 /** The `replay` kind emits RECORDED artifacts from the corpus (context.corpusRoot). TWO modes:
  *  - config.seeds present => the explicit seed-list agent (makeMockReplayAgent): the manifest
  *    author pre-specifies which corpus files to copy. Used by the seeded integration fixtures.
@@ -130,6 +143,11 @@ export const AGENT_CATALOGUE: Record<string, AgentCatalogueEntry> = {
     description: "The REAL agent: spawns `claude -p --agent <role>` and lets the model produce the step's artifact. Pick for a live run.",
     configSummary: "{ role (required), model?, effort?, session?('fresh'|'resume'), resumeKey?, allowedTools?, disallowedTools?, fallbackModel?, maxBudgetUsd? }",
     build: buildClaude,
+  },
+  copilot: {
+    description: "Spawns the GitHub Copilot CLI (`copilot -p …`, or `ug copilot`/`gh copilot --` per the runner's resolution) instead of `claude` to produce the step's artifact. Selected per run via the copilot executor override; contained spawn (cwd=workspace).",
+    configSummary: "{ role (required), model?, allowedTools?, disallowedTools?, nativeAgent?, agentDir? }",
+    build: buildCopilot,
   },
   replay: {
     description: "Emits RECORDED artifacts by copying configured seed files from the corpus (context.corpusRoot). Offline/headless – no model, no cloud.",

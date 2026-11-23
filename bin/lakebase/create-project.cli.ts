@@ -7,6 +7,7 @@
 // stderr.
 
 import { createProject, CreateProjectArgs } from "../../consort/lakebase/create-project.js";
+import { setProjectExecutor } from "../../consort/config/consort-config-file.js";
 import { ALL_AGENT_ROLES, type SpawnableAgentRole } from "../../consort/config/agent-models.js";
 import { runCreateDoctorGate, formatGateBlockers } from "../../consort/lakebase/create-doctor-gate.js";
 import { kitRefPin, recordDevKitLocalDirs, consortVersionFromModule, declaredSubstrateVersionFromModule } from "../../consort/lakebase/kit-ref-pin.js";
@@ -36,6 +37,7 @@ interface ParsedArgs {
   enableInfra?: boolean;
   uiTrack?: boolean;
   clientFramework?: "react" | "none";
+  executor?: "claude" | "copilot";
   skipCommands?: boolean;
   agentModels?: Partial<Record<SpawnableAgentRole, string>>;
   skipDoctor?: boolean;
@@ -114,6 +116,15 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--client":
         out.clientFramework = argv[++i] as ParsedArgs["clientFramework"];
         break;
+      case "--executor": {
+        const v = argv[++i];
+        if (v !== "claude" && v !== "copilot") {
+          process.stderr.write(`--executor: expected claude or copilot. Got: ${v}\n`);
+          process.exit(2);
+        }
+        out.executor = v;
+        break;
+      }
       case "--skip-commands":
         out.skipCommands = true;
         break;
@@ -185,6 +196,10 @@ Flags:
                       "react" lays down the first-class React + TS + Vite SPA
                       (Vitest + Testing Library + Playwright). Default: react
                       for a --ui-track project, none otherwise.
+  --executor          claude | copilot. The agent backend that runs role turns,
+                      persisted to .lakebase/consort-config.json (the single
+                      source of truth — no env override). Default: claude.
+                      "copilot" runs each role turn via the GitHub Copilot CLI.
   --skip-commands     Skip scaffolding .claude/commands/{design,build}.md
                       (default: commands are written)
   --skip-doctor       Skip the environment preflight (lakebase-doctor) that
@@ -358,6 +373,12 @@ async function main(): Promise<number> {
     process.stderr.write(
       `[kit-ref] dev kit in use — recorded .lakebase/${recorded.join(", ")} so lk resolves your local kit for the pinned ref\n`,
     );
+  }
+  // Persist the executor backend into consort-config.json (the ONE door; no env override). Omitted
+  // => the "claude" default. A copilot project records it here so every drive reads it deterministically.
+  if (args.executor) {
+    setProjectExecutor(result.projectDir, args.executor);
+    process.stderr.write(`[executor] project executor set to ${args.executor} (.lakebase/consort-config.json)\n`);
   }
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");
   return 0;

@@ -5,7 +5,8 @@
   "match": { "kind": "invoke-role", "role": "spec-author", "mode": null, "buildMode": null },
   "inputs": [
     { "id": "story-stub", "source": "story:story.json", "description": "The story stub (asA/iWantTo/soThat) the Spec Author drafts ACs for." },
-    { "id": "product-overview", "source": "feature:product-overview.md", "description": "The PO's product overview , the feature framing (product-overview.md)." }
+    { "id": "product-overview", "source": "feature:product-overview.md", "description": "The PO's product overview , the feature framing (product-overview.md)." },
+    { "id": "ac-schema", "source": "schema:ac.schema.json", "description": "ac.schema.json — the EXACT contract each acs/<AC>.json is gated against (acsDirConformant). Emit every AC file conforming to this schema precisely; add no keys it does not define." }
   ],
   "outputs": [
     { "id": "acs", "filename": "acs", "channel": "artifact", "validator": "acsDirConformant", "description": "The per-story acceptance criteria , the acs/ DIRECTORY (one acs/<AC>.json per AC, each named after the AC it authors). acsDirConformant asserts the dir is non-empty AND every acs/*.json conforms to ac.json (the deterministic floor the legacy verify-artifact + design gate enforced)." },

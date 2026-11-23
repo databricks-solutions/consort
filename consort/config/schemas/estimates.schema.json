@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://databricks-solutions.github.io/consort/schemas/estimates.schema.json",
+  "title": "PlanningEstimates",
+  "description": "The Architect Reviewer's t-shirt sizing of candidate / committed features, persisted as .consort/planning/estimates.json. Produced by the architect `estimate` turn (and merged by `estimate-committed`); consumed by readEstimates (consort-paths.ts), which keys each entry by feature_id + size. Each entry MUST carry feature_id (the candidate/real feature id, verbatim) and a t-shirt size; rationale and any richer fields (title/confidence/drivers/risks/depends_on, …) are allowed. feature_id is REQUIRED — an entry keyed by `id` (or any other name) is dropped by the consumer, which empties the backlog.",
+  "type": "object",
+  "required": ["estimates"],
+  "properties": {
+    "estimates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["feature_id", "size"],
+        "properties": {
+          "feature_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The feature id this estimate is for, used VERBATIM (candidate id e.g. FP1 for `estimate`, real feature id e.g. F1 for `estimate-committed`). This exact key — NOT `id` — is what the consumer reads."
+          },
+          "size": {
+            "type": "string",
+            "enum": ["XS", "S", "M", "L", "XL"],
+            "description": "Coarse feature-level t-shirt size."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "One-line justification for the size (optional but expected)."
+          }
+        }
+      }
+    }
+  }
+}

@@ -65,6 +65,9 @@ export const ARTIFACT_FORMATS: Record<string, FormatSpec> = {
   "story.json": { kind: "json-schema", schema: "story.schema.json" },
   "ac.json": { kind: "json-schema", schema: "ac.schema.json" },
   "test-list.json": { kind: "json-schema", schema: "test-list.schema.json" },
+  // Architect Reviewer's t-shirt sizing (planning/estimates.json). Requires feature_id + size per entry;
+  // the consumer (readEstimates) drops entries missing them, so an `id`-keyed file silently empties the backlog.
+  "estimates.json": { kind: "json-schema", schema: "estimates.schema.json" },
   "plan.json": { kind: "json-schema", schema: "plan.schema.json" },
   "architecture.json": { kind: "json-schema", schema: "architecture.schema.json" },
   // DBA's physical schema (tables/DDL + per-story migration plan) that realizes
@@ -192,6 +195,30 @@ function finalize(violations: string[]): ConformanceResult {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
 
+/**
+ * Recursively drop object keys whose value is `null`. LLM roles reliably emit `"field": null` for an
+ * absent OPTIONAL field (the DBA's `"default": null` on a no-default column is the canonical case) —
+ * a benign shape the strict schemas (typed field + `additionalProperties:false`) reject, which bounced
+ * the design lane on every retry even though the prompt + golden exemplar are correct. Normalizing a
+ * null to ABSENT before validation is safe and universal: for an optional field `null`≡omitted (now
+ * valid); for a required field it becomes "missing required" (still fails, same category — no masking);
+ * an unknown null key is simply dropped (it carried no value). This immunizes EVERY role's conformance
+ * against null-for-absent drift, not just the DBA. It affects validation only — the authored file on
+ * disk is untouched. (No kit schema requires a nullable field, so stripping never removes a valid value.)
+ */
+function stripNullProps(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripNullProps);
+  if (node !== null && typeof node === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      if (v === null) continue;
+      out[k] = stripNullProps(v);
+    }
+    return out;
+  }
+  return node;
+}
+
 function checkJsonSchema(name: string, content: string, schemaFile: string): ConformanceResult {
   let parsed: unknown;
   try {
@@ -201,7 +228,7 @@ function checkJsonSchema(name: string, content: string, schemaFile: string): Con
     return { ok: false, violations: [`${name} is not valid JSON: ${cause}`] };
   }
   const validate = getValidator(schemaFile);
-  if (validate(parsed)) return { ok: true };
+  if (validate(stripNullProps(parsed))) return { ok: true };
   return { ok: false, violations: formatSchemaErrors(validate).map((e) => `${name} ${e}`) };
 }
 

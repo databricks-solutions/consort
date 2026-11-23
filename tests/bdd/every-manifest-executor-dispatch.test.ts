@@ -33,7 +33,8 @@ import { outputPathsForAction } from "../../consort/orchestrator/drive/executor-
 import { SHIPPED_MANIFESTS, type StepManifest } from "../../consort/orchestrator/steps/manifest";
 import { resolvePreparer } from "../../consort/orchestrator/build/preconditions";
 import { writeGreenFailure } from "../../consort/smells/supersession";
-import { storyResolved, cycleDir } from "../../consort/config/consort-paths";
+import { storyResolved, cycleDir, handbackFile, architectureJson, dbDesignJson } from "../../consort/config/consort-paths";
+import { diskArtifactProbe } from "../../consort/orchestrator/state/orchestrator-probe";
 import type { WorkflowAction, DriveState } from "../../consort/orchestrator/drive/orchestrator-drive";
 import type { ValidateBoundDeps } from "../../consort/orchestrator/steps/step-contract";
 
@@ -264,4 +265,112 @@ describe("every agent manifest dispatches through the executor (A-full #649)", (
       }
     },
   );
+});
+
+// INFORMED RETRY: a schema-gated output that fails validation threads the EXACT violations into the
+// re-issued turn via the existing handback channel (so a blocked turn no longer re-runs BLIND past its
+// budget — the DBA db-design.schema.json HIL). A CLEAN turn writes no handback (no stale note).
+describe("output-validation failure writes the violations to the handback (informed retry)", () => {
+  const dba = SHIPPED_MANIFESTS.find((m) => m.id === "dba")!;
+  // dba's db-design.json is gated by dbDesignConformant (db-design.schema.json, additionalProperties:false).
+  async function runDba(consortDir: string, projectDir: string, dbDesignBody: string): Promise<string | undefined> {
+    const action = actionFromMatch(dba);
+    const story = "story" in action && typeof (action as { story?: unknown }).story === "string" ? (action as { story: string }).story : undefined;
+    for (const input of dba.inputs) seedInput(consortDir, input.source, undefined);
+    const outPaths = outputPathsForAction(action, consortDir, FEATURE);
+    const runner: DriveEffectsConfig["runner"] = {
+      async run(cmd: DriveCommand) {
+        if (cmd.kind === "claude") {
+          for (const out of dba.outputs) {
+            const rel = outPaths[out.id] ?? out.filename;
+            const root = out.channel === "product" ? projectDir : consortDir;
+            const abs = join(root, rel);
+            if (!rel.includes(".")) { mkdirSync(abs, { recursive: true }); continue; }
+            mkdirSync(dirname(abs), { recursive: true });
+            // Inject the (non)conformant db-design.json; other outputs stay conformant (agent-log etc.).
+            writeFileSync(abs, basename(rel) === "db-design.json" ? dbDesignBody : simulatedOutputBody(basename(rel)));
+          }
+          return;
+        }
+        if (cmd.kind === "cli" && cmd.bin.endsWith("-log") && cmd.args[0] === "--reconcile") {
+          writeFileSync(join(consortDir, "agent-log.jsonl"), JSON.stringify({ timestamp: "2026-08-06T00:00:00Z", level: "info", role: "dba", event: "artifact.written", message: "x" }) + "\n");
+        }
+      },
+    };
+    const effects = buildDriveEffects(cfg(consortDir, projectDir, runner));
+    await effects.performViaExecutor!(action, state, routerDeps);
+    return story;
+  }
+
+  it("a FAILED db-design.json validation writes the schema violations to handbackFile(dba)", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "handback-fail-"));
+    const consortDir = join(projectDir, ".consort");
+    mkdirSync(consortDir, { recursive: true });
+    try {
+      // Non-conformant: extra root key `service_backed` + missing required `feature_id` (additionalProperties:false).
+      const story = await runDba(consortDir, projectDir, JSON.stringify({ service_backed: true, tables: [] }) + "\n");
+      const hb = handbackFile(consortDir, FEATURE, "dba", story);
+      expect(existsSync(hb), "a failed schema-gated turn must write a handback for the re-issue").toBe(true);
+      const note = readFileSync(hb, "utf8");
+      expect(note).toContain("FAILED output validation");
+      expect(note).toMatch(/db-design\.json/);
+      expect(note).toMatch(/db-design:/); // carries the id-prefixed schema violation(s)
+    } finally {
+      try { require("node:fs").rmSync(projectDir, { recursive: true, force: true }); } catch { /* noop */ }
+    }
+  });
+
+  it("a CONFORMANT db-design.json turn writes NO handback (no stale note)", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "handback-ok-"));
+    const consortDir = join(projectDir, ".consort");
+    mkdirSync(consortDir, { recursive: true });
+    try {
+      // The conformant fixture body (same one the matrix test uses) → validation passes → no handback.
+      const story = await runDba(consortDir, projectDir, simulatedOutputBody("db-design.json"));
+      expect(existsSync(handbackFile(consortDir, FEATURE, "dba", story)), "a clean turn must leave no handback").toBe(false);
+    } finally {
+      try { require("node:fs").rmSync(projectDir, { recursive: true, force: true }); } catch { /* noop */ }
+    }
+  });
+
+  it("a db-design.json missing ONLY root feature_id is STAMPED in materialize and then conforms (no handback)", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "stamp-"));
+    const consortDir = join(projectDir, ".consort");
+    mkdirSync(consortDir, { recursive: true });
+    try {
+      // The conformant fixture with the orchestrator-owned root feature_id REMOVED (the recurring drop).
+      const body = JSON.parse(simulatedOutputBody("db-design.json")) as Record<string, unknown>;
+      delete body.feature_id;
+      const story = await runDba(consortDir, projectDir, JSON.stringify(body) + "\n");
+      // materialize stamped the known feature id onto the produced artifact root...
+      const stamped = JSON.parse(readFileSync(dbDesignJson(consortDir, FEATURE), "utf8")) as { feature_id?: unknown };
+      expect(stamped.feature_id, "materialize must stamp the orchestrator-known root feature_id").toBe(FEATURE);
+      // ...so it now conforms → NO handback (the stamp is a no-op on the happy path otherwise).
+      expect(existsSync(handbackFile(consortDir, FEATURE, "dba", story))).toBe(false);
+    } finally {
+      try { require("node:fs").rmSync(projectDir, { recursive: true, force: true }); } catch { /* noop */ }
+    }
+  });
+
+  it("the dbaDesigned probe (orchestrator-expect path) writes the SPECIFIC violations for a present-but-nonconformant db-design", () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "probe-dba-"));
+    const consortDir = join(projectDir, ".consort");
+    mkdirSync(consortDir, { recursive: true });
+    try {
+      // A conformant architecture (so dbaDesigned clears the arch-exists gate) + a schema-nonconformant
+      // db-design (extra `service_backed`, missing `feature_id`, realizes no invariants).
+      mkdirSync(dirname(architectureJson(consortDir, FEATURE)), { recursive: true });
+      writeFileSync(architectureJson(consortDir, FEATURE), simulatedOutputBody("architecture.json"));
+      writeFileSync(dbDesignJson(consortDir, FEATURE), JSON.stringify({ service_backed: true, tables: [] }) + "\n");
+      const probe = diskArtifactProbe(consortDir, FEATURE, STORY); // buildActive = STORY keys the handback
+      expect(probe.dbaDesigned(STORY)).toBe(false);
+      const hb = handbackFile(consortDir, FEATURE, "dba", STORY);
+      expect(existsSync(hb), "dbaDesigned must thread the specific schema violations to the dba handback").toBe(true);
+      const note = readFileSync(hb, "utf8");
+      expect(note).toContain("db-design.json"); // the schema violations are name-prefixed
+      expect(note).toMatch(/required property 'feature_id'|must NOT have additional properties/);
+    } finally {
+      try { require("node:fs").rmSync(projectDir, { recursive: true, force: true }); } catch { /* noop */ }
+    }
+  });
 });

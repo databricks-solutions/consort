@@ -6,7 +6,7 @@
   "inputs": [
     { "id": "ia", "source": "feature:design/ia.md", "description": "The project information architecture to REFINE for this story (append its screens/forms/flows). Project-level file, augmented per story; this story's surfaces must be named here before the architect tags E2E layers." },
     { "id": "design-guide", "source": "feature:design/design-guide.json", "description": "The established style system (tokens + component vocabulary) the new screens/forms compose from — read-only context, not re-authored here." },
-    { "id": "acs", "source": "story:acs", "description": "This story's acceptance criteria — their user-facing surfaces (E2E / client ACs) are what the IA must name." }
+    { "id": "acs", "source": "story:acs", "description": "This story's acceptance criteria — their user-facing surfaces (E2E / client ACs) are what the IA must name. Each AC may declare a ui_seams[] array (exact data-testid tokens its UI drives); ia.md MUST NAME every one verbatim (the deterministic reflect-ia-defect smell fails on any declared seam the IA does not name). Enumerate them exhaustively, not a subset." }
   ],
   "outputs": [
     { "id": "ia", "filename": "ia.md", "channel": "artifact", "validator": "iaConformant", "description": "The refined information architecture (required sections: Screens / Navigation / User flows), with this story's surfaces added. Project-level file, augmented per story (additive, never a rewrite)." },

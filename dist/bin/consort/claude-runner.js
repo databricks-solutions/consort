@@ -3258,8 +3258,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path9) {
-      let input = path9;
+    function removeDotSegments(path10) {
+      let input = path10;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3512,8 +3512,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path9, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path9 && path9 !== "/" ? path9 : void 0;
+        const [path10, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path10 && path10 !== "/" ? path10 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6647,7 +6647,7 @@ var require_ajv = __commonJS({
 
 // consort/orchestrator/drive/claude-runner.ts
 init_esm_shims();
-import { spawn, execFileSync } from "child_process";
+import { spawn as spawn2, execFileSync } from "child_process";
 
 // consort/config/consort-env.ts
 init_esm_shims();
@@ -6839,7 +6839,10 @@ function resolveProjectSettings(projectDir) {
     // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
     // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
     // default only affects config-less/legacy trees.
-    language: file?.project?.language ?? "python"
+    language: file?.project?.language ?? "python",
+    // The executor backend for role turns. Default "claude"; a project created with --executor copilot
+    // persists "copilot" here (the ONE door — no env override). Legacy/config-less projects are claude.
+    executor: file?.project?.executor ?? "claude"
   };
   const plan = { sizing: file?.plan?.sizing ?? true };
   return { build, plan, project };
@@ -6961,6 +6964,9 @@ function refreshKitOwnedInstrumentation(projectDir, kitDir) {
       refreshReporter(path5.join("client", "consort-vitest-reporter.ts"), path5.join("client", "consort-vitest-reporter.ts"));
       refreshReporter(path5.join("client", "vitest.globalSetup.ts"), path5.join("client", "vitest.globalSetup.ts"));
       refreshReporter(path5.join("client", "tests", "e2e", "consort-fixtures.ts"), path5.join("client", "tests", "e2e", "consort-fixtures.ts"));
+      refreshReporter(path5.join("client", "src", "components", "MadeWithConsort.tsx"), path5.join("client", "src", "components", "MadeWithConsort.tsx"));
+      refreshReporter(path5.join("client", "public", "consort-lockup.svg"), path5.join("client", "public", "consort-lockup.svg"));
+      refreshReporter(path5.join("client", "public", "consort-lockup-white.svg"), path5.join("client", "public", "consort-lockup-white.svg"));
     }
   } catch {
   }
@@ -7047,9 +7053,8 @@ function resyncAgentsOnKitDrift(projectDir) {
 
 // consort/orchestrator/drive/claude-runner.ts
 import { randomUUID } from "crypto";
-import * as fs9 from "fs";
-import * as path8 from "path";
-import * as readline from "readline";
+import * as fs10 from "fs";
+import * as path9 from "path";
 
 // consort/logging/replay-artifacts.ts
 init_esm_shims();
@@ -7526,7 +7531,9 @@ var spec_author_breakdown_default = {
   inputs: [
     { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview (product-overview.md)." },
     { id: "nfrs", source: "feature:nfrs.md", description: "The PO's non-functional requirements brief (nfrs.md)." },
-    { id: "feature-request", source: "feature:features/{feature}/feature-request.md", description: "The PO's feature request for this feature (features/<feature>/feature-request.md; {feature} expands to the run's feature id)." }
+    { id: "feature-request", source: "feature:features/{feature}/feature-request.md", description: "The PO's feature request for this feature (features/<feature>/feature-request.md; {feature} expands to the run's feature id)." },
+    { id: "feature-spec-schema", source: "schema:feature.schema.json", description: "feature.schema.json \u2014 the EXACT contract feature-spec.json is gated against (featureSpecNonEmptyStories). Emit feature-spec.json conforming to this schema precisely, with a non-empty stories[]; add no keys it does not define." },
+    { id: "story-schema", source: "schema:story.schema.json", description: "story.schema.json \u2014 the contract EACH story stub (story.json / story.md) is gated against downstream by sync-breakdown. Every story you break out MUST carry the required narrative keys asA / iWantTo / soThat (plus id); a stub missing them fails the design pipeline. Write the 'As a / I want / So that' for every story, not just the feature-spec index." }
   ],
   outputs: [
     { id: "feature-spec", filename: "feature-spec.json", channel: "artifact", validator: "featureSpecNonEmptyStories", description: "The feature breakdown index (feature-spec.json + a story stub per story). A .consort design document , the artifact channel." },
@@ -7579,7 +7586,8 @@ var spec_author_story_default = {
   match: { kind: "invoke-role", role: "spec-author", mode: null, buildMode: null },
   inputs: [
     { id: "story-stub", source: "story:story.json", description: "The story stub (asA/iWantTo/soThat) the Spec Author drafts ACs for." },
-    { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , the feature framing (product-overview.md)." }
+    { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , the feature framing (product-overview.md)." },
+    { id: "ac-schema", source: "schema:ac.schema.json", description: "ac.schema.json \u2014 the EXACT contract each acs/<AC>.json is gated against (acsDirConformant). Emit every AC file conforming to this schema precisely; add no keys it does not define." }
   ],
   outputs: [
     { id: "acs", filename: "acs", channel: "artifact", validator: "acsDirConformant", description: "The per-story acceptance criteria , the acs/ DIRECTORY (one acs/<AC>.json per AC, each named after the AC it authors). acsDirConformant asserts the dir is non-empty AND every acs/*.json conforms to ac.json (the deterministic floor the legacy verify-artifact + design gate enforced)." },
@@ -7603,10 +7611,11 @@ var architect_estimator_default = {
   agent: { kind: "claude", config: { role: "architect-reviewer" } },
   match: { kind: "invoke-role", role: "architect-reviewer", mode: "estimate" },
   inputs: [
-    { id: "feature-proposals", source: "feature:planning/feature-proposals.md", description: "The Spec Author's candidate features the Architect t-shirt sizes (planning/feature-proposals.md)." }
+    { id: "feature-proposals", source: "feature:planning/feature-proposals.md", description: "The Spec Author's candidate features the Architect t-shirt sizes (planning/feature-proposals.md)." },
+    { id: "estimates-schema", source: "schema:estimates.schema.json", description: "estimates.schema.json \u2014 the contract planning/estimates.json is gated against (estimatesConformant). Each entry MUST use the key `feature_id` (NOT `id`) plus a t-shirt `size`; richer fields are allowed. The consumer drops any entry missing feature_id, so conform to this exactly." }
   ],
   outputs: [
-    { id: "estimates", filename: "planning/estimates.json", channel: "artifact", validator: "nonEmptyFile", description: "The per-candidate t-shirt sizes (XS/S/M/L/XL) the PO commits a sprint-fitting backlog from. The post-turn verify-artifact asserts planning/estimates.json exists. Sprint-scoped, so NO reconcile. Matches the plain 'estimate' mode only, NOT 'estimate-committed' (which re-syncs the backlog)." }
+    { id: "estimates", filename: "planning/estimates.json", channel: "artifact", validator: "estimatesConformant", description: "The per-candidate t-shirt sizes (XS/S/M/L/XL) the PO commits a sprint-fitting backlog from. estimatesConformant gates the file against estimates.schema.json (each entry carries feature_id + size) AT the turn, so a wrong-key file fails here with a clear error instead of silently emptying the backlog in readEstimates. Sprint-scoped, so NO reconcile. Matches the plain 'estimate' mode only, NOT 'estimate-committed' (which re-syncs the backlog)." }
   ],
   routing: {
     produced: { next: "state-derived" }
@@ -7627,13 +7636,14 @@ var architect_reviewer_default = {
   match: { kind: "invoke-role", role: "architect-reviewer", mode: null },
   inputs: [
     { id: "acs", source: "story:acs", description: "The story's acceptance criteria the Architect annotates with per-AC architectural_notes." },
-    { id: "nfrs", source: "feature:nfrs.md", description: "The PO's non-functional requirements the architecture must cover (nfrs.md)." }
+    { id: "nfrs", source: "feature:nfrs.md", description: "The PO's non-functional requirements the architecture must cover (nfrs.md)." },
+    { id: "architecture-schema", source: "schema:architecture.schema.json", description: "architecture.schema.json \u2014 the contract architecture.json is gated against (architectureConformant) and that the spec-gate conformance guard reads (feature_id, service_backed, nfrs[], layers). Conform to it exactly; these are the required keys." }
   ],
   preconditions: [
     { id: "cross-story", kind: "cross-story-context", position: "append", description: "The feature's OTHER stories' ACs + existing open_decisions + mandated not-null fields, injected so the Architect records/reconciles open_decisions against the siblings deterministically , NOT a shell-out to consort-cross-story-context. Empty for a lone-story feature." }
   ],
   outputs: [
-    { id: "architecture", filename: "architecture.json", channel: "artifact", validator: "nonEmptyFile", description: "The feature architecture (service_backed, layers, persistence_invariants). The post-turn verify-artifact asserts architecture.json exists under the resolved root." },
+    { id: "architecture", filename: "architecture.json", channel: "artifact", validator: "architectureConformant", description: "The feature architecture (service_backed, layers, persistence_invariants). architectureConformant gates it against architecture.schema.json AT the turn (required feature_id/service_backed/nfrs), so a shape deviation fails here with a clear error instead of a late spec-gate conformance-guard block." },
     { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "architectReviewerLoggedAuthoring", description: "The Architect Reviewer's structured log of the per-AC notes + architecture.json it authored." }
   ],
   routing: {
@@ -7654,10 +7664,11 @@ var dba_default = {
   agent: { kind: "claude", config: { role: "dba" } },
   match: { kind: "invoke-role", role: "dba" },
   inputs: [
-    { id: "architecture", source: "feature:features/{feature}/architecture.json", description: "The Architect's logical contract (service_backed, layers, persistence_invariants) the DBA physically realizes , NOT re-authored. Feature-scoped: the {feature} placeholder expands to the run's feature id (the real on-disk location, features/<F>/architecture.json)." }
+    { id: "architecture", source: "feature:features/{feature}/architecture.json", description: "The Architect's logical contract (service_backed, layers, persistence_invariants) the DBA physically realizes , NOT re-authored. Feature-scoped: the {feature} placeholder expands to the run's feature id (the real on-disk location, features/<F>/architecture.json)." },
+    { id: "db-design-schema", source: "schema:db-design.schema.json", description: "db-design.schema.json \u2014 the contract db-design.json is gated against (dbDesignConformant) and that the spec-gate conformance guard reads for column ownership. Requires feature_id; conform to it exactly." }
   ],
   outputs: [
-    { id: "db-design", filename: "db-design.json", channel: "artifact", validator: "nonEmptyFile", description: "The physical schema (tables + per-story schema_changes + realizes_invariants). A non-persisting or non-service-backed feature may leave this empty, so there is NO post-turn verify-artifact for the DBA (designArtifactExpectation returns null)." },
+    { id: "db-design", filename: "db-design.json", channel: "artifact", validator: "dbDesignConformant", description: "The physical schema (tables + per-story schema_changes + realizes_invariants). dbDesignConformant gates it against db-design.schema.json AT the turn (required feature_id) when the DBA runs, so a shape deviation fails here with a clear error instead of a late conformance-guard block. A non-persisting / non-service-backed feature runs no DBA step at all (designArtifactExpectation returns null), so this validator only applies to a real db-design the DBA actually wrote." },
     { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "dbaLoggedAuthoring", description: "The DBA's structured log of the physical schema it realized." }
   ],
   routing: {
@@ -7696,6 +7707,11 @@ var test_strategist_default = {
       source: "feature:features/{feature}/db-design.json",
       optional: true,
       description: "The DBA's concrete tables/constraints the invariant tests assert against. Feature-scoped: {feature} expands to the run's feature id (features/<F>/db-design.json). OPTIONAL: a non-persisting / non-service-backed feature (service_backed=false, persistence_invariants=[]) runs no DBA step and has no db-design.json \u2014 the DBA output contract already states it 'may leave this empty', so the test-strategist must not fail-loud on its absence (its invariant tests simply have nothing to assert; the architecture input stays the authority). A persisting feature still provides it."
+    },
+    {
+      id: "test-list-schema",
+      source: "schema:test-list.schema.json",
+      description: "test-list.schema.json \u2014 the EXACT contract test-list.json is gated against (testListConformant). Emit test-list.json conforming to this schema precisely; these are the only allowed keys and additionalProperties is false."
     }
   ],
   preconditions: [],
@@ -7777,7 +7793,8 @@ var ux_establish_default = {
   match: { kind: "invoke-role", role: "ux-designer", mode: "establish" },
   inputs: [
     { id: "design-guideline", source: "feature:design/design-brief.md", description: "The HIL design brief the UX Designer extracts the look FROM. Lives under design/ on the real tree (design/design-brief.md, per intake.ts). A planning/intake artifact, human-approved at the intake gate." },
-    { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , which stories produce screens (product-overview.md)." }
+    { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , which stories produce screens (product-overview.md)." },
+    { id: "design-guide-schema", source: "schema:design-guide.schema.json", description: "design-guide.schema.json \u2014 the EXACT contract design-guide.json is gated against (designGuideConformant). These are the ONLY allowed top-level keys and additionalProperties is false: emit design-guide.json conforming to this schema precisely, adding no keys it does not define." }
   ],
   outputs: [
     { id: "design-guide", filename: "design-guide.json", channel: "artifact", validator: "designGuideConformant", description: "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + the initial ia.md skeleton are authored alongside; the JSON is the gated artifact. One-time bootstrap of the project style system." },
@@ -7806,7 +7823,7 @@ var ux_ia_default = {
   inputs: [
     { id: "ia", source: "feature:design/ia.md", description: "The project information architecture to REFINE for this story (append its screens/forms/flows). Project-level file, augmented per story; this story's surfaces must be named here before the architect tags E2E layers." },
     { id: "design-guide", source: "feature:design/design-guide.json", description: "The established style system (tokens + component vocabulary) the new screens/forms compose from \u2014 read-only context, not re-authored here." },
-    { id: "acs", source: "story:acs", description: "This story's acceptance criteria \u2014 their user-facing surfaces (E2E / client ACs) are what the IA must name." }
+    { id: "acs", source: "story:acs", description: "This story's acceptance criteria \u2014 their user-facing surfaces (E2E / client ACs) are what the IA must name. Each AC may declare a ui_seams[] array (exact data-testid tokens its UI drives); ia.md MUST NAME every one verbatim (the deterministic reflect-ia-defect smell fails on any declared seam the IA does not name). Enumerate them exhaustively, not a subset." }
   ],
   outputs: [
     { id: "ia", filename: "ia.md", channel: "artifact", validator: "iaConformant", description: "The refined information architecture (required sections: Screens / Navigation / User flows), with this story's surfaces added. Project-level file, augmented per story (additive, never a rewrite)." },
@@ -8413,22 +8430,6 @@ function parseTurnUsage(streamJson) {
   }
   return last;
 }
-function assistantTextFromLine(line) {
-  const trimmed = line.trim();
-  if (!trimmed || trimmed[0] !== "{") return "";
-  let ev;
-  try {
-    ev = JSON.parse(trimmed);
-  } catch {
-    return "";
-  }
-  if (ev.type !== "assistant" || !ev.message || !Array.isArray(ev.message.content)) return "";
-  const parts = [];
-  for (const block of ev.message.content) {
-    if (block?.type === "text" && typeof block.text === "string") parts.push(block.text);
-  }
-  return parts.join("");
-}
 function assistantEventSummary(line) {
   const trimmed = line.trim();
   if (!trimmed || trimmed[0] !== "{") return { text: "", tools: [] };
@@ -8784,6 +8785,13 @@ function relocateStrayDesignArtifacts(projectDir) {
   return moved.length > 0 ? { relocated: true, from: sibling, moved } : { relocated: false, moved: [] };
 }
 
+// consort/orchestrator/drive/streaming-turn.ts
+init_esm_shims();
+import { spawn } from "child_process";
+import * as fs9 from "fs";
+import * as path8 from "path";
+import * as readline from "readline";
+
 // consort/orchestrator/turns/turn-monitor.ts
 init_esm_shims();
 var realClock = {
@@ -8858,154 +8866,31 @@ function createMonitorController(monitor, onTimeout, clock = realClock) {
   };
 }
 
-// consort/orchestrator/drive/claude-runner.ts
-var MAX_PROMPT_TOO_LONG_RETRIES = 2;
-var MAX_TRANSIENT_RETRIES = Number(consortEnv("MAX_TRANSIENT_RETRIES") ?? "5");
-var TRANSIENT_BACKOFF_MS = Number(consortEnv("TRANSIENT_BACKOFF_MS") ?? "5000");
+// consort/orchestrator/drive/streaming-turn.ts
 var TURN_INACTIVITY_TIMEOUT_MS = Number(consortEnv("TURN_INACTIVITY_TIMEOUT_MS") ?? String(10 * 60 * 1e3));
 var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e3));
-var CliEffectError = class extends Error {
-  constructor(bin, code, capturedOutput) {
-    super(`${bin} exited ${code}`);
-    this.bin = bin;
-    this.code = code;
-    this.capturedOutput = capturedOutput;
-    this.name = "CliEffectError";
-  }
-  bin;
-  code;
-  capturedOutput;
-};
-var CLI_CAPTURE_MAX = 16e3;
-function spawnCmd(bin, args, cwd) {
-  return new Promise((resolve4, reject) => {
-    const child = spawn(bin, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
-    const chunks = [];
-    child.stdout?.on("data", (d) => {
-      process.stdout.write(d);
-      chunks.push(d.toString());
-    });
-    child.stderr?.on("data", (d) => {
-      process.stderr.write(d);
-      chunks.push(d.toString());
-    });
-    child.on("error", (err) => reject(err));
-    child.on("close", (code) => {
-      if (code === 0) return resolve4();
-      const captured = chunks.join("");
-      const tail = captured.length > CLI_CAPTURE_MAX ? captured.slice(-CLI_CAPTURE_MAX) : captured;
-      reject(new CliEffectError(bin, code, tail.trim() || void 0));
-    });
-  });
-}
-var ClaudeTurnError = class extends Error {
-  constructor(message, promptTooLong, transient = false, stalled = false) {
-    super(message);
-    this.promptTooLong = promptTooLong;
-    this.transient = transient;
-    this.stalled = stalled;
-    this.name = "ClaudeTurnError";
-  }
-  promptTooLong;
-  transient;
-  stalled;
-};
-var ReplayCorpusMissError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "ReplayCorpusMissError";
-  }
-};
-var ArtifactOutOfRootError = class extends Error {
-  constructor(role, label, anyOf, consortDir, checkedSibling) {
-    super(
-      `role '${role}' produced no ${label} under ${path8.basename(consortDir)}/ (expected one of: ${anyOf.join(", ")}).
-        The subagent likely resolved the project root wrong and wrote outside it. ` + (checkedSibling ? `Checked (and tried to relocate from) the malformed sibling ${checkedSibling}; nothing there either. ` : `(check $HOME and other dirs for a stray copy). `) + `Nothing downstream can consume the absent artifact. Re-run to re-dispatch the role.`
-    );
-    this.role = role;
-    this.label = label;
-    this.anyOf = anyOf;
-    this.consortDir = consortDir;
-    this.checkedSibling = checkedSibling;
-    this.name = "ArtifactOutOfRootError";
-  }
-  role;
-  label;
-  anyOf;
-  consortDir;
-  checkedSibling;
-};
-var lastAgentTranscript;
-var lastAgentTranscriptByCwd = /* @__PURE__ */ new Map();
-function takeLastAgentTranscript(cwd) {
-  if (cwd !== void 0) {
-    const t2 = lastAgentTranscriptByCwd.get(cwd);
-    lastAgentTranscriptByCwd.delete(cwd);
-    return t2;
-  }
-  const t = lastAgentTranscript;
-  lastAgentTranscript = void 0;
-  return t;
-}
-function peekLastAgentTranscript(cwd) {
-  return cwd !== void 0 ? lastAgentTranscriptByCwd.get(cwd) : lastAgentTranscript;
-}
-function recordAgentTranscript(cwd, tx) {
-  lastAgentTranscript = tx;
-  lastAgentTranscriptByCwd.set(cwd, tx);
-}
-var lastAgentUsage;
-var lastAgentUsageByCwd = /* @__PURE__ */ new Map();
-function peekLastAgentUsage(cwd) {
-  return cwd !== void 0 ? lastAgentUsageByCwd.get(cwd) : lastAgentUsage;
-}
-function recordAgentUsage(cwd, usage) {
-  lastAgentUsage = usage;
-  lastAgentUsageByCwd.set(cwd, usage);
-}
-var lastTurnMeta;
-var lastTurnMetaByCwd = /* @__PURE__ */ new Map();
-function takeLastTurnMeta(cwd) {
-  if (cwd !== void 0) {
-    const m2 = lastTurnMetaByCwd.get(cwd);
-    lastTurnMetaByCwd.delete(cwd);
-    return m2;
-  }
-  const m = lastTurnMeta;
-  lastTurnMeta = void 0;
-  return m;
-}
-function peekLastTurnMeta(cwd) {
-  return cwd !== void 0 ? lastTurnMetaByCwd.get(cwd) : lastTurnMeta;
-}
-function recordTurnMeta(cwd, meta) {
-  lastTurnMeta = meta;
-  lastTurnMetaByCwd.set(cwd, meta);
-}
 function defaultTurnMonitor(sink) {
   const heartbeatMs = TURN_HEARTBEAT_MS > 0 ? TURN_HEARTBEAT_MS : void 0;
   const inactivityTimeoutMs = TURN_INACTIVITY_TIMEOUT_MS > 0 ? TURN_INACTIVITY_TIMEOUT_MS : void 0;
   if (heartbeatMs === void 0 && inactivityTimeoutMs === void 0) return void 0;
   return { onProgress: sink, heartbeatMs, inactivityTimeoutMs };
 }
-function spawnClaudeStreaming(args, cwd, monitorOverride) {
+function spawnStreamingTurn(backend, cwd, monitorOverride) {
   return new Promise((resolve4, reject) => {
-    const child = spawn("claude", args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
+    const child = spawn(backend.target.command, backend.target.args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     const lines = [];
+    let err = "";
     let sawTooLong = false;
     let sawTransient = false;
-    const verboseAgent = !!consortEnv("VERBOSE_AGENT");
+    const verbose = backend.verbose ?? !!consortEnv("VERBOSE_AGENT");
     const liveLogDir = consortEnv("RECORD_DIR")?.trim() || resolveConsortDir(cwd);
     let liveLog;
     if (liveLogDir) {
       try {
         fs9.mkdirSync(liveLogDir, { recursive: true });
         liveLog = fs9.openSync(path8.join(liveLogDir, "agent-live.log"), "a");
-        const pIdxL = args.indexOf("-p"), rIdxL = args.indexOf("--agent");
-        const role = rIdxL >= 0 ? args[rIdxL + 1] : "agent";
-        const task = pIdxL >= 0 ? args[pIdxL + 1] ?? "" : "";
         fs9.writeSync(liveLog, `
-=== ${(/* @__PURE__ */ new Date()).toISOString()} TURN START role=${role} :: ${task}
+=== ${(/* @__PURE__ */ new Date()).toISOString()} TURN START role=${backend.header.role} :: ${backend.header.task}
 `);
       } catch {
         liveLog = void 0;
@@ -9050,14 +8935,18 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
     const rl = readline.createInterface({ input: child.stdout });
     rl.on("line", (line) => {
       lines.push(line);
-      if (isPromptTooLongSignal(line)) sawTooLong = true;
-      if (isTransientApiErrorSignal(line)) sawTransient = true;
-      if (verboseAgent) {
-        const text2 = assistantTextFromLine(line);
-        if (text2) process.stderr.write(text2);
-        if (text2) liveWrite(text2);
-        if (text2) monitorCtl.progress({ kind: "text" });
-        for (const t of assistantEventSummary(line).tools) {
+      const r = backend.onLine(line);
+      if (r.tooLong) sawTooLong = true;
+      if (r.transient) sawTransient = true;
+      const tools = r.tools ?? [];
+      const text = r.text ?? "";
+      if (verbose) {
+        if (text) {
+          process.stderr.write(text);
+          liveWrite(text);
+          monitorCtl.progress({ kind: "text" });
+        }
+        for (const t of tools) {
           allTools.push(t);
           liveWrite(`  \xB7 ${stamp()} ${t}
 `);
@@ -9065,7 +8954,6 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
         }
         return;
       }
-      const { text, tools } = assistantEventSummary(line);
       for (const t of tools) {
         const st = stamp();
         process.stderr.write(`  \xB7 ${st} ${t}
@@ -9086,8 +8974,11 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
     const erl = readline.createInterface({ input: child.stderr });
     erl.on("line", (line) => {
       monitorCtl.progress({ kind: "text" });
-      if (isPromptTooLongSignal(line)) sawTooLong = true;
-      if (isTransientApiErrorSignal(line)) sawTransient = true;
+      err += `${line}
+`;
+      const r = backend.onStderrLine?.(line);
+      if (r?.tooLong) sawTooLong = true;
+      if (r?.transient) sawTransient = true;
       process.stderr.write(`${line}
 `);
     });
@@ -9099,24 +8990,335 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
       }
       liveLog = void 0;
     };
-    child.on("error", (err) => {
+    child.on("error", (err2) => {
       monitorCtl.stop();
       closeLiveLog();
-      reject(err);
+      reject(err2);
     });
     child.on("close", (code) => {
       monitorCtl.stop();
       rl.close();
       erl.close();
-      if (!verboseAgent && lastText) process.stderr.write(`${lastText}
+      if (!verbose && lastText) process.stderr.write(`${lastText}
 `);
       liveWrite(`--- ${(/* @__PURE__ */ new Date()).toISOString()} TURN CLOSE code=${code}${lastText ? ` :: ${lastText}` : ""}
 `);
       closeLiveLog();
-      if (stalled) {
-        return reject(new ClaudeTurnError(`claude turn stalled (inactivity timeout); killed for retry`, false, true, true));
+      try {
+        resolve4(backend.onClose({ code, lines, allText, lastText, allTools, stalled, sawTooLong, sawTransient, err, cwd }));
+      } catch (e) {
+        reject(e);
       }
-      if (code !== 0) return reject(new ClaudeTurnError(`claude exited ${code}`, sawTooLong, sawTransient));
+    });
+  });
+}
+
+// consort/orchestrator/agents/copilot-runner.ts
+init_esm_shims();
+import { spawnSync as spawnSync3 } from "child_process";
+
+// consort/orchestrator/agents/copilot-step-agent.ts
+init_esm_shims();
+import { readFileSync as readFileSync17 } from "fs";
+import { join as join19 } from "path";
+
+// consort/orchestrator/drive/agent-transcript.ts
+init_esm_shims();
+var lastAgentTranscript;
+var lastAgentTranscriptByCwd = /* @__PURE__ */ new Map();
+function takeLastAgentTranscript(cwd) {
+  if (cwd !== void 0) {
+    const t2 = lastAgentTranscriptByCwd.get(cwd);
+    lastAgentTranscriptByCwd.delete(cwd);
+    return t2;
+  }
+  const t = lastAgentTranscript;
+  lastAgentTranscript = void 0;
+  return t;
+}
+function peekLastAgentTranscript(cwd) {
+  return cwd !== void 0 ? lastAgentTranscriptByCwd.get(cwd) : lastAgentTranscript;
+}
+function recordAgentTranscript(cwd, tx) {
+  lastAgentTranscript = tx;
+  lastAgentTranscriptByCwd.set(cwd, tx);
+}
+
+// consort/orchestrator/agents/copilot-step-agent.ts
+var COPILOT_MODEL_ALIASES = {
+  opus: "system.ai.claude-opus-5-5",
+  sonnet: "system.ai.claude-sonnet-5-5",
+  haiku: "system.ai.claude-haiku-5-5"
+};
+function mapCopilotModel(model) {
+  const m = model.trim();
+  if (!m || m.includes(".") || m.includes("/")) return m;
+  return COPILOT_MODEL_ALIASES[m.toLowerCase()] ?? m;
+}
+function parseCopilotLine(line) {
+  const s = line.trim();
+  if (!s || s[0] !== "{") return {};
+  let o;
+  try {
+    o = JSON.parse(s);
+  } catch {
+    return {};
+  }
+  const type = typeof o.type === "string" ? o.type : "";
+  const data = o.data && typeof o.data === "object" ? o.data : {};
+  if (type === "assistant.message_delta" && typeof data.deltaContent === "string") return { text: data.deltaContent };
+  if (type === "assistant.message") {
+    const out = {};
+    if (typeof data.content === "string") out.text = data.content;
+    if (Array.isArray(data.toolRequests)) {
+      const tools = data.toolRequests.map((tr) => tr?.name ?? tr?.tool).filter((n) => typeof n === "string");
+      if (tools.length) out.tools = tools;
+    }
+    return out;
+  }
+  if (/tool/i.test(type) && type !== "assistant.message") {
+    const n = data.name ?? data.tool ?? o.name;
+    if (typeof n === "string") return { tools: [n] };
+  }
+  return {};
+}
+function parseCopilotOutput(stdout) {
+  let usage;
+  const deltas = [];
+  const tools = [];
+  let finalMessage;
+  const num = (v) => typeof v === "number" ? v : void 0;
+  for (const line of stdout.split("\n")) {
+    const s = line.trim();
+    if (!s || s[0] !== "{") continue;
+    let o;
+    try {
+      o = JSON.parse(s);
+    } catch {
+      continue;
+    }
+    const type = typeof o.type === "string" ? o.type : "";
+    const data = o.data && typeof o.data === "object" ? o.data : {};
+    if (type === "assistant.message_delta" && typeof data.deltaContent === "string") deltas.push(data.deltaContent);
+    if (type === "assistant.message") {
+      if (typeof data.content === "string") finalMessage = data.content;
+      if (Array.isArray(data.toolRequests)) {
+        for (const tr of data.toolRequests) {
+          const n = tr?.name ?? tr?.tool;
+          if (typeof n === "string") tools.push(n);
+        }
+      }
+    }
+    if (/tool/i.test(type) && type !== "assistant.message") {
+      const n = data.name ?? data.tool ?? o.name;
+      if (typeof n === "string") tools.push(n);
+    }
+    if (type === "result") {
+      const u = o.usage && typeof o.usage === "object" ? o.usage : void 0;
+      if (u) {
+        const durationMs = num(u.totalApiDurationMs) ?? num(u.sessionDurationMs);
+        usage = { inputTokens: 0, outputTokens: 0, ...durationMs !== void 0 ? { durationMs } : {} };
+      }
+    }
+  }
+  const finalText = finalMessage ?? (deltas.length ? deltas.join("") : void 0);
+  return { ...usage ? { usage } : {}, ...finalText ? { finalText } : {}, ...tools.length ? { tools } : {} };
+}
+
+// consort/orchestrator/agents/copilot-runner.ts
+function onPath(bin) {
+  try {
+    const r = process.platform === "win32" ? spawnSync3("where", [bin], { stdio: "ignore" }) : spawnSync3("sh", ["-c", `command -v ${bin}`], { stdio: "ignore" });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+function resolveCopilotCommand(opts = {}) {
+  const override = (opts.binOverride ?? process.env.CONSORT_COPILOT_BIN ?? "").trim();
+  if (override) {
+    const parts = override.split(/\s+/);
+    return { command: parts[0], baseArgs: parts.slice(1) };
+  }
+  const has = opts.has ?? onPath;
+  if (has("ug")) return { command: "ug", baseArgs: ["copilot"] };
+  if (has("copilot")) return { command: "copilot", baseArgs: [] };
+  return { command: "gh", baseArgs: ["copilot", "--"] };
+}
+function copilotBaseArgs(cmd) {
+  const args = ["-p", cmd.task];
+  if (cmd.model) args.push("--model", mapCopilotModel(cmd.model));
+  if (cmd.allowedTools?.length) {
+    for (const t of cmd.allowedTools) args.push("--allow-tool", t);
+  } else {
+    args.push("--allow-all-tools", "--allow-all-paths");
+  }
+  for (const t of cmd.disallowedTools ?? []) args.push("--deny-tool", t);
+  args.push("--output-format", "json");
+  return args;
+}
+var CopilotTurnError = class extends Error {
+  constructor(message, transient = false, stalled = false) {
+    super(message);
+    this.transient = transient;
+    this.stalled = stalled;
+    this.name = "CopilotTurnError";
+  }
+  transient;
+  stalled;
+};
+function spawnCopilotStreaming(copilotArgs, cwd, resolve4 = resolveCopilotCommand, monitorOverride) {
+  const { command, baseArgs } = resolve4();
+  const pIdx = copilotArgs.indexOf("-p");
+  const prompt = pIdx >= 0 && pIdx + 1 < copilotArgs.length ? copilotArgs[pIdx + 1] : "";
+  const backend = {
+    target: { command, args: [...baseArgs, ...copilotArgs] },
+    header: { role: "copilot", task: prompt },
+    onLine: (line) => parseCopilotLine(line),
+    onClose: (ctx) => {
+      const result = parseCopilotOutput(ctx.lines.join("\n"));
+      const emptyResult = !result || !result.finalText && !result.usage && !(result.tools && result.tools.length);
+      if ((ctx.code ?? 0) !== 0 || emptyResult && ctx.err.trim()) {
+        const tail = ctx.err.trim().split("\n").slice(-6).join("\n");
+        process.stderr.write(
+          `[copilot] turn FAILED via \`${[command, ...baseArgs].join(" ")}\` (exit ${ctx.code ?? "?"})${tail ? `:
+${tail}` : " \u2014 no stderr captured"}
+`
+        );
+      }
+      const tx = { prompt, finalText: result?.finalText ?? "", tools: result?.tools ?? [] };
+      try {
+        recordAgentTranscript(cwd, tx);
+      } catch {
+      }
+      if (ctx.stalled) throw new CopilotTurnError(`copilot turn stalled (inactivity timeout); killed for retry`, true, true);
+      if ((ctx.code ?? 0) !== 0) throw new CopilotTurnError(`copilot exited ${ctx.code}`, true, false);
+      return result;
+    }
+  };
+  return spawnStreamingTurn(backend, cwd, monitorOverride);
+}
+
+// consort/orchestrator/drive/claude-runner.ts
+var MAX_PROMPT_TOO_LONG_RETRIES = 2;
+var MAX_TRANSIENT_RETRIES = Number(consortEnv("MAX_TRANSIENT_RETRIES") ?? "5");
+var TRANSIENT_BACKOFF_MS = Number(consortEnv("TRANSIENT_BACKOFF_MS") ?? "5000");
+var CliEffectError = class extends Error {
+  constructor(bin, code, capturedOutput) {
+    super(`${bin} exited ${code}`);
+    this.bin = bin;
+    this.code = code;
+    this.capturedOutput = capturedOutput;
+    this.name = "CliEffectError";
+  }
+  bin;
+  code;
+  capturedOutput;
+};
+var CLI_CAPTURE_MAX = 16e3;
+function spawnCmd(bin, args, cwd) {
+  return new Promise((resolve4, reject) => {
+    const child = spawn2(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const chunks = [];
+    child.stdout?.on("data", (d) => {
+      process.stdout.write(d);
+      chunks.push(d.toString());
+    });
+    child.stderr?.on("data", (d) => {
+      process.stderr.write(d);
+      chunks.push(d.toString());
+    });
+    child.on("error", (err) => reject(err));
+    child.on("close", (code) => {
+      if (code === 0) return resolve4();
+      const captured = chunks.join("");
+      const tail = captured.length > CLI_CAPTURE_MAX ? captured.slice(-CLI_CAPTURE_MAX) : captured;
+      reject(new CliEffectError(bin, code, tail.trim() || void 0));
+    });
+  });
+}
+var ClaudeTurnError = class extends Error {
+  constructor(message, promptTooLong, transient = false, stalled = false) {
+    super(message);
+    this.promptTooLong = promptTooLong;
+    this.transient = transient;
+    this.stalled = stalled;
+    this.name = "ClaudeTurnError";
+  }
+  promptTooLong;
+  transient;
+  stalled;
+};
+var ReplayCorpusMissError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ReplayCorpusMissError";
+  }
+};
+var ArtifactOutOfRootError = class extends Error {
+  constructor(role, label, anyOf, consortDir, checkedSibling) {
+    super(
+      `role '${role}' produced no ${label} under ${path9.basename(consortDir)}/ (expected one of: ${anyOf.join(", ")}).
+        The subagent likely resolved the project root wrong and wrote outside it. ` + (checkedSibling ? `Checked (and tried to relocate from) the malformed sibling ${checkedSibling}; nothing there either. ` : `(check $HOME and other dirs for a stray copy). `) + `Nothing downstream can consume the absent artifact. Re-run to re-dispatch the role.`
+    );
+    this.role = role;
+    this.label = label;
+    this.anyOf = anyOf;
+    this.consortDir = consortDir;
+    this.checkedSibling = checkedSibling;
+    this.name = "ArtifactOutOfRootError";
+  }
+  role;
+  label;
+  anyOf;
+  consortDir;
+  checkedSibling;
+};
+var lastAgentUsage;
+var lastAgentUsageByCwd = /* @__PURE__ */ new Map();
+function peekLastAgentUsage(cwd) {
+  return cwd !== void 0 ? lastAgentUsageByCwd.get(cwd) : lastAgentUsage;
+}
+function recordAgentUsage(cwd, usage) {
+  lastAgentUsage = usage;
+  lastAgentUsageByCwd.set(cwd, usage);
+}
+var lastTurnMeta;
+var lastTurnMetaByCwd = /* @__PURE__ */ new Map();
+function takeLastTurnMeta(cwd) {
+  if (cwd !== void 0) {
+    const m2 = lastTurnMetaByCwd.get(cwd);
+    lastTurnMetaByCwd.delete(cwd);
+    return m2;
+  }
+  const m = lastTurnMeta;
+  lastTurnMeta = void 0;
+  return m;
+}
+function peekLastTurnMeta(cwd) {
+  return cwd !== void 0 ? lastTurnMetaByCwd.get(cwd) : lastTurnMeta;
+}
+function recordTurnMeta(cwd, meta) {
+  lastTurnMeta = meta;
+  lastTurnMetaByCwd.set(cwd, meta);
+}
+function spawnClaudeStreaming(args, cwd, monitorOverride) {
+  const pIdxH = args.indexOf("-p");
+  const rIdxH = args.indexOf("--agent");
+  const backend = {
+    target: { command: "claude", args },
+    // stdin = /dev/null and the sidecar/monitor are the engine's; header feeds its TURN START line.
+    header: { role: rIdxH >= 0 ? args[rIdxH + 1] : "agent", task: pIdxH >= 0 ? args[pIdxH + 1] ?? "" : "" },
+    onLine: (line) => {
+      const { text, tools } = assistantEventSummary(line);
+      return { ...text ? { text } : {}, tools, tooLong: isPromptTooLongSignal(line), transient: isTransientApiErrorSignal(line) };
+    },
+    onStderrLine: (line) => ({ tooLong: isPromptTooLongSignal(line), transient: isTransientApiErrorSignal(line) }),
+    onClose: (ctx) => {
+      if (ctx.stalled) {
+        throw new ClaudeTurnError(`claude turn stalled (inactivity timeout); killed for retry`, false, true, true);
+      }
+      if (ctx.code !== 0) throw new ClaudeTurnError(`claude exited ${ctx.code}`, ctx.sawTooLong, ctx.sawTransient);
       const pIdx = args.indexOf("-p");
       const rIdx = args.indexOf("--agent");
       const mIdx = args.indexOf("--model");
@@ -9124,18 +9326,18 @@ function spawnClaudeStreaming(args, cwd, monitorOverride) {
         prompt: pIdx >= 0 ? args[pIdx + 1] ?? "" : "",
         role: rIdx >= 0 ? args[rIdx + 1] : void 0,
         model: mIdx >= 0 ? args[mIdx + 1] : void 0,
-        // When the turn emitted a ```agent-report block, use the FULL assistant text as finalText so the
-        // record/log phase can extract the (possibly non-final / streamed) block; otherwise keep the last
-        // message (unchanged for turns that emit no report block).
-        finalText: allText.includes("```agent-report") ? allText : lastText,
-        tools: allTools
+        // When the turn emitted a report block, use the FULL assistant text as finalText so the record/log
+        // phase can extract the (possibly non-final / streamed) block; otherwise keep the last message.
+        finalText: ctx.allText.includes("```agent-report") ? ctx.allText : ctx.lastText,
+        tools: ctx.allTools
       };
       recordAgentTranscript(cwd, tx);
-      const parsed = parseTurnUsage(lines);
+      const parsed = parseTurnUsage(ctx.lines);
       if (parsed) recordAgentUsage(cwd, parsed);
-      resolve4(parsed);
-    });
-  });
+      return parsed;
+    }
+  };
+  return spawnStreamingTurn(backend, cwd, monitorOverride);
 }
 function claudeToolArgs(cmd) {
   const out = [];
@@ -9146,7 +9348,7 @@ function claudeToolArgs(cmd) {
 }
 var UX_BROWSER_MCP_CONFIG = "skills/consort/config/ux-browser-mcp.json";
 function defaultMcpConfigForRole(role) {
-  return role === "ux-designer" ? path8.join(kitRoot(), UX_BROWSER_MCP_CONFIG) : void 0;
+  return role === "ux-designer" ? path9.join(kitRoot(), UX_BROWSER_MCP_CONFIG) : void 0;
 }
 var UX_BROWSER_ALLOWED_TOOLS = ["mcp__playwright", "WebFetch", "WebSearch"];
 function browserAllowedToolsForRole(role) {
@@ -9260,16 +9462,20 @@ function execRunner(cfg) {
             `[drive] REPLAY CORPUS MISS: no recorded artifact for design turn '${where}' under ${replayDir} (features/${cfg.featureId}/...). The deterministic pipeline dispatched this turn but the corpus lacks its output. Replay will NOT run the agent live \u2013 put the recorded artifact in the corpus (check .gitignore is not dropping it).`
           );
         }
-        const baseArgs = claudeBaseArgs(cmd);
-        if (cmd.effort) baseArgs.push("--effort", cmd.effort);
-        if (cmd.fallbackModel) baseArgs.push("--fallback-model", cmd.fallbackModel);
-        if (typeof cmd.maxBudgetUsd === "number") baseArgs.push("--max-budget-usd", String(cmd.maxBudgetUsd));
-        if (cmd.mcpConfig) {
-          if (cmd.role === "ux-designer") ensureUxBrowserChromium();
-          baseArgs.push("--mcp-config", cmd.mcpConfig);
+        const isCopilot = cmd.executor === "copilot";
+        const baseArgs = isCopilot ? copilotBaseArgs(cmd) : claudeBaseArgs(cmd);
+        if (!isCopilot) {
+          if (cmd.effort) baseArgs.push("--effort", cmd.effort);
+          if (cmd.fallbackModel) baseArgs.push("--fallback-model", cmd.fallbackModel);
+          if (typeof cmd.maxBudgetUsd === "number") baseArgs.push("--max-budget-usd", String(cmd.maxBudgetUsd));
+          if (cmd.mcpConfig) {
+            if (cmd.role === "ux-designer") ensureUxBrowserChromium();
+            baseArgs.push("--mcp-config", cmd.mcpConfig);
+          }
+          baseArgs.push(...claudeToolArgs(cmd));
         }
-        baseArgs.push(...claudeToolArgs(cmd));
         const sessionArgsFor = (forceFresh) => {
+          if (isCopilot) return [];
           if (!cmd.resumeKey) return [];
           if (startsFreshEachTurn(cmd.role)) {
             const id2 = randomUUID();
@@ -9301,10 +9507,11 @@ function execRunner(cfg) {
           const args = [...baseArgs, ...sessionArgsFor(overflowRetries > 0 || forceFreshAfterStall)];
           forceFreshAfterStall = false;
           try {
-            usage = await spawnClaudeStreaming(args, cfg.projectDir);
+            usage = isCopilot ? (await spawnCopilotStreaming(args, cfg.projectDir))?.usage : await spawnClaudeStreaming(args, cfg.projectDir);
             break;
           } catch (e) {
-            if (e instanceof ClaudeTurnError && e.promptTooLong && overflowRetries < MAX_PROMPT_TOO_LONG_RETRIES) {
+            const te = e instanceof ClaudeTurnError ? { promptTooLong: e.promptTooLong, transient: e.transient, stalled: e.stalled } : e instanceof CopilotTurnError ? { promptTooLong: false, transient: e.transient, stalled: e.stalled } : void 0;
+            if (te?.promptTooLong && overflowRetries < MAX_PROMPT_TOO_LONG_RETRIES) {
               overflowRetries++;
               process.stderr.write(
                 `[drive] context guard (mid-turn): ${cmd.role} overflowed ${cmd.model}; fresh-session retry ${overflowRetries}/${MAX_PROMPT_TOO_LONG_RETRIES}
@@ -9312,13 +9519,13 @@ function execRunner(cfg) {
               );
               continue;
             }
-            if (e instanceof ClaudeTurnError && e.transient && transientRetries < MAX_TRANSIENT_RETRIES) {
+            if (te?.transient && transientRetries < MAX_TRANSIENT_RETRIES) {
               transientRetries++;
               const backoff = TRANSIENT_BACKOFF_MS * transientRetries;
-              const kind = e.stalled ? "stalled turn (inactivity timeout)" : "transient API error";
-              if (e.stalled) forceFreshAfterStall = true;
+              const kind = te.stalled ? "stalled turn (inactivity timeout)" : "transient API error";
+              if (te.stalled) forceFreshAfterStall = true;
               process.stderr.write(
-                `[drive] ${kind} on ${cmd.role} (${cmd.model}); retry ${transientRetries}/${MAX_TRANSIENT_RETRIES} after ${(backoff / 1e3).toFixed(0)}s${e.stalled ? " on a FRESH session" : ""}
+                `[drive] ${kind} on ${cmd.role} (${cmd.model}); retry ${transientRetries}/${MAX_TRANSIENT_RETRIES} after ${(backoff / 1e3).toFixed(0)}s${te.stalled ? " on a FRESH session" : ""}
 `
               );
               await new Promise((r) => setTimeout(r, backoff));
@@ -9367,8 +9574,8 @@ function execRunner(cfg) {
       if (cmd.kind === "verify-artifact") {
         const isPresent = () => cmd.anyOf.some((p) => {
           try {
-            const st = fs9.statSync(p);
-            return st.isDirectory() ? fs9.readdirSync(p).length > 0 : true;
+            const st = fs10.statSync(p);
+            return st.isDirectory() ? fs10.readdirSync(p).length > 0 : true;
           } catch {
             return false;
           }

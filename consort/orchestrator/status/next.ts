@@ -131,6 +131,10 @@ export interface NextContext {
    *  its resume command. Without this, a `--only design` run's resume silently falls back
    *  to the full transition and a spec-gate approval jumps the feature into build. */
   bound?: string;
+  /** The run's deploy target (`consort-config`/run-config `deploy_target`, default "local"), read back
+   *  from `.consort/run-config.json` alongside `bound`. Threaded into the "Deploy the feature" enact so
+   *  it carries the run's real target (`--deploy-target <t>`) rather than relying on the CLI default. */
+  deployTarget?: string;
   /** ISO timestamp for generated_at (injectable for deterministic tests). */
   now?: string;
   /** Per-story derived rows (feature scope), for the reconciled state + phase.
@@ -184,6 +188,18 @@ function resumeCommand(ctx: NextContext, action?: WorkflowAction): EnactCommand 
     phase = actionPhase && DRIVE_ONLY_BOUNDS.has(actionPhase) ? actionPhase : ctx.bound;
   }
   if (phase) args.push("--only", phase);
+  return { bin: "consort-drive", args };
+}
+
+/** The enact for the "Deploy the feature" step (feature-complete): advance the run into the DEPLOY
+ *  phase. NOT `resumeCommand` — a feature-complete action's lane is "coarse" (a phase transition, not a
+ *  drive-only bound), so resumeCommand would fall back to the run's stale `--only build` bound, which
+ *  no-ops ("build already complete") instead of deploying. Emit the deploy phase explicitly and thread
+ *  the run's `--deploy-target` so the command carries its real target (default local) rather than
+ *  relying on the CLI default. */
+function deployCommand(ctx: NextContext): EnactCommand {
+  const args = ["--feature", ctx.featureId ?? "<feature-id>", "--only", "deploy"];
+  if (ctx.deployTarget) args.push("--deploy-target", ctx.deployTarget);
   return { bin: "consort-drive", args };
 }
 
@@ -408,7 +424,7 @@ export function buildNextOptions(action: WorkflowAction, ctx: NextContext): Next
           title: "Deploy the feature",
           hil_prompt: "Every story is built + accepted. Deploy the feature (local working-software check) and enter promotion?",
           kind: "action",
-          enact: resumeCommand(ctx, action),
+          enact: deployCommand(ctx),
         },
         holdOption(),
       ];
@@ -613,10 +629,13 @@ export function readFeatureNextSnapshot(
   // Read the run's durable phase bound from run-config.json HERE (the single disk-reading
   // builder the drive's auto-emit and the CLI both go through), so both surfaces compute the
   // bounded transition + re-emit `--only <phase>` from one place. An explicit ctx.bound wins.
-  const bound = ctx.bound ?? readRunConfig(consortDir)?.bound;
+  const runConfig = readRunConfig(consortDir);
+  const bound = ctx.bound ?? runConfig?.bound;
+  const deployTarget = ctx.deployTarget ?? runConfig?.deploy_target;
   return buildNextSnapshot("feature", state, {
     ...ctx,
     ...(bound ? { bound } : {}),
+    ...(deployTarget ? { deployTarget } : {}),
     featureId,
     stories: summarizeStories(consortDir, featureId),
     storyReview: buildStoryReview(consortDir, featureId),

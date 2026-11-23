@@ -6,7 +6,7 @@
 // board can be evaluated at any point in the log and tested without a project on disk.
 //
 // Pure read-only observer: it never writes to the watched project.
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
@@ -253,18 +253,69 @@ function sessionActivityAgeMs(): number {
   return age;
 }
 
+// How far the OS-clocked process start time may trail `started_at` and still count as the same
+// process. The drive records `started_at` a hair AFTER the kernel clocks its start (node boots, then
+// the CLI writes the file), so the live process's start time is at or just before `started_at`. A pid
+// that was RECYCLED — the drive exited, the number was handed to an unrelated process later — starts
+// well AFTER `started_at`. A few seconds comfortably covers node startup jitter and `ps` 1s resolution
+// without admitting a recycled pid (which is minutes/hours newer in practice).
+const DRIVE_PID_START_TOLERANCE_MS = 10_000;
+
+// The kernel-clocked start time of a live pid, in epoch ms, or null when it can't be determined
+// (process gone, `ps` unavailable, or output unparseable). `ps -o lstart=` prints a full local
+// datetime (e.g. "Fri Nov 21 10:23:45 2026") on both macOS and Linux; the empty header (`=`) drops
+// the column title so the line is just the date.
+function processStartMs(pid: number): number | null {
+  try {
+    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" }).trim();
+    if (!out) return null;
+    const ms = Date.parse(out);
+    return Number.isFinite(ms) ? ms : null;
+  } catch {
+    return null;
+  }
+}
+
+// Does a LIVE pid's kernel start time match the drive's recorded `started_at`? The original drive
+// records `started_at` a hair AFTER the kernel clocks its start, so its own process reads at or just
+// before `started_at`; a RECYCLED pid (handed to an unrelated process after the drive exited) starts
+// well AFTER it. We treat start times at/before `started_at`, or within DRIVE_PID_START_TOLERANCE_MS
+// after it, as the same process. When the start time is unknown (null — no `ps`/unparseable) or
+// `started_at` is unparseable (NaN), we cannot refute the pid, so we return true and let the plain
+// liveness probe stand — never regressing a genuinely-running drive to dead. Exported for tests.
+export function drivePidStartMatches(startedAtMs: number, osStartMs: number | null): boolean {
+  if (!Number.isFinite(startedAtMs)) return true; // no recorded start time to verify against
+  if (osStartMs === null) return true; // can't verify — never regress a live drive to dead
+  return osStartMs - startedAtMs <= DRIVE_PID_START_TOLERANCE_MS;
+}
+
 // Whether the drive process is CURRENTLY running — the authoritative "running vs stopped" signal
 // (STOP = drive-pid-gone). `.consort/drive.pid` is JSON {pid, started_at}; the file LINGERS after the
 // drive exits, so liveness is `process.kill(pid, 0)` on the pid (throws ESRCH when gone), NOT the
-// file's mere existence. The dashboard runs on the same host as the drive, so the signal is local and
-// exact. Any missing/unparseable file or dead pid → NOT alive (safer: a run that can't be confirmed
-// live is shown at rest — WAITING/PARKED — never a false RUNNING).
+// file's mere existence. But a bare liveness probe also reports ALIVE for a RECYCLED pid — the drive
+// exited and its number was reassigned to an unrelated process — which would wrongly pin the board on
+// the last turn. So when we recorded a `started_at`, we additionally confirm the live process's own
+// kernel start time matches it (within DRIVE_PID_START_TOLERANCE_MS): a start time that lands well
+// after `started_at` is a foreign/recycled pid → NOT alive. If the start time can't be obtained (no
+// `ps`, unparseable) or `started_at` is missing, we fall back to the plain liveness result so a
+// genuinely-running drive is never regressed to dead.
+//
+// The dashboard runs on the same host as the drive, so the signal is local and exact. Any
+// missing/unparseable file or dead pid → NOT alive (safer: a run that can't be confirmed live is shown
+// at rest — WAITING/PARKED — never a false RUNNING).
 function driveIsAlive(): boolean {
   try {
-    const pid = (JSON.parse(readFileSync(join(consortDir(), "drive.pid"), "utf8")) as { pid?: number }).pid;
+    const rec = JSON.parse(readFileSync(join(consortDir(), "drive.pid"), "utf8")) as {
+      pid?: number;
+      started_at?: string;
+    };
+    const pid = rec.pid;
     if (typeof pid !== "number" || pid <= 0) return false;
-    process.kill(pid, 0);
-    return true;
+    process.kill(pid, 0); // throws ESRCH when the pid is gone
+
+    // The pid is live; confirm it is actually the drive and not a recycled reuse of the number.
+    const startedAtMs = typeof rec.started_at === "string" ? Date.parse(rec.started_at) : NaN;
+    return drivePidStartMatches(startedAtMs, Number.isFinite(startedAtMs) ? processStartMs(pid) : null);
   } catch {
     return false;
   }

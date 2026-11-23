@@ -303,6 +303,11 @@ export function refreshKitOwnedInstrumentation(projectDir: string, kitDir: strin
       refreshReporter(path.join("client", "consort-vitest-reporter.ts"), path.join("client", "consort-vitest-reporter.ts"));
       refreshReporter(path.join("client", "vitest.globalSetup.ts"), path.join("client", "vitest.globalSetup.ts"));
       refreshReporter(path.join("client", "tests", "e2e", "consort-fixtures.ts"), path.join("client", "tests", "e2e", "consort-fixtures.ts"));
+      // Fixed "Made with Consort" attribution footer (kit-owned chrome) + its wordmark lockups.
+      // Back-fills apps scaffolded before it shipped; apply-theme wires the App.tsx render site.
+      refreshReporter(path.join("client", "src", "components", "MadeWithConsort.tsx"), path.join("client", "src", "components", "MadeWithConsort.tsx"));
+      refreshReporter(path.join("client", "public", "consort-lockup.svg"), path.join("client", "public", "consort-lockup.svg"));
+      refreshReporter(path.join("client", "public", "consort-lockup-white.svg"), path.join("client", "public", "consort-lockup-white.svg"));
     }
   } catch {
     /* scm-utils templates not resolvable from this kit (dev checkout) — skip; fresh scaffolds carry the fix */

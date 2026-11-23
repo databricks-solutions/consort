@@ -28,9 +28,13 @@ export interface TransportProps {
   // gate-purple, which is a normal checkpoint, NOT an alarm.
   awaitingGate?: boolean;
   escalated?: boolean;
-  // A role step is actively running (focus.kind === "step"). At the newest event, distinguishes
-  // RUNNING from PARKED (at rest: a completed/approved phase, between drives, a quiesced lane).
+  // A role step is actively running (focus.kind === "step") WITH the drive alive. At the newest event,
+  // distinguishes RUNNING from PARKED (at rest: a completed/approved phase, between drives, a quiesced lane).
   running?: boolean;
+  // The locus is a role step but the drive is GONE (driveIsAlive false) — the turn's phase.start never
+  // got a close event because the drive EXITED mid-turn. Shows STOPPED (neutral, not an alarm): the run
+  // isn't advancing and isn't awaiting a decision; re-run the drive to resume.
+  stopped?: boolean;
   // A recorded run is always being REVIEWED (never live/running/waiting on you), so the state
   // readout stays "REVIEWING" at every playhead — the RUNNING/RAISED/WAITING states are live-run only.
   replay?: boolean;
@@ -63,6 +67,7 @@ export function Transport({
   awaitingGate = false,
   escalated = false,
   running = false,
+  stopped = false,
   replay = false,
   granularity = "events",
   onGranularityChange,
@@ -215,6 +220,10 @@ export function Transport({
         ) : running ? (
           // A role step is actively running. No glyph — the active step already flashes on the board.
           <span style={{ color: "var(--status-good)", fontWeight: 700 }}>RUNNING</span>
+        ) : stopped ? (
+          // The locus is a role step but the drive is GONE — it EXITED mid-turn (the turn's phase.start
+          // never closed). Not running, not awaiting a decision. Neutral (not an alarm): re-run to resume.
+          <span style={{ color: "var(--text-muted)", fontWeight: 700 }}>STOPPED</span>
         ) : (
           // At the newest event but nothing is running or awaiting a decision — the run is at REST
           // (a completed, all-approved phase; between drives; a quiesced lane). PARKED, not RUNNING.

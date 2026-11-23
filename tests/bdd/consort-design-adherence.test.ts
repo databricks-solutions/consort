@@ -86,6 +86,10 @@ describe("renderThemeRootCss: generates the :root token block FROM the guide", (
     for (const m of css.matchAll(/^\s*(--[\w-]+):\s*(.+);$/gm)) {
       parsed[m[1]] = m[2];
     }
+    // --consort-lockup is a derived CHROME token (the fixed "Made with Consort" footer wordmark),
+    // deliberately NOT part of the guide's declared contract (designGuideToCssVars), so the adherence
+    // gate ignores it; drop it before comparing the declared set round-trips exactly.
+    delete parsed["--consort-lockup"];
     expect(parsed).toEqual(designGuideToCssVars(GUIDE));
     // And that map, fed to the adherence checker as the rendered side, passes.
     expect(checkTokenAdherence(designGuideToCssVars(GUIDE), parsed).ok).toBe(true);

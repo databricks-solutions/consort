@@ -653,7 +653,8 @@ export default function Home() {
               atTimestamp={lineTimestamp(lineAt)}
               awaitingGate={state.focus.kind === "gate" && state.focus.status === "surfaced"}
               escalated={state.focus.kind === "escalation"}
-              running={state.focus.kind === "step"}
+              running={state.focus.kind === "step" && state.driveAlive}
+              stopped={state.focus.kind === "step" && !state.driveAlive}
               replay={state.source?.mode === "replay"}
               granularity={granularity}
               onGranularityChange={setGranularity}

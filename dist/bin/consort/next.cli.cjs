@@ -1117,14 +1117,14 @@ var require_util = __commonJS({
       return false;
     }
     exports2.schemaHasRulesButRef = schemaHasRulesButRef;
-    function schemaRefOrVal({ topSchemaRef, schemaPath }, schema, keyword, $data) {
+    function schemaRefOrVal({ topSchemaRef, schemaPath: schemaPath2 }, schema, keyword, $data) {
       if (!$data) {
         if (typeof schema == "number" || typeof schema == "boolean")
           return schema;
         if (typeof schema == "string")
           return (0, codegen_1._)`${schema}`;
       }
-      return (0, codegen_1._)`${topSchemaRef}${schemaPath}${(0, codegen_1.getProperty)(keyword)}`;
+      return (0, codegen_1._)`${topSchemaRef}${schemaPath2}${(0, codegen_1.getProperty)(keyword)}`;
     }
     exports2.schemaRefOrVal = schemaRefOrVal;
     function unescapeFragment(str) {
@@ -1369,22 +1369,22 @@ var require_errors = __commonJS({
       const instPath = instancePath ? (0, codegen_1.str)`${errorPath}${(0, util_1.getErrorPath)(instancePath, util_1.Type.Str)}` : errorPath;
       return [names_1.default.instancePath, (0, codegen_1.strConcat)(names_1.default.instancePath, instPath)];
     }
-    function errorSchemaPath({ keyword, it: { errSchemaPath } }, { schemaPath, parentSchema }) {
+    function errorSchemaPath({ keyword, it: { errSchemaPath } }, { schemaPath: schemaPath2, parentSchema }) {
       let schPath = parentSchema ? errSchemaPath : (0, codegen_1.str)`${errSchemaPath}/${keyword}`;
-      if (schemaPath) {
-        schPath = (0, codegen_1.str)`${schPath}${(0, util_1.getErrorPath)(schemaPath, util_1.Type.Str)}`;
+      if (schemaPath2) {
+        schPath = (0, codegen_1.str)`${schPath}${(0, util_1.getErrorPath)(schemaPath2, util_1.Type.Str)}`;
       }
       return [E.schemaPath, schPath];
     }
     function extraErrorProps(cxt, { params, message }, keyValues) {
       const { keyword, data, schemaValue, it } = cxt;
-      const { opts, propertyName, topSchemaRef, schemaPath } = it;
+      const { opts, propertyName, topSchemaRef, schemaPath: schemaPath2 } = it;
       keyValues.push([E.keyword, keyword], [E.params, typeof params == "function" ? params(cxt) : params || (0, codegen_1._)`{}`]);
       if (opts.messages) {
         keyValues.push([E.message, typeof message == "function" ? message(cxt) : message]);
       }
       if (opts.verbose) {
-        keyValues.push([E.schema, schemaValue], [E.parentSchema, (0, codegen_1._)`${topSchemaRef}${schemaPath}`], [names_1.default.data, data]);
+        keyValues.push([E.schema, schemaValue], [E.parentSchema, (0, codegen_1._)`${topSchemaRef}${schemaPath2}`], [names_1.default.data, data]);
       }
       if (propertyName)
         keyValues.push([E.propertyName, propertyName]);
@@ -1781,8 +1781,8 @@ var require_code2 = __commonJS({
       return allSchemaProperties(schemaMap).filter((p) => !(0, util_1.alwaysValidSchema)(it, schemaMap[p]));
     }
     exports2.schemaProperties = schemaProperties;
-    function callValidateCode({ schemaCode, data, it: { gen, topSchemaRef, schemaPath, errorPath }, it }, func, context, passSchema) {
-      const dataAndSchema = passSchema ? (0, codegen_1._)`${schemaCode}, ${data}, ${topSchemaRef}${schemaPath}` : data;
+    function callValidateCode({ schemaCode, data, it: { gen, topSchemaRef, schemaPath: schemaPath2, errorPath }, it }, func, context, passSchema) {
+      const dataAndSchema = passSchema ? (0, codegen_1._)`${schemaCode}, ${data}, ${topSchemaRef}${schemaPath2}` : data;
       const valCxt = [
         [names_1.default.instancePath, (0, codegen_1.strConcat)(names_1.default.instancePath, errorPath)],
         [names_1.default.parentData, it.parentData],
@@ -1985,7 +1985,7 @@ var require_subschema = __commonJS({
     exports2.extendSubschemaMode = exports2.extendSubschemaData = exports2.getSubschema = void 0;
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    function getSubschema(it, { keyword, schemaProp, schema, schemaPath, errSchemaPath, topSchemaRef }) {
+    function getSubschema(it, { keyword, schemaProp, schema, schemaPath: schemaPath2, errSchemaPath, topSchemaRef }) {
       if (keyword !== void 0 && schema !== void 0) {
         throw new Error('both "keyword" and "schema" passed, only one allowed');
       }
@@ -2002,12 +2002,12 @@ var require_subschema = __commonJS({
         };
       }
       if (schema !== void 0) {
-        if (schemaPath === void 0 || errSchemaPath === void 0 || topSchemaRef === void 0) {
+        if (schemaPath2 === void 0 || errSchemaPath === void 0 || topSchemaRef === void 0) {
           throw new Error('"schemaPath", "errSchemaPath" and "topSchemaRef" are required with "schema"');
         }
         return {
           schema,
-          schemaPath,
+          schemaPath: schemaPath2,
           topSchemaRef,
           errSchemaPath
         };
@@ -2496,9 +2496,9 @@ var require_validate = __commonJS({
       if (opts.$comment === true) {
         gen.code((0, codegen_1._)`${names_1.default.self}.logger.log(${msg})`);
       } else if (typeof opts.$comment == "function") {
-        const schemaPath = (0, codegen_1.str)`${errSchemaPath}/$comment`;
+        const schemaPath2 = (0, codegen_1.str)`${errSchemaPath}/$comment`;
         const rootName = gen.scopeValue("root", { ref: schemaEnv.root });
-        gen.code((0, codegen_1._)`${names_1.default.self}.opts.$comment(${msg}, ${schemaPath}, ${rootName}.schema)`);
+        gen.code((0, codegen_1._)`${names_1.default.self}.opts.$comment(${msg}, ${schemaPath2}, ${rootName}.schema)`);
       }
     }
     function returnResults(it) {
@@ -2618,8 +2618,8 @@ var require_validate = __commonJS({
       it.dataTypes = ts;
     }
     function strictTypesError(it, msg) {
-      const schemaPath = it.schemaEnv.baseId + it.errSchemaPath;
-      msg += ` at "${schemaPath}" (strictTypes)`;
+      const schemaPath2 = it.schemaEnv.baseId + it.errSchemaPath;
+      msg += ` at "${schemaPath2}" (strictTypes)`;
       (0, util_1.checkStrictMode)(it, msg, it.opts.strictTypes);
     }
     var KeywordCxt = class {
@@ -3257,8 +3257,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path13) {
-      let input = path13;
+    function removeDotSegments(path14) {
+      let input = path14;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3511,8 +3511,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path13, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path13 && path13 !== "/" ? path13 : void 0;
+        const [path14, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path14 && path14 !== "/" ? path14 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -4951,8 +4951,8 @@ var require_required = __commonJS({
           const { definedProperties } = cxt.it;
           for (const requiredKey of schema) {
             if ((props === null || props === void 0 ? void 0 : props[requiredKey]) === void 0 && !definedProperties.has(requiredKey)) {
-              const schemaPath = it.schemaEnv.baseId + it.errSchemaPath;
-              const msg = `required property "${requiredKey}" is not defined at "${schemaPath}" (strictRequired)`;
+              const schemaPath2 = it.schemaEnv.baseId + it.errSchemaPath;
+              const msg = `required property "${requiredKey}" is not defined at "${schemaPath2}" (strictRequired)`;
               (0, util_1.checkStrictMode)(it, msg, it.opts.strictRequired);
             }
           }
@@ -6712,6 +6712,7 @@ var storyIaCoverageJson = (tdd, f, s) => (0, import_node_path.join)(storyResolve
 var specReviseScopeJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "spec-revise-scope.json");
 var reflectVerdictJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "reflect-verdict.json");
 var reconcileVerdictJson = (tdd, f) => (0, import_node_path.join)(featureResolved(tdd, f), "reconcile-verdict.json");
+var handbackFile = (tdd, f, role, story) => (0, import_node_path.join)(featureDir(tdd, f), ".handback", `${role}${story ? `.${story}` : ""}.md`);
 var cycleDir = (tdd, f, s, ac) => (0, import_node_path.join)(cyclesRootDir(tdd), f, s, ac);
 var sprintDir = (tdd, sprint) => (0, import_node_path.join)(sprintsDir(tdd), sprint);
 var sprintGatesJson = (tdd, sprint) => (0, import_node_path.join)(sprintDir(tdd, sprint), "gates.json");
@@ -6915,7 +6916,10 @@ function resolveProjectSettings(projectDir) {
     // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
     // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
     // default only affects config-less/legacy trees.
-    language: file?.project?.language ?? "python"
+    language: file?.project?.language ?? "python",
+    // The executor backend for role turns. Default "claude"; a project created with --executor copilot
+    // persists "copilot" here (the ONE door — no env override). Legacy/config-less projects are claude.
+    executor: file?.project?.executor ?? "claude"
   };
   const plan = { sizing: file?.plan?.sizing ?? true };
   return { build, plan, project };
@@ -7027,7 +7031,9 @@ var spec_author_breakdown_default = {
   inputs: [
     { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview (product-overview.md)." },
     { id: "nfrs", source: "feature:nfrs.md", description: "The PO's non-functional requirements brief (nfrs.md)." },
-    { id: "feature-request", source: "feature:features/{feature}/feature-request.md", description: "The PO's feature request for this feature (features/<feature>/feature-request.md; {feature} expands to the run's feature id)." }
+    { id: "feature-request", source: "feature:features/{feature}/feature-request.md", description: "The PO's feature request for this feature (features/<feature>/feature-request.md; {feature} expands to the run's feature id)." },
+    { id: "feature-spec-schema", source: "schema:feature.schema.json", description: "feature.schema.json \u2014 the EXACT contract feature-spec.json is gated against (featureSpecNonEmptyStories). Emit feature-spec.json conforming to this schema precisely, with a non-empty stories[]; add no keys it does not define." },
+    { id: "story-schema", source: "schema:story.schema.json", description: "story.schema.json \u2014 the contract EACH story stub (story.json / story.md) is gated against downstream by sync-breakdown. Every story you break out MUST carry the required narrative keys asA / iWantTo / soThat (plus id); a stub missing them fails the design pipeline. Write the 'As a / I want / So that' for every story, not just the feature-spec index." }
   ],
   outputs: [
     { id: "feature-spec", filename: "feature-spec.json", channel: "artifact", validator: "featureSpecNonEmptyStories", description: "The feature breakdown index (feature-spec.json + a story stub per story). A .consort design document , the artifact channel." },
@@ -7080,7 +7086,8 @@ var spec_author_story_default = {
   match: { kind: "invoke-role", role: "spec-author", mode: null, buildMode: null },
   inputs: [
     { id: "story-stub", source: "story:story.json", description: "The story stub (asA/iWantTo/soThat) the Spec Author drafts ACs for." },
-    { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , the feature framing (product-overview.md)." }
+    { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , the feature framing (product-overview.md)." },
+    { id: "ac-schema", source: "schema:ac.schema.json", description: "ac.schema.json \u2014 the EXACT contract each acs/<AC>.json is gated against (acsDirConformant). Emit every AC file conforming to this schema precisely; add no keys it does not define." }
   ],
   outputs: [
     { id: "acs", filename: "acs", channel: "artifact", validator: "acsDirConformant", description: "The per-story acceptance criteria , the acs/ DIRECTORY (one acs/<AC>.json per AC, each named after the AC it authors). acsDirConformant asserts the dir is non-empty AND every acs/*.json conforms to ac.json (the deterministic floor the legacy verify-artifact + design gate enforced)." },
@@ -7104,10 +7111,11 @@ var architect_estimator_default = {
   agent: { kind: "claude", config: { role: "architect-reviewer" } },
   match: { kind: "invoke-role", role: "architect-reviewer", mode: "estimate" },
   inputs: [
-    { id: "feature-proposals", source: "feature:planning/feature-proposals.md", description: "The Spec Author's candidate features the Architect t-shirt sizes (planning/feature-proposals.md)." }
+    { id: "feature-proposals", source: "feature:planning/feature-proposals.md", description: "The Spec Author's candidate features the Architect t-shirt sizes (planning/feature-proposals.md)." },
+    { id: "estimates-schema", source: "schema:estimates.schema.json", description: "estimates.schema.json \u2014 the contract planning/estimates.json is gated against (estimatesConformant). Each entry MUST use the key `feature_id` (NOT `id`) plus a t-shirt `size`; richer fields are allowed. The consumer drops any entry missing feature_id, so conform to this exactly." }
   ],
   outputs: [
-    { id: "estimates", filename: "planning/estimates.json", channel: "artifact", validator: "nonEmptyFile", description: "The per-candidate t-shirt sizes (XS/S/M/L/XL) the PO commits a sprint-fitting backlog from. The post-turn verify-artifact asserts planning/estimates.json exists. Sprint-scoped, so NO reconcile. Matches the plain 'estimate' mode only, NOT 'estimate-committed' (which re-syncs the backlog)." }
+    { id: "estimates", filename: "planning/estimates.json", channel: "artifact", validator: "estimatesConformant", description: "The per-candidate t-shirt sizes (XS/S/M/L/XL) the PO commits a sprint-fitting backlog from. estimatesConformant gates the file against estimates.schema.json (each entry carries feature_id + size) AT the turn, so a wrong-key file fails here with a clear error instead of silently emptying the backlog in readEstimates. Sprint-scoped, so NO reconcile. Matches the plain 'estimate' mode only, NOT 'estimate-committed' (which re-syncs the backlog)." }
   ],
   routing: {
     produced: { next: "state-derived" }
@@ -7128,13 +7136,14 @@ var architect_reviewer_default = {
   match: { kind: "invoke-role", role: "architect-reviewer", mode: null },
   inputs: [
     { id: "acs", source: "story:acs", description: "The story's acceptance criteria the Architect annotates with per-AC architectural_notes." },
-    { id: "nfrs", source: "feature:nfrs.md", description: "The PO's non-functional requirements the architecture must cover (nfrs.md)." }
+    { id: "nfrs", source: "feature:nfrs.md", description: "The PO's non-functional requirements the architecture must cover (nfrs.md)." },
+    { id: "architecture-schema", source: "schema:architecture.schema.json", description: "architecture.schema.json \u2014 the contract architecture.json is gated against (architectureConformant) and that the spec-gate conformance guard reads (feature_id, service_backed, nfrs[], layers). Conform to it exactly; these are the required keys." }
   ],
   preconditions: [
     { id: "cross-story", kind: "cross-story-context", position: "append", description: "The feature's OTHER stories' ACs + existing open_decisions + mandated not-null fields, injected so the Architect records/reconciles open_decisions against the siblings deterministically , NOT a shell-out to consort-cross-story-context. Empty for a lone-story feature." }
   ],
   outputs: [
-    { id: "architecture", filename: "architecture.json", channel: "artifact", validator: "nonEmptyFile", description: "The feature architecture (service_backed, layers, persistence_invariants). The post-turn verify-artifact asserts architecture.json exists under the resolved root." },
+    { id: "architecture", filename: "architecture.json", channel: "artifact", validator: "architectureConformant", description: "The feature architecture (service_backed, layers, persistence_invariants). architectureConformant gates it against architecture.schema.json AT the turn (required feature_id/service_backed/nfrs), so a shape deviation fails here with a clear error instead of a late spec-gate conformance-guard block." },
     { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "architectReviewerLoggedAuthoring", description: "The Architect Reviewer's structured log of the per-AC notes + architecture.json it authored." }
   ],
   routing: {
@@ -7155,10 +7164,11 @@ var dba_default = {
   agent: { kind: "claude", config: { role: "dba" } },
   match: { kind: "invoke-role", role: "dba" },
   inputs: [
-    { id: "architecture", source: "feature:features/{feature}/architecture.json", description: "The Architect's logical contract (service_backed, layers, persistence_invariants) the DBA physically realizes , NOT re-authored. Feature-scoped: the {feature} placeholder expands to the run's feature id (the real on-disk location, features/<F>/architecture.json)." }
+    { id: "architecture", source: "feature:features/{feature}/architecture.json", description: "The Architect's logical contract (service_backed, layers, persistence_invariants) the DBA physically realizes , NOT re-authored. Feature-scoped: the {feature} placeholder expands to the run's feature id (the real on-disk location, features/<F>/architecture.json)." },
+    { id: "db-design-schema", source: "schema:db-design.schema.json", description: "db-design.schema.json \u2014 the contract db-design.json is gated against (dbDesignConformant) and that the spec-gate conformance guard reads for column ownership. Requires feature_id; conform to it exactly." }
   ],
   outputs: [
-    { id: "db-design", filename: "db-design.json", channel: "artifact", validator: "nonEmptyFile", description: "The physical schema (tables + per-story schema_changes + realizes_invariants). A non-persisting or non-service-backed feature may leave this empty, so there is NO post-turn verify-artifact for the DBA (designArtifactExpectation returns null)." },
+    { id: "db-design", filename: "db-design.json", channel: "artifact", validator: "dbDesignConformant", description: "The physical schema (tables + per-story schema_changes + realizes_invariants). dbDesignConformant gates it against db-design.schema.json AT the turn (required feature_id) when the DBA runs, so a shape deviation fails here with a clear error instead of a late conformance-guard block. A non-persisting / non-service-backed feature runs no DBA step at all (designArtifactExpectation returns null), so this validator only applies to a real db-design the DBA actually wrote." },
     { id: "agent-log", filename: "agent-log.jsonl", channel: "meta", validator: "dbaLoggedAuthoring", description: "The DBA's structured log of the physical schema it realized." }
   ],
   routing: {
@@ -7197,6 +7207,11 @@ var test_strategist_default = {
       source: "feature:features/{feature}/db-design.json",
       optional: true,
       description: "The DBA's concrete tables/constraints the invariant tests assert against. Feature-scoped: {feature} expands to the run's feature id (features/<F>/db-design.json). OPTIONAL: a non-persisting / non-service-backed feature (service_backed=false, persistence_invariants=[]) runs no DBA step and has no db-design.json \u2014 the DBA output contract already states it 'may leave this empty', so the test-strategist must not fail-loud on its absence (its invariant tests simply have nothing to assert; the architecture input stays the authority). A persisting feature still provides it."
+    },
+    {
+      id: "test-list-schema",
+      source: "schema:test-list.schema.json",
+      description: "test-list.schema.json \u2014 the EXACT contract test-list.json is gated against (testListConformant). Emit test-list.json conforming to this schema precisely; these are the only allowed keys and additionalProperties is false."
     }
   ],
   preconditions: [],
@@ -7278,7 +7293,8 @@ var ux_establish_default = {
   match: { kind: "invoke-role", role: "ux-designer", mode: "establish" },
   inputs: [
     { id: "design-guideline", source: "feature:design/design-brief.md", description: "The HIL design brief the UX Designer extracts the look FROM. Lives under design/ on the real tree (design/design-brief.md, per intake.ts). A planning/intake artifact, human-approved at the intake gate." },
-    { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , which stories produce screens (product-overview.md)." }
+    { id: "product-overview", source: "feature:product-overview.md", description: "The PO's product overview , which stories produce screens (product-overview.md)." },
+    { id: "design-guide-schema", source: "schema:design-guide.schema.json", description: "design-guide.schema.json \u2014 the EXACT contract design-guide.json is gated against (designGuideConformant). These are the ONLY allowed top-level keys and additionalProperties is false: emit design-guide.json conforming to this schema precisely, adding no keys it does not define." }
   ],
   outputs: [
     { id: "design-guide", filename: "design-guide.json", channel: "artifact", validator: "designGuideConformant", description: "The machine-checkable design tokens + components (design-guide.schema.json). The narrative design-guide.md + the initial ia.md skeleton are authored alongside; the JSON is the gated artifact. One-time bootstrap of the project style system." },
@@ -7307,7 +7323,7 @@ var ux_ia_default = {
   inputs: [
     { id: "ia", source: "feature:design/ia.md", description: "The project information architecture to REFINE for this story (append its screens/forms/flows). Project-level file, augmented per story; this story's surfaces must be named here before the architect tags E2E layers." },
     { id: "design-guide", source: "feature:design/design-guide.json", description: "The established style system (tokens + component vocabulary) the new screens/forms compose from \u2014 read-only context, not re-authored here." },
-    { id: "acs", source: "story:acs", description: "This story's acceptance criteria \u2014 their user-facing surfaces (E2E / client ACs) are what the IA must name." }
+    { id: "acs", source: "story:acs", description: "This story's acceptance criteria \u2014 their user-facing surfaces (E2E / client ACs) are what the IA must name. Each AC may declare a ui_seams[] array (exact data-testid tokens its UI drives); ia.md MUST NAME every one verbatim (the deterministic reflect-ia-defect smell fails on any declared seam the IA does not name). Enumerate them exhaustively, not a subset." }
   ],
   outputs: [
     { id: "ia", filename: "ia.md", channel: "artifact", validator: "iaConformant", description: "The refined information architecture (required sections: Screens / Navigation / User flows), with this story's surfaces added. Project-level file, augmented per story (additive, never a rewrite)." },
@@ -7899,6 +7915,9 @@ var ARTIFACT_FORMATS = {
   "story.json": { kind: "json-schema", schema: "story.schema.json" },
   "ac.json": { kind: "json-schema", schema: "ac.schema.json" },
   "test-list.json": { kind: "json-schema", schema: "test-list.schema.json" },
+  // Architect Reviewer's t-shirt sizing (planning/estimates.json). Requires feature_id + size per entry;
+  // the consumer (readEstimates) drops entries missing them, so an `id`-keyed file silently empties the backlog.
+  "estimates.json": { kind: "json-schema", schema: "estimates.schema.json" },
   "plan.json": { kind: "json-schema", schema: "plan.schema.json" },
   "architecture.json": { kind: "json-schema", schema: "architecture.schema.json" },
   // DBA's physical schema (tables/DDL + per-story migration plan) that realizes
@@ -8003,6 +8022,18 @@ function checkArtifactConformance(name, content) {
 function finalize(violations) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
+function stripNullProps(node) {
+  if (Array.isArray(node)) return node.map(stripNullProps);
+  if (node !== null && typeof node === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(node)) {
+      if (v === null) continue;
+      out[k] = stripNullProps(v);
+    }
+    return out;
+  }
+  return node;
+}
 function checkJsonSchema(name, content, schemaFile) {
   let parsed;
   try {
@@ -8012,7 +8043,7 @@ function checkJsonSchema(name, content, schemaFile) {
     return { ok: false, violations: [`${name} is not valid JSON: ${cause}`] };
   }
   const validate = getValidator(schemaFile);
-  if (validate(parsed)) return { ok: true };
+  if (validate(stripNullProps(parsed))) return { ok: true };
   return { ok: false, violations: formatSchemaErrors(validate).map((e) => `${name} ${e}`) };
 }
 var HEADING_RE = /^(#{1,6})\s+(.*\S)\s*$/;
@@ -8138,13 +8169,13 @@ function checkTestlistWholeTableAggregate(testListJson) {
 }
 function normalizeEndpoint(tok) {
   const [rawPath, rawQuery = ""] = tok.toLowerCase().split("?");
-  const path13 = rawPath.split("/").map((s) => s !== "" && (/\d/.test(s) || /^\{.*\}$/.test(s)) ? "{param}" : s).join("/").replace(/\/+$/, "");
+  const path14 = rawPath.split("/").map((s) => s !== "" && (/\d/.test(s) || /^\{.*\}$/.test(s)) ? "{param}" : s).join("/").replace(/\/+$/, "");
   const keys = /* @__PURE__ */ new Set();
   for (const kv of rawQuery.split("&")) {
     const k = kv.split("=")[0]?.trim();
     if (k) keys.add(k);
   }
-  return { path: path13, keys };
+  return { path: path14, keys };
 }
 var API_ENDPOINT_RE = /\/api\/[A-Za-z0-9_{}/-]+(?:\?[A-Za-z0-9_=&{}%<>-]*)?/g;
 function extractApiEndpoints(text) {
@@ -8161,13 +8192,13 @@ function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
   const keysByPath = /* @__PURE__ */ new Map();
   const resourceSegs = /* @__PURE__ */ new Set();
   for (const d of declaredEndpoints) {
-    const { path: path13, keys } = normalizeEndpoint(d);
-    if (!path13.startsWith("/api/")) continue;
-    declaredPaths.add(path13);
-    const set = keysByPath.get(path13) ?? /* @__PURE__ */ new Set();
+    const { path: path14, keys } = normalizeEndpoint(d);
+    if (!path14.startsWith("/api/")) continue;
+    declaredPaths.add(path14);
+    const set = keysByPath.get(path14) ?? /* @__PURE__ */ new Set();
     for (const k of keys) set.add(k);
-    keysByPath.set(path13, set);
-    const segs = path13.split("/");
+    keysByPath.set(path14, set);
+    const segs = path14.split("/");
     for (let i = 0; i < segs.length - 1; i++) if (segs[i + 1] === "{param}" && segs[i]) resourceSegs.add(segs[i]);
   }
   if (declaredPaths.size === 0) return { ok: true };
@@ -8178,19 +8209,19 @@ function checkTestlistEndpointCoherence(testListJson, declaredEndpoints) {
     if (it.kind !== "behavior" && it.kind !== "client" && it.kind !== "component") continue;
     const desc = it.description ?? "";
     for (const tok of desc.match(API_ENDPOINT_RE) ?? []) {
-      const { path: path13, keys } = normalizeEndpoint(tok);
-      if (!declaredPaths.has(path13)) {
+      const { path: path14, keys } = normalizeEndpoint(tok);
+      if (!declaredPaths.has(path14)) {
         violations.push(
           `test item ${it.id ?? "?"} asserts endpoint "${tok}" whose path is not in the architecture's declared API surface (declared: ${declaredList}). Re-target it to a declared endpoint.`
         );
         if (typeof it.ac_id === "string") acIds.add(it.ac_id);
         break;
       }
-      const declaredKeys = keysByPath.get(path13) ?? /* @__PURE__ */ new Set();
+      const declaredKeys = keysByPath.get(path14) ?? /* @__PURE__ */ new Set();
       const drift = [...keys].find((k) => !declaredKeys.has(k) && (resourceSegs.has(k) || resourceSegs.has(`${k}s`)));
       if (drift) {
         violations.push(
-          `test item ${it.id ?? "?"} queries "${tok}", but "${drift}" has a dedicated endpoint (/api/${drift}s/{${drift}}) \u2014 the architecture declares ${path13} without it. Re-target to the dedicated ${drift} endpoint.`
+          `test item ${it.id ?? "?"} queries "${tok}", but "${drift}" has a dedicated endpoint (/api/${drift}s/{${drift}}) \u2014 the architecture declares ${path14} without it. Re-target to the dedicated ${drift} endpoint.`
         );
         if (typeof it.ac_id === "string") acIds.add(it.ac_id);
         break;
@@ -8462,9 +8493,9 @@ function invariantRealizingStory(architectureJson2, dbDesignJson2) {
   }
   return out;
 }
-function canonicalArtifactName(path13) {
-  const base = (0, import_path4.basename)(path13);
-  if ((0, import_path4.basename)((0, import_path4.dirname)(path13)) === "acs" && base.endsWith(".json")) return "ac.json";
+function canonicalArtifactName(path14) {
+  const base = (0, import_path4.basename)(path14);
+  if ((0, import_path4.basename)((0, import_path4.dirname)(path14)) === "acs" && base.endsWith(".json")) return "ac.json";
   return base;
 }
 function checkFitnessSingularCoverage(testListJson, architectureJson2, opts = {}) {
@@ -9604,7 +9635,7 @@ init_cjs_shims();
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_cjs_shims();
-var fs8 = __toESM(require("fs"), 1);
+var fs9 = __toESM(require("fs"), 1);
 var path4 = __toESM(require("path"), 1);
 
 // consort/pipeline/cycle-record.ts
@@ -10586,31 +10617,52 @@ var TEST_ANALYST_CATALOGUE = {
 // consort/test-list/fan-out-plan.ts
 var analystOrderedJson = (consortDir, f, s) => (0, import_node_path16.join)(storyDir(consortDir, f, s), "analyst-ordered.json");
 
+// consort/orchestrator/drive/conformance-handback.ts
+init_cjs_shims();
+var fs8 = __toESM(require("fs"), 1);
+var import_node_path17 = require("path");
+function writeConformanceHandback(opts) {
+  const { consortDir, featureId, role, story, violations, artifacts } = opts;
+  if (!consortDir || !featureId || !role || violations.length === 0) return;
+  try {
+    const named = artifacts && artifacts.length ? artifacts.join(", ") : "your previous output(s)";
+    const brief = `## Automated conformance feedback \u2014 your previous turn was REJECTED
+
+Your ${named} FAILED output validation and this turn is being re-issued. Fix EXACTLY these and RE-EMIT THE WHOLE FILE(S), conforming precisely to the declared schema/contract \u2014 do NOT add any key the schema does not define (the schemas are additionalProperties:false):
+` + violations.map((v) => `- ${v}`).join("\n") + `
+`;
+    const hb = handbackFile(consortDir, featureId, role, story);
+    fs8.mkdirSync((0, import_node_path17.dirname)(hb), { recursive: true });
+    fs8.writeFileSync(hb, brief, "utf8");
+  } catch {
+  }
+}
+
 // consort/orchestrator/state/orchestrator-probe.ts
 function storyRequiresE2e(consortDir, featureId, story) {
   try {
-    return JSON.parse(fs8.readFileSync(storyJson(consortDir, featureId, story), "utf8")).requires_e2e === true;
+    return JSON.parse(fs9.readFileSync(storyJson(consortDir, featureId, story), "utf8")).requires_e2e === true;
   } catch {
     return false;
   }
 }
 function storyCycles2(consortDir, featureId, story) {
   const base = path4.join(cyclesRootDir(consortDir), featureId, story);
-  if (!fs8.existsSync(base)) return [];
+  if (!fs9.existsSync(base)) return [];
   const out = [];
-  for (const acDir of fs8.readdirSync(base)) {
+  for (const acDir of fs9.readdirSync(base)) {
     const dir = path4.join(base, acDir);
     let isDir = false;
     try {
-      isDir = fs8.statSync(dir).isDirectory();
+      isDir = fs9.statSync(dir).isDirectory();
     } catch {
       isDir = false;
     }
     if (!isDir) continue;
-    for (const f of fs8.readdirSync(dir)) {
+    for (const f of fs9.readdirSync(dir)) {
       if (!/^cycle-\d+\.json$/.test(f)) continue;
       try {
-        out.push(JSON.parse(fs8.readFileSync(path4.join(dir, f), "utf8")));
+        out.push(JSON.parse(fs9.readFileSync(path4.join(dir, f), "utf8")));
       } catch {
       }
     }
@@ -10618,9 +10670,9 @@ function storyCycles2(consortDir, featureId, story) {
   return out;
 }
 function readJson(file) {
-  if (!fs8.existsSync(file)) return void 0;
+  if (!fs9.existsSync(file)) return void 0;
   try {
-    return JSON.parse(fs8.readFileSync(file, "utf8"));
+    return JSON.parse(fs9.readFileSync(file, "utf8"));
   } catch {
     return void 0;
   }
@@ -10635,12 +10687,12 @@ function readDriveContext(consortDir, featureId, projectDir) {
   const proposed = spec !== void 0;
   const intakeReady = intakeReadyOnDisk(consortDir);
   const breakdownDone = Array.isArray(spec?.stories) && spec.stories.length > 0;
-  const requestsAuthored = fs8.existsSync(featureRequestMd(consortDir, featureId));
+  const requestsAuthored = fs9.existsSync(featureRequestMd(consortDir, featureId));
   const backlogCommitted = requestsAuthored;
-  const deployed = fs8.existsSync(featureDeployEvidenceJson(consortDir, featureId));
+  const deployed = fs9.existsSync(featureDeployEvidenceJson(consortDir, featureId));
   const gateApproved = readGateApproved(featureId, consortDir, "deploy");
   const verifyPassed = readDeployVerifyPassed(consortDir, featureId);
-  const reverifyAttempted = fs8.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
+  const reverifyAttempted = fs9.existsSync(featureDeployReverifyMarkerJson(consortDir, featureId));
   const verifyAssessEligible = deployVerifyNeedsAssess(consortDir, featureId);
   const verifyRefactorPending = deployVerifyRefactorPending(consortDir, featureId);
   const proj = projectDir ?? path4.dirname(consortDir);
@@ -10676,7 +10728,7 @@ function readDriveContext(consortDir, featureId, projectDir) {
 }
 function readDeployVerifyPassed(consortDir, featureId) {
   try {
-    const ev = JSON.parse(fs8.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
+    const ev = JSON.parse(fs9.readFileSync(featureDeployEvidenceJson(consortDir, featureId), "utf8"));
     return typeof ev.verify?.passed === "boolean" ? ev.verify.passed : void 0;
   } catch {
     return void 0;
@@ -10694,7 +10746,7 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
     const acs = storyAcIds(consortDir, featureId, story);
     if (acs.length === 0) return false;
     const everyAcNoted = acs.every((ac) => readAcArchitecturalNotes(consortDir, featureId, ac) !== void 0);
-    return everyAcNoted && fs8.existsSync(architectureJson(consortDir, featureId));
+    return everyAcNoted && fs9.existsSync(architectureJson(consortDir, featureId));
   };
   return {
     hasAcs(story) {
@@ -10702,33 +10754,33 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
     },
     specRevisePending(story) {
       const marker = specReviseScopeJson(consortDir, featureId, story);
-      if (!fs8.existsSync(marker)) return false;
+      if (!fs9.existsSync(marker)) return false;
       let ids = [];
       try {
-        ids = JSON.parse(fs8.readFileSync(marker, "utf8")).ac_ids ?? [];
+        ids = JSON.parse(fs9.readFileSync(marker, "utf8")).ac_ids ?? [];
       } catch {
         return false;
       }
       const dir = acsDir(consortDir, featureId, story);
-      return ids.some((ac) => !fs8.existsSync(path4.join(dir, `${ac}.json`)));
+      return ids.some((ac) => !fs9.existsSync(path4.join(dir, `${ac}.json`)));
     },
     iaRefined(story) {
-      if (!fs8.existsSync(iaMd(consortDir))) return false;
-      if (fs8.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return true;
+      if (!fs9.existsSync(iaMd(consortDir))) return false;
+      if (fs9.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return true;
       return isArchitectAnnotated(story);
     },
     iaProjectable(story) {
-      if (!fs8.existsSync(iaMd(consortDir))) return false;
-      if (fs8.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return false;
+      if (!fs9.existsSync(iaMd(consortDir))) return false;
+      if (fs9.existsSync(storyIaCoverageJson(consortDir, featureId, story))) return false;
       if (priorReviseCount(consortDir, "reflect-ia-defect", story) > 0) return false;
       if (storyRequiresE2e(consortDir, featureId, story)) return false;
       const stories = storiesDir(consortDir, featureId);
-      if (!fs8.existsSync(stories)) return false;
+      if (!fs9.existsSync(stories)) return false;
       let siblingCovered = false;
       try {
-        for (const sib of fs8.readdirSync(stories)) {
+        for (const sib of fs9.readdirSync(stories)) {
           if (sib === story) continue;
-          if (fs8.existsSync(storyIaCoverageJson(consortDir, featureId, sib))) {
+          if (fs9.existsSync(storyIaCoverageJson(consortDir, featureId, sib))) {
             siblingCovered = true;
             break;
           }
@@ -10742,26 +10794,40 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
     },
     dbaDesigned() {
       const archFile = architectureJson(consortDir, featureId);
-      if (!fs8.existsSync(archFile)) return false;
+      if (!fs9.existsSync(archFile)) return false;
       let archContent;
       try {
-        archContent = fs8.readFileSync(archFile, "utf8");
+        archContent = fs9.readFileSync(archFile, "utf8");
       } catch {
         return false;
       }
       const dbFile = dbDesignJson(consortDir, featureId);
       let dbContent;
-      if (fs8.existsSync(dbFile)) {
+      if (fs9.existsSync(dbFile)) {
         try {
-          dbContent = fs8.readFileSync(dbFile, "utf8");
+          dbContent = fs9.readFileSync(dbFile, "utf8");
         } catch {
           dbContent = void 0;
         }
       }
-      return checkDbDesign(dbContent, archContent).ok;
+      const ok = checkDbDesign(dbContent, archContent).ok;
+      if (!ok && dbContent !== void 0) {
+        const conf = checkArtifactConformance("db-design.json", dbContent);
+        if (!conf.ok) {
+          writeConformanceHandback({
+            consortDir,
+            featureId,
+            role: "dba",
+            ...buildActive ? { story: buildActive } : {},
+            violations: conf.violations,
+            artifacts: ["db-design.json"]
+          });
+        }
+      }
+      return ok;
     },
     architectProjectable(story) {
-      if (!fs8.existsSync(architectureJson(consortDir, featureId))) return false;
+      if (!fs9.existsSync(architectureJson(consortDir, featureId))) return false;
       const canon = readCanon(consortDir);
       if (!canon) return false;
       if (canon.established_by === featureId) return false;
@@ -10773,11 +10839,11 @@ function diskArtifactProbe(consortDir, featureId, buildActive) {
       return !architectNovelty(canon, layers.map((l) => ({ layer: l }))).novel;
     },
     testListReady(story) {
-      if (!fs8.existsSync(analystOrderedJson(consortDir, featureId, story))) return false;
+      if (!fs9.existsSync(analystOrderedJson(consortDir, featureId, story))) return false;
       const file = storyTestListJson(consortDir, featureId, story);
-      if (!fs8.existsSync(file)) return false;
+      if (!fs9.existsSync(file)) return false;
       try {
-        const data = JSON.parse(fs8.readFileSync(file, "utf8"));
+        const data = JSON.parse(fs9.readFileSync(file, "utf8"));
         return Array.isArray(data.items) && data.items.length > 0;
       } catch {
         return false;
@@ -11025,10 +11091,10 @@ function deriveFeaturePhase(stories) {
 }
 
 // consort/intake/orchestrator-sprint.ts
-var fs9 = __toESM(require("fs"), 1);
-var import_node_path17 = require("path");
+var fs10 = __toESM(require("fs"), 1);
+var import_node_path18 = require("path");
 function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
-  const proposed = fs9.existsSync(featureProposalsMd(consortDir));
+  const proposed = fs10.existsSync(featureProposalsMd(consortDir));
   const estimated = hasEstimates(consortDir);
   const backlog = readBacklog(consortDir, sprint).features;
   const requested = readRequested(consortDir, sprint);
@@ -11042,7 +11108,7 @@ function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
   } catch {
     gateApproved = false;
   }
-  const uiTrack = resolveConsortSettings({ projectDir: (0, import_node_path17.dirname)(consortDir) }).project.uiTrack;
+  const uiTrack = resolveConsortSettings({ projectDir: (0, import_node_path18.dirname)(consortDir) }).project.uiTrack;
   const designGuideReady = designGuideConformance(consortDir).ok;
   const sprintDelivered = backlog.length > 0 && backlog.every((f) => deriveFeaturePhase(summarizeStories(consortDir, f.id)) === "complete");
   return {
@@ -11061,18 +11127,18 @@ function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
 // consort/config/kit-bin.ts
 init_cjs_shims();
 var import_node_child_process6 = require("child_process");
-var fs10 = __toESM(require("fs"), 1);
+var fs11 = __toESM(require("fs"), 1);
 var path5 = __toESM(require("path"), 1);
 var kitRootCache;
 function resolveKitRoot() {
   if (kitRootCache !== void 0) return kitRootCache;
   const env = process.env.LAKEBASE_KIT_DIR?.trim();
-  kitRootCache = env && fs10.existsSync(path5.join(env, "package.json")) ? env : path5.resolve(__dirname, "..", "..", "..");
+  kitRootCache = env && fs11.existsSync(path5.join(env, "package.json")) ? env : path5.resolve(__dirname, "..", "..", "..");
   return kitRootCache;
 }
 function kitVersion() {
   try {
-    const pkg = JSON.parse(fs10.readFileSync(path5.join(resolveKitRoot(), "package.json"), "utf8"));
+    const pkg = JSON.parse(fs11.readFileSync(path5.join(resolveKitRoot(), "package.json"), "utf8"));
     return pkg.version ?? "unknown";
   } catch {
     return "unknown";
@@ -11081,8 +11147,8 @@ function kitVersion() {
 
 // consort/orchestrator/status/next.ts
 init_cjs_shims();
-var fs21 = __toESM(require("fs"), 1);
-var path12 = __toESM(require("path"), 1);
+var fs23 = __toESM(require("fs"), 1);
+var path13 = __toESM(require("path"), 1);
 
 // consort/orchestrator/drive/orchestrator-drive.ts
 init_cjs_shims();
@@ -11566,31 +11632,31 @@ function gateEnactCommand(gate, ctx = {}) {
 
 // consort/orchestrator/drive/orchestrator-effects.ts
 init_cjs_shims();
-var fs20 = __toESM(require("fs"), 1);
-var import_node_path35 = require("path");
+var fs22 = __toESM(require("fs"), 1);
+var import_node_path37 = require("path");
 
 // consort/orchestrator/drive/executor-dispatch.ts
 init_cjs_shims();
-var fs17 = __toESM(require("fs"), 1);
-var import_node_path28 = require("path");
+var fs19 = __toESM(require("fs"), 1);
+var import_node_path30 = require("path");
 
 // consort/orchestrator/turns/step-executor.ts
 init_cjs_shims();
 var import_node_fs16 = require("fs");
-var import_node_path18 = require("path");
+var import_node_path19 = require("path");
 
 // consort/orchestrator/provisioning/channels.ts
 init_cjs_shims();
 
 // consort/orchestrator/steps/step.ts
 init_cjs_shims();
-var import_node_path20 = require("path");
+var import_node_path21 = require("path");
 var import_node_fs18 = require("fs");
 
 // consort/orchestrator/validators/conformance/validator-registry.ts
 init_cjs_shims();
 var import_node_fs17 = require("fs");
-var import_node_path19 = require("path");
+var import_node_path20 = require("path");
 function conformsTo(artifactName) {
   return (producedPath) => {
     let content;
@@ -11607,6 +11673,7 @@ var acConformant = conformsTo("ac.json");
 var architectureConformant = conformsTo("architecture.json");
 var dbDesignConformant = conformsTo("db-design.json");
 var testListConformant = conformsTo("test-list.json");
+var estimatesConformant = conformsTo("estimates.json");
 var productOverviewConformant = conformsTo("product-overview.md");
 var nfrsConformant = conformsTo("nfrs.md");
 var designBriefConformant = conformsTo("design-brief.md");
@@ -11617,8 +11684,8 @@ init_cjs_shims();
 
 // consort/orchestrator/agents/agent-catalogue.ts
 init_cjs_shims();
-var import_node_path25 = require("path");
-var import_node_fs23 = require("fs");
+var import_node_path27 = require("path");
+var import_node_fs24 = require("fs");
 
 // consort/orchestrator/agents/claude-step-agent.ts
 init_cjs_shims();
@@ -11626,45 +11693,45 @@ var import_node_crypto5 = require("crypto");
 
 // consort/orchestrator/drive/claude-runner.ts
 init_cjs_shims();
-var import_node_child_process8 = require("child_process");
+var import_node_child_process10 = require("child_process");
 
 // consort/setup/project-consort-setup.ts
 init_cjs_shims();
-var fs15 = __toESM(require("fs"), 1);
+var fs16 = __toESM(require("fs"), 1);
 var path10 = __toESM(require("path"), 1);
 var import_node_url3 = require("url");
 
 // consort/lakebase/adopt-consort.ts
 init_cjs_shims();
-var fs11 = __toESM(require("fs"), 1);
+var fs12 = __toESM(require("fs"), 1);
 var path6 = __toESM(require("path"), 1);
 var import_node_url = require("url");
 
 // consort/lakebase/update-agents.ts
 init_cjs_shims();
-var fs12 = __toESM(require("fs"), 1);
+var fs13 = __toESM(require("fs"), 1);
 var path7 = __toESM(require("path"), 1);
 
 // consort/lakebase/upgrade.ts
 init_cjs_shims();
-var fs14 = __toESM(require("fs"), 1);
+var fs15 = __toESM(require("fs"), 1);
 var path9 = __toESM(require("path"), 1);
 var import_node_child_process7 = require("child_process");
 
 // consort/config/kit-ref.ts
 init_cjs_shims();
 var import_node_fs19 = require("fs");
-var import_node_path21 = require("path");
+var import_node_path22 = require("path");
 
 // consort/lakebase/update-commands.ts
 init_cjs_shims();
-var fs13 = __toESM(require("fs"), 1);
+var fs14 = __toESM(require("fs"), 1);
 var path8 = __toESM(require("path"), 1);
 
 // consort/lakebase/kit-ref-pin.ts
 init_cjs_shims();
 var import_node_url2 = require("url");
-var import_node_path22 = require("path");
+var import_node_path23 = require("path");
 var import_node_fs20 = require("fs");
 
 // consort/lakebase/upgrade.ts
@@ -11677,9 +11744,8 @@ var AGENT_SYNC_MARKER2 = path10.join(".claude", "agents", ".kit-version");
 
 // consort/orchestrator/drive/claude-runner.ts
 var import_node_crypto4 = require("crypto");
-var fs16 = __toESM(require("fs"), 1);
-var path11 = __toESM(require("path"), 1);
-var readline = __toESM(require("readline"), 1);
+var fs18 = __toESM(require("fs"), 1);
+var path12 = __toESM(require("path"), 1);
 
 // consort/logging/replay-artifacts.ts
 init_cjs_shims();
@@ -11708,45 +11774,66 @@ var import_lakebase10 = require("@databricks-solutions/lakebase-scm-utils/lakeba
 // consort/setup/stray-artifact-recovery.ts
 init_cjs_shims();
 var import_node_fs21 = require("fs");
-var import_node_path23 = require("path");
+var import_node_path24 = require("path");
+
+// consort/orchestrator/drive/streaming-turn.ts
+init_cjs_shims();
+var import_node_child_process8 = require("child_process");
+var fs17 = __toESM(require("fs"), 1);
+var path11 = __toESM(require("path"), 1);
+var readline = __toESM(require("readline"), 1);
 
 // consort/orchestrator/turns/turn-monitor.ts
+init_cjs_shims();
+
+// consort/orchestrator/drive/streaming-turn.ts
+var TURN_INACTIVITY_TIMEOUT_MS = Number(consortEnv("TURN_INACTIVITY_TIMEOUT_MS") ?? String(10 * 60 * 1e3));
+var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e3));
+
+// consort/orchestrator/agents/copilot-runner.ts
+init_cjs_shims();
+var import_node_child_process9 = require("child_process");
+
+// consort/orchestrator/agents/copilot-step-agent.ts
+init_cjs_shims();
+var import_node_fs22 = require("fs");
+var import_node_path25 = require("path");
+
+// consort/orchestrator/drive/agent-transcript.ts
 init_cjs_shims();
 
 // consort/orchestrator/drive/claude-runner.ts
 var MAX_TRANSIENT_RETRIES = Number(consortEnv("MAX_TRANSIENT_RETRIES") ?? "5");
 var TRANSIENT_BACKOFF_MS = Number(consortEnv("TRANSIENT_BACKOFF_MS") ?? "5000");
-var TURN_INACTIVITY_TIMEOUT_MS = Number(consortEnv("TURN_INACTIVITY_TIMEOUT_MS") ?? String(10 * 60 * 1e3));
-var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e3));
 
 // consort/orchestrator/agents/mock-replay-agent.ts
 init_cjs_shims();
-var import_node_fs22 = require("fs");
-var import_node_path24 = require("path");
+var import_node_fs23 = require("fs");
+var import_node_path26 = require("path");
 
 // consort/orchestrator/agents/replay-recorder-wrapper.ts
 init_cjs_shims();
-var import_node_path27 = require("path");
+var import_node_path29 = require("path");
 
 // consort/logging/turn-recorder.ts
 init_cjs_shims();
 var import_node_crypto6 = require("crypto");
-var import_node_fs24 = require("fs");
-var import_node_path26 = require("path");
+var import_node_fs25 = require("fs");
+var import_node_path28 = require("path");
 
 // consort/pipeline/record-build.ts
 init_cjs_shims();
 
 // consort/orchestrator/steps/assert-route-satisfiable.ts
 init_cjs_shims();
-var import_node_fs25 = require("fs");
-var import_node_path29 = require("path");
+var import_node_fs26 = require("fs");
+var import_node_path31 = require("path");
 
 // consort/experiment/ac-lane-live.ts
 init_cjs_shims();
-var import_node_child_process11 = require("child_process");
-var import_node_path32 = require("path");
-var import_node_fs28 = require("fs");
+var import_node_child_process13 = require("child_process");
+var import_node_path34 = require("path");
+var import_node_fs29 = require("fs");
 
 // consort/experiment/ac-lane-coordinator.ts
 init_cjs_shims();
@@ -11756,23 +11843,23 @@ init_cjs_shims();
 
 // consort/experiment/ac-lane.ts
 init_cjs_shims();
-var import_node_child_process9 = require("child_process");
-var import_node_fs26 = require("fs");
+var import_node_child_process11 = require("child_process");
+var import_node_fs27 = require("fs");
 var import_node_os = require("os");
-var import_node_path30 = require("path");
+var import_node_path32 = require("path");
 var import_lakebase11 = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 
 // consort/experiment/ac-lane-merge.ts
 init_cjs_shims();
-var import_node_child_process10 = require("child_process");
-var import_node_fs27 = require("fs");
-var import_node_path31 = require("path");
+var import_node_child_process12 = require("child_process");
+var import_node_fs28 = require("fs");
+var import_node_path33 = require("path");
 
 // consort/orchestrator/build/build-context.ts
 init_cjs_shims();
-var import_node_child_process12 = require("child_process");
-var fs18 = __toESM(require("fs"), 1);
-var import_node_path33 = require("path");
+var import_node_child_process14 = require("child_process");
+var fs20 = __toESM(require("fs"), 1);
+var import_node_path35 = require("path");
 
 // consort/orchestrator/build/preconditions.ts
 init_cjs_shims();
@@ -11782,8 +11869,8 @@ init_cjs_shims();
 
 // consort/orchestrator/steps/cross-story-context.ts
 init_cjs_shims();
-var fs19 = __toESM(require("fs"), 1);
-var import_node_path34 = require("path");
+var fs21 = __toESM(require("fs"), 1);
+var import_node_path36 = require("path");
 
 // consort/orchestrator/drive/orchestrator-effects.ts
 var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
@@ -11828,6 +11915,11 @@ function resumeCommand(ctx, action) {
     phase = actionPhase && DRIVE_ONLY_BOUNDS.has(actionPhase) ? actionPhase : ctx.bound;
   }
   if (phase) args.push("--only", phase);
+  return { bin: "consort-drive", args };
+}
+function deployCommand(ctx) {
+  const args = ["--feature", ctx.featureId ?? "<feature-id>", "--only", "deploy"];
+  if (ctx.deployTarget) args.push("--deploy-target", ctx.deployTarget);
   return { bin: "consort-drive", args };
 }
 function holdOption() {
@@ -12002,7 +12094,7 @@ function buildNextOptions(action, ctx) {
           title: "Deploy the feature",
           hil_prompt: "Every story is built + accepted. Deploy the feature (local working-software check) and enter promotion?",
           kind: "action",
-          enact: resumeCommand(ctx, action)
+          enact: deployCommand(ctx)
         },
         holdOption()
       ];
@@ -12106,23 +12198,23 @@ var UI_TEST_KINDS = /* @__PURE__ */ new Set(["client", "e2e"]);
 function buildStoryReview(consortDir, featureId) {
   const fdir = findFeatureDir(consortDir, featureId);
   if (!fdir) return {};
-  const storiesDir2 = path12.join(fdir, "stories");
+  const storiesDir2 = path13.join(fdir, "stories");
   let ids;
   try {
-    ids = fs21.readdirSync(storiesDir2, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+    ids = fs23.readdirSync(storiesDir2, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
   } catch {
     return {};
   }
   const out = {};
   for (const story of ids) {
-    const sdir = path12.join(storiesDir2, story);
+    const sdir = path13.join(storiesDir2, story);
     let items = [];
     try {
-      items = JSON.parse(fs21.readFileSync(path12.join(sdir, "test-list-per-story.json"), "utf8")).items ?? [];
+      items = JSON.parse(fs23.readFileSync(path13.join(sdir, "test-list-per-story.json"), "utf8")).items ?? [];
     } catch {
     }
     const apiOnly = items.length > 0 && !items.some((i) => typeof i.kind === "string" && UI_TEST_KINDS.has(i.kind));
-    const ev = readDeployEvidence(path12.join(sdir, "deploy-evidence.json"));
+    const ev = readDeployEvidence(path13.join(sdir, "deploy-evidence.json"));
     const docsUrl = apiOnly && ev && deployEvidencePasses(ev) && ev.url ? ev.url.replace(/\/+$/, "") + "/docs" : void 0;
     out[story] = { apiOnly, ...docsUrl ? { docsUrl } : {} };
   }
@@ -12130,10 +12222,13 @@ function buildStoryReview(consortDir, featureId) {
 }
 function readFeatureNextSnapshot(consortDir, featureId, projectDir, ctx = {}) {
   const state = readDriveStateFromDisk(consortDir, featureId, projectDir, { uiTrack: ctx.uiTrack });
-  const bound = ctx.bound ?? readRunConfig(consortDir)?.bound;
+  const runConfig = readRunConfig(consortDir);
+  const bound = ctx.bound ?? runConfig?.bound;
+  const deployTarget = ctx.deployTarget ?? runConfig?.deploy_target;
   return buildNextSnapshot("feature", state, {
     ...ctx,
     ...bound ? { bound } : {},
+    ...deployTarget ? { deployTarget } : {},
     featureId,
     stories: summarizeStories(consortDir, featureId),
     storyReview: buildStoryReview(consortDir, featureId)

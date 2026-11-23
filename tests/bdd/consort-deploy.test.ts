@@ -17,6 +17,9 @@ import {
   defaultRunVerify,
   probeServingOk,
   resolveServeBaseUrl,
+  preferredServePort,
+  portOfUrl,
+  projectServeId,
   isOffTreeStampFailure,
   buildBranchSchemaResetCommand,
   resyncOffTreeStampIfPresent,
@@ -116,6 +119,47 @@ describe("resolveServeBaseUrl: relocate off a busy port instead of halting", () 
       baseUrl: "http://localhost:8000",
       port: 8000,
     });
+  });
+
+  it("probes upward from an explicit startPortOverride (the per-project preferred port)", async () => {
+    const probe = async (url: string) => url.includes(":8100"); // :8100 answers, :8101 free
+    expect(await resolveServeBaseUrl("http://localhost:8000", probe, 8100)).toEqual({
+      baseUrl: "http://localhost:8101",
+      port: 8101,
+    });
+  });
+});
+
+describe("preferredServePort: deterministic per-project port so two projects never share :8000", () => {
+  it("leaves an explicit (non-8000) configured port unchanged — explicit config is the one door", () => {
+    expect(preferredServePort("/tmp/stockflow-copilot", 8123)).toBe(8123);
+    expect(preferredServePort("/tmp/stockflow-copilot", 9000)).toBe(9000);
+  });
+
+  it("maps the shared :8000 default to a stable port in 8000-8499", () => {
+    const p = preferredServePort("/tmp/stockflow-copilot", 8000);
+    expect(p).toBeGreaterThanOrEqual(8000);
+    expect(p).toBeLessThanOrEqual(8499);
+    // deterministic: same project resolves the same port across calls/runs
+    expect(preferredServePort("/tmp/stockflow-copilot", 8000)).toBe(p);
+  });
+
+  it("gives two different projects different preferred ports (no TOCTOU contention on :8000)", () => {
+    const a = preferredServePort("/tmp/stockflow-claude", 8000);
+    const b = preferredServePort("/tmp/stockflow-copilot", 8000);
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("portOfUrl + projectServeId helpers", () => {
+  it("portOfUrl reads the port, defaulting by scheme", () => {
+    expect(portOfUrl("http://127.0.0.1:8000")).toBe(8000);
+    expect(portOfUrl("https://example.com")).toBe(443);
+    expect(portOfUrl("http://example.com")).toBe(80);
+  });
+
+  it("projectServeId falls back to the project dir name when no Lakebase instance is resolvable", () => {
+    expect(projectServeId("/tmp/some/stockflow-copilot")).toBe("stockflow-copilot");
   });
 });
 
@@ -422,7 +466,9 @@ describe("deployToTarget (local)", () => {
     });
     expect(result.ok).toBe(true);
     expect(result.pid).toBe(4242);
-    expect(result.url).toBe("http://localhost:8000/");
+    // The serve starts from this project's PER-PROJECT preferred port (a shared :8000 maps to a
+    // stable hashed port so two projects never contend), not the raw :8000 default.
+    expect(result.url).toBe(`http://localhost:${preferredServePort(dir, 8000)}/`);
     expect(existsSync(join(dir, ".consort", "deploy", "local.pid"))).toBe(true);
   });
 
@@ -482,6 +528,43 @@ describe("deployToTarget (local)", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.reason).toMatch(/not reachable/);
+  });
+
+  it("refuses + does not verify when a FOREIGN backend answers the port (serve_id mismatch)", async () => {
+    let verified = false;
+    const result = await deployToTarget({
+      projectDir: dir,
+      targetName: "local",
+      featureId: "F1",
+      startProcess: () => 4242,
+      reachable: async () => true,
+      // A different project's app answers /health with ITS serve_id, not ours.
+      serveId: async () => "some-other-project",
+      runVerify: () => {
+        verified = true;
+        return { passed: true };
+      },
+      stop: () => {},
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/FOREIGN backend/);
+    expect(verified).toBe(false); // never verified against the squatter
+  });
+
+  it("proceeds to verify when the backend's serve_id is OURS", async () => {
+    const result = await deployToTarget({
+      projectDir: dir,
+      targetName: "local",
+      startProcess: () => 4242,
+      reachable: async () => true,
+      serveId: async () => projectServeId(dir), // our own id
+      runVerify: () => ({ passed: true }),
+      sleep: async () => {},
+      now: fastClock(),
+    });
+    expect(result.ok).toBe(true);
   });
 
   it("refuses an unsupported target type without starting anything", async () => {

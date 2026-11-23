@@ -10,7 +10,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildThemeCss, applyDesignGuideTheme } from "../../consort/architecture/apply-theme";
-import { designGuideToCssVars } from "../../consort/architecture/design-adherence";
+import {
+  designGuideToCssVars,
+  hexLuminance,
+  consortLockupForSurface,
+  pageSurfaceColor,
+  ensureConsortFooter,
+  CONSORT_FOOTER_IMPORT,
+  CONSORT_FOOTER_ELEMENT,
+} from "../../consort/architecture/design-adherence";
 
 const INDIGO_GUIDE = {
   typography: { font_family: "'Inter', sans-serif", font_mono: "'Roboto Mono', monospace", scale: { "text-hero": "56px" } },
@@ -174,6 +182,117 @@ describe("applyDesignGuideTheme: installs the brand icon at design-apply time", 
     const once = readFileSync(appPath, "utf8");
     applyDesignGuideTheme(dir);
     expect(readFileSync(appPath, "utf8")).toBe(once);
+  });
+});
+
+// The fixed "Made with Consort" footer: the generated theme.css carries a --consort-lockup token
+// that picks the wordmark variant CONTRASTING with the app's own surface (white on dark, dark on
+// light). It is NOT a guide-declared token, so the adherence gate (which compares only declared
+// tokens) ignores it.
+describe("--consort-lockup token: light/dark wordmark by the app's own surface", () => {
+  const darkGuide = {
+    typography: { font_family: "'Inter', sans-serif", scale: { "text-base": "15px" } },
+    colors: { surface: { surface: "#11161c" }, brand: { brand: "#4840BB" } },
+    spacing: { "space-4": "16px" },
+  };
+  const lightGuide = {
+    typography: { font_family: "'Inter', sans-serif", scale: { "text-base": "15px" } },
+    colors: { surface: { surface: "#f9f7f4" }, brand: { brand: "#4840BB" } },
+    spacing: { "space-4": "16px" },
+  };
+
+  it("emits the WHITE lockup when the page surface is dark", () => {
+    expect(buildThemeCss(darkGuide)).toContain('--consort-lockup: url("/consort-lockup-white.svg");');
+  });
+  it("emits the DARK lockup when the page surface is light", () => {
+    expect(buildThemeCss(lightGuide)).toContain('--consort-lockup: url("/consort-lockup.svg");');
+  });
+  it("defaults to the DARK lockup when no recognizable surface token is present", () => {
+    // INDIGO_GUIDE names its surface `page` (→ --color-page) with a LIGHT value, so still dark mark;
+    // a guide with no surface color at all also defaults to the dark (light-surface) mark.
+    expect(buildThemeCss(INDIGO_GUIDE)).toContain('--consort-lockup: url("/consort-lockup.svg");');
+  });
+  it("is NOT a guide-declared token (the adherence contract never lists it, so the gate ignores it)", () => {
+    expect(Object.keys(designGuideToCssVars(darkGuide))).not.toContain("--consort-lockup");
+  });
+
+  it("hexLuminance / consortLockupForSurface / pageSurfaceColor are pure and correct", () => {
+    expect(hexLuminance("#000000")).toBeCloseTo(0, 5);
+    expect(hexLuminance("#ffffff")).toBeCloseTo(1, 5);
+    expect(hexLuminance("not-a-hex")).toBeNull();
+    expect(consortLockupForSurface("#11161c")).toBe('url("/consort-lockup-white.svg")');
+    expect(consortLockupForSurface("#f9f7f4")).toBe('url("/consort-lockup.svg")');
+    expect(consortLockupForSurface(undefined)).toBe('url("/consort-lockup.svg")'); // safe light default
+    expect(pageSurfaceColor({ "--color-page": "#123456" })).toBe("#123456"); // probes `page` too
+    expect(pageSurfaceColor({ "--color-brand": "#abcdef" })).toBeUndefined(); // brand is not a surface
+  });
+});
+
+describe("ensureConsortFooter: back-fills the footer into an existing App.tsx", () => {
+  const APP_TSX =
+    'import { Routes, Route } from "react-router-dom";\n' +
+    'import { HomePage } from "./pages/HomePage";\n' +
+    '\n' +
+    'export function App() {\n' +
+    '  return (\n' +
+    '    <>\n' +
+    '      <Routes>\n' +
+    '        <Route path="/" element={<HomePage />} />\n' +
+    '      </Routes>\n' +
+    '    </>\n' +
+    '  );\n' +
+    '}\n';
+
+  // A real client carries the footer COMPONENT (delivered by the kit-owned refresh); ensureConsortFooter
+  // only wires the import when it's present. `withComponent: false` models the version-skew half-state.
+  function appProject(appSrc: string, opts: { withComponent?: boolean } = {}): string {
+    const dir = mkdtempSync(join(tmpdir(), "consort-footer-"));
+    dirs.push(dir);
+    mkdirSync(join(dir, "client", "src", "components"), { recursive: true });
+    writeFileSync(join(dir, "client", "src", "App.tsx"), appSrc);
+    if (opts.withComponent !== false) {
+      writeFileSync(join(dir, "client", "src", "components", "MadeWithConsort.tsx"), "export function MadeWithConsort() { return null; }\n");
+    }
+    return dir;
+  }
+
+  it("injects the import + renders <MadeWithConsort/> after </Routes>", () => {
+    const dir = appProject(APP_TSX);
+    expect(ensureConsortFooter(dir)).toBe(true);
+    const app = readFileSync(join(dir, "client", "src", "App.tsx"), "utf8");
+    expect(app).toContain(CONSORT_FOOTER_IMPORT);
+    expect(app).toMatch(/<\/Routes>\s*\n\s*<MadeWithConsort \/>/);
+    expect(app.indexOf(CONSORT_FOOTER_IMPORT)).toBeLessThan(app.indexOf("export function App"));
+  });
+
+  it("is idempotent (already-wired App.tsx is a no-op, no duplicate import/element)", () => {
+    const dir = appProject(APP_TSX);
+    ensureConsortFooter(dir);
+    const once = readFileSync(join(dir, "client", "src", "App.tsx"), "utf8");
+    expect(ensureConsortFooter(dir)).toBe(false);
+    const twice = readFileSync(join(dir, "client", "src", "App.tsx"), "utf8");
+    expect(twice).toBe(once);
+    expect(twice.match(/import \{ MadeWithConsort \}/g)?.length).toBe(1); // exactly one import
+    expect(twice.match(/<MadeWithConsort \/>/g)?.length).toBe(1); // exactly one render site
+  });
+
+  it("no-ops (best-effort) when there is no </Routes> seam to anchor on", () => {
+    const dir = appProject('export function App() { return <div>bare</div>; }\n');
+    expect(ensureConsortFooter(dir)).toBe(false);
+    expect(readFileSync(join(dir, "client", "src", "App.tsx"), "utf8")).not.toContain("MadeWithConsort");
+  });
+
+  it("ATOMICITY: no-ops when the footer COMPONENT is absent — never wires an import to a missing module", () => {
+    // The import-injection (here, consort) and the component delivery (refreshKitOwnedInstrumentation,
+    // from scm-utils) can version-skew; injecting the import without the component breaks the client
+    // typecheck and gets mis-fixed as an app regression. With no component present, this MUST no-op.
+    const dir = appProject(APP_TSX, { withComponent: false });
+    expect(ensureConsortFooter(dir)).toBe(false);
+    expect(readFileSync(join(dir, "client", "src", "App.tsx"), "utf8")).not.toContain("MadeWithConsort");
+  });
+
+  it("CONSORT_FOOTER_ELEMENT is the element string the injector drops in", () => {
+    expect(CONSORT_FOOTER_ELEMENT).toBe("<MadeWithConsort />");
   });
 });
 

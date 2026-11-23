@@ -4,10 +4,11 @@
   "agent": { "kind": "claude", "config": { "role": "architect-reviewer" } },
   "match": { "kind": "invoke-role", "role": "architect-reviewer", "mode": "estimate" },
   "inputs": [
-    { "id": "feature-proposals", "source": "feature:planning/feature-proposals.md", "description": "The Spec Author's candidate features the Architect t-shirt sizes (planning/feature-proposals.md)." }
+    { "id": "feature-proposals", "source": "feature:planning/feature-proposals.md", "description": "The Spec Author's candidate features the Architect t-shirt sizes (planning/feature-proposals.md)." },
+    { "id": "estimates-schema", "source": "schema:estimates.schema.json", "description": "estimates.schema.json — the contract planning/estimates.json is gated against (estimatesConformant). Each entry MUST use the key `feature_id` (NOT `id`) plus a t-shirt `size`; richer fields are allowed. The consumer drops any entry missing feature_id, so conform to this exactly." }
   ],
   "outputs": [
-    { "id": "estimates", "filename": "planning/estimates.json", "channel": "artifact", "validator": "nonEmptyFile", "description": "The per-candidate t-shirt sizes (XS/S/M/L/XL) the PO commits a sprint-fitting backlog from. The post-turn verify-artifact asserts planning/estimates.json exists. Sprint-scoped, so NO reconcile. Matches the plain 'estimate' mode only, NOT 'estimate-committed' (which re-syncs the backlog)." }
+    { "id": "estimates", "filename": "planning/estimates.json", "channel": "artifact", "validator": "estimatesConformant", "description": "The per-candidate t-shirt sizes (XS/S/M/L/XL) the PO commits a sprint-fitting backlog from. estimatesConformant gates the file against estimates.schema.json (each entry carries feature_id + size) AT the turn, so a wrong-key file fails here with a clear error instead of silently emptying the backlog in readEstimates. Sprint-scoped, so NO reconcile. Matches the plain 'estimate' mode only, NOT 'estimate-committed' (which re-syncs the backlog)." }
   ],
   "routing": {
     "produced": { "next": "state-derived" }

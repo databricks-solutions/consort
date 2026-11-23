@@ -7284,10 +7284,10 @@ function readHeldByPid(lockPath) {
     return null;
   }
 }
-function gatesLockFilePath(consortDir, featureId, basename4) {
+function gatesLockFilePath(consortDir, featureId, basename5) {
   const dir = requireFeatureDir(consortDir, featureId);
   mkdirSync4(dir, { recursive: true });
-  return join8(dir, basename4);
+  return join8(dir, basename5);
 }
 function withPipelineLock(featureId, fn, opts = {}) {
   return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
@@ -7420,7 +7420,7 @@ import { mergePaired } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 init_esm_shims();
 import { existsSync as existsSync21, readFileSync as readFileSync21, readdirSync as readdirSync16, statSync as statSync11, writeFileSync as writeFileSync12, mkdirSync as mkdirSync13, rmSync as rmSync7 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
-import { join as join23, dirname as dirname12, basename as basename3 } from "path";
+import { join as join23, dirname as dirname12, basename as basename4 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -7436,7 +7436,7 @@ init_esm_shims();
 import { execSync, execFileSync as execFileSync3, spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync16, mkdirSync as mkdirSync11, readFileSync as readFileSync17, rmSync as rmSync6, writeFileSync as writeFileSync10 } from "fs";
-import { dirname as dirname10, join as join18 } from "path";
+import { basename as basename2, dirname as dirname10, join as join18 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -7533,7 +7533,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync17, readFileSync as readFileSync18, readdirSync as readdirSync13, writeFileSync as writeFileSync11, mkdirSync as mkdirSync12, copyFileSync } from "fs";
-import { join as join19, dirname as dirname11, basename as basename2 } from "path";
+import { join as join19, dirname as dirname11, basename as basename3 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();

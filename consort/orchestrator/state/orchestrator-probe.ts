@@ -68,7 +68,8 @@ import {
   storyJson,
 } from "../../config/consort-paths.js";
 import { analystOrderedJson } from "../../test-list/fan-out-plan.js";
-import { checkDbDesign } from "../validators/conformance/artifact-conformance.js";
+import { checkDbDesign, checkArtifactConformance } from "../validators/conformance/artifact-conformance.js";
+import { writeConformanceHandback } from "../drive/conformance-handback.js";
 
 /** True iff the story is a UI story — its story.json carries the PO's human-authoritative
  *  `requires_e2e: true` (set at breakdown). Available BEFORE the architect assigns AC layers, so
@@ -388,7 +389,26 @@ export function diskArtifactProbe(
           dbContent = undefined;
         }
       }
-      return checkDbDesign(dbContent, archContent).ok;
+      const ok = checkDbDesign(dbContent, archContent).ok;
+      // Present-but-nonconformant db-design.json governed by the orchestrator-expect ledger (its generic
+      // handback carries no specifics): when the failure is SCHEMA conformance, thread the EXACT violations
+      // to the dba's re-issued turn via the shared handback mechanism (the SAME one the executor's phase-5
+      // path uses — one coherent informed-retry). Only on a real schema failure (a non-schema checkDbDesign
+      // miss, e.g. invariant coverage, leaves the generic message). Keyed by the building story. Best-effort.
+      if (!ok && dbContent !== undefined) {
+        const conf = checkArtifactConformance("db-design.json", dbContent);
+        if (!conf.ok) {
+          writeConformanceHandback({
+            consortDir,
+            featureId,
+            role: "dba",
+            ...(buildActive ? { story: buildActive } : {}),
+            violations: conf.violations,
+            artifacts: ["db-design.json"],
+          });
+        }
+      }
+      return ok;
     },
 
     architectProjectable(story) {

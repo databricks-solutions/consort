@@ -6939,10 +6939,10 @@ function readHeldByPid(lockPath) {
     return null;
   }
 }
-function gatesLockFilePath(consortDir, featureId, basename4) {
+function gatesLockFilePath(consortDir, featureId, basename5) {
   const dir = requireFeatureDir(consortDir, featureId);
   mkdirSync2(dir, { recursive: true });
-  return join6(dir, basename4);
+  return join6(dir, basename5);
 }
 function withPipelineLock(featureId, fn, opts = {}) {
   return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
@@ -7193,7 +7193,7 @@ init_esm_shims();
 import { execSync, execFileSync as execFileSync5, spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync20, mkdirSync as mkdirSync12, readFileSync as readFileSync20, rmSync as rmSync7, writeFileSync as writeFileSync12 } from "fs";
-import { dirname as dirname11, join as join21 } from "path";
+import { basename as basename4, dirname as dirname11, join as join21 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 

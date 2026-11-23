@@ -79,7 +79,11 @@ export type DriveCommand =
   // for the ux-designer role (a headless browser MCP so it can read named reference
   // sites' real fonts/colors/spacing); absent on every other command, so their spawn
   // is unchanged.
-  | { kind: "claude"; role: string; model: string; task: string; resumeKey?: string; effort?: string; fallbackModel?: string; maxBudgetUsd?: number; allowedTools?: string[]; disallowedTools?: string[]; mcpConfig?: string; replay?: { mode?: string; buildMode?: string; story?: string } }
+  // `executor` selects which CLI the shared execRunner envelope spawns for this role turn: "claude"
+  // (default/absent — unchanged) or "copilot" (routes the SAME envelope — session/retry/monitor/
+  // transcript — to spawnCopilotStreaming with copilotBaseArgs). The command shape is otherwise
+  // identical; the model alias is mapped to the ug id at copilot spawn.
+  | { kind: "claude"; role: string; model: string; task: string; resumeKey?: string; effort?: string; fallbackModel?: string; maxBudgetUsd?: number; allowedTools?: string[]; disallowedTools?: string[]; mcpConfig?: string; replay?: { mode?: string; buildMode?: string; story?: string }; executor?: "claude" | "copilot" }
   | { kind: "cli"; bin: string; args: string[] }
   | { kind: "set-phase"; phase: string }
   // Deterministic sprint-backlog projection (the ONE writer): after the PO

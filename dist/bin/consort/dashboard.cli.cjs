@@ -183,6 +183,45 @@ function prebuiltServer(kit) {
   const candidates = [path2.join(root, "server.js"), path2.join(root, "apps", "dashboard", "server.js")];
   return candidates.find((p) => fs2.existsSync(p)) ?? null;
 }
+function buildLockPath(kit) {
+  return path2.join(kit, "dist", "dashboard", ".build.lock");
+}
+async function ensurePrebuilt(kit) {
+  const existing = prebuiltServer(kit);
+  if (existing) return existing;
+  if (!fs2.existsSync(path2.join(kit, "apps", "dashboard"))) return null;
+  const lock = buildLockPath(kit);
+  try {
+    fs2.mkdirSync(path2.dirname(lock), { recursive: true });
+  } catch {
+  }
+  let held = false;
+  try {
+    fs2.writeFileSync(lock, String(process.pid), { flag: "wx" });
+    held = true;
+  } catch {
+  }
+  if (!held) {
+    for (let i = 0; i < 360; i++) {
+      const s = prebuiltServer(kit);
+      if (s) return s;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return prebuiltServer(kit);
+  }
+  try {
+    console.log("Consort dashboard: building the standalone bundle (one-time, ~30-60s)\u2026");
+    (0, import_node_child_process2.execFileSync)("npm", ["run", "build:dashboard"], { cwd: kit, stdio: "inherit" });
+  } catch (e) {
+    console.error(`consort-dashboard: build:dashboard failed (${e instanceof Error ? e.message : String(e)}); falling back to dev mode.`);
+  } finally {
+    try {
+      fs2.rmSync(lock, { force: true });
+    } catch {
+    }
+  }
+  return prebuiltServer(kit);
+}
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const projectDir = path2.resolve(args.projectDir);
@@ -238,7 +277,7 @@ async function main() {
     ...args.recordDir ? { CONSORT_RECORD_DIR: args.recordDir } : {}
   };
   const url = `http://${args.host}:${port}/`;
-  const server = prebuiltServer(kit);
+  const server = await ensurePrebuilt(kit);
   const runSh = path2.join(kit, "apps", "dashboard", "run.sh");
   let stdio = "inherit";
   let logFile = null;
@@ -259,7 +298,7 @@ async function main() {
   record:  ${args.recordDir}` : ""}${args.detach ? "" : "\n  Ctrl-C to stop."}`);
     child = (0, import_node_child_process2.spawn)("node", [server], { cwd: path2.dirname(server), ...spawnOpts });
   } else if (fs2.existsSync(runSh)) {
-    console.log(`Consort dashboard (dev) \u2192 ${url}
+    console.log(`Consort dashboard (dev, FALLBACK \u2014 prebuilt unavailable) \u2192 ${url}
   project: ${projectDir}${args.detach ? "" : "\n  Ctrl-C to stop."}`);
     child = (0, import_node_child_process2.spawn)("bash", [runSh, projectDir], { cwd: path2.join(kit, "apps", "dashboard"), ...spawnOpts });
   } else {

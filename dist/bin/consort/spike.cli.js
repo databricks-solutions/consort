@@ -3259,8 +3259,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path11) {
-      let input = path11;
+    function removeDotSegments(path12) {
+      let input = path12;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3513,8 +3513,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path11, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path11 && path11 !== "/" ? path11 : void 0;
+        const [path12, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path12 && path12 !== "/" ? path12 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6648,7 +6648,7 @@ var require_ajv = __commonJS({
 
 // bin/consort/spike.cli.ts
 init_esm_shims();
-import * as path10 from "path";
+import * as path11 from "path";
 
 // consort/config/consort-paths.ts
 init_esm_shims();
@@ -7345,7 +7345,7 @@ function buildResourceAttrs(deps = {}) {
 
 // consort/orchestrator/drive/claude-runner.ts
 init_esm_shims();
-import { spawn as spawn2, execFileSync } from "child_process";
+import { spawn as spawn3, execFileSync } from "child_process";
 
 // consort/config/consort-env.ts
 init_esm_shims();
@@ -7453,9 +7453,8 @@ var AGENT_SYNC_MARKER2 = path8.join(".claude", "agents", ".kit-version");
 
 // consort/orchestrator/drive/claude-runner.ts
 import { randomUUID as randomUUID3 } from "crypto";
-import * as fs10 from "fs";
-import * as path9 from "path";
-import * as readline from "readline";
+import * as fs11 from "fs";
+import * as path10 from "path";
 
 // consort/logging/replay-artifacts.ts
 init_esm_shims();
@@ -7598,14 +7597,35 @@ init_esm_shims();
 import { existsSync as existsSync14, mkdirSync as mkdirSync12, cpSync as cpSync3, rmSync as rmSync3, readdirSync as readdirSync9, statSync as statSync4 } from "fs";
 import { join as join17, dirname as dirname11, basename } from "path";
 
+// consort/orchestrator/drive/streaming-turn.ts
+init_esm_shims();
+import { spawn as spawn2 } from "child_process";
+import * as fs10 from "fs";
+import * as path9 from "path";
+import * as readline from "readline";
+
 // consort/orchestrator/turns/turn-monitor.ts
+init_esm_shims();
+
+// consort/orchestrator/drive/streaming-turn.ts
+var TURN_INACTIVITY_TIMEOUT_MS = Number(consortEnv("TURN_INACTIVITY_TIMEOUT_MS") ?? String(10 * 60 * 1e3));
+var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e3));
+
+// consort/orchestrator/agents/copilot-runner.ts
+init_esm_shims();
+import { spawnSync as spawnSync3 } from "child_process";
+
+// consort/orchestrator/agents/copilot-step-agent.ts
+init_esm_shims();
+import { readFileSync as readFileSync15 } from "fs";
+import { join as join19 } from "path";
+
+// consort/orchestrator/drive/agent-transcript.ts
 init_esm_shims();
 
 // consort/orchestrator/drive/claude-runner.ts
 var MAX_TRANSIENT_RETRIES = Number(consortEnv("MAX_TRANSIENT_RETRIES") ?? "5");
 var TRANSIENT_BACKOFF_MS = Number(consortEnv("TRANSIENT_BACKOFF_MS") ?? "5000");
-var TURN_INACTIVITY_TIMEOUT_MS = Number(consortEnv("TURN_INACTIVITY_TIMEOUT_MS") ?? String(10 * 60 * 1e3));
-var TURN_HEARTBEAT_MS = Number(consortEnv("TURN_HEARTBEAT_MS") ?? String(60 * 1e3));
 var lastTurnMeta;
 var lastTurnMetaByCwd = /* @__PURE__ */ new Map();
 function takeLastTurnMeta(cwd) {
@@ -8013,7 +8033,7 @@ async function runSpikeCli(argv) {
   }
   const args = parseArgs(argv.slice(1));
   const consortDir = tddDirFor(args);
-  const envPath = path10.join(args.projectDir ?? process.cwd(), ".env");
+  const envPath = path11.join(args.projectDir ?? process.cwd(), ".env");
   if (!args.instance) args.instance = readEnvVar(envPath, "LAKEBASE_PROJECT_ID");
   if (!args.host) args.host = readEnvVar(envPath, "DATABRICKS_HOST");
   const telemetry = sub === "cut" || sub === "delete" ? beginTelemetryRun({ command: "spike", onNotice: (m) => process.stderr.write(m) }) : void 0;

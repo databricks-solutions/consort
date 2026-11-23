@@ -3,9 +3,12 @@
 // using whatever kit is deployed locally (no git, no remote). The dashboard's live source
 // reads the project's .consort/ straight off disk, so this just points a server at it.
 //
-// Prefers the PREBUILT bundle the kit ships (dist/dashboard/server.js — a Next standalone
-// server, no install needed). Falls back to `apps/dashboard/run.sh` (next dev) when the
-// deployed kit is a dev clone with source but no build. The scaffolded run-dashboard.sh is a
+// ALWAYS serves the PREBUILT bundle (dist/dashboard/server.js — a Next standalone server, no
+// install needed): the kit ships one, and a dev clone that has source but no bundle gets one
+// BUILT once on first launch (ensurePrebuilt), then reused. This is the resilient default — the
+// precompiled server has no on-demand `next dev` route compilation to wedge, and no shared
+// apps/dashboard/.next for a later build to clobber. `apps/dashboard/run.sh` (next dev) is only a
+// LAST-RESORT fallback when the build is unavailable/fails. The scaffolded run-dashboard.sh is a
 // thin wrapper that calls this via `lk` (so lk's kit resolution is reused, not duplicated).
 //
 //   consort-dashboard [--project-dir <p>] [--port <n>] [--record-dir <p>] [--host <h>] [--no-open] [--status]
@@ -16,7 +19,7 @@
 // idempotent (re-opens the browser, no second server); --status reports running/stopped without
 // launching, so a caller can decide whether to OFFER the dashboard rather than re-asking.
 
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { createServer, connect } from "node:net";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
@@ -194,6 +197,47 @@ function prebuiltServer(kit: string): string | null {
   return candidates.find((p) => fs.existsSync(p)) ?? null;
 }
 
+/** Cross-process build lock, so two concurrent first-launches don't both run `build:dashboard`
+ *  (which would race on apps/dashboard/.next). The loser waits for the bundle to appear. */
+function buildLockPath(kit: string): string {
+  return path.join(kit, "dist", "dashboard", ".build.lock");
+}
+
+/** The prebuilt standalone server for this kit — BUILDING it once when a dev clone has source but
+ *  no bundle yet. This is the resilient default: the dashboard is ALWAYS served from the precompiled
+ *  dist/dashboard bundle, never `next dev`, so there is no on-demand route compilation to wedge
+ *  (the dev-server hang) and no shared apps/dashboard/.next for a later build to clobber. The build
+ *  writes once and every subsequent launch reuses it. Returns null only when neither a bundle nor a
+ *  buildable dev clone is present. */
+async function ensurePrebuilt(kit: string): Promise<string | null> {
+  const existing = prebuiltServer(kit);
+  if (existing) return existing;
+  // No bundle yet — can we build one? (dev clone: apps/dashboard source present.)
+  if (!fs.existsSync(path.join(kit, "apps", "dashboard"))) return null;
+  const lock = buildLockPath(kit);
+  try { fs.mkdirSync(path.dirname(lock), { recursive: true }); } catch { /* best-effort */ }
+  let held = false;
+  try { fs.writeFileSync(lock, String(process.pid), { flag: "wx" }); held = true; } catch { /* another launch holds it */ }
+  if (!held) {
+    // Another launch is mid-build; wait (up to ~3min) for the bundle instead of racing it.
+    for (let i = 0; i < 360; i++) {
+      const s = prebuiltServer(kit);
+      if (s) return s;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return prebuiltServer(kit);
+  }
+  try {
+    console.log("Consort dashboard: building the standalone bundle (one-time, ~30-60s)…");
+    execFileSync("npm", ["run", "build:dashboard"], { cwd: kit, stdio: "inherit" });
+  } catch (e) {
+    console.error(`consort-dashboard: build:dashboard failed (${e instanceof Error ? e.message : String(e)}); falling back to dev mode.`);
+  } finally {
+    try { fs.rmSync(lock, { force: true }); } catch { /* best-effort */ }
+  }
+  return prebuiltServer(kit);
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const projectDir = path.resolve(args.projectDir);
@@ -276,7 +320,11 @@ async function main(): Promise<void> {
   };
 
   const url = `http://${args.host}:${port}/`;
-  const server = prebuiltServer(kit);
+  // Resilient default: serve the PREBUILT standalone bundle, building it once if this is a dev
+  // clone without one yet. Never `next dev` (whose lazy on-demand route compile can wedge, and
+  // whose shared .next a later build clobbers). run.sh/next dev remains only a last resort when
+  // the build is unavailable or failed, so this is never WORSE than before.
+  const server = await ensurePrebuilt(kit);
   const runSh = path.join(kit, "apps", "dashboard", "run.sh");
 
   // Detached launch (a session/agent): the server gets its OWN session (detached:true → setsid) +
@@ -299,9 +347,11 @@ async function main(): Promise<void> {
     console.log(`Consort dashboard (prebuilt) → ${url}\n  project: ${projectDir}${args.recordDir ? `\n  record:  ${args.recordDir}` : ""}${args.detach ? "" : "\n  Ctrl-C to stop."}`);
     child = spawn("node", [server], { cwd: path.dirname(server), ...spawnOpts });
   } else if (fs.existsSync(runSh)) {
-    // Dev-clone kit: no prebuilt bundle, but the dashboard source is here. run.sh sets
-    // CONSORT_PROJECT_DIR/PORT itself from its args + env and runs `next dev`.
-    console.log(`Consort dashboard (dev) → ${url}\n  project: ${projectDir}${args.detach ? "" : "\n  Ctrl-C to stop."}`);
+    // LAST RESORT only: ensurePrebuilt could neither find nor build a bundle (build:dashboard
+    // failed / unavailable). run.sh runs `next dev` — functional, but lazy-compiles routes on
+    // demand (can wedge) and serves from apps/dashboard/.next (a later build clobbers it). We
+    // prefer prebuilt above precisely to avoid this path.
+    console.log(`Consort dashboard (dev, FALLBACK — prebuilt unavailable) → ${url}\n  project: ${projectDir}${args.detach ? "" : "\n  Ctrl-C to stop."}`);
     child = spawn("bash", [runSh, projectDir], { cwd: path.join(kit, "apps", "dashboard"), ...spawnOpts });
   } else {
     console.error(

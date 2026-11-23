@@ -285,6 +285,25 @@ else
   offer_brew_install "Databricks CLI" "databricks/tap/databricks" "https://docs.databricks.com/dev-tools/cli/install.html" || MISSING=$((MISSING+1))
 fi
 
+# ug (Unity Gateway): launches the coding agents THROUGH Databricks (`ug claude`,
+# `ug copilot`) — the way Consort drives on a Databricks machine. Installed as a
+# uv tool (needs uv, checked above). ADVISORY, not a blocker: the bare
+# `claude` / `copilot` CLIs still work without it.
+UG_INSTALL="uv tool install git+https://github.com/databricks/unity-gateway"
+if have ug; then
+  echo -e "  ${GREEN}✓${NC} Unity Gateway (ug)"
+else
+  echo -e "  ${YELLOW}!${NC} Unity Gateway (ug) not found (launches agents through Databricks: ug claude / ug copilot)"
+  if have uv; then
+    if confirm "  Install Unity Gateway via '$UG_INSTALL'?"; then
+      $UG_INSTALL || true
+    fi
+  else
+    echo -e "    ${YELLOW}→ needs uv first (see above), then: $UG_INSTALL${NC}"
+  fi
+  have ug || ADVISORIES+=("Unity Gateway (ug) is not on PATH — install: $UG_INSTALL (or use the bare claude/copilot CLIs).")
+fi
+
 echo
 if [ "$MISSING" -gt 0 ]; then
   echo -e "${YELLOW}$MISSING required tool(s) still missing. Install them (see above), then re-run.${NC}"
@@ -389,10 +408,60 @@ else
   echo "    claude plugin install consort@databricks-solutions   # or: plugin update if already installed"
 fi
 
+# --- Install the Consort plugin for GitHub Copilot CLI ------------------------
+# Mirror of the Claude plugin install above, for the `copilot` executor. Unlike
+# Claude's marketplace, the Copilot plugin is a LOCAL-PATH install (gh/copilot
+# caches the skill + agents at install time, so re-run this after editing them).
+# Resolve the plugin dir from THIS script's location (a consort checkout); a
+# curl|bash run has no checkout, so fall back to a hint. Optional + best-effort:
+# only offered when a Copilot CLI is present, and never a bootstrap failure.
+echo
+COPILOT_CLI=""
+if have copilot; then COPILOT_CLI="copilot"
+elif have gh && gh copilot --help >/dev/null 2>&1; then COPILOT_CLI="gh copilot"; fi
+if [ -n "$COPILOT_CLI" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+  COPILOT_PLUGIN_DIR="$SCRIPT_DIR/integrations/copilot/consort-copilot"
+  if [ "$CHECK_ONLY" = true ]; then
+    if $COPILOT_CLI plugin list 2>/dev/null | grep -qi consort; then
+      echo -e "  ${GREEN}✓${NC} Consort Copilot plugin installed"
+    else
+      echo -e "  ${YELLOW}!${NC} Consort Copilot plugin not installed (re-run without --check-only to install it)"
+    fi
+  elif [ ! -f "$COPILOT_PLUGIN_DIR/plugin.json" ]; then
+    # curl|bash or not run from a consort checkout: no local plugin dir to install from.
+    echo -e "  ${YELLOW}!${NC} Consort Copilot plugin: run this from a consort checkout to auto-install, or:"
+    echo "      npm i -g @databricks-solutions/consort   # the kit + the bundled Copilot plugin"
+    echo "      $COPILOT_CLI plugin install \"\$(npm root -g)/@databricks-solutions/consort/integrations/copilot/consort-copilot\""
+  elif confirm "Install the Consort plugin for GitHub Copilot CLI (from this checkout)?"; then
+    if $COPILOT_CLI plugin install "$COPILOT_PLUGIN_DIR"; then
+      echo -e "  ${GREEN}✓${NC} Consort Copilot plugin installed (re-run this after editing the skill/agents — the CLI caches at install)"
+    else
+      echo -e "  ${YELLOW}!${NC} Copilot plugin install failed. Retry: $COPILOT_CLI plugin install \"$COPILOT_PLUGIN_DIR\""
+    fi
+  else
+    echo "  Skipped. When you are ready: $COPILOT_CLI plugin install \"$COPILOT_PLUGIN_DIR\""
+  fi
+else
+  echo -e "  ${BLUE}·${NC} GitHub Copilot CLI not found — skipping the Copilot plugin (needed only for the copilot executor)."
+fi
+
 echo
 echo -e "${BLUE}Next:${NC}"
-echo "  claude"
-echo "  /consort:start    # in the folder for your project"
+# Both coordinators work EITHER way — the bare CLI (your own agent auth) or, when
+# Unity Gateway is present, `ug <agent>` (turns routed through Databricks).
+echo "  Claude Code:"
+echo "    claude                       # the Claude Code CLI (your own auth)"
+if have ug; then
+  echo "    ug claude                    # …or route turns through Databricks (Unity Gateway)"
+fi
+echo "    /consort:start    # in the folder for your project"
+echo "  GitHub Copilot CLI:"
+echo "    ${COPILOT_CLI:-gh copilot}                   # the Copilot CLI"
+if have ug; then
+  echo "    ug copilot                   # …or route turns through Databricks (Unity Gateway)"
+fi
+echo "    /consort          # in the folder for your project"
 echo
 echo "When you create a project, /consort:start runs a full environment doctor"
 echo "against the workspace you choose — including that it has Lakebase enabled —"

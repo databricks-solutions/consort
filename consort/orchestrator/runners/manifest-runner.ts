@@ -19,6 +19,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { manifestForAction, type StepManifest } from "../steps/manifest.js";
 import { Step } from "../steps/step.js";
+import { schemaPath } from "../validators/schema-loader.js";
 import { resolvePreparer } from "../build/preconditions.js";
 import { buildAgent, type AgentBuildContext } from "../agents/agent-catalogue.js";
 import { probeDriveState } from "../state/escalation-probe.js";
@@ -105,6 +106,16 @@ function resolveInputsFromWorkspace(
   const expand = (rel: string): string => rel.replace(/\{feature\}/g, featureId).replace(/\{story\}/g, story);
   const out: Record<string, string> = {};
   for (const input of manifest.inputs) {
+    // `schema:` – a kit JSON schema (one source of truth with the output validator), not a tree file.
+    if (input.source.startsWith("schema:")) {
+      const sp = schemaPath(input.source.slice("schema:".length));
+      if (!existsSync(sp)) {
+        if (input.optional) continue;
+        return { missing: input.id };
+      }
+      out[input.id] = readFileSync(sp, "utf8");
+      continue;
+    }
     const file = expand(input.source.replace(/^feature:/, ""));
     const p = join(workspaceDir, file);
     if (!existsSync(p)) {

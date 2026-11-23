@@ -14,7 +14,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { renderThemeRootCss, installBrandAsset, applyBrandIconReference, applyNavbarBranding, type DesignGuide } from "./design-adherence.js";
+import { renderThemeRootCss, installBrandAsset, applyBrandIconReference, applyNavbarBranding, ensureConsortFooter, type DesignGuide } from "./design-adherence.js";
 import { resolveConsortDir, designGuideJson } from "../config/consort-paths.js";
 
 /** The ONE place the generated stylesheet lives (project-relative). apply-theme is its sole
@@ -94,5 +94,10 @@ export function applyDesignGuideTheme(
       ...(guide.app_name ? { appName: guide.app_name } : {}),
     });
   }
+  // Fixed "Made with Consort" attribution footer. New scaffolds carry it from the App.tsx template;
+  // this back-fills projects scaffolded before it shipped (idempotent). The theme.css token above
+  // (`--consort-lockup`, from renderThemeRootCss) already picks the light/dark wordmark for this
+  // guide's surface; the component file + public lockups land via the kit-owned surface refresh.
+  ensureConsortFooter(projectDir);
   return { themePath, varCount: (css.match(/--[\w-]+:/g) ?? []).length, iconInstalled };
 }

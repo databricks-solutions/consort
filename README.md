@@ -148,6 +148,44 @@ cd consort
 npm install   # the prepare script builds dist/
 ```
 
+### Running on GitHub Copilot
+
+Consort can drive its role turns through the **GitHub Copilot CLI** instead of Claude Code: the same deterministic orchestrator, gates, and test-driven loop, with each role run as `copilot -p` (routed to Databricks models). The executor is chosen once, when the project is created.
+
+**Install the Copilot plugin** (the Consort coordinator skill, the role agents, and the MCP server). Unlike the Claude Code marketplace plugin, this is a local-path install:
+
+```bash
+# from an npm-global install of consort
+copilot plugin install "$(npm root -g)/@databricks-solutions/consort/integrations/copilot/consort-copilot"
+# or from a clone of this repo
+copilot plugin install integrations/copilot/consort-copilot
+# (use `gh copilot plugin install …` if you run Copilot as the gh extension)
+```
+
+The bootstrap in [step 0](#getting-started) installs this automatically whenever a Copilot CLI is present. Re-run the install after you edit the skill or any agent; the CLI caches them at install time.
+
+**Create a project on the Copilot executor.** Pass `--executor copilot` at creation. It is persisted to `.lakebase/consort-config.json` (`project.executor`) as the single source of truth and is fixed for the life of the project (default: `claude`):
+
+```bash
+lakebase-create-project --project-name <name> --parent-dir <dir> \
+  --databricks-host <url> --github-owner <owner> --executor copilot
+```
+
+**Run it.** Start the Copilot CLI inside the project, then invoke the Consort coordinator skill (it drives the same `/plan -> /design -> /build -> /deploy` loop, stopping at every gate):
+
+```bash
+copilot            # or: gh copilot
+```
+
+To route turns through Databricks with Unity Gateway, install `ug` (`uv tool install git+https://github.com/databricks/unity-gateway`), then launch either executor through it:
+
+```bash
+ug copilot         # Copilot, through Databricks
+ug claude          # the Claude Code equivalent
+```
+
+Both the bare CLIs (`claude` / `copilot`) and the `ug`-wrapped forms are supported.
+
 ### Prerequisites
 
 The bootstrap in [step 0](#getting-started) checks and installs these for you; they are listed here for reference and surface only when the doctor reports one missing.

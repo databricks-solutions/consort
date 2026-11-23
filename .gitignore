@@ -53,3 +53,7 @@ examples/sftdd-scenarios/stockflow-s3-selfheal-verify/
 # Heavy recorded corpora live in kevin-hartman/consort-examples (fetch via scripts/fetch-examples.sh)
 examples/replay/corpora/
 examples/replay/optimize-results/
+.isaac/
+.playwright-mcp/
+apps/dashboard/package-lock.json
+todo.md

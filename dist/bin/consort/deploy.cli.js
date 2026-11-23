@@ -6655,7 +6655,7 @@ init_esm_shims();
 import { execSync, execFileSync as execFileSync5, spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync17, mkdirSync as mkdirSync9, readFileSync as readFileSync17, rmSync as rmSync5, writeFileSync as writeFileSync8 } from "fs";
-import { dirname as dirname10, join as join19 } from "path";
+import { basename as basename3, dirname as dirname10, join as join19 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -8234,14 +8234,43 @@ function defaultStart(cmd, cwd, env) {
   child.unref();
   return child.pid ?? -1;
 }
-async function resolveServeBaseUrl(baseUrl, probe) {
+async function resolveServeBaseUrl(baseUrl, probe, startPortOverride) {
   const u = new URL(baseUrl);
-  const startPort = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
+  const startPort = startPortOverride ?? (Number(u.port) || (u.protocol === "https:" ? 443 : 80));
   for (let p = startPort, tries = 0; tries < 20; p++, tries++) {
     u.port = String(p);
     if (!await probe(`${u.origin}/`)) return { baseUrl: u.origin, port: p };
   }
-  return { baseUrl: new URL(baseUrl).origin, port: startPort };
+  u.port = String(startPort);
+  return { baseUrl: u.origin, port: startPort };
+}
+function portOfUrl(b) {
+  const u = new URL(b);
+  return Number(u.port) || (u.protocol === "https:" ? 443 : 80);
+}
+function fnv1a(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function projectServeId(projectDir) {
+  return readProjectInstance(projectDir) || basename3(projectDir);
+}
+function preferredServePort(projectDir, configuredPort) {
+  if (configuredPort !== 8e3) return configuredPort;
+  return 8e3 + fnv1a(projectServeId(projectDir)) % 500;
+}
+async function probeServeId(url) {
+  try {
+    const r = await fetch(url, { method: "GET" });
+    const body = await r.json();
+    return typeof body.serve_id === "string" ? body.serve_id : void 0;
+  } catch {
+    return void 0;
+  }
 }
 function logDeployEvent(consortDir, event, slots) {
   try {
@@ -8259,12 +8288,16 @@ async function deployToTarget(args) {
   if (!cfg.run) return { ok: false, reason: `target '${args.targetName}' has no run command` };
   const start = args.startProcess ?? defaultStart;
   const reachable = args.reachable ?? probeReachable;
-  const portOf = (b) => {
-    const u = new URL(b);
-    return Number(u.port) || (u.protocol === "https:" ? 443 : 80);
-  };
-  let serveBaseUrl = cfg.baseUrl;
-  let servePort = portOf(cfg.baseUrl);
+  const preferredPort = preferredServePort(args.projectDir, portOfUrl(cfg.baseUrl));
+  const preferredBase = (() => {
+    const u = new URL(cfg.baseUrl);
+    u.port = String(preferredPort);
+    return u.origin;
+  })();
+  const serveId = projectServeId(args.projectDir);
+  const serveIdProbe = args.serveId ?? probeServeId;
+  let serveBaseUrl = preferredBase;
+  let servePort = preferredPort;
   let url = serveBaseUrl + cfg.healthPath;
   const stop = args.stop ?? ((pd, tn) => void stopLocal(pd, tn));
   if (args.rejectForeignPort && await reachable(url)) {
@@ -8278,7 +8311,7 @@ async function deployToTarget(args) {
     });
     if (released.outcome === "done") {
     } else {
-      const bumped = await resolveServeBaseUrl(cfg.baseUrl, reachable);
+      const bumped = await resolveServeBaseUrl(cfg.baseUrl, reachable, preferredPort);
       if (bumped.baseUrl === serveBaseUrl) {
         const reason = `target port ${url} is held by a foreign process and no free port was found nearby; stop it (consort-deploy --target ${args.targetName} --stop) or free a port.`;
         const verify2 = { passed: false, summary: reason };
@@ -8321,6 +8354,9 @@ async function deployToTarget(args) {
     BASE_URL: serveBaseUrl,
     PORT: String(servePort),
     E2E_BACKEND_PORT: String(servePort),
+    // Echoed on /health so the readiness poll (and the client e2e) can confirm the backend
+    // answering this port is OURS, not a foreign process that grabbed the same port.
+    CONSORT_SERVE_ID: serveId,
     // Per-story deploy: bind the run command to the experiment branch's Lakebase DB so the PO
     // reviews the story on its own branch. Unset = the ambient env (the per-sprint deploy).
     ...args.lakebaseBranch ? { LAKEBASE_BRANCH_ID: args.lakebaseBranch } : {},
@@ -8382,6 +8418,37 @@ async function deployToTarget(args) {
     now: args.now
   });
   const reachableNow = poll.outcome === "done";
+  if (reachableNow) {
+    const seenServeId = await serveIdProbe(url);
+    if (seenServeId !== void 0 && seenServeId !== serveId) {
+      stop(args.projectDir, args.targetName);
+      const reason = `the app answering ${url} is a FOREIGN backend (serve_id "${seenServeId}", expected "${serveId}") \u2014 another project is holding this port; refusing to verify against it. Relocate this project's deploy-targets.yaml local base_url to a free port or stop the other server.`;
+      const verify2 = { passed: false, summary: reason };
+      let evidencePath2;
+      if (args.featureId) {
+        const consortDir = args.consortDir ?? resolveConsortDir(args.projectDir);
+        const at = (args.now ?? (() => /* @__PURE__ */ new Date()))().toISOString();
+        evidencePath2 = writeDeployEvidence(consortDir, {
+          schema_version: DEPLOY_EVIDENCE_SCHEMA_VERSION,
+          feature_id: args.featureId,
+          ...args.storyId ? { story_id: args.storyId } : {},
+          target: args.targetName,
+          url,
+          reachable: false,
+          verify: verify2,
+          ...args.lakebaseBranch ? { lakebase_branch: args.lakebaseBranch } : {},
+          deployed_at: at
+        });
+        writeEscalation(consortDir, {
+          source: "deploy-verify",
+          reason: `deploy of ${args.featureId}${args.storyId ? `/${args.storyId}` : ""} blocked: ${reason}`,
+          feature_id: args.featureId,
+          ...args.storyId ? { story_id: args.storyId } : {}
+        });
+      }
+      return { ok: false, reason, verify: verify2, evidencePath: evidencePath2 };
+    }
+  }
   let verify = { passed: false };
   let verifyOutput = "";
   if (reachableNow && cfg.verify) {

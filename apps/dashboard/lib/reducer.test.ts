@@ -674,6 +674,21 @@ describe("batch /design does NOT bounce focus to a surfaced-but-unapproved spec 
     // ...but the gate NODE still lights on its own surfaced frame (independent of the WAITING focus).
     expect(fold(BATCH_DESIGN, snap(), 3).topology.laneGate).not.toBeNull();
   });
+
+  it("next.json awaiting_human surfaces the frontier gate EVEN when drive.pid still probes alive", () => {
+    // The drive EXITS at a HIL gate, but `.consort/drive.pid` lingers and its pid can read ALIVE (not yet
+    // reaped, or recycled). next.json's own `awaiting_human` is the orchestrator's authoritative park
+    // signal, so a surfaced frontier gate must win focus even while the pid probes alive — otherwise the
+    // board holds the stale last role step (the "out of sync" bug).
+    const parkedNext = { feature: "F1", awaiting_human: true } as unknown as SnapshotInputs["next"];
+    expect(fold(BATCH_DESIGN, snap({ driveAlive: true, next: parkedNext })).focus).toEqual({
+      kind: "gate",
+      gate: "spec",
+      status: "surfaced",
+    });
+    // Sanity: WITHOUT awaiting_human the same alive-drive state still holds the role step (unchanged).
+    expect(fold(BATCH_DESIGN, snap({ driveAlive: true })).focus).toEqual({ kind: "step", lane: "design", step: "d-dba" });
+  });
 });
 
 describe("a HITL gate the drive has STOPPED at (drive.pid gone) wins focus immediately — not after a timer", () => {
@@ -727,6 +742,58 @@ describe("a HITL gate the drive has STOPPED at (drive.pid gone) wins focus immed
     // gate is not a rest yet; focus stays on the carried step until the drive actually exits. This is the
     // PARKED-while-running bug: a live drive past an approved gate is RUNNING, not PARKED between stages.
     expect(fold(APPROVED_AT_REST, snap({ driveAlive: true })).focus).toEqual({ kind: "step", lane: "build", step: "b-green" });
+  });
+});
+
+describe("fold surfaces driveAlive — the transport's RUNNING-vs-STOPPED split", () => {
+  // An OPEN role turn (phase.start, no close) with NO frontier gate: the focus is a live step EITHER
+  // way, so the only thing distinguishing the two is driveAlive — alive ⇒ RUNNING, gone ⇒ STOPPED (the
+  // drive exited mid-turn; the stockflow-6 "spec-author working for 666 min" case). page.tsx derives
+  // the transport's `running`/`stopped` props from exactly these two fields.
+  const MID_TURN: AgentLogEvent[] = [ev("phase.start", { phase: "green", story: "S1", feature_id: "F1" }, { role: "driver" })];
+  it("drive ALIVE on a running step → focus=step + driveAlive true (→ RUNNING)", () => {
+    const r = fold(MID_TURN, snap({ driveAlive: true }));
+    expect(r.focus.kind).toBe("step");
+    expect(r.driveAlive).toBe(true);
+  });
+  it("drive GONE mid-turn (no frontier gate) → focus still a step but driveAlive false (→ STOPPED, not RUNNING)", () => {
+    const r = fold(MID_TURN, snap({ driveAlive: false }));
+    expect(r.focus.kind).toBe("step");
+    expect(r.driveAlive).toBe(false);
+  });
+});
+
+describe("a STALE next.json does not freeze the top band on an old park (the 'top part is completely stale' bug)", () => {
+  // next.json is a STOP-STATE snapshot, rewritten only at gate stops; during an active run it LAGS the
+  // log. A drive restarted PAST a gate keeps building while next.json still reads the OLD park with
+  // awaiting_human:true. Trusting that stale flag froze the top band ("awaiting your decision") while the
+  // lane/timeline streamed the live build. The authoritative "superseded" signal: the newest LOG event is
+  // AFTER next.json's generated_at.
+  const BUILDING_PAST_GATE: AgentLogEvent[] = [
+    ev("gate.surfaced", { gate: "acceptance", story: "S3", feature_id: "F1" }, { role: "orchestrator", timestamp: "2026-11-22T02:00:00.000Z" }),
+    // the drive is now BUILDING the next story, PAST that gate — the newest event is well after it:
+    ev("phase.start", { phase: "green", story: "S4", feature_id: "F1" }, { role: "driver", timestamp: "2026-11-22T02:10:00.000Z" }),
+  ];
+  const mkNext = (generatedAt: string) =>
+    ({
+      feature: "F1",
+      generated_at: generatedAt,
+      awaiting_human: true,
+      state: { open_gates: ["acceptance"] },
+    }) as unknown as SnapshotInputs["next"];
+
+  it("SUPERSEDED snapshot + drive alive → the live build step holds the top, NOT the stale awaiting-human gate", () => {
+    // generated_at (02:05) is BEFORE the newest log event (02:10 build) → the snapshot is stale, its
+    // awaiting_human is NOT trusted, so the board stays on the running build rather than parking.
+    const r = fold(BUILDING_PAST_GATE, snap({ driveAlive: true, next: mkNext("2026-11-22T02:05:00.000Z") }));
+    expect(r.focus).toEqual({ kind: "step", lane: "build", step: "b-green" });
+  });
+
+  it("FRESH snapshot (written after the last log event) + awaiting_human → the gate parks, even with pid alive", () => {
+    // generated_at (02:15) is AFTER the newest log event (02:10) → a genuine park written last; the
+    // original "trust awaiting_human even in the brief pre-exit window" behavior is preserved.
+    const r = fold(BUILDING_PAST_GATE, snap({ driveAlive: true, next: mkNext("2026-11-22T02:15:00.000Z") }));
+    expect(r.focus).toEqual({ kind: "gate", gate: "acceptance", status: "surfaced" });
   });
 });
 
@@ -1718,6 +1785,18 @@ describe("RunPosition (drive-position authority)", () => {
     // Names a DIFFERENT (frozen) feature → ignored, lane follows the log's drive position.
     const otherFeat = fold(run, snap({ driveAlive: true, next: { feature: "F8", state: { derived_phase: "complete" } } as any }));
     expect(otherFeat.lane).toBe("build");
+  });
+
+  it("next.json terminal (primary_action.kind 'done') for the live feature reads as run-ended", () => {
+    // The workflow for the live feature ENDED, but its `derived_phase` is frozen at "build" and a
+    // stale/recycled drive.pid still probes alive. The terminal `primary_action.kind === "done"` is
+    // authoritative → lane complete, so a lingering pid can't pin a finished run on the Build lane.
+    const run = [ev("phase.start", { phase: "green", story: "S1", feature_id: "F9" }, { role: "driver" })];
+    const done = { feature: "F9", primary_action: { kind: "done" }, state: { derived_phase: "build" } } as any;
+    expect(fold(run, snap({ driveAlive: true, next: done })).lane).toBe("complete");
+    // Names a DIFFERENT (frozen) feature → ignored, lane follows the log's drive position.
+    const otherDone = { feature: "F8", primary_action: { kind: "done" }, state: { derived_phase: "build" } } as any;
+    expect(fold(run, snap({ driveAlive: true, next: otherDone })).lane).toBe("build");
   });
 
   it("a pin does not move the run position; a pinned past feature has no active story", () => {

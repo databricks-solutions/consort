@@ -68,6 +68,18 @@ var LEGACY_CONFIG_RELS = [
   (0, import_path2.join)(".lakebase", "tdd-config.json")
 ];
 var LEGACY_TDD_CONFIG_REL = LEGACY_CONFIG_RELS[0];
+function loadConsortConfig(projectDir) {
+  for (const rel of [CONSORT_CONFIG_REL, ...LEGACY_CONFIG_RELS]) {
+    const f = (0, import_path2.join)(projectDir, rel);
+    if (!(0, import_fs.existsSync)(f)) continue;
+    try {
+      return JSON.parse((0, import_fs.readFileSync)(f, "utf8"));
+    } catch {
+      return void 0;
+    }
+  }
+  return void 0;
+}
 function defaultConsortConfig() {
   const roles = {};
   for (const role of ALL_AGENT_ROLES) roles[role] = {};
@@ -85,6 +97,13 @@ function writeConsortConfig(projectDir, config, opts) {
   (0, import_fs.mkdirSync)((0, import_path2.dirname)(f), { recursive: true });
   (0, import_fs.writeFileSync)(f, JSON.stringify(config, null, 2) + "\n");
   return true;
+}
+function setProjectExecutor(projectDir, executor) {
+  if (!executor) return;
+  const cfg = loadConsortConfig(projectDir) ?? defaultConsortConfig();
+  cfg.project = cfg.project ?? {};
+  cfg.project.executor = executor;
+  writeConsortConfig(projectDir, cfg, { force: true });
 }
 
 // consort/lakebase/adopt-consort.ts
@@ -500,6 +519,16 @@ function parseArgs(argv) {
       case "--client":
         out.clientFramework = argv[++i];
         break;
+      case "--executor": {
+        const v = argv[++i];
+        if (v !== "claude" && v !== "copilot") {
+          process.stderr.write(`--executor: expected claude or copilot. Got: ${v}
+`);
+          process.exit(2);
+        }
+        out.executor = v;
+        break;
+      }
       case "--skip-commands":
         out.skipCommands = true;
         break;
@@ -569,6 +598,10 @@ Flags:
                       "react" lays down the first-class React + TS + Vite SPA
                       (Vitest + Testing Library + Playwright). Default: react
                       for a --ui-track project, none otherwise.
+  --executor          claude | copilot. The agent backend that runs role turns,
+                      persisted to .lakebase/consort-config.json (the single
+                      source of truth \u2014 no env override). Default: claude.
+                      "copilot" runs each role turn via the GitHub Copilot CLI.
   --skip-commands     Skip scaffolding .claude/commands/{design,build}.md
                       (default: commands are written)
   --skip-doctor       Skip the environment preflight (lakebase-doctor) that
@@ -715,6 +748,11 @@ async function main() {
       `[kit-ref] dev kit in use \u2014 recorded .lakebase/${recorded.join(", ")} so lk resolves your local kit for the pinned ref
 `
     );
+  }
+  if (args.executor) {
+    setProjectExecutor(result.projectDir, args.executor);
+    process.stderr.write(`[executor] project executor set to ${args.executor} (.lakebase/consort-config.json)
+`);
   }
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");
   return 0;

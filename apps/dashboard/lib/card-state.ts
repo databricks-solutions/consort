@@ -76,10 +76,18 @@ const ORDER: ReadonlyMap<string, number> = (() => {
  * not light it. That is why `parkedGateStep` counts only when `!atLive`.
  */
 function pendingGateStep(v: FoldView): string | null {
-  // A gate the playhead sits on — but NOT an APPROVED one: an approved gate is a REACHED milestone (the
-  // done terminal's focus), never an awaiting park, so it must not light here (lighting it re-lit the
-  // promote gate on a shipped run). A SURFACED or status-less gate focus is a real live park → lights.
-  if (v.focus.kind === "gate" && v.focus.status !== "approved") return GATE_STEP_BY_KEY[v.focus.gate] ?? null;
+  if (v.focus.kind === "gate") {
+    // A SURFACED (or status-less) gate focus is a real live park — the run is awaiting a decision → lights.
+    if (v.focus.status !== "approved") return GATE_STEP_BY_KEY[v.focus.gate] ?? null;
+    // An APPROVED FRONTIER gate the run is RESTING at (restingAtGate folded focus onto it) is the run's
+    // locus too: the gate shows done, NOT the trailing role/verify turn that ran before it. Without this
+    // the glow fell through to the furthest-reached fallback, where the PER-STORY deploy-verify that runs
+    // while the acceptance gate is open (deploy.*/verify.* → dp-verify, in the LATER deploy lane)
+    // out-ordered the build-lane acceptance gate b-accept — the reported "verify light on at the approve
+    // gate" bug. EXCLUDED only on a SHIPPED run (complete), whose terminal rests on "Shipped"
+    // (currentLocus precedence 3), so the approved promote gate stays dark there.
+    if (v.atLive && !v.complete) return GATE_STEP_BY_KEY[v.focus.gate] ?? null;
+  }
   return v.atLive ? null : v.parkedGateStep;
 }
 

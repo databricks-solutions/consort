@@ -6823,7 +6823,10 @@ function resolveProjectSettings(projectDir) {
     // build lane's historical convention (app/ + .py + alembic), which is what the reference corpus
     // and pre-persistence projects actually are. A NEW scaffold persists its real language, so this
     // default only affects config-less/legacy trees.
-    language: file?.project?.language ?? "python"
+    language: file?.project?.language ?? "python",
+    // The executor backend for role turns. Default "claude"; a project created with --executor copilot
+    // persists "copilot" here (the ONE door — no env override). Legacy/config-less projects are claude.
+    executor: file?.project?.executor ?? "claude"
   };
   const plan = { sizing: file?.plan?.sizing ?? true };
   return { build, plan, project };
@@ -6881,6 +6884,9 @@ var ARTIFACT_FORMATS = {
   "story.json": { kind: "json-schema", schema: "story.schema.json" },
   "ac.json": { kind: "json-schema", schema: "ac.schema.json" },
   "test-list.json": { kind: "json-schema", schema: "test-list.schema.json" },
+  // Architect Reviewer's t-shirt sizing (planning/estimates.json). Requires feature_id + size per entry;
+  // the consumer (readEstimates) drops entries missing them, so an `id`-keyed file silently empties the backlog.
+  "estimates.json": { kind: "json-schema", schema: "estimates.schema.json" },
   "plan.json": { kind: "json-schema", schema: "plan.schema.json" },
   "architecture.json": { kind: "json-schema", schema: "architecture.schema.json" },
   // DBA's physical schema (tables/DDL + per-story migration plan) that realizes
@@ -6985,6 +6991,18 @@ function checkArtifactConformance(name, content) {
 function finalize(violations) {
   return violations.length === 0 ? { ok: true } : { ok: false, violations };
 }
+function stripNullProps(node) {
+  if (Array.isArray(node)) return node.map(stripNullProps);
+  if (node !== null && typeof node === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(node)) {
+      if (v === null) continue;
+      out[k] = stripNullProps(v);
+    }
+    return out;
+  }
+  return node;
+}
 function checkJsonSchema(name, content, schemaFile) {
   let parsed;
   try {
@@ -6994,7 +7012,7 @@ function checkJsonSchema(name, content, schemaFile) {
     return { ok: false, violations: [`${name} is not valid JSON: ${cause}`] };
   }
   const validate = getValidator(schemaFile);
-  if (validate(parsed)) return { ok: true };
+  if (validate(stripNullProps(parsed))) return { ok: true };
   return { ok: false, violations: formatSchemaErrors(validate).map((e) => `${name} ${e}`) };
 }
 var HEADING_RE = /^(#{1,6})\s+(.*\S)\s*$/;
@@ -9328,10 +9346,10 @@ function readHeldByPid(lockPath) {
     return null;
   }
 }
-function gatesLockFilePath(consortDir, featureId, basename6) {
+function gatesLockFilePath(consortDir, featureId, basename7) {
   const dir = requireFeatureDir(consortDir, featureId);
   mkdirSync6(dir, { recursive: true });
-  return join10(dir, basename6);
+  return join10(dir, basename7);
 }
 function withPipelineLock(featureId, fn, opts = {}) {
   return withGatesLock(featureId, fn, { ...opts, lockBasename: ".pipeline.lock" });
@@ -10112,7 +10130,7 @@ function clearReconcileVerdict(consortDir, feature) {
 init_esm_shims();
 import { existsSync as existsSync30, readFileSync as readFileSync31, readdirSync as readdirSync20, statSync as statSync13, writeFileSync as writeFileSync19, mkdirSync as mkdirSync17, rmSync as rmSync9 } from "fs";
 import { execFileSync as execFileSync5 } from "child_process";
-import { join as join28, dirname as dirname14, basename as basename5 } from "path";
+import { join as join28, dirname as dirname14, basename as basename6 } from "path";
 
 // consort/gates/verify-gate-integrity.ts
 init_esm_shims();
@@ -10248,7 +10266,7 @@ init_esm_shims();
 import { execSync, execFileSync as execFileSync3, spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { existsSync as existsSync25, mkdirSync as mkdirSync15, readFileSync as readFileSync27, rmSync as rmSync8, writeFileSync as writeFileSync17 } from "fs";
-import { dirname as dirname12, join as join23 } from "path";
+import { basename as basename4, dirname as dirname12, join as join23 } from "path";
 import { readTargets } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { pollUntil } from "@databricks-solutions/lakebase-scm-utils/util";
 
@@ -10371,7 +10389,7 @@ import { getConnection as getConnection2, waitForBranchAuthReady } from "@databr
 // consort/architecture/design-adherence.ts
 init_esm_shims();
 import { existsSync as existsSync26, readFileSync as readFileSync28, readdirSync as readdirSync17, writeFileSync as writeFileSync18, mkdirSync as mkdirSync16, copyFileSync } from "fs";
-import { join as join24, dirname as dirname13, basename as basename4 } from "path";
+import { join as join24, dirname as dirname13, basename as basename5 } from "path";
 
 // consort/architecture/layering-clean.ts
 init_esm_shims();

@@ -309,6 +309,29 @@ describe("buildNextSnapshot: reconciled state, blockers, truthful summary", () =
     expect(snap.options.map((o) => o.id)).toEqual(["resume", "hold"]);
   });
 
+  it("the 'Deploy the feature' option enacts the DEPLOY phase (--only deploy + --deploy-target), NOT the stale build bound", () => {
+    // REGRESSION (reported): a `--only build` run reaching feature-complete (every story built +
+    // accepted) emitted `consort-drive --feature F1 --only build` — which NO-OPS ("build already
+    // complete") instead of deploying. feature-complete's lane is "coarse", so the generic resumeCommand
+    // fell back to the run's stale bound. The option must carry the run into the DEPLOY phase and thread
+    // the run's real deploy target, so the coordinator enacts it verbatim (one source of truth) rather
+    // than hand-substituting the skill's form.
+    const BUILD_CTX: NextContext = { ...CTX, bound: "build", deployTarget: "local" };
+    const opts = buildNextOptions({ kind: "feature-complete" } as WorkflowAction, BUILD_CTX);
+    const deploy = opts.find((o) => o.id === "resume")!;
+    expect(deploy.title).toBe("Deploy the feature");
+    expect(deploy.enact).toEqual({
+      bin: "consort-drive",
+      args: ["--feature", "F1-checkout", "--only", "deploy", "--deploy-target", "local"],
+    });
+  });
+
+  it("the deploy option omits --deploy-target when the run target is unknown (CLI default = local)", () => {
+    const opts = buildNextOptions({ kind: "feature-complete" } as WorkflowAction, CTX); // no deployTarget in ctx
+    const deploy = opts.find((o) => o.id === "resume")!;
+    expect(deploy.enact).toEqual({ bin: "consort-drive", args: ["--feature", "F1-checkout", "--only", "deploy"] });
+  });
+
   it("surfaces open_gates for a gate stop", () => {
     const snap = buildNextSnapshot("feature", baseState(), CTX, fixed({ kind: "accept", story: "S3" }));
     expect(snap.state.open_gates).toEqual(["acceptance"]);

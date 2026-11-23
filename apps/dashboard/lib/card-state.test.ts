@@ -144,6 +144,26 @@ describe("card-state — exactly ONE card glows: the current locus", () => {
     expect(glowing(deriveCardStates(v))).toEqual({ id: "dp-promgate", state: "current-gate" });
   });
 
+  // REGRESSION (the reported bug): "I'm at the approve gate yet the verify light is on." At the
+  // per-story acceptance gate the run rests (restingAtGate → focus = the frontier acceptance gate). The
+  // per-story deploy-verify runs WHILE that gate is open (deploy.*/verify.* with story=S3 → dp-verify in
+  // the LATER deploy lane) and, once the frontier gate reads APPROVED, the glow fell through to the
+  // furthest-reached fallback where dp-verify out-ordered the build-lane b-accept — lighting Verify
+  // instead of the approve gate. A NON-complete run resting at an approved frontier gate lights THAT gate.
+  it("LIVE: resting at an APPROVED acceptance gate lights the gate, NOT the trailing per-story dp-verify", () => {
+    const v = base({
+      focus: { kind: "gate", gate: "acceptance", status: "approved" } as Focus,
+      liveStep: null, // restingAtGate nulled laneCurrent
+      complete: false, // mid-feature: more stories pending, NOT shipped
+      atLive: true,
+      reachedThisPass: new Set([...DESIGN, ...BUILD, "dp-deploy", "dp-verify"]), // the per-story deploy-verify
+      approvedGates: new Set(["intake", "plan", "spec", "acceptance"]),
+    });
+    const st = deriveCardStates(v);
+    expect(glowing(st)).toEqual({ id: "b-accept", state: "current-gate" });
+    expect(st.get("dp-verify")).toBe("base"); // the reported "verify light" must NOT glow
+  });
+
   it("LIVE: a truly done run lights NOTHING — an APPROVED promote-gate focus does not re-light the gate", () => {
     const v = base({
       focus: { kind: "gate", gate: "promote", status: "approved" } as Focus,
