@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.54] - 2026-11-23
+
+- **Copilot agent interface is now one door: every LIVE role turn gets its `.md` contract.** The role-contract injection (`.claude/agents/<role>.md`, the parallel to Claude's `--agent <role>`) had been wired only into the contained/test path (`buildCopilotTask`); the **live drive** path (`copilotBaseArgs`) shipped with NO contract, so every Copilot role turn ran on only its task. That produced the recurring gate rejections: the spec-author omitted the `asA/iWantTo/soThat` breakdown narrative, the DBA over-structured `db-design.json`, etc. Both paths now funnel through one documented interface, `copilotRoleContract(projectDir, role)` (copilot-step-agent.ts); `copilotBaseArgs` prepends it at the live door exactly as `claudeBaseArgs` adds `--agent`. New regression guard (`consort-copilot-engine.test.ts`) asserts the live door injects the real contract and that the live + contained doors inject the identical one. Full reference: [`consort/orchestrator/agents/COPILOT-AGENT-INTERFACE.md`](consort/orchestrator/agents/COPILOT-AGENT-INTERFACE.md).
+
 ## [0.4.53] - 2026-11-23
 
 - **Copilot plugin installs from a marketplace.** Added `.github/plugin/marketplace.json` (marketplace name `databricks-solutions`, plugin `consort` sourced from `integrations/copilot/consort-copilot`), so the Copilot plugin installs the same way as the Claude Code plugin and via the Copilot CLI's **non-deprecated** path: `copilot plugin marketplace add databricks-solutions/consort` then `copilot plugin install consort@databricks-solutions` (direct repo/URL/local-path installs are being phased out). `bootstrap.sh` + README now use the marketplace (works over `curl|bash`, no checkout or npm). The `consort-copilot` plugin version is synced to the release (was `0.0.1`).

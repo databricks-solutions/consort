@@ -24,7 +24,7 @@
 // this runner imports the agent's pure parser, never the reverse.
 
 import { spawnSync } from "node:child_process";
-import { parseCopilotOutput, parseCopilotLine, mapCopilotModel, type CopilotTurnResult } from "./copilot-step-agent.js";
+import { parseCopilotOutput, parseCopilotLine, mapCopilotModel, copilotRoleContract, type CopilotTurnResult } from "./copilot-step-agent.js";
 import { recordAgentTranscript, type TurnTranscript } from "../drive/agent-transcript.js";
 import { spawnStreamingTurn, type StreamBackend } from "../drive/streaming-turn.js";
 import { type TurnMonitor } from "../turns/turn-monitor.js";
@@ -71,12 +71,19 @@ export function resolveCopilotCommand(
 /**
  * Build the copilot CLI arg vector (the `-p …` part; the binary + its leading args are resolved by
  * spawnCopilotStreaming) from a drive command — the execRunner-envelope sibling of claude's
- * claudeBaseArgs. Mirrors buildCopilotArgs' flag assembly: the model alias is mapped to the ug/
- * Databricks id here (one door), acceptEdits-equivalent allow-all by default (else an explicit
- * allow-/deny-tool list), and structured `--output-format json` so the stream parses.
+ * `claudeBaseArgs`. This is the LIVE-drive door of the Copilot agent interface: where `claudeBaseArgs`
+ * adds `--agent cmd.role` (Claude loads `.claude/agents/<role>.md`), this PREPENDS that same role
+ * contract to the `-p` prompt via `copilotRoleContract(projectDir, cmd.role)` — the ONE interface both
+ * doors share (see copilot-step-agent.ts `copilotRoleContract` + COPILOT-AGENT-INTERFACE.md). Without
+ * it a live Copilot turn runs with only the task and never sees its role contract. Also: the model
+ * alias is mapped to the ug/Databricks id here (one door), acceptEdits-equivalent allow-all by default
+ * (else an explicit allow-/deny-tool list), and structured `--output-format json` so the stream parses.
  */
-export function copilotBaseArgs(cmd: { task: string; model?: string; allowedTools?: string[]; disallowedTools?: string[] }): string[] {
-  const args: string[] = ["-p", cmd.task];
+export function copilotBaseArgs(
+  cmd: { task: string; role: string; model?: string; allowedTools?: string[]; disallowedTools?: string[] },
+  projectDir: string,
+): string[] {
+  const args: string[] = ["-p", copilotRoleContract(projectDir, cmd.role) + cmd.task];
   if (cmd.model) args.push("--model", mapCopilotModel(cmd.model));
   if (cmd.allowedTools?.length) {
     for (const t of cmd.allowedTools) args.push("--allow-tool", t);

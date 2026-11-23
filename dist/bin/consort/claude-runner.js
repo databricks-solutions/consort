@@ -9045,6 +9045,35 @@ function recordAgentTranscript(cwd, tx) {
 }
 
 // consort/orchestrator/agents/copilot-step-agent.ts
+function stripFrontmatter(md) {
+  const lines = md.split("\n");
+  if (lines[0]?.trim() === "---") {
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].trim() === "---") return lines.slice(i + 1).join("\n").trim();
+    }
+  }
+  return md.trim();
+}
+function loadRoleAgentBody(workspaceDir, role) {
+  try {
+    return stripFrontmatter(readFileSync17(join19(workspaceDir, ".claude", "agents", `${role}.md`), "utf8"));
+  } catch {
+    return "";
+  }
+}
+function copilotRoleContract(workspaceDir, role, opts = {}) {
+  if (opts.nativeAgent) return "";
+  const body = loadRoleAgentBody(workspaceDir, role);
+  return body ? `You are the "${role}" agent. Your role contract follows; obey it EXACTLY.
+
+${body}
+
+---
+
+` : `You are the "${role}" agent. Follow its role contract exactly.
+
+`;
+}
 var COPILOT_MODEL_ALIASES = {
   opus: "system.ai.claude-opus-5-5",
   sonnet: "system.ai.claude-sonnet-5-5",
@@ -9145,8 +9174,8 @@ function resolveCopilotCommand(opts = {}) {
   if (has("copilot")) return { command: "copilot", baseArgs: [] };
   return { command: "gh", baseArgs: ["copilot", "--"] };
 }
-function copilotBaseArgs(cmd) {
-  const args = ["-p", cmd.task];
+function copilotBaseArgs(cmd, projectDir) {
+  const args = ["-p", copilotRoleContract(projectDir, cmd.role) + cmd.task];
   if (cmd.model) args.push("--model", mapCopilotModel(cmd.model));
   if (cmd.allowedTools?.length) {
     for (const t of cmd.allowedTools) args.push("--allow-tool", t);
@@ -9463,7 +9492,7 @@ function execRunner(cfg) {
           );
         }
         const isCopilot = cmd.executor === "copilot";
-        const baseArgs = isCopilot ? copilotBaseArgs(cmd) : claudeBaseArgs(cmd);
+        const baseArgs = isCopilot ? copilotBaseArgs(cmd, cfg.projectDir) : claudeBaseArgs(cmd);
         if (!isCopilot) {
           if (cmd.effort) baseArgs.push("--effort", cmd.effort);
           if (cmd.fallbackModel) baseArgs.push("--fallback-model", cmd.fallbackModel);

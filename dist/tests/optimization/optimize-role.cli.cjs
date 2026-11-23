@@ -11680,18 +11680,22 @@ function loadRoleAgentBody(workspaceDir, role) {
     return "";
   }
 }
-function buildCopilotTask(invocation, levers) {
-  const { instructions, inputs } = invocation;
-  const roleBody = levers.nativeAgent ? "" : loadRoleAgentBody(invocation.workspaceDir, levers.role);
-  const rolePreamble = levers.nativeAgent ? "" : roleBody ? `You are the "${levers.role}" agent. Your role contract follows \u2014 obey it EXACTLY.
+function copilotRoleContract(workspaceDir, role, opts = {}) {
+  if (opts.nativeAgent) return "";
+  const body = loadRoleAgentBody(workspaceDir, role);
+  return body ? `You are the "${role}" agent. Your role contract follows; obey it EXACTLY.
 
-${roleBody}
+${body}
 
 ---
 
-` : `You are the "${levers.role}" agent. Follow its role contract exactly.
+` : `You are the "${role}" agent. Follow its role contract exactly.
 
 `;
+}
+function buildCopilotTask(invocation, levers) {
+  const { instructions, inputs } = invocation;
+  const rolePreamble = copilotRoleContract(invocation.workspaceDir, levers.role, { nativeAgent: levers.nativeAgent });
   const inputBlock = Object.keys(inputs).length ? `
 
 Provided inputs (read these; do NOT look elsewhere):
@@ -11850,8 +11854,8 @@ function resolveCopilotCommand(opts = {}) {
   if (has("copilot")) return { command: "copilot", baseArgs: [] };
   return { command: "gh", baseArgs: ["copilot", "--"] };
 }
-function copilotBaseArgs(cmd) {
-  const args = ["-p", cmd.task];
+function copilotBaseArgs(cmd, projectDir) {
+  const args = ["-p", copilotRoleContract(projectDir, cmd.role) + cmd.task];
   if (cmd.model) args.push("--model", mapCopilotModel(cmd.model));
   if (cmd.allowedTools?.length) {
     for (const t of cmd.allowedTools) args.push("--allow-tool", t);
@@ -12151,7 +12155,7 @@ function execRunner(cfg) {
           );
         }
         const isCopilot = cmd.executor === "copilot";
-        const baseArgs = isCopilot ? copilotBaseArgs(cmd) : claudeBaseArgs(cmd);
+        const baseArgs = isCopilot ? copilotBaseArgs(cmd, cfg.projectDir) : claudeBaseArgs(cmd);
         if (!isCopilot) {
           if (cmd.effort) baseArgs.push("--effort", cmd.effort);
           if (cmd.fallbackModel) baseArgs.push("--fallback-model", cmd.fallbackModel);

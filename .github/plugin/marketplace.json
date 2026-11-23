@@ -11,7 +11,7 @@
     {
       "name": "consort",
       "source": "integrations/copilot/consort-copilot",
-      "version": "0.4.53",
+      "version": "0.4.54",
       "description": "Consort on GitHub Copilot: the coordinator skill + role agents that drive the Spec-First Branched-Database TDD workflow (plan -> design -> build -> deploy) through the deterministic consort-drive orchestrator, with human-in-the-loop gates. Create a project with `lakebase-create-project --executor copilot`, then run the coordinator."
     }
   ]

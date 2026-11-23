@@ -607,7 +607,10 @@ export function execRunner(cfg: DriveEffectsConfig): CommandRunner {
         const isCopilot = cmd.executor === "copilot";
         // stream-json (requires --verbose with --print) lets us capture the turn's token usage from the
         // result event while teeing readable text to the console. The Copilot CLI uses its own arg vector.
-        const baseArgs = isCopilot ? copilotBaseArgs(cmd) : claudeBaseArgs(cmd);
+        // isCopilot: copilotBaseArgs prepends the role's .claude/agents/<role>.md contract to the prompt
+        // (the Copilot agent interface — Copilot has no `--agent`); claudeBaseArgs passes `--agent` so
+        // Claude Code loads it. Same role binding, one interface, both executors.
+        const baseArgs = isCopilot ? copilotBaseArgs(cmd, cfg.projectDir) : claudeBaseArgs(cmd);
         // Per-role/turn model-side knobs are Claude-CLI flags (effort, fallback model, dollar cap,
         // per-role MCP server). The Copilot CLI has no equivalents (its model alias is mapped to a ug id
         // inside copilotBaseArgs), so these are claude-only — byte-identical to before for a claude turn.

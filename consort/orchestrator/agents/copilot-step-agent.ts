@@ -92,9 +92,8 @@ function stripFrontmatter(md: string): string {
 
 /** The role's FULL agent system prompt — the SAME `.claude/agents/<role>.md` body Claude loads via
  *  `claude --agent <role>` — so a Copilot role turn runs with its real contract, not just a pointer to
- *  it. This is the one adapter seam that gives EVERY role (spec-author, dba, navigator, …) its system
- *  prompt on Copilot, which has no per-invocation `--agent`. Best-effort: a missing/unreadable file
- *  returns "" and the caller degrades to the role-name stub rather than failing the turn. */
+ *  it. Best-effort: a missing/unreadable file returns "" and `copilotRoleContract` degrades to the
+ *  role-name stub rather than failing the turn. */
 function loadRoleAgentBody(workspaceDir: string, role: string): string {
   try {
     return stripFrontmatter(readFileSync(join(workspaceDir, ".claude", "agents", `${role}.md`), "utf8"));
@@ -103,24 +102,41 @@ function loadRoleAgentBody(workspaceDir: string, role: string): string {
   }
 }
 
+/**
+ * THE COPILOT AGENT INTERFACE — the single, standard way EVERY Copilot role turn is given its role
+ * contract, and the exact parallel to Claude's `claude --agent <role>`. Full reference:
+ * `consort/orchestrator/agents/COPILOT-AGENT-INTERFACE.md`.
+ *
+ * Claude Code loads a role's system prompt from `<workspaceDir>/.claude/agents/<role>.md` when spawned
+ * with `--agent <role> --setting-sources project`. The GitHub Copilot CLI has NO `--agent` — no way to
+ * load a per-invocation system prompt — so Consort inlines that SAME `.md` body (frontmatter stripped)
+ * as a preamble on the `-p` prompt. This function IS that inlining, and it is the ONE door it happens
+ * at: both call sites funnel through it, so a turn gets byte-identical role binding on every path:
+ *   - LIVE drive:        `copilotBaseArgs` (copilot-runner.ts), the production execRunner door.
+ *   - CONTAINED / tests: `buildCopilotTask` (this file), the direct-spawn door.
+ * It applies to EVERY role through one code path — the role name is the agent-file stem; there is NO
+ * per-role special-case. A missing/unreadable `.md` degrades to a NAMED role stub (never a silent
+ * empty contract). When `nativeAgent` is set it returns "" (Copilot's own `--agent` then carries the
+ * role — the follow-on NATIVE_AGENT seam). The returned preamble ends with a `---` divider; prepend it
+ * to the task body.
+ */
+export function copilotRoleContract(workspaceDir: string, role: string, opts: { nativeAgent?: boolean } = {}): string {
+  if (opts.nativeAgent) return "";
+  const body = loadRoleAgentBody(workspaceDir, role);
+  return body
+    ? `You are the "${role}" agent. Your role contract follows; obey it EXACTLY.\n\n${body}\n\n---\n\n`
+    : `You are the "${role}" agent. Follow its role contract exactly.\n\n`;
+}
+
 /** Assemble the turn's task text: the orchestrator's prompt, a role preamble (baseline for the
  *  absent per-invocation `--agent`), the provided input CONTENTS (so the agent reads them from the
  *  prompt, never the filesystem), then guidelines. Identical input/guideline framing to
  *  ClaudeStepAgent so a role behaves the same regardless of harness. */
 export function buildCopilotTask(invocation: AgentInvocation, levers: CopilotLevers): string {
   const { instructions, inputs } = invocation;
-  // Baseline role binding: INJECT the role's full `.claude/agents/<role>.md` body (what Claude gets via
-  // `--agent <role>`). Copilot has no per-invocation `--agent`, so without this the turn runs with only
-  // the task and never sees the role contract — e.g. the DBA never got its db-design shape rules and
-  // over-structured the artifact. Applies to EVERY role (one code path), not a per-role special-case.
-  // Fall back to the role-name stub when the body can't be read, so a missing file degrades, never
-  // breaks. When nativeAgent is used the preamble is omitted (Copilot's own `--agent` carries the role).
-  const roleBody = levers.nativeAgent ? "" : loadRoleAgentBody(invocation.workspaceDir, levers.role);
-  const rolePreamble = levers.nativeAgent
-    ? ""
-    : roleBody
-      ? `You are the "${levers.role}" agent. Your role contract follows — obey it EXACTLY.\n\n${roleBody}\n\n---\n\n`
-      : `You are the "${levers.role}" agent. Follow its role contract exactly.\n\n`;
+  // Role binding goes through the ONE Copilot agent interface — copilotRoleContract — the SAME door the
+  // live drive uses (copilotBaseArgs). See its doc block + COPILOT-AGENT-INTERFACE.md.
+  const rolePreamble = copilotRoleContract(invocation.workspaceDir, levers.role, { nativeAgent: levers.nativeAgent });
   const inputBlock = Object.keys(inputs).length
     ? `\n\nProvided inputs (read these; do NOT look elsewhere):\n${Object.entries(inputs)
         .map(([id, content]) => `<<INPUT id="${id}">>\n${content}\n<<END INPUT ${id}>>`)

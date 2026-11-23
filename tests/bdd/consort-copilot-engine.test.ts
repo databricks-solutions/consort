@@ -6,11 +6,19 @@
 // Uses a tiny real `node -e` process as the "CLI" (deterministic, no network).
 
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseCopilotLine } from "../../consort/orchestrator/agents/copilot-step-agent";
+import { parseCopilotLine, buildCopilotTask, copilotRoleContract } from "../../consort/orchestrator/agents/copilot-step-agent";
 import { spawnCopilotStreaming, copilotBaseArgs, CopilotTurnError } from "../../consort/orchestrator/agents/copilot-runner";
+
+/** A temp project workspace carrying a role agent md at .claude/agents/<role>.md. */
+function workspaceWithAgent(role: string, body: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "copilot-iface-"));
+  mkdirSync(join(dir, ".claude", "agents"), { recursive: true });
+  writeFileSync(join(dir, ".claude", "agents", `${role}.md`), `---\nname: ${role}\n---\n${body}\n`);
+  return dir;
+}
 
 describe("parseCopilotLine: one real JSONL line → text/tools", () => {
   it("maps a message_delta to incremental text", () => {
@@ -30,20 +38,67 @@ describe("parseCopilotLine: one real JSONL line → text/tools", () => {
 });
 
 describe("copilotBaseArgs: model alias mapping + flag vector", () => {
+  const dirs: string[] = [];
+  afterEach(() => { while (dirs.length) try { rmSync(dirs.pop()!, { recursive: true, force: true }); } catch { /* */ } });
+
   it("maps a bare alias to the ug id and defaults to allow-all + json", () => {
-    const args = copilotBaseArgs({ task: "DO IT", model: "opus" });
-    expect(args.slice(0, 2)).toEqual(["-p", "DO IT"]);
+    const dir = workspaceWithAgent("driver", "DRIVER CONTRACT BODY"); dirs.push(dir);
+    const args = copilotBaseArgs({ task: "DO IT", role: "driver", model: "opus" }, dir);
+    expect(args[0]).toBe("-p");
     expect(args[args.indexOf("--model") + 1]).toBe("system.ai.claude-opus-5-5");
     expect(args).toContain("--allow-all-tools");
     expect(args).toContain("--allow-all-paths");
     expect(args.join(" ")).toContain("--output-format json");
   });
   it("passes a qualified model id through + narrows with allow/deny tools", () => {
-    const args = copilotBaseArgs({ task: "x", model: "system.ai.claude-sonnet-5-5", allowedTools: ["write"], disallowedTools: ["shell(rm)"] });
+    const dir = workspaceWithAgent("dba", "DBA CONTRACT"); dirs.push(dir);
+    const args = copilotBaseArgs({ task: "x", role: "dba", model: "system.ai.claude-sonnet-5-5", allowedTools: ["write"], disallowedTools: ["shell(rm)"] }, dir);
     expect(args[args.indexOf("--model") + 1]).toBe("system.ai.claude-sonnet-5-5");
     expect(args).not.toContain("--allow-all-tools");
     expect(args.join(" ")).toContain("--allow-tool write");
     expect(args.join(" ")).toContain("--deny-tool shell(rm)");
+  });
+});
+
+// REGRESSION GUARD for the live-path agent-contract bug: the live drive uses copilotBaseArgs (NOT
+// buildCopilotTask), so the role's .claude/agents/<role>.md MUST be injected THERE. This is the test
+// that was missing when the body-injection shipped only in the contained door.
+describe("Copilot agent interface: the role .md contract reaches the LIVE door (copilotBaseArgs)", () => {
+  const dirs: string[] = [];
+  afterEach(() => { while (dirs.length) try { rmSync(dirs.pop()!, { recursive: true, force: true }); } catch { /* */ } });
+
+  it("copilotBaseArgs PREPENDS the role's .claude/agents/<role>.md body to the -p prompt", () => {
+    const dir = workspaceWithAgent("spec-author", "WRITE the As a / I want / So that narrative"); dirs.push(dir);
+    const prompt = copilotBaseArgs({ task: "Break down F1.", role: "spec-author" }, dir)[1];
+    expect(prompt).toContain('You are the "spec-author" agent');
+    expect(prompt).toContain("WRITE the As a / I want / So that narrative"); // the real contract body
+    expect(prompt).toContain("Break down F1."); // task preserved, after the contract
+    expect(prompt.indexOf("WRITE the As a")).toBeLessThan(prompt.indexOf("Break down F1.")); // contract FIRST
+  });
+
+  it("a missing agent md degrades to a NAMED stub, never a silent empty contract", () => {
+    const dir = mkdtempSync(join(tmpdir(), "copilot-iface-")); dirs.push(dir);
+    const prompt = copilotBaseArgs({ task: "t", role: "navigator" }, dir)[1];
+    expect(prompt).toContain('You are the "navigator" agent');
+    expect(prompt).toContain("t");
+  });
+
+  it("ONE INTERFACE: the LIVE door (copilotBaseArgs) and the CONTAINED door (buildCopilotTask) inject the IDENTICAL contract", () => {
+    const dir = workspaceWithAgent("architect-reviewer", "ARCHITECT CANON XYZ"); dirs.push(dir);
+    const contract = copilotRoleContract(dir, "architect-reviewer");
+    const live = copilotBaseArgs({ task: "TASK", role: "architect-reviewer" }, dir)[1];
+    const contained = buildCopilotTask(
+      {
+        action: { kind: "invoke-role" } as unknown as import("../../consort/orchestrator/agents/agent-types").AgentInvocation["action"],
+        workspaceDir: dir,
+        instructions: { prompt: "TASK" },
+        inputs: {},
+      },
+      { role: "architect-reviewer" },
+    );
+    expect(contract).toContain("ARCHITECT CANON XYZ");
+    expect(live.startsWith(contract)).toBe(true);
+    expect(contained.startsWith(contract)).toBe(true);
   });
 });
 
