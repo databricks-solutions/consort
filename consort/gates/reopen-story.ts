@@ -35,6 +35,7 @@ import {
 } from "../config/consort-paths.js";
 import { updatePipeline } from "../pipeline/story-pipeline.js";
 import { PHASE_OWNER_KEY } from "./workflow-phase.js";
+import { readRegressionAssessment } from "../smells/supersession.js";
 
 /** A reopen with a `--reason` must DELIVER that reason to the re-authoring role's next turn, else the
  *  role re-authors BLIND and reproduces the very defect the reopen was meant to fix (the F6/S1 case:
@@ -55,6 +56,43 @@ function writeReopenBrief(consortDir: string, feature: string, story: string, ro
   } catch {
     /* best-effort: the brief is observability for the re-author; never fail the reopen on it */
   }
+}
+
+/** The build lane's assess ALREADY produced the concrete re-author remedy for a spec-defect — it is
+ *  on disk in the story's `regression-assessment.json` (`specDefect.reason`, else the `diagnosis`),
+ *  scanned across the story's per-AC cycle dirs. Reopen AUTO-CARRIES it so the role does NOT re-author
+ *  blind: the navigator wrote "re-author T45 as a component test rendering `<StockTable records={[]}/>`",
+ *  but a reopen that forwards only a generic `--reason` drops it and the role reproduces the same
+ *  defect (the F1/S2 live loop: the operator cannot be expected to copy the diagnosis by hand).
+ *  Returns undefined when no spec-defect assessment is on disk. */
+function specDefectRemedyForStory(consortDir: string, feature: string, story: string): string | undefined {
+  try {
+    const storyCyclesDir = join(cyclesRootDir(consortDir), feature, story);
+    if (!fs.existsSync(storyCyclesDir)) return undefined;
+    for (const ac of fs.readdirSync(storyCyclesDir)) {
+      const ra = readRegressionAssessment(consortDir, feature, story, ac);
+      if (!ra?.specDefect) continue;
+      const text = (ra.specDefect.reason ?? ra.diagnosis ?? "").trim();
+      if (text) return `The build-lane assess diagnosed a SPEC-DEFECT for ${ac} — apply this remedy exactly: ${text}`;
+    }
+  } catch {
+    /* best-effort: a missing/unreadable assessment just yields no auto-brief */
+  }
+  return undefined;
+}
+
+/** The reopen brief delivered to the re-authoring role = the navigator's on-disk spec-defect remedy
+ *  (auto-carried, so the operator need not know to paste it) COMBINED with the operator's explicit
+ *  `--reason` when it adds more than the generic default. Either may be absent. */
+function combinedReopenBrief(consortDir: string, feature: string, story: string, explicit?: string): string | undefined {
+  const remedy = specDefectRemedyForStory(consortDir, feature, story);
+  const reason = (explicit ?? "").trim();
+  const isGenericDefault = reason === "" || reason === "reopened for redesign";
+  const parts: string[] = [];
+  if (remedy) parts.push(remedy);
+  if (reason && !isGenericDefault) parts.push(reason);
+  if (parts.length === 0 && reason) parts.push(reason); // nothing auto-carried -> keep the generic reason
+  return parts.length ? parts.join("\n\n") : undefined;
 }
 
 export interface ReopenResult {
@@ -143,8 +181,9 @@ export function reopenStoryForRedesign(
   // reopenStoryFromRole (the scoped reopen) so both revisions re-gate cleanly.
   resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared);
 
-  // A full reopen re-dispatches the Spec Author (hasAcs=false) — deliver the reason to its turn.
-  writeReopenBrief(consortDir, feature, story, "spec-author", opts.reason);
+  // A full reopen re-dispatches the Spec Author (hasAcs=false) — deliver the brief to its turn
+  // (the navigator's on-disk spec-defect remedy, auto-carried, + any explicit reason).
+  writeReopenBrief(consortDir, feature, story, "spec-author", combinedReopenBrief(consortDir, feature, story, opts.reason));
   return { backupDir, cleared, dbResyncNeeded: storyHasMigration(consortDir, feature, story) };
 }
 
@@ -325,8 +364,10 @@ export function reopenStoryFromRole(
   clearFile(storyPlanJson(consortDir, feature, story), "plan.json (design-spec)", "plan.json");
 
   resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared);
-  // Deliver the reopen reason to the role the drive will resume at, so it re-authors WITH the diagnosis.
-  writeReopenBrief(consortDir, feature, story, fromRole, opts.reason);
+  // Deliver the brief to the role the drive resumes at, so it re-authors WITH the diagnosis: the
+  // navigator's on-disk spec-defect remedy is AUTO-CARRIED (the operator need not know to paste it),
+  // combined with any explicit --reason.
+  writeReopenBrief(consortDir, feature, story, fromRole, combinedReopenBrief(consortDir, feature, story, opts.reason));
   return { backupDir, cleared, dbResyncNeeded: storyHasMigration(consortDir, feature, story) };
 }
 

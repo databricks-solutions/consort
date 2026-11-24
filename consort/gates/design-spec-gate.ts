@@ -5,6 +5,7 @@ import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from
 import { storyPlanJson, storyJson } from "../../consort/config/consort-paths.js";
 import type { TestList, TestListItem } from "../test-list/test-list.js";
 import { readAcLayer } from "../pipeline/run-cycle.js";
+import { readAcE2eExempt } from "../config/consort-paths.js";
 import type { AcLayer } from "../experiment/experiment.js";
 import { collectSpikeInputs, type SpikeInput } from "../experiment/spike-carryforward.js";
 
@@ -258,7 +259,9 @@ export function checkE2eGate(args: {
   const e2eAcIds = new Set<string>();
   for (const item of args.list.items) {
     const layer = readAcLayer(args.consortDir, args.featureId, item.ac_id) as AcLayer | undefined;
-    if (layer === "E2E") {
+    // An e2e-exempt E2E AC (architect-declared pure empty/zero-state, no satisfiable browser e2e) is
+    // covered by component tests, so it does not demand an e2e — skip it from the coverage set.
+    if (layer === "E2E" && !readAcE2eExempt(args.consortDir, args.featureId, item.ac_id)) {
       e2eAcIds.add(item.ac_id);
     }
   }

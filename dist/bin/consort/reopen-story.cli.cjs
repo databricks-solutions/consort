@@ -6695,6 +6695,7 @@ var storyTestListJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(
 var storyPlanJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "plan.json");
 var reflectVerdictJson = (tdd, f, s) => (0, import_node_path.join)(storyResolved(tdd, f, s), "reflect-verdict.json");
 var handbackFile = (tdd, f, role, story) => (0, import_node_path.join)(featureDir(tdd, f), ".handback", `${role}${story ? `.${story}` : ""}.md`);
+var cycleDir = (tdd, f, s, ac) => (0, import_node_path.join)(cyclesRootDir(tdd), f, s, ac);
 function findFeatureDir(tdd, featureId) {
   const root = featuresDir(tdd);
   if (!fs.existsSync(root)) return void 0;
@@ -6711,8 +6712,8 @@ function requireFeatureDir(tdd, featureId) {
 
 // consort/gates/reopen-story.ts
 init_cjs_shims();
-var fs3 = __toESM(require("fs"), 1);
-var import_node_path3 = require("path");
+var fs4 = __toESM(require("fs"), 1);
+var import_node_path4 = require("path");
 
 // consort/pipeline/story-pipeline.ts
 init_cjs_shims();
@@ -6985,14 +6986,63 @@ init_cjs_shims();
 var fs2 = __toESM(require("fs"), 1);
 var PHASE_OWNER_KEY = "phase_feature_id";
 
+// consort/smells/supersession.ts
+init_cjs_shims();
+var fs3 = __toESM(require("fs"), 1);
+var import_node_child_process = require("child_process");
+var import_node_crypto = require("crypto");
+var import_node_path3 = require("path");
+var TREE_STATE_EXCLUDE_PREFIXES = [
+  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
+  ".lakebase/",
+  ".claude/agent-memory/",
+  "node_modules/",
+  "dist/",
+  ".venv/",
+  "coverage/"
+];
+function regressionAssessmentJson(tdd, feature, story, ac) {
+  return (0, import_node_path3.join)(cycleDir(tdd, feature, story, ac), "regression-assessment.json");
+}
+function readRegressionAssessment(tdd, feature, story, ac) {
+  const dir = cycleDir(tdd, feature, story, ac);
+  const candidates = [
+    regressionAssessmentJson(tdd, feature, story, ac),
+    // canonical: regression-assessment.json
+    (0, import_node_path3.join)(dir, "assess-regression.json")
+    // agent-natural filename (mirrors the CLI verb)
+  ];
+  for (const file of candidates) {
+    if (!fs3.existsSync(file)) continue;
+    try {
+      const raw = JSON.parse(fs3.readFileSync(file, "utf8"));
+      const diagnosis = raw.diagnosis;
+      if (typeof diagnosis !== "string" || diagnosis.length === 0) continue;
+      const fixDirective = typeof raw.fixDirective === "string" && raw.fixDirective.length > 0 ? raw.fixDirective : typeof raw.fix === "string" && raw.fix.length > 0 ? raw.fix : void 0;
+      const sd = raw.specDefect;
+      const isSpecDefect = sd !== void 0 && sd !== null || raw.classification === "spec-defect";
+      let specDefect;
+      if (isSpecDefect) {
+        const fromRole = typeof sd?.fromRole === "string" && sd.fromRole || typeof raw.fromRole === "string" && raw.fromRole || typeof raw.from_role === "string" && raw.from_role || void 0;
+        const reason = typeof sd?.reason === "string" && sd.reason || typeof raw.reason === "string" && raw.reason || void 0;
+        specDefect = { ...fromRole ? { fromRole } : {}, ...reason ? { reason } : {} };
+      }
+      if (specDefect) return { diagnosis, specDefect };
+      return { diagnosis, ...fixDirective ? { fixDirective } : {} };
+    } catch {
+    }
+  }
+  return void 0;
+}
+
 // consort/gates/reopen-story.ts
 function writeReopenBrief(consortDir, feature, story, role, reason) {
   const text = (reason ?? "").trim();
   if (!text) return;
   try {
     const hb = handbackFile(consortDir, feature, role, story);
-    fs3.mkdirSync((0, import_node_path3.dirname)(hb), { recursive: true });
-    fs3.writeFileSync(
+    fs4.mkdirSync((0, import_node_path4.dirname)(hb), { recursive: true });
+    fs4.writeFileSync(
       hb,
       `REOPEN RE-AUTHOR BRIEF (${role}): this story was reopened to you for a genuine re-author. Address EXACTLY the following, then produce your normal output \u2014 do NOT re-emit the same artifact unchanged:
 
@@ -7002,11 +7052,35 @@ ${text}
   } catch {
   }
 }
+function specDefectRemedyForStory(consortDir, feature, story) {
+  try {
+    const storyCyclesDir = (0, import_node_path4.join)(cyclesRootDir(consortDir), feature, story);
+    if (!fs4.existsSync(storyCyclesDir)) return void 0;
+    for (const ac of fs4.readdirSync(storyCyclesDir)) {
+      const ra = readRegressionAssessment(consortDir, feature, story, ac);
+      if (!ra?.specDefect) continue;
+      const text = (ra.specDefect.reason ?? ra.diagnosis ?? "").trim();
+      if (text) return `The build-lane assess diagnosed a SPEC-DEFECT for ${ac} \u2014 apply this remedy exactly: ${text}`;
+    }
+  } catch {
+  }
+  return void 0;
+}
+function combinedReopenBrief(consortDir, feature, story, explicit) {
+  const remedy = specDefectRemedyForStory(consortDir, feature, story);
+  const reason = (explicit ?? "").trim();
+  const isGenericDefault = reason === "" || reason === "reopened for redesign";
+  const parts = [];
+  if (remedy) parts.push(remedy);
+  if (reason && !isGenericDefault) parts.push(reason);
+  if (parts.length === 0 && reason) parts.push(reason);
+  return parts.length ? parts.join("\n\n") : void 0;
+}
 function storyHasMigration(consortDir, feature, story) {
   try {
     const p = dbDesignJson(consortDir, feature);
-    if (!fs3.existsSync(p)) return false;
-    const db = JSON.parse(fs3.readFileSync(p, "utf8"));
+    if (!fs4.existsSync(p)) return false;
+    const db = JSON.parse(fs4.readFileSync(p, "utf8"));
     return (db.schema_changes ?? []).some(
       (c) => c?.story_id === story && typeof c.kind === "string" && /create_table|add_column|add_constraint|add_index|drop_/.test(c.kind)
     );
@@ -7018,13 +7092,13 @@ function reopenStoryForRedesign(consortDir, feature, story, opts = {}) {
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
   const storyRoot = storyResolved(consortDir, feature, story);
   const stamp = now().toISOString().replace(/[:.]/g, "-");
-  const backupDir = (0, import_node_path3.join)(consortDir, `.backup-${(0, import_node_path3.basename)(storyRoot)}-redesign-${stamp}`);
+  const backupDir = (0, import_node_path4.join)(consortDir, `.backup-${(0, import_node_path4.basename)(storyRoot)}-redesign-${stamp}`);
   const cleared = [];
-  const rel = (p) => p.slice(storyRoot.length).replace(/^[/\\]/, "") || (0, import_node_path3.basename)(p);
+  const rel = (p) => p.slice(storyRoot.length).replace(/^[/\\]/, "") || (0, import_node_path4.basename)(p);
   const backup = (p) => {
-    const dest = (0, import_node_path3.join)(backupDir, rel(p));
-    fs3.mkdirSync((0, import_node_path3.dirname)(dest), { recursive: true });
-    fs3.cpSync(p, dest, { recursive: true });
+    const dest = (0, import_node_path4.join)(backupDir, rel(p));
+    fs4.mkdirSync((0, import_node_path4.dirname)(dest), { recursive: true });
+    fs4.cpSync(p, dest, { recursive: true });
   };
   for (const p of [
     acsDir(consortDir, feature, story),
@@ -7032,34 +7106,34 @@ function reopenStoryForRedesign(consortDir, feature, story, opts = {}) {
     reflectVerdictJson(consortDir, feature, story),
     storyPlanJson(consortDir, feature, story)
   ]) {
-    if (!fs3.existsSync(p)) continue;
+    if (!fs4.existsSync(p)) continue;
     backup(p);
-    fs3.rmSync(p, { recursive: true, force: true });
+    fs4.rmSync(p, { recursive: true, force: true });
     cleared.push(rel(p));
   }
   const sj = storyJson(consortDir, feature, story);
-  if (fs3.existsSync(sj)) {
+  if (fs4.existsSync(sj)) {
     try {
-      const obj = JSON.parse(fs3.readFileSync(sj, "utf8"));
+      const obj = JSON.parse(fs4.readFileSync(sj, "utf8"));
       if (Array.isArray(obj.acs) && obj.acs.length > 0) {
         backup(sj);
-        fs3.writeFileSync(sj, JSON.stringify({ ...obj, acs: [] }, null, 2) + "\n");
+        fs4.writeFileSync(sj, JSON.stringify({ ...obj, acs: [] }, null, 2) + "\n");
         cleared.push(rel(sj) + " (acs[] emptied)");
       }
     } catch {
     }
   }
   resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared);
-  writeReopenBrief(consortDir, feature, story, "spec-author", opts.reason);
+  writeReopenBrief(consortDir, feature, story, "spec-author", combinedReopenBrief(consortDir, feature, story, opts.reason));
   return { backupDir, cleared, dbResyncNeeded: storyHasMigration(consortDir, feature, story) };
 }
 function resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared) {
   const fde = featureDeployEvidenceJson(consortDir, feature);
-  if (fs3.existsSync(fde)) {
-    const dest = (0, import_node_path3.join)(backupDir, "feature-deploy-evidence.json");
-    fs3.mkdirSync((0, import_node_path3.dirname)(dest), { recursive: true });
-    fs3.cpSync(fde, dest);
-    fs3.rmSync(fde, { force: true });
+  if (fs4.existsSync(fde)) {
+    const dest = (0, import_node_path4.join)(backupDir, "feature-deploy-evidence.json");
+    fs4.mkdirSync((0, import_node_path4.dirname)(dest), { recursive: true });
+    fs4.cpSync(fde, dest);
+    fs4.rmSync(fde, { force: true });
     cleared.push("../deploy-evidence.json (feature deploy gate)");
   }
   try {
@@ -7077,30 +7151,30 @@ function resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared
   }
   try {
     const wsFile = workflowStateJson(consortDir);
-    if (fs3.existsSync(wsFile)) {
-      const ws = JSON.parse(fs3.readFileSync(wsFile, "utf8"));
+    if (fs4.existsSync(wsFile)) {
+      const ws = JSON.parse(fs4.readFileSync(wsFile, "utf8"));
       if (ws.phase !== void 0 || ws[PHASE_OWNER_KEY] !== void 0) {
-        const dest = (0, import_node_path3.join)(backupDir, "workflow-state.json");
-        fs3.mkdirSync((0, import_node_path3.dirname)(dest), { recursive: true });
-        fs3.cpSync(wsFile, dest);
+        const dest = (0, import_node_path4.join)(backupDir, "workflow-state.json");
+        fs4.mkdirSync((0, import_node_path4.dirname)(dest), { recursive: true });
+        fs4.cpSync(wsFile, dest);
         delete ws.phase;
         delete ws[PHASE_OWNER_KEY];
-        fs3.writeFileSync(wsFile, JSON.stringify(ws, null, 2) + "\n");
+        fs4.writeFileSync(wsFile, JSON.stringify(ws, null, 2) + "\n");
         cleared.push("coarse phase cleared (drive re-derives design/build from artifacts)");
       }
     }
   } catch {
   }
   try {
-    const storyCyclesDir = (0, import_node_path3.join)(cyclesRootDir(consortDir), feature, story);
-    if (fs3.existsSync(storyCyclesDir)) {
-      for (const acEntry of fs3.readdirSync(storyCyclesDir)) {
-        const gf = (0, import_node_path3.join)(storyCyclesDir, acEntry, "green-failure.json");
-        if (!fs3.existsSync(gf)) continue;
-        const dest = (0, import_node_path3.join)(backupDir, "cycles", acEntry, "green-failure.json");
-        fs3.mkdirSync((0, import_node_path3.dirname)(dest), { recursive: true });
-        fs3.cpSync(gf, dest);
-        fs3.rmSync(gf, { force: true });
+    const storyCyclesDir = (0, import_node_path4.join)(cyclesRootDir(consortDir), feature, story);
+    if (fs4.existsSync(storyCyclesDir)) {
+      for (const acEntry of fs4.readdirSync(storyCyclesDir)) {
+        const gf = (0, import_node_path4.join)(storyCyclesDir, acEntry, "green-failure.json");
+        if (!fs4.existsSync(gf)) continue;
+        const dest = (0, import_node_path4.join)(backupDir, "cycles", acEntry, "green-failure.json");
+        fs4.mkdirSync((0, import_node_path4.dirname)(dest), { recursive: true });
+        fs4.cpSync(gf, dest);
+        fs4.rmSync(gf, { force: true });
         cleared.push(`cycles/${acEntry}/green-failure.json (orphaned build marker)`);
       }
     }
@@ -7120,24 +7194,24 @@ function reopenStoryFromRole(consortDir, feature, story, fromRole, opts = {}) {
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
   const storyRoot = storyResolved(consortDir, feature, story);
   const stamp = now().toISOString().replace(/[:.]/g, "-");
-  const backupDir = (0, import_node_path3.join)(consortDir, `.backup-${(0, import_node_path3.basename)(storyRoot)}-reopen-${fromRole}-${stamp}`);
+  const backupDir = (0, import_node_path4.join)(consortDir, `.backup-${(0, import_node_path4.basename)(storyRoot)}-reopen-${fromRole}-${stamp}`);
   const cleared = [];
   const backupTo = (p, name) => {
-    const dest = (0, import_node_path3.join)(backupDir, name);
-    fs3.mkdirSync((0, import_node_path3.dirname)(dest), { recursive: true });
-    fs3.cpSync(p, dest, { recursive: true });
+    const dest = (0, import_node_path4.join)(backupDir, name);
+    fs4.mkdirSync((0, import_node_path4.dirname)(dest), { recursive: true });
+    fs4.cpSync(p, dest, { recursive: true });
   };
   const clearFile = (p, label, backupName) => {
-    if (!fs3.existsSync(p)) return;
+    if (!fs4.existsSync(p)) return;
     backupTo(p, backupName);
-    fs3.rmSync(p, { recursive: true, force: true });
+    fs4.rmSync(p, { recursive: true, force: true });
     cleared.push(label);
   };
   const clearForRole = {
     "ux-designer": () => {
       clearFile(designGuideJson(consortDir), "design/design-guide.json (UX)", "design-guide.json");
-      clearFile((0, import_node_path3.join)(designDir(consortDir), "design-guide.md"), "design/design-guide.md (UX)", "design-guide.md");
-      clearFile((0, import_node_path3.join)(designDir(consortDir), "ia.md"), "design/ia.md (UX)", "ia.md");
+      clearFile((0, import_node_path4.join)(designDir(consortDir), "design-guide.md"), "design/design-guide.md (UX)", "design-guide.md");
+      clearFile((0, import_node_path4.join)(designDir(consortDir), "ia.md"), "design/ia.md (UX)", "ia.md");
     },
     "architect-reviewer": () => {
       clearFile(architectureJson(consortDir, feature), "architecture.json (feature)", "architecture.json");
@@ -7162,23 +7236,23 @@ function reopenStoryFromRole(consortDir, feature, story, fromRole, opts = {}) {
   }
   clearFile(storyPlanJson(consortDir, feature, story), "plan.json (design-spec)", "plan.json");
   resetBuildStateForReopen(consortDir, feature, story, backupDir, cleared);
-  writeReopenBrief(consortDir, feature, story, fromRole, opts.reason);
+  writeReopenBrief(consortDir, feature, story, fromRole, combinedReopenBrief(consortDir, feature, story, opts.reason));
   return { backupDir, cleared, dbResyncNeeded: storyHasMigration(consortDir, feature, story) };
 }
 function stripArchitecturalNotes(consortDir, feature, story, backupDir, cleared) {
   const dir = acsDir(consortDir, feature, story);
-  if (!fs3.existsSync(dir)) return;
+  if (!fs4.existsSync(dir)) return;
   let stripped = 0;
-  for (const name of fs3.readdirSync(dir)) {
+  for (const name of fs4.readdirSync(dir)) {
     if (!name.endsWith(".json")) continue;
-    const p = (0, import_node_path3.join)(dir, name);
+    const p = (0, import_node_path4.join)(dir, name);
     try {
-      const ac = JSON.parse(fs3.readFileSync(p, "utf8"));
+      const ac = JSON.parse(fs4.readFileSync(p, "utf8"));
       if (!("architectural_notes" in ac)) continue;
-      fs3.mkdirSync((0, import_node_path3.join)(backupDir, "acs"), { recursive: true });
-      fs3.cpSync(p, (0, import_node_path3.join)(backupDir, "acs", name));
+      fs4.mkdirSync((0, import_node_path4.join)(backupDir, "acs"), { recursive: true });
+      fs4.cpSync(p, (0, import_node_path4.join)(backupDir, "acs", name));
       delete ac.architectural_notes;
-      fs3.writeFileSync(p, JSON.stringify(ac, null, 2) + "\n");
+      fs4.writeFileSync(p, JSON.stringify(ac, null, 2) + "\n");
       stripped++;
     } catch {
     }
@@ -7208,7 +7282,7 @@ var import_lakebase2 = require("@databricks-solutions/lakebase-scm-utils/lakebas
 
 // consort/experiment/experiment.ts
 init_cjs_shims();
-var import_node_child_process = require("child_process");
+var import_node_child_process2 = require("child_process");
 var import_lakebase = require("@databricks-solutions/lakebase-scm-utils/lakebase");
 var RUNTIME_ARTIFACT_PREFIXES = [
   ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
@@ -7232,12 +7306,12 @@ init_cjs_shims();
 // consort/architecture/design-adherence.ts
 init_cjs_shims();
 var import_node_fs2 = require("fs");
-var import_node_path4 = require("path");
+var import_node_path5 = require("path");
 
 // consort/architecture/layering-clean.ts
 init_cjs_shims();
 var import_node_fs3 = require("fs");
-var import_node_path5 = require("path");
+var import_node_path6 = require("path");
 var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   "node_modules",
   "__pycache__",
@@ -7256,22 +7330,6 @@ var SOURCE_SKIP_DIRS = /* @__PURE__ */ new Set([
   ".pytest_cache",
   ".ruff_cache"
 ]);
-
-// consort/smells/supersession.ts
-init_cjs_shims();
-var fs4 = __toESM(require("fs"), 1);
-var import_node_child_process2 = require("child_process");
-var import_node_crypto = require("crypto");
-var import_node_path6 = require("path");
-var TREE_STATE_EXCLUDE_PREFIXES = [
-  ...ALL_ARTIFACT_ROOTS.map((r) => `${r}/`),
-  ".lakebase/",
-  ".claude/agent-memory/",
-  "node_modules/",
-  "dist/",
-  ".venv/",
-  "coverage/"
-];
 
 // consort/architecture/contract-clean.ts
 init_cjs_shims();

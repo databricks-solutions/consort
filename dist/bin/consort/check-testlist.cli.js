@@ -6738,6 +6738,20 @@ function readAcLayer(tdd, f, acId) {
   }
   return void 0;
 }
+function readAcE2eExempt(tdd, f, acId) {
+  const stories = storiesDir(tdd, f);
+  if (!fs.existsSync(stories)) return false;
+  for (const s of fs.readdirSync(stories)) {
+    const file = acJson(tdd, f, s, acId);
+    if (!fs.existsSync(file)) continue;
+    try {
+      const ac = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (typeof ac.e2e_exempt_reason === "string" && ac.e2e_exempt_reason.trim().length > 0) return true;
+    } catch {
+    }
+  }
+  return false;
+}
 
 // consort/test-list/fan-out-plan.ts
 init_esm_shims();
@@ -6855,7 +6869,7 @@ function validateTestlistItems(items, storyAcs, opts = {}) {
     else if (storyAcs.length > 0 && !acSet.has(ac)) {
       problems.push(`${where}: ac_id "${ac}" is NOT one of the story's EXACT ac ids [${storyAcs.join(", ")}] \u2014 use the full id verbatim, do not abbreviate/truncate`);
     }
-    if (opts.acLayers && it.kind === "client" && opts.acLayers[ac] === "E2E") {
+    if (opts.acLayers && it.kind === "client" && opts.acLayers[ac] === "E2E" && !opts.acE2eExempt?.[ac]) {
       const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
       if (!E2E_SPEC.test(sf)) {
         problems.push(
@@ -6924,7 +6938,11 @@ function main() {
   const consortDir = resolveConsortDir(projectDir);
   const storyAcs = storyAcIds(consortDir, featureId, story);
   const acLayers = {};
-  for (const ac of storyAcs) acLayers[ac] = readAcLayer(consortDir, featureId, ac);
+  const acE2eExempt = {};
+  for (const ac of storyAcs) {
+    acLayers[ac] = readAcLayer(consortDir, featureId, ac);
+    acE2eExempt[ac] = readAcE2eExempt(consortDir, featureId, ac);
+  }
   let items;
   try {
     items = readItems(readFileSync3(file, "utf8"));
@@ -6933,7 +6951,7 @@ function main() {
 `);
     return 1;
   }
-  const problems = validateTestlistItems(items, storyAcs, { ordered, acLayers });
+  const problems = validateTestlistItems(items, storyAcs, { ordered, acLayers, acE2eExempt });
   if (problems.length === 0) {
     process.stdout.write(`ok: ${items.length} ${ordered ? "ordered " : ""}items, every ac_id valid${ordered ? " + full coverage" : ""} (story ${story}).
 `);

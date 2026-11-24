@@ -143,6 +143,19 @@ describe("fan-out-plan — validateTestlistItems (the sub-agent self-check)", ()
     expect(validateTestlistItems([bhv], ACS, { acLayers: layers })).toEqual([]);
   });
 
+  it("flags a COMPONENT client test on an E2E AC that is NOT exempt (must be a real e2e spec)", () => {
+    const layers = { "AC1-file-stock-record": "E2E" };
+    const comp = item({ id: "T43", kind: "client", scenario_file: "client/tests/components/StockTable.test.tsx", description: "renders the stock-empty-state when given an empty list as props" });
+    expect(validateTestlistItems([comp], ACS, { acLayers: layers }).join(" ")).toMatch(/client test must be a real Playwright e2e spec/);
+  });
+
+  it("does NOT flag that component client test when the E2E AC is e2e-exempt (empty-state render)", () => {
+    const layers = { "AC1-file-stock-record": "E2E" };
+    const acE2eExempt = { "AC1-file-stock-record": true };
+    const comp = item({ id: "T43", kind: "client", scenario_file: "client/tests/components/StockTable.test.tsx", description: "renders the stock-empty-state when given an empty list as props" });
+    expect(validateTestlistItems([comp], ACS, { acLayers: layers, acE2eExempt })).toEqual([]);
+  });
+
   it("flags a non-array", () => {
     expect(validateTestlistItems({ items: [] }, ACS)).toEqual(["output is not a JSON array of test-list items"]);
   });

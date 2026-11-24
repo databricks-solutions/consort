@@ -9298,7 +9298,8 @@ function e2eCoverageReason(consortDir, featureId, testListJson) {
       if (!f.endsWith(".json")) continue;
       try {
         const ac = JSON.parse(readFileSync9(join9(ad, f), "utf8"));
-        if (ac.layer === "E2E") e2eAcIds.push(ac.id ?? f.replace(/\.json$/, ""));
+        const exempt = typeof ac.e2e_exempt_reason === "string" && ac.e2e_exempt_reason.trim().length > 0;
+        if (ac.layer === "E2E" && !exempt) e2eAcIds.push(ac.id ?? f.replace(/\.json$/, ""));
       } catch {
       }
     }

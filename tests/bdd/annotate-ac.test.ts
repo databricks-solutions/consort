@@ -62,4 +62,16 @@ describe("mergeAcAnnotation", () => {
     expect(parseUiSeams(undefined)).toBeUndefined();
     expect(parseUiSeams("")).toEqual([]);
   });
+
+  it("sets e2e_exempt_reason only when provided; an empty string clears it", () => {
+    // provided → written (the architect declares the empty-state AC has no satisfiable e2e)
+    const exempt = JSON.parse(mergeAcAnnotation(AC, { layer: "E2E", notes: "empty-state render", e2eExempt: "global empty-state; covered by component tests, no per-test empty branch for an e2e" }));
+    expect(exempt.e2e_exempt_reason).toMatch(/empty-state/);
+    // omitted → the field is absent
+    const none = JSON.parse(mergeAcAnnotation(AC, { layer: "E2E", notes: "x" }));
+    expect("e2e_exempt_reason" in none).toBe(false);
+    // explicit empty string → cleared from an object that had it
+    const cleared = JSON.parse(mergeAcAnnotation(JSON.stringify({ ...JSON.parse(AC), e2e_exempt_reason: "old" }), { notes: "x", e2eExempt: "" }));
+    expect("e2e_exempt_reason" in cleared).toBe(false);
+  });
 });

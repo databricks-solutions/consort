@@ -372,6 +372,26 @@ export function readAcLayer(tdd: string, f: string, acId: string): AcLayer | und
   return undefined;
 }
 
+/** True when an E2E (UI) AC is EXEMPT from the browser-e2e requirement because the architect declared
+ *  its outcome a pure component-presentation with no satisfiable full-journey e2e (a global empty/zero-
+ *  state): a non-empty `e2e_exempt_reason` on its acs/<AC>.json. checkE2ECoverage + the fan-out
+ *  client-on-E2E spec rule skip an exempt AC (it is covered by component tests, not a browser e2e). */
+export function readAcE2eExempt(tdd: string, f: string, acId: string): boolean {
+  const stories = storiesDir(tdd, f);
+  if (!fs.existsSync(stories)) return false;
+  for (const s of fs.readdirSync(stories)) {
+    const file = acJson(tdd, f, s, acId);
+    if (!fs.existsSync(file)) continue;
+    try {
+      const ac = JSON.parse(fs.readFileSync(file, "utf8")) as { e2e_exempt_reason?: unknown };
+      if (typeof ac.e2e_exempt_reason === "string" && ac.e2e_exempt_reason.trim().length > 0) return true;
+    } catch {
+      /* treat malformed as not exempt */
+    }
+  }
+  return false;
+}
+
 /** Read an AC's `architectural_notes` (the Architect Reviewer's distinctive
  *  per-AC output: layer rationale + cross-cutting concerns + owner module).
  *  Undefined when the AC file is absent/malformed or has no notes. Used to tell

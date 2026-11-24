@@ -824,8 +824,11 @@ function e2eCoverageReason(consortDir: string, featureId: string, testListJson: 
     for (const f of readdirSync(ad)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const ac = JSON.parse(readFileSync(join(ad, f), "utf8")) as { id?: string; layer?: string };
-        if (ac.layer === "E2E") e2eAcIds.push(ac.id ?? f.replace(/\.json$/, ""));
+        const ac = JSON.parse(readFileSync(join(ad, f), "utf8")) as { id?: string; layer?: string; e2e_exempt_reason?: unknown };
+        // An E2E AC the architect marked e2e-exempt (a pure empty/zero-state with no satisfiable
+        // full-journey e2e) is covered by component tests, so it does NOT require a browser e2e.
+        const exempt = typeof ac.e2e_exempt_reason === "string" && ac.e2e_exempt_reason.trim().length > 0;
+        if (ac.layer === "E2E" && !exempt) e2eAcIds.push(ac.id ?? f.replace(/\.json$/, ""));
       } catch {
         /* a malformed AC is caught by acsConformanceReason */
       }

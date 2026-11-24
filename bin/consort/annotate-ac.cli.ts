@@ -24,6 +24,7 @@ interface ParsedArgs {
   notes?: string;
   uiSeams?: string;
   apiContract?: string;
+  e2eExempt?: string;
   consortDir?: string;
   help?: boolean;
 }
@@ -47,6 +48,13 @@ deterministic pre-reflect IA gate checks each is named in ia.md.
 --api-contract (API-asserting ACs): the id of the architecture.json api_contracts[]
 entry whose response shape this AC exercises (e.g. "EP1-list-stock-by-sku"). The shape
 is single-sourced there; checkApiContractConsistency checks it is a declared endpoint.
+
+--e2e-exempt "<reason>" (E2E/UI ACs ONLY): declare this E2E AC a pure component-presentation
+with NO satisfiable full-journey browser e2e — a global empty/zero-state (the whole view shows
+the empty-state because the collection has no rows). The shared-suite e2e harness has no per-test
+empty branch, so an e2e premising a globally-empty DB can never hold. The AC is then covered by
+component tests (render with an empty collection) and EXEMPT from the browser-e2e requirement. Pass
+"" to clear. Use ONLY for an outcome with no satisfiable e2e, never to dodge a real journey e2e.
 `;
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -60,6 +68,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case "--notes": out.notes = argv[++i]; break;
       case "--ui-seams": out.uiSeams = argv[++i]; break;
       case "--api-contract": out.apiContract = argv[++i]; break;
+      case "--e2e-exempt": out.e2eExempt = argv[++i]; break;
       case "--consort-dir": case "--tdd-dir": out.consortDir = argv[++i]; break;
       case "--help": case "-h": out.help = true; break;
       default: break;
@@ -75,7 +84,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
  */
 export function mergeAcAnnotation(
   raw: string,
-  fields: { layer?: string; notes: string; uiSeams?: string[]; apiContract?: string },
+  fields: { layer?: string; notes: string; uiSeams?: string[]; apiContract?: string; e2eExempt?: string },
 ): string {
   const obj = JSON.parse(raw) as Record<string, unknown>;
   if (fields.layer) obj.layer = fields.layer;
@@ -86,6 +95,11 @@ export function mergeAcAnnotation(
   if (fields.apiContract !== undefined) {
     if (fields.apiContract.length > 0) obj.api_contract_id = fields.apiContract;
     else delete obj.api_contract_id;
+  }
+  // Only set e2e_exempt_reason when provided (default: not exempt); an empty string clears it.
+  if (fields.e2eExempt !== undefined) {
+    if (fields.e2eExempt.trim().length > 0) obj.e2e_exempt_reason = fields.e2eExempt;
+    else delete obj.e2e_exempt_reason;
   }
   return JSON.stringify(obj, null, 2) + "\n";
 }
@@ -120,7 +134,7 @@ function main(argv: string[]): number {
   }
   let merged: string;
   try {
-    merged = mergeAcAnnotation(fs.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes, uiSeams: parseUiSeams(args.uiSeams), apiContract: args.apiContract });
+    merged = mergeAcAnnotation(fs.readFileSync(file, "utf8"), { layer: args.layer, notes: args.notes, uiSeams: parseUiSeams(args.uiSeams), apiContract: args.apiContract, e2eExempt: args.e2eExempt });
   } catch (e) {
     process.stderr.write(
       `Error: ${file} is not valid JSON (${e instanceof Error ? e.message : String(e)}). ` +

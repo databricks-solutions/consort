@@ -61,6 +61,11 @@
       "items": { "type": "string" },
       "description": "For an E2E / client AC: the ia.md data-testid seam token(s) this AC's UI must drive (e.g. stock-cell-tracking, sku-par-level). Declared by the Architect Reviewer; the deterministic pre-reflect IA gate checks every one is named in ia.md, so an AC that asserts a surface the information architecture does not define is caught before the LLM reflect lap. Omit for a non-UI (API/Infra) AC."
     },
+    "e2e_exempt_reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "For an E2E (UI) AC whose outcome is a pure COMPONENT-presentation with NO satisfiable full-journey browser e2e — a global empty/zero-state (the whole view shows the empty-state because the collection has no rows): the shared-suite e2e harness provides no per-test empty branch, so an e2e premising a globally-empty DB can never hold (sibling specs seed rows). Set by the Architect Reviewer to declare the AC is satisfied by component tests (render with an empty collection) and EXEMPT from the browser-e2e requirement (checkE2ECoverage and the fan-out client-on-E2E spec rule skip an exempt AC). The non-empty string is the justification. Do NOT use it to dodge a genuine full-journey e2e — only for an outcome with no satisfiable e2e."
+    },
     "status": {
       "type": "string",
       "enum": ["draft", "approved", "in-progress", "passing", "deprecated"]

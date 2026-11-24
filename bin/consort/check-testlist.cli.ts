@@ -12,7 +12,7 @@
 //   fenced ```json ... ``` array (so the sub-agent can check the exact text it is about to return).
 
 import { existsSync, readFileSync } from "node:fs";
-import { resolveConsortDir, storyAcIds, readAcLayer } from "../../consort/config/consort-paths.js";
+import { resolveConsortDir, storyAcIds, readAcLayer, readAcE2eExempt } from "../../consort/config/consort-paths.js";
 import { extractJsonArray, validateTestlistItems } from "../../consort/test-list/fan-out-plan.js";
 
 function arg(name: string): string | undefined {
@@ -52,7 +52,13 @@ function main(): number {
   const storyAcs = storyAcIds(consortDir, featureId, story);
   // Per-AC layer, so the check can require an E2E-layer AC's client test to be a real Playwright e2e spec.
   const acLayers: Record<string, string | undefined> = {};
-  for (const ac of storyAcs) acLayers[ac] = readAcLayer(consortDir, featureId, ac);
+  // Per-AC e2e-exemption: an E2E AC the architect marked a pure empty/zero-state (no satisfiable
+  // browser e2e) is covered by a component client test, so the "client test must be an e2e spec" rule skips it.
+  const acE2eExempt: Record<string, boolean> = {};
+  for (const ac of storyAcs) {
+    acLayers[ac] = readAcLayer(consortDir, featureId, ac);
+    acE2eExempt[ac] = readAcE2eExempt(consortDir, featureId, ac);
+  }
   let items: unknown;
   try {
     items = readItems(readFileSync(file, "utf8"));
@@ -60,7 +66,7 @@ function main(): number {
     process.stderr.write(`FAIL: could not read a JSON array of items from ${file}: ${e instanceof Error ? e.message : String(e)}\n`);
     return 1;
   }
-  const problems = validateTestlistItems(items, storyAcs, { ordered, acLayers });
+  const problems = validateTestlistItems(items, storyAcs, { ordered, acLayers, acE2eExempt });
   if (problems.length === 0) {
     process.stdout.write(`ok: ${(items as unknown[]).length} ${ordered ? "ordered " : ""}items, every ac_id valid${ordered ? " + full coverage" : ""} (story ${story}).\n`);
     return 0;

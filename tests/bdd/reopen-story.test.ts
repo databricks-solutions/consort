@@ -135,10 +135,40 @@ describe("reopenStoryForRedesign", () => {
       expect(body).toContain("prop-driven component test");
     });
 
-    it("writes NO brief when no reason is given (no stray handback)", () => {
+    it("writes NO brief when no reason is given AND no on-disk diagnosis (no stray handback)", () => {
       seedFullyDesigned();
       reopenStoryFromRole(tdd, F, S, "test-strategist", { now: () => new Date("2026-09-07T00:00:00Z") });
       expect(existsSync(handbackFile(tdd, F, "test-strategist", S))).toBe(false);
+    });
+
+    it("AUTO-CARRIES the navigator's on-disk spec-defect remedy into the brief even with NO --reason (the operator need not know to paste it)", () => {
+      // The build-lane assess already wrote the concrete remedy to regression-assessment.json; a reopen
+      // must deliver IT without the operator copying it by hand (the F1/S2 live loop: reopen --from
+      // test-strategist with a generic reason re-authored the SAME empty-state e2e).
+      seedFullyDesigned();
+      write(`cycles/${F}/${S}/AC1-a/regression-assessment.json`, {
+        diagnosis: "Not a code regression; the test is wrong.",
+        specDefect: { fromRole: "test-strategist", reason: "Re-author T45 as a Vitest component test rendering <StockTable records={[]}/> in a MemoryRouter; the empty-state e2e premises a globally-empty shared DB." },
+      });
+      reopenStoryFromRole(tdd, F, S, "test-strategist", { now: () => new Date("2026-09-07T00:00:00Z") });
+      const brief = handbackFile(tdd, F, "test-strategist", S);
+      expect(existsSync(brief), "the on-disk remedy is auto-carried even without --reason").toBe(true);
+      const body = readFileSync(brief, "utf8");
+      expect(body).toContain("REOPEN RE-AUTHOR BRIEF (test-strategist)");
+      expect(body).toContain("SPEC-DEFECT for AC1-a");
+      expect(body).toContain("Re-author T45 as a Vitest component test");
+    });
+
+    it("COMBINES the auto-carried remedy with an explicit --reason when both are present", () => {
+      seedFullyDesigned();
+      write(`cycles/${F}/${S}/AC1-a/regression-assessment.json`, {
+        diagnosis: "d",
+        specDefect: { fromRole: "test-strategist", reason: "render the component with an empty list" },
+      });
+      reopenStoryFromRole(tdd, F, S, "test-strategist", { now: () => new Date("2026-09-07T00:00:00Z"), reason: "also drop the dead import" });
+      const body = readFileSync(handbackFile(tdd, F, "test-strategist", S), "utf8");
+      expect(body).toContain("render the component with an empty list"); // auto-carried remedy
+      expect(body).toContain("also drop the dead import"); // explicit operator reason
     });
 
     it("flags dbResyncNeeded when the reverted story owns a MIGRATION (the orphan-alembic-stamp class)", () => {

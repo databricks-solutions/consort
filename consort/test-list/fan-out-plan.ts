@@ -242,7 +242,7 @@ export function uncoveredAcs(items: Array<{ ac_id?: unknown }>, storyAcIds: stri
 export function validateTestlistItems(
   items: unknown,
   storyAcs: string[],
-  opts: { ordered?: boolean; acLayers?: Record<string, string | undefined> } = {},
+  opts: { ordered?: boolean; acLayers?: Record<string, string | undefined>; acE2eExempt?: Record<string, boolean> } = {},
 ): string[] {
   if (!Array.isArray(items)) return ["output is not a JSON array of test-list items"];
   const problems: string[] = [];
@@ -267,7 +267,9 @@ export function validateTestlistItems(
     // #2 — an E2E-layer AC's client test MUST be a real Playwright e2e spec, not a component harness or a
     // mis-named file. Catches the churn where the client analyst over-produced jsdom harness tests
     // (pages/*.test.tsx) or *.e2e.ts files that a later pass had to re-derive/strip.
-    if (opts.acLayers && it.kind === "client" && opts.acLayers[ac] === "E2E") {
+    // An e2e-exempt E2E AC (architect-declared pure empty/zero-state, no satisfiable browser e2e) is
+    // covered by a component client test, so it is EXEMPT from the "client test must be an e2e spec" rule.
+    if (opts.acLayers && it.kind === "client" && opts.acLayers[ac] === "E2E" && !opts.acE2eExempt?.[ac]) {
       const sf = typeof it.scenario_file === "string" ? it.scenario_file : "";
       if (!E2E_SPEC.test(sf)) {
         problems.push(
