@@ -47,6 +47,8 @@ import { consortEnv } from "../../config/consort-env.js";
 import type { TurnUsage } from "../../session/claude-usage.js";
 import { productDirForLanguage, projectLanguage, resolveProjectSettings } from "../../config/consort-config-file.js";
 import type { WorkflowAction, DriveState } from "./orchestrator-drive.js";
+import { turnKeyForAction } from "./turn-key.js";
+import { resolveConsortSettings } from "../settings/project-settings.js";
 import type { BoundedRoute, ValidateBoundDeps } from "../steps/step-contract.js";
 // Types only (erased at compile) – so this module never imports orchestrator-effects at runtime.
 import type { DriveCommand, DriveEffectsConfig } from "./orchestrator-effects.js";
@@ -240,9 +242,13 @@ export function copilotExecutorSelected(projectDir: string): boolean {
  * replay-kind swap. The Copilot CLI's `--model` accepts a provider/model (it can route to Claude or
  * GPT), so the per-step model lever still applies.
  */
-export function copilotExecutorSpec(manifest: StepManifest): AgentSpec {
+export function copilotExecutorSpec(manifest: StepManifest, resolvedModel?: string): AgentSpec {
   const cfg = (manifest.agent?.config ?? {}) as { role?: string };
-  const model = (manifest.agentOptions as { model?: unknown } | undefined)?.model;
+  // The model is resolved through the ONE door (copilotModelForTurn -> resolveConsortSettings) when
+  // the caller threads it, so a project's per-role / per-step-type override reaches a Copilot turn
+  // exactly as it reaches a claude turn. Falling back to the manifest's own agentOptions.model keeps
+  // the pure remap (and its unit tests) byte-identical when no resolution is supplied.
+  const model = resolvedModel ?? (manifest.agentOptions as { model?: unknown } | undefined)?.model;
   return {
     kind: "copilot",
     config: {
@@ -250,6 +256,29 @@ export function copilotExecutorSpec(manifest: StepManifest): AgentSpec {
       ...(typeof model === "string" ? { model } : {}),
     },
   };
+}
+
+/**
+ * Resolve the model a Copilot turn runs with THROUGH THE SAME DOOR the claude path uses
+ * (resolveConsortSettings.modelFor), keyed by the action's (role, TurnKey). This is what makes a
+ * project's model config reach the Copilot executor at all: the claude runner consumes modelFor via
+ * its modelForTurn resolver, but copilotExecutorSpec is a pure manifest remap that never saw the
+ * resolver — so a Copilot project silently ignored EVERY project override (per-role AND per-step-
+ * type). Routing the remap's model through here closes that gap with NO new config shape — the per-
+ * step-type override already lives in consort-config.json `roles.<role>.model` as a TurnKey map
+ * (e.g. `{ "green": "sonnet", "red": "opus" }`), the same key the drive derives via turnKeyForAction.
+ * Returns undefined only when the manifest declares no role (leaves copilotExecutorSpec on its
+ * manifest fallback). Effort is deliberately NOT resolved here: the Copilot CLI arg vector carries no
+ * effort lever (copilotBaseArgs), so there is nothing to thread — model is the one knob it exposes.
+ */
+export function copilotModelForTurn(
+  manifest: StepManifest,
+  action: WorkflowAction,
+  projectDir: string,
+): string | undefined {
+  const role = (manifest.agent?.config as { role?: string } | undefined)?.role;
+  if (typeof role !== "string") return undefined;
+  return resolveConsortSettings({ projectDir }).modelFor(role, turnKeyForAction(action));
 }
 
 /**
@@ -550,7 +579,7 @@ export async function performTurnViaExecutor(
   const spec: AgentSpec = replayDir
     ? { ...manifest.agent!, kind: "replay", config: {} }
     : copilotExecutorSelected(cfg.projectDir)
-      ? copilotExecutorSpec(manifest)
+      ? copilotExecutorSpec(manifest, copilotModelForTurn(manifest, action, cfg.projectDir))
       : manifest.agent!;
   let agent = buildAgent(spec, {
     workspaceDir: cfg.projectDir,

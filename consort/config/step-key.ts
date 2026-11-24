@@ -42,3 +42,31 @@ export type TurnKey = BuildTurn | DesignStep;
 
 /** `--effort` levels `claude -p` accepts, plus "default" (omit the flag). */
 export type EffortLevel = "default" | "low" | "medium" | "high" | "xhigh" | "max";
+
+// ── Runtime vocabularies ────────────────────────────────────────────────────
+// The unions above are compile-time only; a validator (the model-config doctor) needs the
+// vocabularies at RUNTIME to check a project's per-step config keys/values. These const arrays are
+// that single runtime home. The `satisfies` below makes tsc FAIL if an array lists a value that is
+// NOT in its union; the `_assert*` aliases below make tsc FAIL if a union member is MISSING from its
+// array — so the arrays can never silently drift from the types. Still zero imports (lowest layer).
+
+/** Every BUILD turn, at runtime (order = the loop's natural order). */
+export const ALL_BUILD_TURNS = ["red", "green", "review", "refactor", "assess", "repair", "reflect", "reconcile", "reauthor"] as const satisfies readonly BuildTurn[];
+/** Every DESIGN step, at runtime. */
+export const ALL_DESIGN_STEPS = ["breakdown", "propose", "acs", "estimate", "architect", "dba", "test-list", "ux"] as const satisfies readonly DesignStep[];
+/** Every per-invocation TurnKey (build turns + design steps) a role's model/effort map may key on. */
+export const ALL_TURN_KEYS = [...ALL_BUILD_TURNS, ...ALL_DESIGN_STEPS] as const satisfies readonly TurnKey[];
+/** Every `--effort` level, at runtime. */
+export const ALL_EFFORT_LEVELS = ["default", "low", "medium", "high", "xhigh", "max"] as const satisfies readonly EffortLevel[];
+
+// Completeness guards: a union member missing from its array makes the Exclude a non-`never` type,
+// so the `true` assignment fails to typecheck (naming exactly which key drifted).
+type _MissingBuildTurn = Exclude<BuildTurn, (typeof ALL_BUILD_TURNS)[number]>;
+type _MissingDesignStep = Exclude<DesignStep, (typeof ALL_DESIGN_STEPS)[number]>;
+type _MissingEffort = Exclude<EffortLevel, (typeof ALL_EFFORT_LEVELS)[number]>;
+const _assertBuildTurns: _MissingBuildTurn extends never ? true : _MissingBuildTurn = true;
+const _assertDesignSteps: _MissingDesignStep extends never ? true : _MissingDesignStep = true;
+const _assertEffort: _MissingEffort extends never ? true : _MissingEffort = true;
+void _assertBuildTurns;
+void _assertDesignSteps;
+void _assertEffort;

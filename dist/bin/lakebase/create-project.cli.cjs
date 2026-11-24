@@ -59,6 +59,7 @@ var RECOMMENDED_MODELS = {
   "product-owner": "opus"
 };
 var ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS);
+var KNOWN_MODEL_ALIASES = ["opus", "sonnet", "haiku"];
 var AGENT_CONFIG_REL = (0, import_path.join)(".lakebase", "agent-config.json");
 
 // consort/config/consort-config-file.ts
@@ -104,6 +105,122 @@ function setProjectExecutor(projectDir, executor) {
   cfg.project = cfg.project ?? {};
   cfg.project.executor = executor;
   writeConsortConfig(projectDir, cfg, { force: true });
+}
+
+// consort/config/step-key.ts
+var ALL_BUILD_TURNS = ["red", "green", "review", "refactor", "assess", "repair", "reflect", "reconcile", "reauthor"];
+var ALL_DESIGN_STEPS = ["breakdown", "propose", "acs", "estimate", "architect", "dba", "test-list", "ux"];
+var ALL_TURN_KEYS = [...ALL_BUILD_TURNS, ...ALL_DESIGN_STEPS];
+var ALL_EFFORT_LEVELS = ["default", "low", "medium", "high", "xhigh", "max"];
+
+// consort/config/model-config-doctor.ts
+function editDistance(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+    }
+  }
+  return d[m][n];
+}
+function closest(value, candidates) {
+  let best;
+  let bestD = Infinity;
+  for (const c of candidates) {
+    const dist = editDistance(value.toLowerCase(), c.toLowerCase());
+    if (dist < bestD) {
+      bestD = dist;
+      best = c;
+    }
+  }
+  if (best === void 0) return void 0;
+  const threshold = Math.max(2, Math.floor(Math.max(value.length, best.length) / 3));
+  return bestD <= threshold ? best : void 0;
+}
+function isQualifiedOrSentinel(value) {
+  const v = value.trim().toLowerCase();
+  if (v === "inherit" || v === "default") return true;
+  if (v.includes("/") || v.includes(".")) return true;
+  if (/^claude-(opus|sonnet|haiku)-/.test(v)) return true;
+  return false;
+}
+function lintModelValue(role, value, step) {
+  if (KNOWN_MODEL_ALIASES.includes(value) || isQualifiedOrSentinel(value)) return void 0;
+  const suggestion = closest(value, KNOWN_MODEL_ALIASES);
+  return {
+    role,
+    ...step ? { step } : {},
+    field: "model",
+    value,
+    ...suggestion ? { suggestion } : {},
+    reason: `"${value}" is not a known model alias (known: ${KNOWN_MODEL_ALIASES.join(", ")}; a fully-qualified id such as system.ai.claude-opus-5-5 is also accepted)`
+  };
+}
+function lintEffortValue(role, value, step) {
+  if (ALL_EFFORT_LEVELS.includes(value)) return void 0;
+  const suggestion = closest(value, ALL_EFFORT_LEVELS);
+  return {
+    role,
+    ...step ? { step } : {},
+    field: "effort",
+    value,
+    ...suggestion ? { suggestion } : {},
+    reason: `"${value}" is not a valid effort level (${ALL_EFFORT_LEVELS.join(", ")})`
+  };
+}
+function lintStepKey(role, step) {
+  if (ALL_TURN_KEYS.includes(step)) return void 0;
+  const suggestion = closest(step, ALL_TURN_KEYS);
+  return {
+    role,
+    step,
+    field: "step-key",
+    value: step,
+    ...suggestion ? { suggestion } : {},
+    reason: `"${step}" is not a known step key, so this per-step override is silently ignored (keys: ${ALL_TURN_KEYS.join(", ")})`
+  };
+}
+function lintRole(role, entry) {
+  const out = [];
+  const scan = (v, scalar, perStep) => {
+    if (typeof v === "string") {
+      const f = scalar(role, v);
+      if (f) out.push(f);
+    } else if (v && typeof v === "object") {
+      for (const [step, val] of Object.entries(v)) {
+        const kf = lintStepKey(role, step);
+        if (kf) out.push(kf);
+        if (typeof val === "string") {
+          const f = perStep(role, val, step);
+          if (f) out.push(f);
+        }
+      }
+    }
+  };
+  scan(entry.model, (r, val) => lintModelValue(r, val), (r, val, step) => lintModelValue(r, val, step));
+  scan(entry.effort, (r, val) => lintEffortValue(r, val), (r, val, step) => lintEffortValue(r, val, step));
+  return out;
+}
+function lintModelConfig(projectDir) {
+  const cfg = loadConsortConfig(projectDir);
+  const roles = cfg?.roles;
+  if (!roles) return [];
+  const out = [];
+  for (const [role, entry] of Object.entries(roles)) {
+    if (entry) out.push(...lintRole(role, entry));
+  }
+  return out;
+}
+function formatFindings(findings) {
+  return findings.map((f) => {
+    const where = f.step ? `roles.${f.role}.${f.field === "step-key" ? "model/effort" : f.field}["${f.step}"]` : `roles.${f.role}.${f.field}`;
+    const fix = f.suggestion ? ` \u2014 did you mean "${f.suggestion}"?` : "";
+    return `  ${where}: ${f.reason}${fix}`;
+  }).join("\n");
 }
 
 // consort/lakebase/adopt-consort.ts
@@ -307,6 +424,49 @@ function layDownKitClaudeAssets(targetDir) {
   }
 }
 var AGENT_SYNC_MARKER2 = path5.join(".claude", "agents", ".kit-version");
+function modelTuningDoc() {
+  return `# Tuning models & effort for this project
+
+Each Consort role agent runs on a model (and reasoning effort) that the kit tunes per step. You can
+override any of it for THIS project by editing \`${CONSORT_CONFIG_REL}\` under \`roles.<role>\`. The
+override works the same whether the project runs on the \`claude\` or the \`copilot\` executor.
+
+## Where
+
+In \`${CONSORT_CONFIG_REL}\`:
+
+\`\`\`jsonc
+{
+  "roles": {
+    "driver":      { "model": { "green": "sonnet", "refactor": "opus" } },
+    "spec-author": { "model": "opus", "effort": { "breakdown": "high" } }
+  }
+}
+\`\`\`
+
+- \`model\`: a string (applies to EVERY one of that role's turns) OR a per-step map \`{ "<step>": "<model>" }\`.
+- \`effort\`: a level (all turns) OR a per-step map \`{ "<step>": "<level>" }\`.
+
+A **scalar** flattens the kit's per-step tuning for that role (blunt). A **per-step map** changes only
+the steps you name and leaves the rest on the tuned default (the scalpel). Omitting a role entirely
+keeps the shipped tuning exactly as-is.
+
+## Vocabulary
+
+- Models (aliases): ${KNOWN_MODEL_ALIASES.join(", ")}. A fully-qualified id (e.g. \`system.ai.claude-opus-5-5\`, \`anthropic/claude-...\`) is also accepted and passed through untouched.
+- Step keys: ${ALL_TURN_KEYS.join(", ")}.
+- Effort levels: ${ALL_EFFORT_LEVELS.join(", ")} (\`default\` omits the flag).
+
+## Check it
+
+After editing, validate your config against the kit's known set (catches typos + stale aliases and
+suggests the closest replacement):
+
+\`\`\`bash
+./scripts/lk consort-agent-model --doctor
+\`\`\`
+`;
+}
 function seedConsortConfig(projectDir, opts) {
   const consortConfig = defaultConsortConfig();
   for (const [role, model] of Object.entries(opts.agentModels ?? {})) {
@@ -320,6 +480,22 @@ function seedConsortConfig(projectDir, opts) {
     consortConfig.project.language = opts.language ?? "java";
   }
   writeConsortConfig(projectDir, consortConfig);
+  try {
+    fs6.writeFileSync(path5.join(projectDir, ".lakebase", "model-tuning.md"), modelTuningDoc());
+  } catch {
+  }
+  try {
+    const findings = lintModelConfig(projectDir);
+    if (findings.length > 0) {
+      process.stderr.write(
+        `[consort] model config has ${findings.length} issue(s) in ${CONSORT_CONFIG_REL}:
+${formatFindings(findings)}
+[consort] re-check anytime with: ./scripts/lk consort-agent-model --doctor
+`
+      );
+    }
+  } catch {
+  }
 }
 var kitConsortHooks = {
   layDownScaffold: layDownTddScaffold,

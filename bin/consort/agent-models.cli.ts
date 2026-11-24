@@ -7,8 +7,14 @@
 // Usage:
 //   consort-agent-model --role <role> [--project-dir <dir>] [--json]
 //   consort-agent-model --list        [--project-dir <dir>] [--json]
+//   consort-agent-model --doctor      [--project-dir <dir>] [--json]
 //
-// Exit: 0 ok; 2 bad args (unknown role / missing --role and --list).
+// --doctor validates the project's per-role / per-step model + effort overrides in
+// .lakebase/consort-config.json against the kit's known aliases + step keys, and suggests the
+// closest replacement for anything that doesn't match (a typo or stale alias). It does NOT rewrite
+// the file.
+//
+// Exit: 0 ok (or doctor clean); 1 doctor found issues; 2 bad args (unknown role / no mode).
 
 import {
   ALL_AGENT_ROLES,
@@ -16,10 +22,12 @@ import {
   readAgentConfig,
   type SpawnableAgentRole,
 } from "../../consort/config/agent-models";
+import { lintModelConfig, formatFindings } from "../../consort/config/model-config-doctor";
 
 interface Args {
   role?: string;
   list?: boolean;
+  doctor?: boolean;
   projectDir: string;
   json?: boolean;
 }
@@ -30,6 +38,7 @@ function parse(argv: string[]): Args {
     const a = argv[i];
     if (a === "--role") out.role = argv[++i];
     else if (a === "--list") out.list = true;
+    else if (a === "--doctor") out.doctor = true;
     else if (a === "--project-dir") out.projectDir = argv[++i];
     else if (a === "--json") out.json = true;
   }
@@ -38,6 +47,18 @@ function parse(argv: string[]): Args {
 
 function main(): number {
   const args = parse(process.argv.slice(2));
+
+  if (args.doctor) {
+    const findings = lintModelConfig(args.projectDir);
+    if (args.json) {
+      process.stdout.write(JSON.stringify(findings, null, 2) + "\n");
+    } else if (findings.length === 0) {
+      process.stdout.write("✓ model config OK — every configured model/effort/step matches the kit's known set\n");
+    } else {
+      process.stderr.write(`Model config issues in .lakebase/consort-config.json:\n${formatFindings(findings)}\n`);
+    }
+    return findings.length === 0 ? 0 : 1;
+  }
 
   if (args.list) {
     const cfg = readAgentConfig(args.projectDir);
@@ -58,6 +79,7 @@ function main(): number {
     process.stderr.write(
       `Usage: consort-agent-model --role <role> [--project-dir <dir>] [--json]\n` +
         `       consort-agent-model --list [--project-dir <dir>] [--json]\n` +
+        `       consort-agent-model --doctor [--project-dir <dir>] [--json]\n` +
         `roles: ${ALL_AGENT_ROLES.join(", ")}\n`,
     );
     return 2;

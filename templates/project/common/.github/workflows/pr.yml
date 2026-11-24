@@ -13,6 +13,12 @@ permissions:
   contents: read
   pull-requests: write
 
+# Database for every kit CLI below (migrate, status, diff, ci-resolve-branch's
+# DATABASE_URL). Set the repo variable LAKEBASE_DATABASE when the app uses its
+# own database (Settings -> Secrets and variables -> Actions -> Variables).
+env:
+  PGDATABASE: ${{ vars.LAKEBASE_DATABASE || 'databricks_postgres' }}
+
 jobs:
   build-and-test:
     runs-on: self-hosted

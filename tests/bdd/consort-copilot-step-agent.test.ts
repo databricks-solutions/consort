@@ -16,9 +16,11 @@ import {
 } from "../../consort/orchestrator/agents/copilot-step-agent";
 import { resolveCopilotCommand } from "../../consort/orchestrator/agents/copilot-runner";
 import { resolveAgentKind, buildAgent } from "../../consort/orchestrator/agents/agent-catalogue";
-import { copilotExecutorSelected, copilotExecutorSpec } from "../../consort/orchestrator/drive/executor-dispatch";
+import { copilotExecutorSelected, copilotExecutorSpec, copilotModelForTurn } from "../../consort/orchestrator/drive/executor-dispatch";
+import { resolveConsortSettings } from "../../consort/orchestrator/settings/project-settings";
 import type { StepManifest } from "../../consort/orchestrator/steps/manifest";
 import type { AgentInvocation } from "../../consort/orchestrator/agents/agent-types";
+import type { WorkflowAction } from "../../consort/orchestrator/drive/orchestrator-drive";
 
 function inv(overrides: Partial<AgentInvocation> = {}): AgentInvocation {
   return {
@@ -252,5 +254,59 @@ describe("copilot executor selection (ONE door: project.executor in consort-conf
   it("copilotExecutorSpec omits model when the manifest declares none", () => {
     const manifest = { agent: { kind: "claude", config: { role: "spec-author" } } } as unknown as StepManifest;
     expect(copilotExecutorSpec(manifest)).toEqual({ kind: "copilot", config: { role: "spec-author" } });
+  });
+  it("copilotExecutorSpec uses the resolved model (the ONE door) OVER the manifest's own agentOptions", () => {
+    const manifest = { agent: { kind: "claude", config: { role: "driver" } }, agentOptions: { model: "sonnet" } } as unknown as StepManifest;
+    // The caller threads the resolver's answer; it wins over the manifest default.
+    expect(copilotExecutorSpec(manifest, "opus")).toEqual({ kind: "copilot", config: { role: "driver", model: "opus" } });
+  });
+});
+
+// REGRESSION GUARD for the Copilot project-override gap: copilotExecutorSpec was a pure manifest
+// remap that never consulted resolveConsortSettings, so a Copilot project silently ignored EVERY
+// project model override (per-role AND per-step-type). copilotModelForTurn routes the remap's model
+// through the SAME door the claude runner uses (resolveConsortSettings.modelFor keyed by role+TurnKey)
+// — so the per-step-type override that already lives in consort-config.json roles.<role>.model (a
+// TurnKey map) reaches BOTH executors identically, with no new config shape.
+describe("copilotModelForTurn: a project's model override reaches the Copilot executor (ONE door)", () => {
+  const dirs: string[] = [];
+  afterEach(() => { while (dirs.length) try { rmSync(dirs.pop()!, { recursive: true, force: true }); } catch { /* */ } });
+  function projectWithConfig(config: unknown): string {
+    const dir = mkdtempSync(join(tmpdir(), "copilot-model-"));
+    dirs.push(dir);
+    mkdirSync(join(dir, ".lakebase"), { recursive: true });
+    writeFileSync(join(dir, ".lakebase", "consort-config.json"), JSON.stringify(config));
+    return dir;
+  }
+  // A driver manifest + its plain build turn (turnKeyForAction => "green").
+  const driverManifest = { agent: { kind: "claude", config: { role: "driver" } }, agentOptions: { model: "sonnet" } } as unknown as StepManifest;
+  const greenAction = { kind: "invoke-role", role: "driver" } as unknown as WorkflowAction;
+
+  it("a per-ROLE scalar override reaches the Copilot model (wins for every turn)", () => {
+    const dir = projectWithConfig({ project: { executor: "copilot" }, roles: { driver: { model: "opus" } } });
+    expect(copilotModelForTurn(driverManifest, greenAction, dir)).toBe("opus");
+  });
+
+  it("a per-STEP-TYPE override (roles.<role>.model keyed by TurnKey) reaches the Copilot model for the step it names", () => {
+    const dir = projectWithConfig({ project: { executor: "copilot" }, roles: { driver: { model: { green: "haiku" } } } });
+    expect(copilotModelForTurn(driverManifest, greenAction, dir)).toBe("haiku"); // the "green" step
+    // An UNmapped step (driver REFACTOR) does NOT pick up the "green" override — proves per-step keying.
+    const refactorAction = { kind: "invoke-role", role: "driver", buildMode: "refactor" } as unknown as WorkflowAction;
+    expect(copilotModelForTurn(driverManifest, refactorAction, dir)).not.toBe("haiku");
+  });
+
+  it("resolves BYTE-IDENTICALLY to the claude door (resolveConsortSettings.modelFor) — one door, both executors", () => {
+    const dir = projectWithConfig({ project: { executor: "copilot" }, roles: { "spec-author": { model: { breakdown: "opus" } } } });
+    const breakdownManifest = { agent: { kind: "claude", config: { role: "spec-author" } } } as unknown as StepManifest;
+    const breakdownAction = { kind: "invoke-role", role: "spec-author", mode: "breakdown" } as unknown as WorkflowAction;
+    const claudeDoor = resolveConsortSettings({ projectDir: dir }).modelFor("spec-author", "breakdown");
+    expect(copilotModelForTurn(breakdownManifest, breakdownAction, dir)).toBe(claudeDoor);
+    expect(claudeDoor).toBe("opus"); // and the project's per-step override is what both see
+  });
+
+  it("returns undefined when the manifest declares no role (copilotExecutorSpec keeps its manifest fallback)", () => {
+    const dir = projectWithConfig({ project: { executor: "copilot" } });
+    const roleless = { agent: { kind: "claude", config: {} } } as unknown as StepManifest;
+    expect(copilotModelForTurn(roleless, greenAction, dir)).toBeUndefined();
   });
 });

@@ -44,6 +44,19 @@ export const RECOMMENDED_MODELS: Record<SpawnableAgentRole, string> = {
 
 export const ALL_AGENT_ROLES = Object.keys(RECOMMENDED_MODELS) as SpawnableAgentRole[];
 
+/**
+ * The model ALIASES the coding harness accepts as a short name (Claude Code's `--model opus|sonnet|
+ * haiku`; Copilot maps the same keys to Databricks ids via COPILOT_MODEL_ALIASES). This is the kit's
+ * authoritative "known model" set used to VALIDATE a project's configured models (the model-config
+ * doctor): a configured value that is one of these — or a fully-qualified id (a `provider/model`,
+ * `system.ai.*`, a versioned `claude-*-N` name) which the doctor passes through since the kit can't
+ * enumerate what a given account can actually reach — is accepted; anything else is an unknown bare
+ * token (a typo or a stale alias) the doctor flags with the closest known alias as the replacement.
+ * RECOMMENDED_MODELS only ever uses these aliases, and COPILOT_MODEL_ALIASES's keys ARE these (both
+ * guarded by consort-agent-models.test), so this stays the single source of the alias vocabulary.
+ */
+export const KNOWN_MODEL_ALIASES = ["opus", "sonnet", "haiku"] as const;
+
 export interface AgentModelEntry {
   /** The role's strongly-recommended model (from its definition). */
   recommended: string;

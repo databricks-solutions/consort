@@ -182,6 +182,8 @@ The scaffolder runs from the plugin's installed binary; the first log line is `[
 
 After create, run `./scripts/lk --install` to cache this project's pinned kit — instant when the cache is already warm; if it downloads, say the kit cache is warming and narrate it.
 
+**Point the human at the model-tuning location once (after a successful scaffold, not before).** The create flow drops a short guide at `.lakebase/model-tuning.md` next to the project's `.lakebase/consort-config.json`; tell the human that is where they change which model/effort a given role or step runs on (per the Customize notes above), and that `./scripts/lk consort-agent-model --doctor` validates their picks against the kit's known models and names the closest replacement for any typo. Mention it in one line as part of the post-create relay; do not re-explain the whole scheme.
+
 Report only what the live log shows; don't narrate a step it hasn't reached.
 
 **Launch scaffolding from the plugin's OWN binary with `--detach`, and MONITOR it — NEVER foreground.** The plugin ships the scaffolder (`dist/bin/lakebase/create-project.cli.js`), so run THAT directly; do NOT `npx`-fetch the kit again to run create. `--detach` re-launches scaffolding in its own session and returns at once, capturing every step (`[doctor]`, `[Creating GitHub repository...]`, `[Creating Lakebase database …]`, `[Scaffolding project files...]`, `[Setting up CI auth …]`, `[Setting up the self-hosted CI runner …]`, `[Cutting staging tier …]`, `[Creating initial commit...]`, `[Project created successfully!]`) to a log. It is the only launch that survives the turn ending (a foreground call is killed; a plain `&` is reaped at turn-end) and lets you see each step live. **MONITOR it** with the canonical watch command (in the block below); do NOT hand-roll a poll loop. Narrate each step as it arrives, then relay the final `Next:` hint.
@@ -205,7 +207,7 @@ KIT_REF="${LAKEBASE_KIT_REF:-}"
 if [ -z "$KIT_REF" ] && [ -f "$CONSORT_ROOT/.claude-plugin/plugin.json" ]; then
   KIT_REF="v$(node -p "require('$CONSORT_ROOT/.claude-plugin/plugin.json').version" 2>/dev/null || true)"
 fi
-KIT_REF="${KIT_REF:-v0.4.54}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
+KIT_REF="${KIT_REF:-v0.4.55}"   # stamped at release; == package.json version (enforced by tests/bdd/start-kit-pin.test.ts)
 export LAKEBASE_KIT_REF="$KIT_REF"
 
 # Launch scaffolding DETACHED (own session): it prints the child pid + a live-log path

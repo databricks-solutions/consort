@@ -11703,6 +11703,15 @@ import * as fs16 from "fs";
 import * as path11 from "path";
 import { fileURLToPath as fileURLToPath4 } from "url";
 
+// consort/config/step-key.ts
+init_esm_shims();
+var ALL_BUILD_TURNS = ["red", "green", "review", "refactor", "assess", "repair", "reflect", "reconcile", "reauthor"];
+var ALL_DESIGN_STEPS = ["breakdown", "propose", "acs", "estimate", "architect", "dba", "test-list", "ux"];
+var ALL_TURN_KEYS = [...ALL_BUILD_TURNS, ...ALL_DESIGN_STEPS];
+
+// consort/config/model-config-doctor.ts
+init_esm_shims();
+
 // consort/lakebase/adopt-consort.ts
 init_esm_shims();
 import * as fs12 from "fs";

@@ -7246,6 +7246,15 @@ function writeConsortConfig(projectDir, config, opts) {
   return true;
 }
 
+// consort/config/step-key.ts
+init_esm_shims();
+var ALL_BUILD_TURNS = ["red", "green", "review", "refactor", "assess", "repair", "reflect", "reconcile", "reauthor"];
+var ALL_DESIGN_STEPS = ["breakdown", "propose", "acs", "estimate", "architect", "dba", "test-list", "ux"];
+var ALL_TURN_KEYS = [...ALL_BUILD_TURNS, ...ALL_DESIGN_STEPS];
+
+// consort/config/model-config-doctor.ts
+init_esm_shims();
+
 // consort/lakebase/adopt-consort.ts
 init_esm_shims();
 import * as fs2 from "fs";
@@ -13516,9 +13525,9 @@ function isPlanningMode(action) {
 function copilotExecutorSelected(projectDir) {
   return resolveProjectSettings(projectDir).project.executor === "copilot";
 }
-function copilotExecutorSpec(manifest) {
+function copilotExecutorSpec(manifest, resolvedModel) {
   const cfg = manifest.agent?.config ?? {};
-  const model = manifest.agentOptions?.model;
+  const model = resolvedModel ?? manifest.agentOptions?.model;
   return {
     kind: "copilot",
     config: {
@@ -13526,6 +13535,11 @@ function copilotExecutorSpec(manifest) {
       ...typeof model === "string" ? { model } : {}
     }
   };
+}
+function copilotModelForTurn(manifest, action, projectDir) {
+  const role = manifest.agent?.config?.role;
+  if (typeof role !== "string") return void 0;
+  return resolveConsortSettings({ projectDir }).modelFor(role, turnKeyForAction(action));
 }
 function assertNotStrandedAgentTurn(action) {
   if (action.kind !== "invoke-role") return;
@@ -13671,7 +13685,7 @@ async function performTurnViaExecutor(action, state, routerDeps, cfg, deps) {
   const replayDir = consortEnv("REPLAY_DIR")?.trim();
   const replayBuildDir = consortEnv("REPLAY_BUILD_DIR")?.trim();
   const recordDir = consortEnv("RECORD_DIR")?.trim();
-  const spec = replayDir ? { ...manifest.agent, kind: "replay", config: {} } : copilotExecutorSelected(cfg.projectDir) ? copilotExecutorSpec(manifest) : manifest.agent;
+  const spec = replayDir ? { ...manifest.agent, kind: "replay", config: {} } : copilotExecutorSelected(cfg.projectDir) ? copilotExecutorSpec(manifest, copilotModelForTurn(manifest, action, cfg.projectDir)) : manifest.agent;
   let agent = buildAgent(spec, {
     workspaceDir: cfg.projectDir,
     liveDispatch: liveDispatchSeam(cfg, deps),

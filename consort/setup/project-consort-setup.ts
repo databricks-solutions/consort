@@ -14,7 +14,10 @@ import type {
   ClientFramework,
 } from "@databricks-solutions/lakebase-scm-utils/lakebase";
 import { ARTIFACT_ROOT } from "../../consort/config/consort-paths.js";
-import { defaultConsortConfig, writeConsortConfig } from "../../consort/config/consort-config-file.js";
+import { defaultConsortConfig, writeConsortConfig, CONSORT_CONFIG_REL } from "../../consort/config/consort-config-file.js";
+import { KNOWN_MODEL_ALIASES } from "../../consort/config/agent-models.js";
+import { ALL_TURN_KEYS, ALL_EFFORT_LEVELS } from "../../consort/config/step-key.js";
+import { lintModelConfig, formatFindings } from "../../consort/config/model-config-doctor.js";
 import { adoptTdd } from "../lakebase/adopt-consort.js";
 import { updateAgents } from "../lakebase/update-agents.js";
 import { commitRefreshedSurface, refreshKitOwnedInstrumentation } from "../lakebase/upgrade.js";
@@ -239,6 +242,54 @@ export function resyncAgentsOnKitDrift(projectDir: string): {
   }
 }
 
+/** The project-level model-tuning guide, written next to consort-config.json so the human can find
+ *  "where do I change the model for a step?" without leaving the project. Kept in sync with the kit
+ *  vocabularies (interpolated from the single-source arrays), so it can never list a stale step key
+ *  or effort level. The `/consort:start` create flow points the human here after scaffolding. */
+export function modelTuningDoc(): string {
+  return `# Tuning models & effort for this project
+
+Each Consort role agent runs on a model (and reasoning effort) that the kit tunes per step. You can
+override any of it for THIS project by editing \`${CONSORT_CONFIG_REL}\` under \`roles.<role>\`. The
+override works the same whether the project runs on the \`claude\` or the \`copilot\` executor.
+
+## Where
+
+In \`${CONSORT_CONFIG_REL}\`:
+
+\`\`\`jsonc
+{
+  "roles": {
+    "driver":      { "model": { "green": "sonnet", "refactor": "opus" } },
+    "spec-author": { "model": "opus", "effort": { "breakdown": "high" } }
+  }
+}
+\`\`\`
+
+- \`model\`: a string (applies to EVERY one of that role's turns) OR a per-step map \`{ "<step>": "<model>" }\`.
+- \`effort\`: a level (all turns) OR a per-step map \`{ "<step>": "<level>" }\`.
+
+A **scalar** flattens the kit's per-step tuning for that role (blunt). A **per-step map** changes only
+the steps you name and leaves the rest on the tuned default (the scalpel). Omitting a role entirely
+keeps the shipped tuning exactly as-is.
+
+## Vocabulary
+
+- Models (aliases): ${KNOWN_MODEL_ALIASES.join(", ")}. A fully-qualified id (e.g. \`system.ai.claude-opus-5-5\`, \`anthropic/claude-...\`) is also accepted and passed through untouched.
+- Step keys: ${ALL_TURN_KEYS.join(", ")}.
+- Effort levels: ${ALL_EFFORT_LEVELS.join(", ")} (\`default\` omits the flag).
+
+## Check it
+
+After editing, validate your config against the kit's known set (catches typos + stale aliases and
+suggests the closest replacement):
+
+\`\`\`bash
+./scripts/lk consort-agent-model --doctor
+\`\`\`
+`;
+}
+
 /** Seed .lakebase/consort-config.json from per-role model overrides + UI knobs. */
 export function seedConsortConfig(
   projectDir: string,
@@ -258,6 +309,29 @@ export function seedConsortConfig(
     consortConfig.project.language = opts.language ?? "java";
   }
   writeConsortConfig(projectDir, consortConfig);
+
+  // Drop the model-tuning guide next to the config so "where do I change a step's model?" is
+  // answerable on the project itself (the create flow points the human here). Best-effort.
+  try {
+    fs.writeFileSync(path.join(projectDir, ".lakebase", "model-tuning.md"), modelTuningDoc());
+  } catch {
+    /* non-fatal: a missing doc never blocks create */
+  }
+
+  // Validate any model/effort overrides the create flow just seeded (e.g. a mistyped --agent-model),
+  // so a bad value is caught HERE rather than silently ignored at the first turn. Best-effort + a
+  // warning only; never throws, never blocks create.
+  try {
+    const findings = lintModelConfig(projectDir);
+    if (findings.length > 0) {
+      process.stderr.write(
+        `[consort] model config has ${findings.length} issue(s) in ${CONSORT_CONFIG_REL}:\n${formatFindings(findings)}\n` +
+          `[consort] re-check anytime with: ./scripts/lk consort-agent-model --doctor\n`,
+      );
+    }
+  } catch {
+    /* non-fatal */
+  }
 }
 
 /** The workflow-setup hooks the kit injects into the base createProject.

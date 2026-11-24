@@ -11701,6 +11701,15 @@ var fs16 = __toESM(require("fs"), 1);
 var path10 = __toESM(require("path"), 1);
 var import_node_url3 = require("url");
 
+// consort/config/step-key.ts
+init_cjs_shims();
+var ALL_BUILD_TURNS = ["red", "green", "review", "refactor", "assess", "repair", "reflect", "reconcile", "reauthor"];
+var ALL_DESIGN_STEPS = ["breakdown", "propose", "acs", "estimate", "architect", "dba", "test-list", "ux"];
+var ALL_TURN_KEYS = [...ALL_BUILD_TURNS, ...ALL_DESIGN_STEPS];
+
+// consort/config/model-config-doctor.ts
+init_cjs_shims();
+
 // consort/lakebase/adopt-consort.ts
 init_cjs_shims();
 var fs12 = __toESM(require("fs"), 1);
